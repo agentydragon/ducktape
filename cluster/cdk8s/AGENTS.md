@@ -81,6 +81,31 @@ typed, including `resourceNames`:
 - **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_34.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane/namespace_rbac_constructs.py`'s `_NamedApiResource`.
 - **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
 
+## `image-pins/kustomization.yaml`: the `:tag` Setters marker, not the bare form
+
+Every converted directory's hand-written (never generated) `image-pins/` Component pins
+the real tag via a placeholder `newTag:` plus a Flux image-automation Setters marker
+comment, one entry per image:
+
+```yaml
+images:
+  - name: git.allegedly.works/ducktape-ci/<image>
+    newTag: <tag> # {"$imagepolicy": "flux-system:<name>:tag"}
+```
+
+The marker's trailing `:tag` is load-bearing: it tells Setters to write back only the
+bare tag value into the marked `newTag:` field. Omit it and Setters instead rewrites the
+_whole_ marked field to the full `repository:tag` reference — which corrupted a
+`newTag:`-only field into `repository:repository:tag` on its very first write-back and
+took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one. See
+<https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
+update markers". Don't repeat this explanation per directory; point back here instead.
+
+The `images:` transformer matches by image `name:` across **every resource in the
+Kustomization's rendered output**, not just one Deployment — relevant when a directory's
+chart shares one image across multiple resources (e.g. `app/`'s runner `SandboxTemplate`
+alongside its Deployment): one `image-pins` entry patches all of them.
+
 ## Restructuring which Kustomization owns an object: land it in two steps
 
 Converting a directory to cdk8s often changes which Flux `Kustomization` renders a
