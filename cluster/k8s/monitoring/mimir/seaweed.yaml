@@ -1,0 +1,82 @@
+# Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
+# The old seaweedfs-namespace resources remain until the consumer cutover and
+# data-path verification are complete.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: mimir-blocks
+  namespace: monitoring
+  annotations:
+    description: Mimir blocks.
+spec:
+  name: mimir-blocks
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: mimir
+      actions: [Read, Write, List, Tagging]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: mimir-ruler
+  namespace: monitoring
+  annotations:
+    description: Mimir ruler state.
+spec:
+  name: mimir-ruler
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: mimir
+      actions: [Read, Write, List, Tagging]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: mimir
+  namespace: monitoring
+  annotations:
+    description: Mimir's tenant-local SeaweedFS credentials.
+spec:
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  # The IAM identity name is cluster-global. Without a same-namespace
+  # S3Identity, the operator uses the existing identity named mimir.
+  identityRef:
+    name: mimir
+  # Use a new Secret during the staged handoff. The existing Secret is
+  # populated by the old cross-namespace S3Credentials object and cannot be
+  # adopted here.
+  secretRef:
+    name: mimir-seaweedfs-credentials
+    accessKeyField: AWS_ACCESS_KEY_ID
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+  reclaimPolicy: Retain
+---
+# Permit only Mimir's tenant-local Buckets and S3Credentials to reference the
+# SeaweedFS cluster in its namespace.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: mimir
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: monitoring
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
