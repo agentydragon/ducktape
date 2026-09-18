@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,

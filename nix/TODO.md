@@ -82,7 +82,7 @@ roster and Terraform pins; `haku-console` is already covered by
 Two ways to close it: add the wrappers to `//cluster/k8s/litellm/app:test_litellm_config`'s
 `data` and parse `model`/`haikuModel` out, asserting both are served by `proxy-config.yaml`
 and admitted by the consuming key (cheap, but introduces nix parsing from a Python test); or
-generate a JSON roster from `cluster/k8s/litellm/app/model_rosters.py` that the wrappers
+generate a JSON roster from `cluster/cdk8s/model_rosters.py` that the wrappers
 `importJSON`, so the name is never retyped (real SSOT, wider change).
 
 ## Roll out drivefs to remaining hosts

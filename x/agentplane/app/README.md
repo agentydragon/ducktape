@@ -296,8 +296,8 @@ The service owns persistence, authorization, Decisions, dispatch, and recovery. 
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
 Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
-Git-owned `agentplane-action-federation` ConfigMap
-(`cluster/k8s/agentplane-staging/actions/configmap-action-federation.yaml`), and the app's network
+Git-owned `agentplane-action-federation` ConfigMap (built from the `action_federation`/
+`operator_oidc` dicts in `cluster/cdk8s/generate_manifests.py`), and the app's network
 policy admits Authentik by TLS SNI and the Action Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically

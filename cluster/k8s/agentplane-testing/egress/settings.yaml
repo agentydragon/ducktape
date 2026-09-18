@@ -1,8 +1,0 @@
-# The egress proxy's settings, mounted via configMapGenerator -- not a K8s manifest.
-# Read as YAML so a list is a list; scalars stay flags on the Deployment.
-#
-# Every namespace whose ServiceAccounts may present a token here. One for now: the sandboxes run
-# beside the rules. An agent hosted elsewhere gets another entry -- and the same entry in the LLM
-# ingress's settings, which authenticates the same bearer on the next hop.
-allowed_service_account_namespaces:
-  - agentplane-testing

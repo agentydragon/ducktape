@@ -157,9 +157,14 @@ def test_ssh_backend_uses_shared_secret_and_requires_agent_approval(monkeypatch:
     assert reference["name"] == source["spec"]["target"]["name"]
     assert reference["key"] in source["spec"]["target"]["template"]["data"]
     assert reference["name"] in deployment["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")
-    staging = yaml.safe_load(
-        get_required_path("_main/cluster/k8s/agentplane-staging/actions/settings.yaml").read_text()
+    actions_settings_configmap = next(
+        doc
+        for doc in yaml.safe_load_all(
+            get_required_path("_main/cluster/k8s/agentplane-staging/agentplane.k8s.yaml").read_text()
+        )
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-actions-settings"
     )
+    staging = yaml.safe_load(actions_settings_configmap["data"]["settings.yaml"])
     assert str(backend.url) == staging["action_groups"]["ssh"]["executor"]["config"]["url"]
     registry = AutoApprovalPolicyRegistry(config)
     for profile in config.access_profiles:

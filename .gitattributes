@@ -46,6 +46,13 @@ cluster/k8s/litellm/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-staging/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-testing/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-testing/kustomization.yaml linguist-generated=true
+# kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
+# output, pinned by //x/agentplane/crds:test_generate.
+cluster/schemas/**/*.json linguist-generated=true
 # `bb run //cluster/ssh_targets:generate_bin` output (cluster/ssh_targets/generate.py).
 cluster/k8s/ssh-mcp/known_hosts linguist-generated=true
 cluster/k8s/ssh-mcp/settings.yaml linguist-generated=true
@@ -99,15 +106,8 @@ cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignore
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
-# The Agentplane app's settings file, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/agentplane-staging/app/config.yaml cluster-manifest-ignored=true
 # SSH MCP settings, mounted via configMapGenerator — not a Kubernetes manifest.
 cluster/k8s/ssh-mcp/settings.yaml cluster-manifest-ignored=true
-# Agentplane egress and LLM ingress settings, mounted via configMapGenerator — not K8s manifests.
-cluster/k8s/agentplane-staging/egress/settings.yaml cluster-manifest-ignored=true
-cluster/k8s/agentplane-staging/llm-ingress/settings.yaml cluster-manifest-ignored=true
-cluster/k8s/agentplane-testing/egress/settings.yaml cluster-manifest-ignored=true
-cluster/k8s/agentplane-testing/llm-ingress/settings.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 haku/x/dispatch/deploy/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

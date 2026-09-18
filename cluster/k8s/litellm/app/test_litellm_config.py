@@ -4,7 +4,7 @@ import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.litellm_config import main_proxy_config
-from cluster.k8s.litellm.app.model_rosters import ApiShape
+from cluster.cdk8s.model_rosters import ApiShape
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 

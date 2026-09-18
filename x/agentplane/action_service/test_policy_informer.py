@@ -24,7 +24,7 @@ from x.agentplane.action_service.policies.resources import (
     InvalidResource,
 )
 from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import FakeApiServer, fake_apiserver

@@ -26,15 +26,23 @@ from pydantic.alias_generators import to_camel
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 
 
-def flux_kustomization(name: str, *, spec: KustomizationSpec) -> dict[str, object]:
+def flux_kustomization(name: str, *, spec: KustomizationSpec, description: str | None = None) -> dict[str, object]:
     """Return a Flux `Kustomization` custom resource as a plain manifest dict.
 
     `spec` is the generated typed `KustomizationSpec` (//third_party/flux:kustomization) --
     build it directly rather than through a hand-rolled subset of its fields; this only
     supplies the metadata/chart/synth plumbing that isn't part of the CRD's own spec.
+    `description` becomes the `description` annotation (cluster/AGENTS.md).
     """
     chart = Testing.chart()
-    Kustomization(chart, name, metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE), spec=spec)
+    Kustomization(
+        chart,
+        name,
+        metadata=ApiObjectMetadata(
+            name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
+        ),
+        spec=spec,
+    )
     (manifest,) = Testing.synth(chart)
     assert isinstance(manifest, dict)
     return manifest

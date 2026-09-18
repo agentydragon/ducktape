@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from cluster.k8s.litellm.app.model_rosters import (
+from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     ASTRA_CONTEXT_WINDOW,
     ASTRA_MAX_TOKENS,
@@ -16,6 +16,7 @@ from cluster.k8s.litellm.app.model_rosters import (
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
     MISTRAL_MODELS,
+    OLLAMA_EMBEDDING_MODEL,
     TANA_MODELS,
     Provider,
     exposed_name,
@@ -186,7 +187,7 @@ def _ollama_entries() -> list[dict]:
     embed_shape = shape_for("ollama", "embed")
     entries.append(
         _model_entry(
-            exposed_name(Provider.OLLAMA, embed_shape, "qwen3-embedding-4b"),
+            exposed_name(Provider.OLLAMA, embed_shape, OLLAMA_EMBEDDING_MODEL),
             "ollama/qwen3-embedding:4b",
             shape_mode(embed_shape),
             api_base=_OLLAMA_BASE,
@@ -237,14 +238,14 @@ def _cliproxy_entries() -> list[dict]:
 
 
 def _tana_entries() -> list[dict]:
-    shape = shape_for("tana", "messages")
+    shape = shape_for(Provider.TANA, "messages")
     return [
         _model_entry(
             exposed_name(Provider.TANA, shape, exposed),
-            f"tana/tana/{downstream}",
+            f"{Provider.TANA}/{Provider.TANA}/{downstream}",
             shape_mode(shape),
             supports_function_calling=True,
-            custom_llm_provider="tana",
+            custom_llm_provider=Provider.TANA,
         )
         for exposed, downstream in TANA_MODELS
     ]

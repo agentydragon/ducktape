@@ -18,8 +18,9 @@ cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Cron, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Cron, Duration, Size
 from cdk8s_plus_34 import (
+    ApiResource,
     Capability,
     ConcurrencyPolicy,
     ConfigMap,
@@ -42,6 +43,7 @@ from cdk8s_plus_34 import (
     RestartPolicy,
     Role,
     RoleBinding,
+    RolePolicyRule,
     Secret,
     SecretValue,
     Service,
@@ -87,6 +89,7 @@ _APP_UPSTREAM_PORT = 8086
 _APP_FACADE_PORT = 8765
 _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
+_APP_DATA_DIR = "/data"
 
 
 class HaMcpCredentialsProvisioner(Construct):
@@ -105,26 +108,21 @@ class HaMcpCredentialsProvisioner(Construct):
         self._add_cronjob(service_account, break_glass_secret, pull_secret)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # cdk8s_plus_34's RolePolicyRule has no resourceNames field, so this Role's
-        # /rules (which needs one) is patched in directly -- same escape hatch as
-        # Deployment's topologySpreadConstraints in litellm_constructs.py: the typed
-        # Role construct stays authoritative for apiVersion/kind/metadata, and
-        # ApiObject.of() reaches its internally-managed ApiObject for the one field
-        # the typed API can't express.
-        role = Role(self, "role", metadata=metadata(_PROVISIONER_NAME, _NAMESPACE))
-        ApiObject.of(role).add_json_patch(
-            JsonPatch.add(
-                "/rules",
-                [
-                    {
-                        "apiGroups": [""],
-                        "resources": ["secrets"],
-                        "resourceNames": [_HOME_ASSISTANT_TOKEN_SECRET_NAME],
-                        "verbs": ["get", "update", "patch"],
-                    },
-                    {"apiGroups": [""], "resources": ["secrets"], "verbs": ["create"]},
-                ],
-            )
+        # Role's rules= takes real IApiResource objects, not raw dicts -- a
+        # resourceNames-scoped rule uses the same Secret.from_secret_name() reference
+        # RoleBinding subjects use elsewhere, whose resource_name is exactly this
+        # secret's name; Role synthesizes it into the rule's resourceNames.
+        Role(
+            self,
+            "role",
+            metadata=metadata(_PROVISIONER_NAME, _NAMESPACE),
+            rules=[
+                RolePolicyRule(
+                    resources=[Secret.from_secret_name(self, "token-secret-ref", _HOME_ASSISTANT_TOKEN_SECRET_NAME)],
+                    verbs=["get", "update", "patch"],
+                ),
+                RolePolicyRule(resources=[ApiResource.SECRETS], verbs=["create"]),
+            ],
         )
         RoleBinding(
             self,
@@ -246,8 +244,8 @@ class HaMcpApp(Construct):
                 "ENVIRONMENT": "production",
                 "LOG_LEVEL": "INFO",
                 "BACKUP_HINT": "normal",
-                "HA_MCP_CONFIG_DIR": "/data",
-                "HAMCP_BACKUP_DIR": "/data/backups",
+                "HA_MCP_CONFIG_DIR": _APP_DATA_DIR,
+                "HAMCP_BACKUP_DIR": f"{_APP_DATA_DIR}/backups",
                 "ENABLE_TOOL_SEARCH": "false",
                 "READ_ONLY_MODE": "false",
                 "ENABLE_BETA_FEATURES": "false",
@@ -321,7 +319,7 @@ class HaMcpApp(Construct):
             ),
         )
         deployment.containers[0].mount("/tmp", tmp_volume)
-        deployment.containers[0].mount("/data", data_volume)
+        deployment.containers[0].mount(_APP_DATA_DIR, data_volume)
 
         deployment.add_container(
             name="facade",

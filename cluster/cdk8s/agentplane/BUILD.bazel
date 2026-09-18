@@ -1,0 +1,376 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "namespace_rbac_constructs",
+    srcs = ["namespace_rbac_constructs.py"],
+    deps = [
+        ":environment",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//jsii",
+    ],
+)
+
+py_library(
+    name = "container_security",
+    srcs = ["container_security.py"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
+    name = "cilium_helpers",
+    srcs = ["cilium_helpers.py"],
+    deps = [
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "node_scheduling",
+    srcs = ["node_scheduling.py"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
+    name = "migrate_container",
+    srcs = ["migrate_container.py"],
+    deps = [
+        ":container_security",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "db_constructs",
+    srcs = ["db_constructs.py"],
+    deps = [
+        ":environment",
+        ":node_scheduling",
+        "//third_party/cnpg:cluster",
+        "//third_party/cnpg:database",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "dex_constructs",
+    srcs = ["dex_constructs.py"],
+    deps = [
+        ":cilium_helpers",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress_constructs",
+    srcs = ["egress_constructs.py"],
+    deps = [
+        ":actions_constructs",
+        ":app_settings",
+        ":cilium_helpers",
+        ":container_security",
+        ":db_constructs",
+        ":environment",
+        ":llm_ingress_constructs",
+        ":migrate_container",
+        ":node_scheduling",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/cert_manager:bundle",
+        "//third_party/cert_manager:certificate",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/crds:egresscredential",
+        "//x/agentplane/crds:egresspolicy",
+        "//x/agentplane/egress:database_migrate",
+        "//x/agentplane/egress:main",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "llm_ingress_constructs",
+    srcs = ["llm_ingress_constructs.py"],
+    deps = [
+        ":cilium_helpers",
+        ":container_security",
+        ":environment",
+        ":node_scheduling",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/llm_ingress:main",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "app_constructs",
+    srcs = ["app_constructs.py"],
+    deps = [
+        ":actions_constructs",
+        ":cilium_helpers",
+        ":container_security",
+        ":db_constructs",
+        ":egress_constructs",
+        ":environment",
+        ":llm_ingress_constructs",
+        ":migrate_container",
+        ":node_scheduling",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/agent_sandbox:sandboxtemplate",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/app:main",
+        "//x/agentplane/app:oidc",
+        "//x/agentplane/egress:sidecar",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_constructs",
+    srcs = ["actions_constructs.py"],
+    deps = [
+        ":cilium_helpers",
+        ":container_security",
+        ":db_constructs",
+        ":environment",
+        ":llm_ingress_constructs",
+        ":migrate_container",
+        ":node_scheduling",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/action_service:main",
+        "//x/agentplane/app:main",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_staging_policies",
+    srcs = ["actions_staging_policies.py"],
+    deps = [
+        ":staging_config",
+        "//x/agentplane/action_service/policies:resources",
+        "//x/agentplane/crds:actionpolicybinding",
+        "//x/agentplane/crds:actionpolicyset",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_testing_fixtures",
+    srcs = ["actions_testing_fixtures.py"],
+    deps = [
+        ":cilium_helpers",
+        ":container_security",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "app_settings",
+    srcs = ["app_settings.py"],
+)
+
+py_library(
+    name = "testing_config",
+    srcs = ["testing_config.py"],
+    deps = [
+        ":app_settings",
+        "//cluster/cdk8s:model_rosters",
+    ],
+)
+
+py_library(
+    name = "staging_config",
+    srcs = ["staging_config.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":app_settings",
+        "//cluster/cdk8s:model_rosters",
+    ],
+)
+
+py_library(
+    name = "environment",
+    srcs = ["environment.py"],
+    deps = [
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "chart",
+    srcs = ["chart.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":actions_constructs",
+        ":app_constructs",
+        ":db_constructs",
+        ":egress_constructs",
+        ":environment",
+        ":llm_ingress_constructs",
+        ":namespace_rbac_constructs",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:metadata",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/app:main",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "staging",
+    srcs = ["staging.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":actions_constructs",
+        ":actions_staging_policies",
+        ":cilium_helpers",
+        ":environment",
+        ":staging_config",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "testing",
+    srcs = ["testing.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":actions_constructs",
+        ":actions_testing_fixtures",
+        ":cilium_helpers",
+        ":dex_constructs",
+        ":environment",
+        ":testing_config",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":chart",
+        ":staging",
+        ":testing",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
+
+# The conftest's in-memory synth needs jsii's Node runtime.
+py_test(
+    name = "test_actions_constructs",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
+    srcs = ["test_actions_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_constructs",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
+    srcs = ["test_egress_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app_settings",
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

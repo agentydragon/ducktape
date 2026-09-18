@@ -28,19 +28,29 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-filegroup(
-    name = "agentplane_staging_model_config",
-    srcs = ["agentplane-staging/app/config.yaml"],
-    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+# cdk8s-generated (cluster/cdk8s/generate_manifests.py) -- the test_generate_manifests
+# pinning test reads the committed files directly, and cluster/k8s/litellm/app's tests
+# import the underlying config() functions directly rather than reading these rendered
+# manifests.
+exports_files(
+    [
+        "agentplane-staging/agentplane.k8s.yaml",
+        "agentplane-staging/flux-kustomization.yaml",
+        "agentplane-staging/kustomization.yaml",
+        "agentplane-testing/agentplane.k8s.yaml",
+        "agentplane-testing/flux-kustomization.yaml",
+        "agentplane-testing/kustomization.yaml",
+        "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "descheduler/helmrelease.k8s.yaml",
+        "seaweedfs/cluster/priorityclass.k8s.yaml",
+    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 filegroup(
     name = "openclaw_model_config",
-    srcs = [
-        "agents/haku-openclaw-spike/app/deployment.yaml",
-        "agents/haku-openclaw-spike/app/openclaw.json",
-        "agents/public-coder-agent/app/openclaw.json5",
-    ],
+    srcs = ["agents/haku-openclaw-spike/app/deployment.yaml"],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 
@@ -78,7 +88,10 @@ exports_files(
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane/crds:__pkg__",
+    ],
 )
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not
@@ -97,16 +110,10 @@ filegroup(
 filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
-        "activitywatch/activitywatch-read-token.sops.yaml",
-        "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml",
+        "agentplane-staging/agentplane.k8s.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
-        "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",
-        "agents/agent-sandbox/controller/patches.yaml",
         "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml",
-        "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml",
-        "agents/haku-egress-proxy/claude-networkpolicy.yaml",
-        "agents/haku-egress-proxy/trust-bundle.yaml",
         "agents/machine-access-tf/flux-kustomization.yaml",
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/app/agentplane-acceptance-operator.yaml",
@@ -114,51 +121,28 @@ filegroup(
         "agents/public-coder-agent/app/cluster-metadata-reader.yaml",
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/app/extended-diagnostics-reader.yaml",
-        "agents/public-coder-agent/app/kustomization.yaml",
         "agents/public-coder-agent/app/networkpolicy-egress.yaml",
         "agents/public-coder-agent/app/node-reader.yaml",
         "agents/public-coder-agent/app/role.yaml",
         "agents/public-coder-agent/devbox/virtualmachine.yaml",
-        "agents/public-coder-agent/namespace/namespace.yaml",
-        "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "agents/public-coder-agent/proxy/cnp-ingress.yaml",
         "agents/public-coder-agent/proxy/deployment.yaml",
-        "agents/public-coder-agent/proxy/flux-kustomization.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
-        "agents/public-coder-agent/proxy/kustomization.yaml",
-        "agents/public-coder-agent/proxy/trust-bundle.yaml",
         "agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml",
         "aiquota/public-coder-bearer-eso.yaml",
         "clickhouse/cluster/agent-diagnostics-rbac.yaml",
-        "clickhouse/cluster/kustomization.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
-        "flux-image-automation-forgejo/kustomization.yaml",
-        "flux-image-automation-ghcr/kustomization.yaml",
-        "flux-system/kustomization.yaml",
-        "flux-webhook/github-webhook-receiver.yaml",
-        "forgejo-images/registry-creds.sops.yaml",
-        "grocy/sf/app/namespace.yaml",
-        "grocy/vallejo/app/namespace.yaml",
-        "haku-ci/namespace.yaml",
         "haku-ci/scaledjob.yaml",
-        "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
         "haku/console/config.yaml",
         "haku/console/db/flux-kustomization.yaml",
-        "haku/console/db/indexer-role-secret.yaml",
-        "haku/console/db/kustomization.yaml",
-        "haku/console/db/postgres-cluster.yaml",
         "haku/console/deployment.yaml",
         "haku/console/flux-kustomization.yaml",
-        "haku/console/haku-console-github-mcp-client-credentials.sops.yaml",
         "haku/console/httproute.yaml",
-        "haku/console/indexer-role.sql",
         "haku/console/kube-api-proxy.yaml",
         "haku/console/kubernetes-authorization-rbac.yaml",
-        "haku/console/kustomization.yaml",
         "haku/console/migration/flux-kustomization.yaml",
         "haku/console/migration/job.yaml",
-        "haku/console/migration/kustomization.yaml",
         "haku/console/migration/serviceaccount.yaml",
         "haku/console/service.yaml",
         "haku/console/static-deployment.yaml",
@@ -167,19 +151,10 @@ filegroup(
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
-        "haku/workspaces/app/flux-kustomization.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/image/haku-sandbox-setup.sh",
         "keda/helmrelease.yaml",
         "kustomization.yaml",
-        "kyverno/policies/inject-haku-egress-proxy.yaml",
-        "matrix/namespace/namespace.yaml",
-        "monitoring/loki/namespace.yaml",
-        "monitoring/namespace/namespace.yaml",
-        "nix-cache/namespace.yaml",
-        "vm-images-publisher/namespace.yaml",
-        "//haku/x/dispatch:deploy/namespace/namespace.yaml",
-        "//props:deploy/namespace/namespace.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )
@@ -221,13 +196,8 @@ filegroup(
     visibility = ["//cluster/validation/kyverno:__pkg__"],
 )
 
-filegroup(
-    name = "descheduler_priority_threshold_files",
-    srcs = [
-        "descheduler/helmrelease.yaml",
-        "seaweedfs/cluster/priorityclass.yaml",
-        "seaweedfs/cluster/seaweed.yaml",
-    ],
+exports_files(
+    ["seaweedfs/cluster/seaweed.yaml"],
     visibility = ["//cluster/validation:__pkg__"],
 )
 
@@ -271,11 +241,6 @@ filegroup(
     visibility = ["//haku/console:__pkg__"],
 )
 
-exports_files(
-    ["agentplane-testing/actions/mcp-everything-deployment.yaml"],
-    visibility = ["//x/agentplane/action_service:__pkg__"],
-)
-
 # //cluster/ssh_targets derives the last three from the devbox Service (and ssh_keys/).
 exports_files(
     [
@@ -290,13 +255,9 @@ exports_files(
 filegroup(
     name = "agentplane_actions_remote_mcp",
     srcs = glob([
-        "agentplane-staging/actions/*.yaml",
-        "agentplane-testing/actions/*.yaml",
+        "agentplane-staging/**/*",
+        "agentplane-testing/**/*",
         "ssh-mcp/**/*",
-        "agentplane-staging/flux-kustomization.yaml",
     ]),
-    visibility = [
-        "//cluster/validation:__pkg__",
-        "//x/agentplane/action_service:__pkg__",
-    ],
+    visibility = ["//cluster/validation:__pkg__"],
 )

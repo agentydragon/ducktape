@@ -21,7 +21,7 @@ from typing import Any
 from aiohttp import web
 from more_itertools import one
 
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,

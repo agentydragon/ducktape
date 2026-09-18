@@ -2,7 +2,7 @@
 
 A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, which is what both the
 egress proxy and the Action Service authenticate it by. `EgressBinding` and `ActionPolicyBinding`
-mirror this model's JSON schema, and `cluster/validation` pins each of them to it.
+carry this model's JSON schema as their subject, spliced in by `bb run //x/agentplane/crds:generate_bin`.
 
 A Sandbox was a subject too, resolved by following a Pod to the Sandbox that owns it. That reach
 only ever existed for workloads this cluster provisions, so an agent hosted anywhere else could not

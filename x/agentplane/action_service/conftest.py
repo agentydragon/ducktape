@@ -8,16 +8,13 @@ from datetime import timedelta
 
 import httpx
 import pytest
-import yaml
 from fastmcp import FastMCP
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
-from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.postgres import PostgresContainer
 
 from github_policy.visibility import RepositoryVisibilityService
-from util.bazel.runfiles import get_required_path
+from mcp_infra.testing.remote_server import as_remote_server
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
@@ -69,22 +66,6 @@ def echo_catalog() -> ActionCatalog:
     )
 
 
-@pytest.fixture
-def everything_url() -> Iterator[str]:
-    deployment = yaml.safe_load(
-        get_required_path("_main/cluster/k8s/agentplane-testing/actions/mcp-everything-deployment.yaml").read_text()
-    )
-    container_spec = deployment["spec"]["template"]["spec"]["containers"][0]
-    with (
-        DockerContainer(container_spec["image"])
-        .with_kwargs(entrypoint=container_spec["command"], read_only=True, user="1000:1000")
-        .with_command([])
-        .with_exposed_ports(3001) as container
-    ):
-        wait_for_logs(container, "MCP Streamable HTTP Server listening on port", timeout=30, raise_on_exit=True)
-        yield f"http://{container.get_container_host_ip()}:{container.get_exposed_port(3001)}/mcp"
-
-
 class AlwaysLiveLease:
     renewal_interval = timedelta(seconds=1)
 
@@ -126,6 +107,21 @@ async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGr
         yield executor
     finally:
         await executor.close()
+
+
+@pytest.fixture
+async def echo_mcp_url() -> AsyncIterator[str]:
+    """A real streamable-HTTP MCP server for tests that need an actual network URL rather
+    than the in-memory transport `mcp_executor` uses -- exercises the same wire path
+    (`transport: streamable-http`) production Action Service settings use."""
+    server = FastMCP("echo-fixture")
+
+    @server.tool
+    def echo(message: str) -> str:
+        return f"Echo: {message}"
+
+    async with as_remote_server(server) as remote:
+        yield remote.url
 
 
 @pytest.fixture

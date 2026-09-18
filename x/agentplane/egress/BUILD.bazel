@@ -66,7 +66,7 @@ py_library(
         ":policy",
         ":resources",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
     ],
@@ -77,7 +77,7 @@ py_library(
     srcs = ["main.py"],
     # Also the cluster validation that parses the deployed flags through this Settings.
     visibility = [
-        "//cluster/validation:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//x/agentplane:__subpackages__",
     ],
     deps = [
@@ -315,6 +315,10 @@ oci_image(
 py_library(
     name = "sidecar",
     srcs = ["sidecar.py"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -460,6 +464,10 @@ py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//x/agentplane/egress/migrations:files"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         ":decision_store",
         "//util:db_migrations",
@@ -534,5 +542,18 @@ py_library(
         "//x/agentplane:subjects",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    deps = [
+        ":conftest",
+        ":main",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -10,15 +10,12 @@ resources:
   - service.yaml
   - networkpolicy-ingress.yaml
   - networkpolicy-egress.yaml
+  # cdk8s-generated (cluster/cdk8s/haku_openclaw_spike_config.py) -- see cluster/docs/cdk8s.md.
+  - haku-openclaw-spike-config.k8s.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: haku-openclaw-spike-config
-    namespace: haku-openclaw-spike
-    files:
-      - openclaw.json
-      - claude.json
   # Separate ConfigMap for kubeconfig so it can be mounted at ~/.kube/config
   # where kubectl finds it by default, matching public-coder-agent's convention.
   # The source file is named kube-client-config because cluster/.gitignore

@@ -2,10 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/tana-litellm-proxy
-    # The `:tag` suffix tells Setters to write back only the bare tag value --
-    # without it, Setters always rewrites the whole marked field to the full
-    # "repository:tag" reference, which corrupted this newTag:-only field into
-    # "repository:repository:tag" on its very first write-back and took
-    # litellm down (InvalidImageName). See fluxcd.io/flux/components/image/
-    # imageupdateautomations/ "Field-specific update markers".
     newTag: devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy:tag"}

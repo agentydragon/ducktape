@@ -240,8 +240,8 @@ repos:
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.; cluster/schemas/ holds the ones for this repo's
-      # own CRDs (each file is its CRD's openAPIV3Schema, pinned by a
-      # cluster/validation test). Niche third-party CRDs without catalog
+      # own CRDs (each file is its CRD's openAPIV3Schema, dumped by
+      # `bb run //x/agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
       # schemas (powerdns-operator, kagent) are skipped rather than failing.
       # TODO: Run the datree CRD extractor against the live cluster to get
       # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,
@@ -281,15 +281,6 @@ repos:
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
             # act_runner config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/haku-ci/config\.yaml|
-            # Agentplane settings mounted via configMapGenerator, not K8s manifests
-            cluster/k8s/agentplane-staging/app/config\.yaml|
-            cluster/k8s/agentplane-staging/actions/settings\.yaml|
-            cluster/k8s/agentplane-testing/app/config\.yaml|
-            cluster/k8s/agentplane-testing/actions/settings\.yaml|
-            cluster/k8s/agentplane-staging/egress/settings\.yaml|
-            cluster/k8s/agentplane-staging/llm-ingress/settings\.yaml|
-            cluster/k8s/agentplane-testing/egress/settings\.yaml|
-            cluster/k8s/agentplane-testing/llm-ingress/settings\.yaml|
             # SSH MCP settings are mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/ssh-mcp/settings\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest

@@ -87,9 +87,10 @@ constrains nor is constrained by this. The transport decision is recorded separa
 
 **Staging GitOps wiring:** `tf/gitops/sso-providers/provider_agentplane_actions.tf` provisions the
 Action-only Authentik target and its policy binding. The non-secret `action-federation` and
-`operator-oidc` JSON is Git-owned in
-`cluster/k8s/agentplane-staging/actions/configmap-action-federation.yaml`; both Deployments read it
-from that ConfigMap through their existing Settings environment sources. Terraform still owns the
+`operator-oidc` JSON is Git-owned in the `_AGENTPLANE_STAGING_ACTION_FEDERATION`/
+`_AGENTPLANE_STAGING_OPERATOR_OIDC` dicts in `cluster/cdk8s/generate_manifests.py`; both
+Deployments read it from that ConfigMap through their existing Settings environment
+sources. Terraform still owns the
 Authentik provider and the credential-bearing Secrets, but does not render this configuration. This
 is configuration, not a credential or evidence of a successful live exchange. Never mount a shared
 BFF operator bearer, forward a workload token, or invent a BFF signing authority.

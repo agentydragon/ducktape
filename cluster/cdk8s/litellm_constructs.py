@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size, Yaml
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
@@ -43,16 +43,9 @@ from cdk8s_plus_34 import (
     TaintedNode,
     TaintEffect,
     Volume,
+    k8s,
 )
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecParentRefs,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesTimeouts,
-)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -61,13 +54,16 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _CONTAINER_PORT = 4000
+_CONFIG_DIR = "/etc/litellm"
 
 
 @dataclass(frozen=True)
@@ -111,10 +107,12 @@ class ProxySpec:
     termination_grace_period_seconds: int | None = None
     node_affinity: LabeledNode | None = None
     tolerations: tuple[TaintedNode, ...] = ()
-    # cdk8s_plus_34 has no typed builder for custom topologySpreadConstraints
-    # (only an all-or-nothing `spread: bool` auto-toggle) -- stays a raw dict,
-    # applied via the ApiObject escape hatch in _add_deployment.
-    topology_spread_constraints: tuple[dict[str, object], ...] = ()
+    # cdk8s_plus_34's fluent Deployment/Workload has no builder for custom
+    # topologySpreadConstraints (only an all-or-nothing `spread: bool`
+    # auto-toggle), but k8s.TopologySpreadConstraint (the raw generated struct)
+    # is real API-schema-validated input to the ApiObject escape hatch in
+    # _add_deployment, not a raw dict.
+    topology_spread_constraints: tuple[k8s.TopologySpreadConstraint, ...] = ()
     strategy: DeploymentStrategy | None = None
     service: ServiceSpec = field(default_factory=ServiceSpec)
     hostname: str | None = None
@@ -185,12 +183,12 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 ),
             ),
             topology_spread_constraints=(
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "ScheduleAnyway",
-                    "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}},
-                },
+                k8s.TopologySpreadConstraint(
+                    max_skew=1,
+                    topology_key="kubernetes.io/hostname",
+                    when_unsatisfiable="ScheduleAnyway",
+                    label_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
+                ),
             ),
             strategy=DeploymentStrategy.rolling_update(
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
@@ -202,15 +200,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
     )
 
 
-def _yaml_config(config: dict) -> str:
-    return Yaml.format_objects([config])
-
-
 def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
     formatted: dict[str, str] = {}
     for filename, value in data.items():
         if isinstance(value, dict):
-            formatted[filename] = _yaml_config(value)
+            formatted[filename] = yaml_config(value)
         else:
             assert isinstance(value, str)
             formatted[filename] = value
@@ -241,7 +235,7 @@ class LiteLLMProxy(Construct):
         deployment = self._add_deployment(config_map, service_account)
         self._add_service(deployment)
         if spec.hostname is not None:
-            self._add_http_route()
+            self._add_http_route(spec.hostname)
 
     def _add_config_map(self) -> ConfigMap:
         return ConfigMap(
@@ -309,7 +303,7 @@ class LiteLLMProxy(Construct):
         deployment.add_container(
             name="litellm",
             image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
-            args=["--config", "/etc/litellm/config.yaml"],
+            args=["--config", f"{_CONFIG_DIR}/config.yaml"],
             ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
             env_variables=self._env_variables(),
             image_pull_policy=self.spec.image_pull_policy,
@@ -323,7 +317,7 @@ class LiteLLMProxy(Construct):
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )
-        deployment.containers[0].mount("/etc/litellm", volume, read_only=True)
+        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
         if self.spec.node_affinity is not None:
             deployment.scheduling.attract(self.spec.node_affinity)
@@ -363,22 +357,17 @@ class LiteLLMProxy(Construct):
             automount_token=False,
         )
 
-    def _add_http_route(self) -> None:
-        assert self.spec.hostname is not None
-        HttpRoute(
+    def _add_http_route(self, hostname: str) -> None:
+        https_route(
             self,
             "httproute",
             metadata=metadata(self.spec.name, self.spec.namespace),
-            spec=HttpRouteSpec(
-                parent_refs=[HttpRouteSpecParentRefs(name="cluster-gateway", namespace="gateway-system")],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=self.spec.name, port=4000)],
-                    )
-                ],
-            ),
+            hostname=hostname,
+            backend=self.spec.name,
+            port=4000,
+            timeout="600s",
+            hsts=False,
+            listener=None,
         )
 
     def _add_forgejo_image_credentials(self) -> None:

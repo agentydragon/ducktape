@@ -1,10 +1,15 @@
 {
   "type": "object",
-  "required": ["spec"],
+  "required": [
+    "spec"
+  ],
   "properties": {
     "spec": {
       "type": "object",
-      "required": ["subjects", "policies"],
+      "required": [
+        "subjects",
+        "policies"
+      ],
       "properties": {
         "subjects": {
           "description": "The ServiceAccounts this binding grants to. A subject is what a workload's Pod runs as, so an agent this cluster does not host is an ordinary subject. Every Pod running as the account is this subject and nothing ends the subject with a workload, so bind only an account dedicated to one; the app gives each sandbox an account of its own, owned by it.",
@@ -12,7 +17,10 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["namespace", "name"],
+            "required": [
+              "namespace",
+              "name"
+            ],
             "properties": {
               "namespace": {
                 "type": "string",

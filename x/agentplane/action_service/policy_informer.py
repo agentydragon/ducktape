@@ -34,7 +34,7 @@ from x.agentplane.action_service.policies.resources import (
     parse_binding,
     parse_policy_set,
 )
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.kubernetes_watch import Freshness, ListWatch, WatchedKind, apply_to
 from x.agentplane.subjects import ServiceAccountRef
 

@@ -171,7 +171,7 @@ Kustomization-directory granularity; CI pins generated output to committed outpu
 via a `py_test` snapshot check; SOPS-encrypted secrets always stay hand-written.
 Full design (the one-writer-per-byte-range principle, the `image-pins/` mechanism
 for live Flux image automation, typed-vs-hand-rolled construct status): <cdk8s.md>.
-Forward-looking work: <plans/cdk8s_adoption.md>.
+Generator conventions: <../cdk8s/AGENTS.md>.
 
 ## Google OAuth Client redirect URIs (blocked upstream)
 

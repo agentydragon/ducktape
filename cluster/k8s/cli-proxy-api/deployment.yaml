@@ -31,7 +31,7 @@ spec:
       # + allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml), and the
       # already-bound PV carries that same zone in its own nodeAffinity.
       # hil-ovh's only schedulable workers (ovh-ns103711, ovh-ns102453) run hot enough
-      # that the descheduler's LowNodeUtilization plugin (k8s/descheduler/helmrelease.yaml)
+      # that the descheduler's LowNodeUtilization plugin (cluster/cdk8s/descheduler_constructs.py)
       # evicts this pod roughly every 15 minutes for node overutilization. As the
       # single-writer, Recreate-strategy holder of the Codex OAuth refresh token on its
       # PVC, it can't tolerate that churn — each eviction breaks the auto-refresh worker's

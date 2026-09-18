@@ -1,8 +1,9 @@
 # Testing MCP server
 
 Use the existing `tzolov/mcp-everything-server:v3` Docker image, pinned to the published
-multi-platform digest in the testing Deployment
-(`cluster/k8s/agentplane-testing/actions/mcp-everything-deployment.yaml`). The image packages the upstream
+multi-platform digest in the `agentplane-mcp-everything` Deployment
+(`cluster/cdk8s/agentplane/actions_testing_fixtures.py`, generated into
+`cluster/k8s/agentplane-testing/agentplane.k8s.yaml`). The image packages the upstream
 Everything reference server with streamable HTTP support. Its
 [source and Dockerfile](https://github.com/tzolov/mcp-everything-server-docker-image/tree/18d3cedb9f3685fff86b9e18dad413c9ad99506c)
 are maintained outside this repository. There is no Agentplane MCP server
@@ -16,8 +17,12 @@ token, mounted credentials, writable root, public ingress, or outbound network a
 The broader upstream tool catalog is not a reason to maintain our own replacement server.
 
 The existing live acceptance suite sends real Claude/Codex agents the Action API task
-and checks their JSON reports. The remote Docker-backed runtime test exercises the same
-pinned upstream image and provider composition without claiming to be the live testing deployment.
+and checks their JSON reports against the deployed `everything` fixture. `test_runtime.py`'s
+policy-auto-approval test exercises the same production settings/catalog/policy-evaluation
+composition over a real `streamable-http` MCP server, but doesn't need `everything`'s
+broader tool catalog or the deployed image itself -- it uses an in-process FastMCP echo
+server (`echo_mcp_url` in `x/agentplane/action_service/conftest.py`), avoiding a Docker
+dependency for a test that isn't validating the image.
 
 The official `mcp/everything` latest image was also checked: its published May 2025
 digest lacks the streamable-HTTP entry point and failed the remote container test.
@@ -36,7 +41,7 @@ in the Action Service; the fixture itself has no credentials.
 
 This remains our own image because `everything` has no auth and cannot exercise the linkage
 against an external authorization server. The fixture is deployed under
-`cluster/k8s/agentplane-testing/actions/`, cluster-internal only (no public route), same as
+`cluster/k8s/agentplane-testing/`, cluster-internal only (no public route), same as
 `everything`. The acceptance suite reuses the Dex session established by its existing operator
 login, follows Dex's HTTPS authorization redirects, completes the callback through the app BFF,
 and then executes the protected tool.

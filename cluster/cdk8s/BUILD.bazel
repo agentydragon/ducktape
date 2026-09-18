@@ -13,24 +13,109 @@ py_library(
 )
 
 py_library(
+    name = "model_rosters",
+    srcs = ["model_rosters.py"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
+    ],
+)
+
+py_library(
     name = "litellm_config",
     srcs = ["litellm_config.py"],
     visibility = [
         "//cluster/k8s/litellm/app:__pkg__",
         "//debug/litellm_probe:__pkg__",
     ],
-    deps = ["//cluster/k8s/litellm/app:model_rosters"],
+    deps = [":model_rosters"],
 )
 
 py_library(
     name = "metadata",
     srcs = ["metadata.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = ["@pypi//cdk8s"],
+)
+
+py_library(
+    name = "config_format",
+    srcs = ["config_format.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = ["@pypi//cdk8s"],
+)
+
+py_library(
+    name = "fleet_rules",
+    srcs = ["fleet_rules.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//jsii",
+    ],
+)
+
+py_test(
+    name = "test_fleet_rules",
+    srcs = ["test_fleet_rules.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":fleet_rules",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "api_resource",
+    srcs = ["api_resource.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
+    name = "token_reviewer_rbac",
+    srcs = ["token_reviewer_rbac.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "openclaw_gateway",
+    srcs = ["openclaw_gateway.py"],
+)
+
+py_library(
+    name = "haku_openclaw_spike_config",
+    srcs = ["haku_openclaw_spike_config.py"],
+    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+    deps = [
+        ":model_rosters",
+        ":openclaw_gateway",
+    ],
+)
+
+py_library(
+    name = "public_coder_agent_config",
+    srcs = ["public_coder_agent_config.py"],
+    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+    deps = [
+        ":model_rosters",
+        ":openclaw_gateway",
+    ],
 )
 
 py_library(
     name = "probes",
     srcs = ["probes.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -40,6 +125,7 @@ py_library(
 py_library(
     name = "forgejo_images",
     srcs = ["forgejo_images.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         "//third_party/external_secrets:externalsecret",
         "@pypi//cdk8s",
@@ -49,14 +135,36 @@ py_library(
 )
 
 py_library(
+    name = "gateway",
+    srcs = ["gateway.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "//third_party/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "pod_spec_patches",
+    srcs = ["pod_spec_patches.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "litellm_constructs",
     srcs = ["litellm_constructs.py"],
     deps = [
+        ":config_format",
         ":forgejo_images",
+        ":gateway",
         ":litellm_config",
         ":metadata",
         ":probes",
-        "//third_party/gateway_api:httproute",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -80,15 +188,51 @@ py_library(
 )
 
 py_library(
+    name = "stateful_infra",
+    srcs = ["stateful_infra.py"],
+    visibility = ["//cluster/validation:__pkg__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "descheduler_constructs",
+    srcs = ["descheduler_constructs.py"],
+    deps = [
+        ":metadata",
+        ":stateful_infra",
+        "//third_party/flux:helmrelease",
+        "//third_party/flux:helmrepository",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
     deps = [
+        ":config_format",
+        ":descheduler_constructs",
         ":flux_constructs",
         ":ha_mcp_constructs",
+        ":haku_openclaw_spike_config",
         ":litellm_constructs",
+        ":metadata",
+        ":public_coder_agent_config",
+        ":stateful_infra",
+        "//cluster/cdk8s/agentplane:chart",
+        "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/agentplane:testing",
         "//util/bazel:workspace",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -103,8 +247,20 @@ py_binary(
 
 py_test(
     name = "test_generate_manifests",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s:agentplane-staging/agentplane.k8s.yaml",
+        "//cluster/k8s:agentplane-staging/flux-kustomization.yaml",
+        "//cluster/k8s:agentplane-staging/kustomization.yaml",
+        "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
+        "//cluster/k8s:agentplane-testing/flux-kustomization.yaml",
+        "//cluster/k8s:agentplane-testing/kustomization.yaml",
+        "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
+        "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:flux-kustomization.yaml",
         "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:kustomization.yaml",

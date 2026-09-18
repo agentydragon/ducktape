@@ -170,6 +170,10 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         ":api",
         ":auth",
@@ -274,7 +278,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = ["//cluster/k8s:agentplane-testing/actions/mcp-everything-deployment.yaml"],
     deps = [
         ":catalog",
         ":database_migrate",
@@ -282,7 +285,7 @@ py_library(
         ":mcp_executor",
         ":models",
         "//github_policy:visibility",
-        "//util/bazel:runfiles",
+        "//mcp_infra/testing:remote_server",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//x/agentplane/action_service/test_fixtures:lifecycle",
@@ -291,7 +294,6 @@ py_library(
         "@pypi//httpx",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -466,7 +468,7 @@ py_test(
         ":updates",
         "//:conftest",
         "//util/bazel:runfiles",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
@@ -569,31 +571,6 @@ py_test(
         "@pypi//alembic",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_settings",
-    srcs = ["test_settings.py"],
-    data = [
-        "//cluster/k8s:agentplane_actions_remote_mcp",
-        "@multitool//tools/kustomize",
-    ],
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":main",
-        ":mcp_executor",
-        ":push",
-        ":runtime",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//cryptography",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -914,6 +891,7 @@ py_test(
         ":push",
         "//:conftest",
         "//x/agentplane:subjects",
+        "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -969,7 +947,7 @@ py_library(
     deps = [
         ":models",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
@@ -986,7 +964,7 @@ py_test(
         ":policy_informer",
         "//:conftest",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",

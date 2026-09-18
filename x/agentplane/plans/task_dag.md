@@ -382,7 +382,7 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 **Deferred migration:** the Haku console's `auto_approval_policies`
 (`cluster/k8s/haku/console/config.yaml`) is the reviewed authority the Action policy model
-replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/actions/`. What
+replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
 remains, each with what it needs; an entry leaves when its set can be written.
 
 - **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
@@ -665,8 +665,8 @@ path waits on it, and it is what a tool-surface switch waits on rather than an e
 
 **Planned schema:** `EgressBinding.spec.subjects` is an array (`minItems: 1`); `ActionPolicyBinding`
 names one `subject`. Everything inside them is now the same `ServiceAccountRef`, so arity is the
-only difference left, and `cluster/validation:test_agentplane_crd_schemas` has to special-case
-array-versus-object to compare them.
+only difference left, and `x/agentplane/crds/generate.py` has to special-case array-versus-object
+to splice it in.
 
 Nothing writes the plural side. No `EgressBinding` manifest is checked in anywhere under
 `cluster/`, and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is an
@@ -732,7 +732,7 @@ smaller than its description implies:
   the `schemeToken` target parses `<scheme> <credential>`, which is the shape public-coder's GitHub
   token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
   (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
-- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/actions/` carries
+- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/` carries
   `ActionPolicySet`s for `github-identity-reads`, `github-reads`, `public-github-reads`,
   `public-ducktape-reads`, `public-ducktape-fork-reads` and `public-gaffer-private-reads`.
   Whether that set covers what

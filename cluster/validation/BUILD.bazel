@@ -21,7 +21,6 @@ py_test(
     srcs = ["test_actions_artifact.py"],
     data = [
         "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s/agents/ha-mcp/app:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
@@ -33,6 +32,7 @@ py_test(
     deps = [
         ":tool_resolve",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -220,6 +220,19 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "agentplane_fixtures",
+    testonly = True,
+    srcs = ["agentplane_fixtures.py"],
+    deps = [
+        "//cluster/cdk8s/agentplane:chart",
+        "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/agentplane:testing",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
     ],
 )
 
@@ -535,24 +548,6 @@ py_test(
 py_test(
     name = "test_haku_public_coder_contract",
     srcs = ["test_haku_public_coder_contract.py"],
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//haku/x/dispatch:deploy/namespace/namespace.yaml",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_recall_unwired_contract",
-    srcs = ["test_haku_recall_unwired_contract.py"],
     data = ["//cluster/k8s:haku_manifest_contract_files"],
     deps = [
         ":conftest",
@@ -600,21 +595,6 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_dispatch_job_contract",
-    srcs = ["test_haku_dispatch_job_contract.py"],
-    data = [
-        "//cluster/k8s:kustomization.yaml",
-        "//haku/x/dispatch/deploy/dispatcher:manifests",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//haku/x/dispatch:k8s_jobs",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_haku_dispatch_zones_contract",
     srcs = ["test_haku_dispatch_zones_contract.py"],
     data = [
@@ -631,90 +611,22 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_dispatch_deploy",
-    srcs = ["test_haku_dispatch_deploy.py"],
+    name = "test_ssh_mcp_consumers",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
+    srcs = ["test_ssh_mcp_consumers.py"],
+    # agentplane_manifests (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes
+    # a cdk8s chart in memory, which needs jsii's Node runtime.
     data = [
-        "//haku/x/dispatch:deploy_base_files",
-        "//haku/x/dispatch/deploy/dispatcher:manifests",
-        "//haku/x/dispatch/deploy/litellm:manifests",
+        "//cluster/k8s:agentplane_actions_remote_mcp",
+        "@multitool//tools/kustomize",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":kustomize",
+        ":agentplane_fixtures",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_haku_zones_deploy",
-    srcs = ["test_haku_zones_deploy.py"],
-    data = ["//haku/x/zones/deploy:manifests"],
-    deps = [
-        ":kustomize",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_crd_schemas",
-    srcs = ["test_agentplane_crd_schemas.py"],
-    data = [
-        "//cluster/k8s:agentplane-crds/crd-actionpolicybindings.yaml",
-        "//cluster/k8s:agentplane-crds/crd-actionpolicysets.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
-        "//cluster/schemas",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane:subjects",
         "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_egress_flags",
-    srcs = ["test_agentplane_egress_flags.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane/egress:main",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_workload_namespaces",
-    srcs = ["test_agentplane_workload_namespaces.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane/egress:main",
-        "//x/agentplane/llm_ingress:main",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_action_policies",
-    srcs = ["test_agentplane_action_policies.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane:crds",
-        "//x/agentplane/action_service/policies:resources",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -750,10 +662,16 @@ py_test(
 )
 
 py_test(
-    name = "test_descheduler_priority_threshold",
-    srcs = ["test_descheduler_priority_threshold.py"],
-    data = ["//cluster/k8s:descheduler_priority_threshold_files"],
+    name = "test_seaweedfs_priority_class",
+    srcs = ["test_seaweedfs_priority_class.py"],
+    # stateful_infra imports cdk8s_plus_34, which needs jsii's Node runtime.
+    data = [
+        "//cluster/k8s:seaweedfs/cluster/seaweed.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        "//cluster/cdk8s:stateful_infra",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -854,69 +772,6 @@ py_test(
     data = ["//cluster/k8s:cluster_all_files"],
     deps = [
         "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_ca_isolation",
-    srcs = ["test_agentplane_ca_isolation.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        ":conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_dex_credentials",
-    srcs = ["test_agentplane_dex_credentials.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        ":conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_inventory_rbac",
-    srcs = ["test_agentplane_inventory_rbac.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        ":conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_rules_route",
-    srcs = ["test_agentplane_rules_route.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_agentplane_mcp_route",
-    srcs = ["test_agentplane_mcp_route.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane/egress:policy",
-        "//x/agentplane/egress:resources",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

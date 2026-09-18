@@ -92,6 +92,10 @@ py_library(
         "//x/agentplane/app/frontend:bundle",
         "//x/agentplane/app/frontend:service_worker",
     ],  # keep: the SPA and service worker the server mounts
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         ":action_federation",
         ":action_policy",
@@ -497,7 +501,7 @@ py_library(
     deps = [
         ":inventory",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:subjects",
         "//x/agentplane/egress:resources",
         "@pypi//kubernetes_asyncio",
@@ -537,6 +541,10 @@ py_library(
 py_library(
     name = "oidc",
     srcs = ["oidc.py"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         "@pypi//authlib",
         "@pypi//fastapi",
@@ -802,7 +810,7 @@ py_library(
         ":egress",
         ":inventory",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:policy_view",

@@ -10,7 +10,7 @@ py_library(
         "//haku/x/dispatch:__pkg__",
     ],
     deps = [
-        "//cluster/k8s/litellm/app:model_rosters",
+        "//cluster/cdk8s:model_rosters",
         "//devinfra:prettier",
         "//util/bazel:workspace",
         "@pypi//pyyaml",

@@ -25,6 +25,9 @@ x/claude_commands_old/**
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**
 
+# kubeconform schemas dumped from the Agentplane CRDs by `bb run //x/agentplane/crds:generate_bin`
+cluster/schemas/**
+
 # Root kustomization.yaml - prettier mangles the resources list
 cluster/k8s/kustomization.yaml
 

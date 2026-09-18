@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 exports_files(
     [
@@ -11,22 +11,13 @@ exports_files(
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
-py_library(
-    name = "model_rosters",
-    srcs = ["model_rosters.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//haku/x/dispatch/deploy/litellm:__pkg__",
-    ],
-)
-
 py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
     data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
-        ":model_rosters",
         "//cluster/cdk8s:litellm_config",
+        "//cluster/cdk8s:model_rosters",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
@@ -37,17 +28,14 @@ py_test(
 py_test(
     name = "test_model_roster_consumers",
     srcs = ["test_model_roster_consumers.py"],
-    data = [
-        "//cluster/k8s:agentplane_staging_model_config",
-        "//tf/gitops/litellm-keys:main.tf",
-    ],
+    data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
-        ":model_rosters",
+        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s/agentplane:staging_config",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -56,10 +44,11 @@ py_test(
     srcs = ["test_openclaw_models.py"],
     data = ["//cluster/k8s:openclaw_model_config"],
     deps = [
-        ":model_rosters",
+        "//cluster/cdk8s:haku_openclaw_spike_config",
         "//cluster/cdk8s:litellm_config",
+        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:public_coder_agent_config",
         "//util/bazel:runfiles",
-        "@pypi//json5",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

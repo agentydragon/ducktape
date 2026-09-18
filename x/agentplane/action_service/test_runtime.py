@@ -50,7 +50,7 @@ from x.agentplane.action_service.service import ActionService, UnsupportedAction
 from x.agentplane.action_service.test_fixtures.callers import in_sync_index
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import fake_apiserver
@@ -105,6 +105,30 @@ async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str,
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
                 pytest.fail("invalid binding was served")
+        start.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"transport": "sse", "url": "https://test.invalid/mcp"},
+        {
+            "transport": "streamable-http",
+            "url": "https://test.invalid/mcp",
+            "headers": {"Authorization": "test-only-private"},
+        },
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp?token=test-only-private"},
+    ],
+)
+async def test_malformed_http_binding_fails_before_any_connection_without_echoing_it(
+    config: dict[str, JsonValue],
+) -> None:
+    catalog = ActionCatalog(groups={"remote": _group(config)})
+    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+        with pytest.raises(ValueError, match="invalid MCP binding") as error:
+            async with running_executor(catalog):
+                pytest.fail("malformed binding was served")
+        assert "test-only-private" not in str(error.value)
         start.assert_not_awaited()
 
 
@@ -376,7 +400,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
 
 
 async def test_main_auto_approves_the_bound_service_account_from_watched_policy_objects(
-    db_url: str, everything_url: str
+    db_url: str, echo_mcp_url: str
 ) -> None:
     """Real production composition + fixture HTTP + the fake API server the informer watches; only
     the in-cluster client configuration and the uvicorn loop are replaced."""
@@ -386,7 +410,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
     bound_caller = CallerPrincipal(account=bound)
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": echo_mcp_url, "auth": "none"})},
         allowed_service_account_namespaces=frozenset({namespace}),
         _cli_parse_args=False,
     )
@@ -416,7 +440,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                 await asyncio.sleep(0.01)
                 view = await service.get(view.id, bound_caller)
         assert view.execution is not None
-        assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
+        assert view.execution.result == {"result": "Echo: MCP0-ok"}
         with pytest.raises(ActionConflictError):
             await service.submit(body, bound_caller)
         recovered = one(await service.list_requests(bound_caller, idempotency_key=body.idempotency_key))

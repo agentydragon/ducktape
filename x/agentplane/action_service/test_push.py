@@ -5,6 +5,8 @@ from typing import cast
 
 import pytest
 import pytest_bazel
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import ActionIdentity
@@ -22,6 +24,7 @@ from x.agentplane.action_service.push import (
     PushRetract,
     PushShow,
     PushSubscriptionStore,
+    WebPushSettings,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -104,6 +107,28 @@ async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> 
     assert len(await store.list_for(OPERATOR)) == 1
     assert await store.delete(operator=OPERATOR, endpoint=args["endpoint"])
     assert not await store.list_for(OPERATOR)
+
+
+def test_push_identity_signs_only_for_reviewed_push_hosts() -> None:
+    private_key = (
+        ec.generate_private_key(ec.SECP256R1())
+        .private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+        .decode()
+    )
+    settings = WebPushSettings(
+        private_key_pem=private_key,
+        subject="mailto:push@agentplane.test",
+        public_base_url="https://app.example",
+        allowed_push_hosts=frozenset({"push.example"}),
+    )
+    identity = PushIdentity(settings)
+    assert identity.application_server_key == PushIdentity(settings).application_server_key
+    assert len(identity.application_server_key) == 87
+    identity.validate_endpoint("https://push.example/test-subscription")
+    assert identity.authorization("https://push.example/test-subscription").startswith("vapid ")
+    for endpoint in ("https://unreviewed.example/push", "http://push.example/push", "https://push.example:8443/push"):
+        with pytest.raises(ValueError, match="configured HTTPS push service"):
+            identity.validate_endpoint(endpoint)
 
 
 if __name__ == "__main__":
