@@ -155,6 +155,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("langfuse-cache", "langfuse/cache"),
         ("langfuse-db", "langfuse/db"),
         ("langfuse-namespace", "langfuse/namespace"),
+        ("langfuse-seaweed", "langfuse/seaweed"),
         ("langfuse-secrets", "langfuse/secrets"),
         ("litellm", "litellm/app"),
         ("litellm-cheap-experiments-namespace", "litellm-cheap-experiments/namespace"),

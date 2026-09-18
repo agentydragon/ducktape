@@ -211,6 +211,7 @@ resources:
   - langfuse/secrets/flux-kustomization.yaml
   - langfuse/cache/flux-kustomization.yaml
   - langfuse/db/flux-kustomization.yaml
+  - langfuse/seaweed/flux-kustomization.yaml
   - langfuse/app/flux-kustomization.yaml
 
   # --- tofu-state ---
