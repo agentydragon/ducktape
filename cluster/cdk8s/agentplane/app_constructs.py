@@ -77,35 +77,8 @@ from cdk8s_plus_34 import (
     Volume,
     k8s,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
+from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesTimeouts,
-)
 
 from cluster.cdk8s.agentplane import (
     actions_constructs,
@@ -122,7 +95,7 @@ from cluster.cdk8s.forgejo_images import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
 )
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -412,196 +385,73 @@ class App(Construct):
 
     def _add_http_route(self) -> None:
         namespace = self.spec.namespace
-        HttpRoute(
+        https_route(
             self,
             "httproute",
             metadata=metadata(namespace, namespace),
-            spec=HttpRouteSpec(
-                # Not the plaintext listener: the gateway's HTTP-only route owns port
-                # 80 and redirects it.
-                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        filters=[
-                            # Set at the TLS-aware edge; the app's own hop cannot tell
-                            # that HTTPS was terminated.
-                            HttpRouteSpecRulesFilters(
-                                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                    set=[
-                                        HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                            name="Strict-Transport-Security", value="max-age=31536000"
-                                        )
-                                    ]
-                                ),
-                            )
-                        ],
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_CONTAINER_PORT)],
-                        # A session stream stays attached for as long as the tab is open.
-                        timeouts=HttpRouteSpecRulesTimeouts(request="3600s", backend_request="3600s"),
-                    )
-                ],
-            ),
+            hostname=self.spec.hostname,
+            backend=_NAME,
+            port=_CONTAINER_PORT,
+            # A session stream stays attached for as long as the tab is open.
+            timeout="3600s",
         )
 
     def _oidc_egress_rules(self) -> list[CiliumNetworkPolicySpecEgress]:
         server_name = urlsplit(self.spec.oidc_issuer).hostname
         assert server_name is not None, f"OIDC issuer has no hostname: {self.spec.oidc_issuer!r}"
-        rules = [
-            # Public OIDC origin resolves to hostNetwork Gateway node IPs. FQDN/CIDR
-            # selectors cannot match those identities with the cluster's current
-            # Cilium configuration. TLS SNI restricts the node:443 rule to this one
-            # origin; TLS remains end-to-end (no terminatingTLS secret or MITM).
-            CiliumNetworkPolicySpecEgress(
-                to_entities=[
-                    CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-                    CiliumNetworkPolicySpecEgressToEntities.HOST,
-                ],
-                to_ports=[
-                    CiliumNetworkPolicySpecEgressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecEgressToPortsPorts(
-                                port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                            )
-                        ],
-                        server_names=[server_name],
-                    )
-                ],
-            )
-        ]
+        rules = [cilium_helpers.egress_via_gateway(server_name)]
         if self.spec.reach_incluster_authentik:
-            # Gateway Service traffic is checked against the selected backend, with
-            # the client's original SNI.
             rules.append(
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": "authentik",
-                                "app.kubernetes.io/name": "authentik",
-                                "app.kubernetes.io/instance": "authentik",
-                                "app.kubernetes.io/component": "server",
-                            }
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="9000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                )
-                            ],
-                            server_names=[server_name],
-                        )
-                    ],
-                )
+                cilium_helpers.egress_to(cilium_helpers.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name])
             )
         return rules
 
     def _add_network_policy(self) -> None:
         namespace = self.spec.namespace
-        dns_egress = CiliumNetworkPolicySpecEgress(
-            to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)],
-            to_ports=[
-                CiliumNetworkPolicySpecEgressToPorts(
-                    ports=[
-                        CiliumNetworkPolicySpecEgressToPortsPorts(
-                            port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                        ),
-                        CiliumNetworkPolicySpecEgressToPortsPorts(
-                            port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                        ),
-                    ]
-                )
-            ],
-        )
+        dns_egress = cilium_helpers.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
         # relays to; port 7000 is open only to Pods in this namespace.
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy-runner",
             metadata=metadata("agentplane-runner", namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_RUNNER_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={"k8s:io.kubernetes.pod.namespace": namespace}
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_RUNNER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    )
-                ],
-                egress=[
-                    dns_egress,
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT
-                    ),
-                ],
-            ),
+            selector=_RUNNER_LABELS,
+            ingress=[cilium_helpers.ingress_from({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
+            egress=[
+                dns_egress,
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT
+                ),
+            ],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
         # API server, the OIDC provider, the runner Pods, the egress proxy's admin
         # port, the Action Service, and the trajectory store.
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy-app",
             metadata=metadata(_NAME, namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    # cilium-envoy is hostNetwork and its egress to a backend Pod
-                    # carries the reserved:ingress identity.
-                    CiliumNetworkPolicySpecIngress(
-                        from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    )
-                ],
-                egress=[
-                    dns_egress,
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    *self._oidc_egress_rules(),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT
-                    ),
-                    # Separate BFF/operator transport boundary. The Action Service
-                    # still requires its own configured operator authenticator;
-                    # network reachability grants no review authority.
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-actions"),
-                        actions_constructs.CONTAINER_PORT,
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                        db_constructs.POSTGRES_PORT,
-                    ),
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[cilium_helpers.ingress_from_gateway(_CONTAINER_PORT)],
+            egress=[
+                dns_egress,
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                *self._oidc_egress_rules(),
+                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT
+                ),
+                # Separate BFF/operator transport boundary. The Action Service
+                # still requires its own configured operator authenticator;
+                # network reachability grants no review authority.
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
+                ),
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    db_constructs.POSTGRES_PORT,
+                ),
+            ],
         )
 
     def _add_pdb(self, min_available: int) -> None:

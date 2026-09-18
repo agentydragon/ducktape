@@ -14,15 +14,6 @@ from typing import cast
 
 from cdk8s import ApiObject, App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToFqdNs,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
@@ -43,6 +34,7 @@ from cluster.cdk8s.agentplane import (
     actions_staging_policies,
     actions_testing_fixtures,
     app_constructs,
+    cilium_helpers,
     db_constructs,
     dex_constructs,
     egress_constructs,
@@ -185,171 +177,31 @@ _AGENTPLANE_TESTING_OPERATOR_OIDC = {
     "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
     "token_profile": "dex",
 }
+
 _AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS = [
-    CiliumNetworkPolicySpecEgress(
-        to_fqd_ns=[
-            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host) for host in actions_settings.WEB_PUSH_ALLOWED_HOSTS
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=list(actions_settings.WEB_PUSH_ALLOWED_HOSTS),
-            )
-        ],
-    ),
-    CiliumNetworkPolicySpecEgress(
-        to_endpoints=[
-            CiliumNetworkPolicySpecEgressToEndpoints(
-                match_labels={"k8s:io.kubernetes.pod.namespace": "ssh-mcp", "app.kubernetes.io/name": "ssh-mcp"}
-            )
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="8080", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ]
-            )
-        ],
-    ),
+    cilium_helpers.egress_to_fqdns(*actions_settings.WEB_PUSH_ALLOWED_HOSTS),
+    cilium_helpers.egress_to(cilium_helpers.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
     # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
     # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
-    CiliumNetworkPolicySpecEgress(
-        to_entities=[
-            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-            CiliumNetworkPolicySpecEgressToEntities.HOST,
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["auth.allegedly.works"],
-            )
-        ],
-    ),
+    cilium_helpers.egress_via_gateway("auth.allegedly.works"),
     # GitHub MCP discovery advertises github.com as its OAuth authorization server.
-    CiliumNetworkPolicySpecEgress(
-        to_fqd_ns=[
-            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host) for host in ("api.githubcopilot.com", "github.com")
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["api.githubcopilot.com", "github.com"],
-            )
-        ],
-    ),
+    cilium_helpers.egress_to_fqdns("api.githubcopilot.com", "github.com"),
     # `github_public_repository` policies confirm a repository is public with an
     # unauthenticated GitHub REST call (github_policy/visibility.py); no credential
     # rides this path.
-    CiliumNetworkPolicySpecEgress(
-        to_fqd_ns=[CiliumNetworkPolicySpecEgressToFqdNs(match_name="api.github.com")],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["api.github.com"],
-            )
-        ],
-    ),
+    cilium_helpers.egress_to_fqdns("api.github.com"),
     # The Kubernetes MCP server uses the public Gateway/remote-node path.
-    CiliumNetworkPolicySpecEgress(
-        to_entities=[
-            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-            CiliumNetworkPolicySpecEgressToEntities.HOST,
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["kubectl-passthrough-mcp.allegedly.works"],
-            )
-        ],
-    ),
-    # Gateway Service traffic is checked against the selected backend, with the
-    # client's original SNI. See cluster/docs/cilium_network_policy.md § Egress
-    # through the Gateway Service.
-    CiliumNetworkPolicySpecEgress(
-        to_endpoints=[
-            CiliumNetworkPolicySpecEgressToEndpoints(
-                match_labels={
-                    "k8s:io.kubernetes.pod.namespace": "authentik",
-                    "app.kubernetes.io/name": "authentik",
-                    "app.kubernetes.io/instance": "authentik",
-                    "app.kubernetes.io/component": "server",
-                }
-            )
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="9000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["auth.allegedly.works"],
-            )
-        ],
-    ),
+    cilium_helpers.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+    cilium_helpers.egress_to(cilium_helpers.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
 ]
+
 _AGENTPLANE_TESTING_ACTIONS_EXTRA_EGRESS = [
     # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
-    CiliumNetworkPolicySpecEgress(
-        to_entities=[
-            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-            CiliumNetworkPolicySpecEgressToEntities.HOST,
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ],
-                server_names=["agentplane-dex-testing.allegedly.works"],
-            )
-        ],
-    ),
+    cilium_helpers.egress_via_gateway("agentplane-dex-testing.allegedly.works"),
     # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
     # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
     # linked in staging.
-    CiliumNetworkPolicySpecEgress(
-        to_endpoints=[
-            CiliumNetworkPolicySpecEgressToEndpoints(
-                match_labels={
-                    "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
-                    "app.kubernetes.io/name": "agentplane-oauth-fixture",
-                }
-            )
-        ],
-        to_ports=[
-            CiliumNetworkPolicySpecEgressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                        port="8080", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                    )
-                ]
-            )
-        ],
-    ),
+    cilium_helpers.egress_to(cilium_helpers.endpoint_labels("agentplane-testing", "agentplane-oauth-fixture"), 8080),
 ]
 # What each environment's Flux Kustomization waits on. Staging additionally federates
 # operator login through the shared Authentik (sso-providers-tf) and reaches ssh-mcp.

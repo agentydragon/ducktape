@@ -32,22 +32,6 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 
 from cluster.cdk8s.agentplane import cilium_helpers, container_security, node_scheduling
@@ -203,58 +187,21 @@ class LlmIngress(Construct):
         # Only central egress can call the workload-authenticated listener. The
         # ingress can reach only DNS, TokenReview at the API server, and the
         # existing LiteLLM Service.
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, self.spec.namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": self.spec.namespace,
-                                    "app.kubernetes.io/name": "agentplane-egress",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    )
-                ],
-                egress=[
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                                    ),
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    ),
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
-                    ),
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(self.spec.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                )
+            ],
+            egress=[
+                cilium_helpers.dns_egress(),
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
+                ),
+            ],
         )

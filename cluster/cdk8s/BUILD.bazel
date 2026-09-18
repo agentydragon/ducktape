@@ -107,7 +107,11 @@ py_library(
     name = "gateway",
     srcs = ["gateway.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["//third_party/gateway_api:httproute"],
+    deps = [
+        "//third_party/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
 )
 
 py_library(
@@ -130,7 +134,6 @@ py_library(
         ":litellm_config",
         ":metadata",
         ":probes",
-        "//third_party/gateway_api:httproute",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -173,6 +176,7 @@ py_library(
         "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:actions_testing_fixtures",
         "//cluster/cdk8s/agentplane:app_constructs",
+        "//cluster/cdk8s/agentplane:cilium_helpers",
         "//cluster/cdk8s/agentplane:db_constructs",
         "//cluster/cdk8s/agentplane:dex_constructs",
         "//cluster/cdk8s/agentplane:egress_constructs",

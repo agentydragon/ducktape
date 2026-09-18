@@ -45,41 +45,8 @@ from cdk8s_plus_34 import (
     Volume,
     k8s,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToFqdNs,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEgressToPortsRules,
-    CiliumNetworkPolicySpecEgressToPortsRulesDns,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
+from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-    HttpRouteSpecRulesTimeouts,
-)
 
 from cluster.cdk8s.agentplane import (
     cilium_helpers,
@@ -91,7 +58,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -403,150 +370,44 @@ class Actions(Construct):
     def _add_http_route(self) -> None:
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
-        HttpRoute(
+        https_route(
             self,
             "httproute",
             metadata=metadata(f"{_NAME}-mcp", self.spec.namespace),
-            spec=HttpRouteSpec(
-                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        matches=[
-                            HttpRouteSpecRulesMatches(
-                                path=HttpRouteSpecRulesMatchesPath(
-                                    type=HttpRouteSpecRulesMatchesPathType.EXACT, value=path
-                                )
-                            )
-                            for path in _MCP_PATHS
-                        ],
-                        filters=[
-                            HttpRouteSpecRulesFilters(
-                                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                    set=[
-                                        HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                            name="Strict-Transport-Security", value="max-age=31536000"
-                                        )
-                                    ]
-                                ),
-                            )
-                        ],
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=CONTAINER_PORT)],
-                        timeouts=HttpRouteSpecRulesTimeouts(request="3600s", backend_request="3600s"),
-                    )
-                ],
-            ),
+            hostname=self.spec.hostname,
+            backend=_NAME,
+            port=CONTAINER_PORT,
+            paths=_MCP_PATHS,
+            timeout="3600s",
         )
 
     def _add_network_policy(self) -> None:
         namespace = self.spec.namespace
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-egress",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-app",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                ],
-                egress=[
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                                    ),
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    ),
-                                ],
-                                rules=CiliumNetworkPolicySpecEgressToPortsRules(
-                                    dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                                ),
-                            )
-                        ],
-                    ),
-                    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                    CiliumNetworkPolicySpecEgress(
-                        to_fqd_ns=[CiliumNetworkPolicySpecEgressToFqdNs(match_name="claude.ai")],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ],
-                                server_names=["claude.ai"],
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                        db_constructs.POSTGRES_PORT,
-                    ),
-                    *self.spec.extra_egress,
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[
+                cilium_helpers.ingress_from_gateway(CONTAINER_PORT),
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                ),
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]
+                ),
+            ],
+            egress=[
+                cilium_helpers.dns_egress(l7=True),
+                # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+                cilium_helpers.egress_to_fqdns("claude.ai"),
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    db_constructs.POSTGRES_PORT,
+                ),
+                *self.spec.extra_egress,
+            ],
         )
 
     def _add_pdb(self, min_available: int) -> None:

@@ -62,24 +62,6 @@ from cert_manager_crds.io.cert_manager import (
     CertificateSpecPrivateKeyAlgorithm,
     CertificateSpecSecretTemplate,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEgressToPortsRules,
-    CiliumNetworkPolicySpecEgressToPortsRulesDns,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
@@ -500,118 +482,35 @@ class Egress(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.spec.namespace
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels=cilium_helpers.endpoint_labels(namespace, "agentplane-runner")
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(PROXY_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels=cilium_helpers.endpoint_labels(namespace, "agentplane-app")
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(ADMIN_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels=cilium_helpers.endpoint_labels(namespace, _NAME)
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_AGENT_API_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                ],
-                egress=[
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                        db_constructs.POSTGRES_PORT,
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.ANY
-                                    )
-                                ],
-                                rules=CiliumNetworkPolicySpecEgressToPortsRules(
-                                    dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                                ),
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    cilium_helpers.tcp_egress_to(cilium_helpers.endpoint_labels(namespace, _NAME), _AGENT_API_PORT),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-llm-ingress"),
-                        llm_ingress_constructs.CONTAINER_PORT,
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-actions"),
-                        actions_constructs.CONTAINER_PORT,
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[
-                            CiliumNetworkPolicySpecEgressToEntities.WORLD,
-                            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-                            CiliumNetworkPolicySpecEgressToEntities.HOST,
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    ),
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="80", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    ),
-                                ]
-                            )
-                        ],
-                    ),
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), ports=[PROXY_PORT]
+                ),
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]
+                ),
+                cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(namespace, _NAME), ports=[_AGENT_API_PORT]),
+            ],
+            egress=[
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    db_constructs.POSTGRES_PORT,
+                ),
+                cilium_helpers.dns_egress(protocols=["ANY"], l7=True),
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, _NAME), _AGENT_API_PORT),
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-llm-ingress"),
+                    llm_ingress_constructs.CONTAINER_PORT,
+                ),
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
+                ),
+                cilium_helpers.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
+            ],
         )

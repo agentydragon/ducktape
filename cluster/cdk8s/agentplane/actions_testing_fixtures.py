@@ -26,25 +26,9 @@ from cdk8s_plus_34 import (
     ServicePort,
 )
 from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressDeny,
-    CiliumNetworkPolicySpecEgressDenyToEntities,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEgressToPortsRules,
-    CiliumNetworkPolicySpecEgressToPortsRulesDns,
     CiliumNetworkPolicySpecEndpointSelector,
     CiliumNetworkPolicySpecEndpointSelectorMatchExpressions,
     CiliumNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from constructs import Construct
 
@@ -117,83 +101,41 @@ def _add_mcp_everything(scope: Construct) -> None:
     )
     # Only the testing control-plane callers may reach this no-auth upstream reference
     # server. Runner isolation stays unchanged; there is no public route or fixture egress.
-    CiliumNetworkPolicy(
+
+    cilium_helpers.network_policy(
         scope,
         "mcp-everything-networkpolicy",
         metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_MCP_EVERYTHING_LABELS),
-            ingress=[
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=[
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-app",
-                            }
-                        ),
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-actions",
-                            }
-                        ),
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecIngressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(MCP_EVERYTHING_PORT),
-                                    protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                )
-                            ]
-                        )
-                    ],
-                )
-            ],
-            egress_deny=[
-                CiliumNetworkPolicySpecEgressDeny(to_entities=[CiliumNetworkPolicySpecEgressDenyToEntities.ALL])
-            ],
-        ),
+        selector=_MCP_EVERYTHING_LABELS,
+        ingress=[
+            cilium_helpers.ingress_from(
+                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-app"),
+                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-actions"),
+                ports=[MCP_EVERYTHING_PORT],
+            )
+        ],
+        egress_deny=cilium_helpers.deny_all_egress(),
     )
     # Add only this destination to the callers' existing egress fences.
-    CiliumNetworkPolicy(
+
+    cilium_helpers.network_policy(
         scope,
         "mcp-everything-callers-networkpolicy",
         metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(
-                match_expressions=[
-                    CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
-                        key="app.kubernetes.io/name",
-                        operator=CiliumNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                        values=["agentplane-app", "agentplane-actions"],
-                    )
-                ]
-            ),
-            egress=[
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                "app.kubernetes.io/name": MCP_EVERYTHING_NAME,
-                            }
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port=str(MCP_EVERYTHING_PORT),
-                                    protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP,
-                                )
-                            ]
-                        )
-                    ],
+        selector=CiliumNetworkPolicySpecEndpointSelector(
+            match_expressions=[
+                CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
+                    key="app.kubernetes.io/name",
+                    operator=CiliumNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
+                    values=["agentplane-app", "agentplane-actions"],
                 )
-            ],
+            ]
         ),
+        egress=[
+            cilium_helpers.egress_to(
+                cilium_helpers.endpoint_labels(NAMESPACE, MCP_EVERYTHING_NAME), MCP_EVERYTHING_PORT
+            )
+        ],
     )
 
 
@@ -263,79 +205,22 @@ def _add_oauth_fixture(scope: Construct) -> None:
     # Cluster-internal only, no public route. The Action Service reaches it for
     # protected-resource discovery and tool calls. The fixture fetches Dex's signing
     # keys through the internal Service; its public Dex issuer is metadata only.
-    CiliumNetworkPolicy(
+
+    cilium_helpers.network_policy(
         scope,
         "oauth-fixture-networkpolicy",
         metadata=metadata(_OAUTH_FIXTURE_NAME, NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_OAUTH_FIXTURE_LABELS),
-            ingress=[
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=[
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-actions",
-                            }
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecIngressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(_OAUTH_FIXTURE_PORT),
-                                    protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                )
-                            ]
-                        )
-                    ],
-                )
-            ],
-            egress=[
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                                ),
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                ),
-                            ],
-                            rules=CiliumNetworkPolicySpecEgressToPortsRules(
-                                dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                            ),
-                        )
-                    ],
-                ),
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-testing-dex",
-                            }
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="5556", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                )
-                            ]
-                        )
-                    ],
-                ),
-            ],
-            egress_deny=[
-                CiliumNetworkPolicySpecEgressDeny(to_entities=[CiliumNetworkPolicySpecEgressDenyToEntities.ALL])
-            ],
-        ),
+        selector=_OAUTH_FIXTURE_LABELS,
+        ingress=[
+            cilium_helpers.ingress_from(
+                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-actions"), ports=[_OAUTH_FIXTURE_PORT]
+            )
+        ],
+        egress=[
+            cilium_helpers.dns_egress(l7=True),
+            cilium_helpers.egress_to(cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-testing-dex"), 5556),
+        ],
+        egress_deny=cilium_helpers.deny_all_egress(),
     )
 
 
