@@ -56,7 +56,7 @@ their heading, never by position — positions change as entries come and go.
 
 Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
 authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp_config.py>, <../../cluster/k8s/haku/console/config.yaml>,
+Source of truth: <../console/mcp_config.py>, <../../cluster/cdk8s/haku/console_config.py>,
 Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
@@ -115,7 +115,7 @@ exact-Origin-gated calls resolve the configured downstream authentication in tha
 Operator's context and deliberately create no tool-call row. The refresh tokens live
 only in the `haku-console` Postgres; Haku never holds them, and they are never reflected
 into `haku-sandbox`.
-Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
+Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
 <../console/mcp_agent_auth.py>, <../console/mcp/tool_call_service.py>,
 <../console/tools/gmail.py>, <../console/tools/google_calendar.py>.
 
@@ -148,7 +148,7 @@ Operator's own linked Grocy account. Supersedes Haku's dedicated read-only `haku
 identity (`grocy-mcp-haku-sf` Authentik provider + JWT rotation) — that credential could
 never reach writes at all; console routing trades a server-side permission scope for an
 allowlist gate, in exchange for approval-gated write access every runtime can now reach.
-Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
+Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
 <../console/mcp_config.py>.
 
 ### `sandbox` in-process server
@@ -169,7 +169,7 @@ RBE — source never leaves the cluster). The server itself is credential-free: 
 own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in
 <../console/tools/sandbox.py>).
 Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>,
-<../../cluster/k8s/haku/console/config.yaml>, <../../cluster/k8s/haku/workspaces/>.
+<../../cluster/cdk8s/haku/console_config.py>, <../../cluster/k8s/haku/workspaces/>.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
 

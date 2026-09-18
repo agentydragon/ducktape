@@ -8,7 +8,7 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
@@ -42,6 +42,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
+from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from cluster.cdk8s.litellm_keys import model_allowlists
 from cluster.cdk8s.metadata import metadata
@@ -308,6 +309,58 @@ def _agentplane_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
     ]
 
 
+def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | None:
+    """The `decryption` block a directory listing a hand-written `.sops.yaml` needs; without it
+    Flux applies the ENC[...] ciphertext literally (cluster/docs/cdk8s.md)."""
+    if not any(resource.endswith(".sops.yaml") for resource in resources):
+        return None
+    return KustomizationSpecDecryption(
+        provider=KustomizationSpecDecryptionProvider.SOPS,
+        secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+    )
+
+
+def _generate_haku_console(root: Path) -> None:
+    """Each of the console's Kustomization directories: its chart, the Flux Kustomization
+    (health checks from the chart's own objects), and the root Kustomization listing the
+    generated file beside the hand-written siblings."""
+    for directory in haku_charts.DIRECTORIES:
+        out_dir = root / directory.path
+        out_dir.mkdir(parents=True, exist_ok=True)
+        app = App(outdir=str(out_dir))
+        chart = haku_charts.chart(app, directory)
+        app.synth()
+        _write_yaml(
+            out_dir / "flux-kustomization.yaml",
+            flux_kustomization(
+                directory.name,
+                spec=KustomizationSpec(
+                    interval="10m",
+                    retry_interval="1m",
+                    timeout=directory.timeout,
+                    path=f"./{directory.path}",
+                    prune=True,
+                    wait=True,
+                    source_ref=KustomizationSpecSourceRef(
+                        kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE
+                    ),
+                    decryption=_sops_decryption(directory.extra_resources),
+                    health_checks=health_checks(chart, directory.health_check_kinds) or None,
+                    depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on],
+                ),
+            ),
+        )
+        _write_yaml(
+            out_dir / "kustomization.yaml",
+            kustomize_kustomization(
+                namespace=directory.namespace,
+                resources=[f"{directory.name}.k8s.yaml", *directory.extra_resources],
+                components=["./image-pins"] if directory.image_pins else (),
+                config_map_generator=directory.config_map_generator,
+            ),
+        )
+
+
 def _generate_agentplane(root: Path, env: Environment) -> None:
     """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
     `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
@@ -345,14 +398,7 @@ def _generate_agentplane(root: Path, env: Environment) -> None:
                         api_version="postgresql.cnpg.io/v1", kind="Database", current=_CNPG_DATABASE_READY
                     )
                 ],
-                decryption=(
-                    KustomizationSpecDecryption(
-                        provider=KustomizationSpecDecryptionProvider.SOPS,
-                        secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                    )
-                    if any(resource.endswith(".sops.yaml") for resource in env.extra_resources)
-                    else None
-                ),
+                decryption=_sops_decryption(env.extra_resources),
                 source_ref=KustomizationSpecSourceRef(
                     kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=env.namespace, namespace=NAMESPACE
                 ),
@@ -445,6 +491,7 @@ def generate_manifests(root: Path) -> None:
     _generate_aiquota(root)
     for env in (staging.ENV, testing.ENV):
         _generate_agentplane(root, env)
+    _generate_haku_console(root)
     _write_charts(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
     _write_charts(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
     _write_charts(root, _DESCHEDULER_DIR, _descheduler_chart)

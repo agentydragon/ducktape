@@ -5,7 +5,7 @@ real `FastMCP` server attached via an in-memory transport (see `gmail.py` for th
 so the application service's approval/audit lifecycle and the HTTP adapter's Origin/reflection
 behavior run unchanged.
 Registered as MCP server id `google_calendar` with an `in_process` backend in
-`cluster/k8s/haku/console/config.yaml`. Executes as the acting Operator's own Google account via the
+`cluster/cdk8s/haku/console_config.py`. Executes as the acting Operator's own Google account via the
 config-bound `google_calendar` operator connection in `provider_connection.py`. See
 `haku/docs/security.md` for the credential/consent model.
 """
@@ -30,7 +30,7 @@ from haku.console.tools.google_calendar_client import (
 )
 from haku.console.tools.google_service import build_google_api_service
 
-# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 # Reads only fetch; advertise read-only so clients (claude.ai) skip per-call approval prompts.

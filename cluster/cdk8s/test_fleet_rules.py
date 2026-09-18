@@ -132,16 +132,23 @@ def test_references_resolve_to_chart_objects_or_declared_providers() -> None:
         },
         _reader("chart-provided", env_secret="es-target", volume_secret="ca-secret", config_map="ca-bundle"),
         _reader("cnpg", env_secret="postgres-app"),
-        _reader("declared", env_secret="oidc"),
+        _reader("declared", env_secret="oidc", config_map="image-tag"),
         _reader("undeclared", env_secret="nobody-makes-this", config_map="nor-this"),
         _reader("wrong-dependency", volume_secret="token"),
     ]
     provided = {"oidc": "sso-tf", "token": "token-maker", "stale": "sso-tf"}
-    assert resolved_references(objects, provided_secrets=provided, providers=frozenset({"sso-tf"})) == [
+    config_maps = {"image-tag": "image-tag.yaml", "stale-map": "sso-tf"}
+    assert resolved_references(
+        objects,
+        provided_secrets=provided,
+        providers=frozenset({"sso-tf", "image-tag.yaml"}),
+        provided_config_maps=config_maps,
+    ) == [
         "Deployment/undeclared reads Secret 'nobody-makes-this', which nothing in the chart creates and no dependency is listed as providing",
-        "Deployment/undeclared reads ConfigMap 'nor-this', which nothing in the chart creates",
+        "Deployment/undeclared reads ConfigMap 'nor-this', which nothing in the chart creates and no dependency is listed as providing",
         "Deployment/wrong-dependency reads Secret 'token' provided by 'token-maker', which is not a dependency",
         "provided_secrets lists 'stale', which no Pod template reads",
+        "provided_config_maps lists 'stale-map', which no Pod template reads",
     ]
 
 

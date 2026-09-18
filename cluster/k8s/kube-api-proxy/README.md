@@ -9,7 +9,7 @@ API TLS-passthrough listener on port 443: it overlapped the Gateway's wildcard
 HTTPS listener.
 
 Haku's separately authorized API boundary uses `haku-kubeapi.allegedly.works`;
-see <../haku/console/kube-api-proxy.yaml>.
+see <../../cdk8s/haku/kube_api_proxy_constructs.py>.
 
 ## Why terminate TLS?
 

@@ -12,7 +12,7 @@ is the Kubernetes half it calls.
 ## Configuration
 
 `SandboxEnvironmentConfig` (<config.py>) is Console's `agent_sandbox` block
-(<../../cluster/k8s/haku/console/config.yaml>):
+(<../../cluster/cdk8s/haku/console_config.py>):
 
 ```yaml
 agent_sandbox:

@@ -11,10 +11,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
     ClusterSpecAffinity,
-    ClusterSpecAffinityNodeAffinity,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     ClusterSpecAffinityTolerations,
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
@@ -49,6 +45,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 
 _CLUSTER_NAME = "postgres"
 _IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
@@ -64,22 +61,6 @@ _ROLE_NAMES = ["actions", "egress"]
 
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-)
-# Soft anti-affinity off control-plane nodes (their etcd is on a rotational HDD; co-located
-# I/O starves etcd fsync -- 2026-06-28 outage).
-_OFF_CONTROL_PLANE_NODE_AFFINITY = ClusterSpecAffinityNodeAffinity(
-    preferred_during_scheduling_ignored_during_execution=[
-        ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-            weight=100,
-            preference=ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                match_expressions=[
-                    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                    )
-                ]
-            ),
-        )
-    ]
 )
 
 
@@ -159,7 +140,7 @@ class Db(Construct):
                     topology_key="kubernetes.io/hostname" if env.db.pod_anti_affinity else None,
                     node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
                     tolerations=[_CONTROL_PLANE_TOLERATION],
-                    node_affinity=_OFF_CONTROL_PLANE_NODE_AFFINITY,
+                    node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
                 ),
                 storage=ClusterSpecStorage(storage_class=_STORAGE_CLASS, size=_STORAGE_SIZE),
                 monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),

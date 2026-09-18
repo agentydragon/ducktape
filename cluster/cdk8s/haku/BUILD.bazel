@@ -1,0 +1,133 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "console_config",
+    srcs = ["console_config.py"],
+)
+
+py_library(
+    name = "db_constructs",
+    srcs = ["db_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/agentplane:node_scheduling",
+        "//third_party/cnpg:cluster",
+        "//third_party/cnpg:database",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "console_constructs",
+    srcs = ["console_constructs.py"],
+    deps = [
+        ":console_config",
+        ":db_constructs",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s/agentplane:container_security",
+        "//cluster/cdk8s/agentplane:node_scheduling",
+        "//haku/console:config",
+        "//haku/console:mcp_config",
+        "//haku/console:settings",
+        "//third_party/prometheus_operator:servicemonitor",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "kube_api_proxy_constructs",
+    srcs = ["kube_api_proxy_constructs.py"],
+    deps = [
+        ":console_constructs",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//third_party/cert_manager:certificate",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "migration_constructs",
+    srcs = ["migration_constructs.py"],
+    deps = [
+        ":console_constructs",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s/agentplane:container_security",
+        "//cluster/cdk8s/agentplane:node_scheduling",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "charts",
+    srcs = ["charts.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":console_constructs",
+        ":db_constructs",
+        ":kube_api_proxy_constructs",
+        ":migration_constructs",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux_constructs",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":charts",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_console_constructs",
+    # Synth imports the console's Settings, and with it the console runtime.
+    size = "medium",
+    srcs = ["test_console_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":console_constructs",
+        "//:conftest",
+        "//haku/console:settings",
+        "//util:settings_contract",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

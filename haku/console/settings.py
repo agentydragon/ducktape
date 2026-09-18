@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from haku.console.config import ConsoleProcessConfig
+from haku.console.config import CONFIG_FILE_ENV, ConsoleProcessConfig
 from haku.console.mcp_config import ConsoleConfigFile
 
 
@@ -15,7 +15,7 @@ class _ConfigFileSettings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
-    config_file: Path = Field(validation_alias="HAKU_CONSOLE_CONFIG_FILE")
+    config_file: Path = Field(validation_alias=CONFIG_FILE_ENV)
 
 
 class Settings(ConsoleConfigFile, ConsoleProcessConfig, BaseSettings):

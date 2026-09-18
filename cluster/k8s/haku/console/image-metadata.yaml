@@ -1,0 +1,11 @@
+# The API image's tag for the Settings panel, read by the API Deployment as
+# HAKU_CONSOLE__IMAGE_TAG. Flux rewrites it in the same commit as image-pins/, so the pods a
+# release rolls out read the tag they were built from. Hand-written beside the generated
+# manifests because a generated file cannot carry the marker (cluster/docs/cdk8s.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-console-image-metadata
+  namespace: haku-console
+data:
+  image-tag: devel-20260916175501-b92451d # {"$imagepolicy": "flux-system:haku-console:tag"}

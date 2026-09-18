@@ -152,7 +152,7 @@ are currently available. Availability is not the same as auto-approval.
 
 The policy source of truth is:
 
-- `cluster/k8s/haku/console/config.yaml` for access profiles and policy composition;
+- `cluster/cdk8s/haku/console_config.py` for access profiles and policy composition;
 - `haku/console/auto_approval.py` for evaluator semantics; and
 - `haku/console/test_auto_approval.py` for accepted and rejected argument shapes.
 

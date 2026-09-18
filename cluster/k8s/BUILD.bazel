@@ -54,6 +54,15 @@ exports_files(
         "clickhouse/schema/kustomization.yaml",
         "descheduler/helmrelease.k8s.yaml",
         "dns-automation/dns-records.k8s.yaml",
+        "haku/console/db/flux-kustomization.yaml",
+        "haku/console/db/haku-console-db.k8s.yaml",
+        "haku/console/db/kustomization.yaml",
+        "haku/console/flux-kustomization.yaml",
+        "haku/console/haku-console.k8s.yaml",
+        "haku/console/kustomization.yaml",
+        "haku/console/migration/flux-kustomization.yaml",
+        "haku/console/migration/haku-console-migration.k8s.yaml",
+        "haku/console/migration/kustomization.yaml",
         "litellm/keys-tf/litellm-keys.k8s.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
     ],
@@ -139,21 +148,7 @@ filegroup(
         "clickhouse/cluster/agent-diagnostics-rbac.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
         "haku-ci/scaledjob.yaml",
-        "haku/console/agent-diagnostics-rbac.yaml",
-        "haku/console/config.yaml",
-        "haku/console/db/flux-kustomization.yaml",
-        "haku/console/deployment.yaml",
-        "haku/console/flux-kustomization.yaml",
-        "haku/console/httproute.yaml",
-        "haku/console/kube-api-proxy.yaml",
-        "haku/console/kubernetes-authorization-rbac.yaml",
-        "haku/console/migration/flux-kustomization.yaml",
-        "haku/console/migration/job.yaml",
-        "haku/console/migration/serviceaccount.yaml",
-        "haku/console/service.yaml",
-        "haku/console/static-deployment.yaml",
-        "haku/console/static-metadata.yaml",
-        "haku/console/static-service.yaml",
+        "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
@@ -222,23 +217,6 @@ filegroup(
     name = "market_roster_yaml",
     srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
-)
-
-# The deployed console config, so contract tests exercise the file the console actually
-# mounts rather than a fixture that can drift from it.
-filegroup(
-    name = "haku_console_config",
-    srcs = ["haku/console/config.yaml"],
-    visibility = [
-        "//cluster/k8s/litellm/app:__pkg__",
-        "//haku/console:__pkg__",
-    ],
-)
-
-filegroup(
-    name = "haku_console_deployment",
-    srcs = ["haku/console/deployment.yaml"],
-    visibility = ["//haku/console:__pkg__"],
 )
 
 # //cluster/ssh_targets derives the last three from the devbox Service (and ssh_keys/).

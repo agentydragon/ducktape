@@ -14,7 +14,7 @@ _NAMESPACE = "agentplane-staging"
 # preset, named here because the preset binds them: reads of confirmed-public
 # repositories, of ducktape and its fork, and of the private Gaffer repository -- what
 # the console's `public_coder_github_reads` grants public-coder-agent
-# (cluster/k8s/haku/console/config.yaml).
+# (cluster/cdk8s/haku/console_config.py).
 PUBLIC_GITHUB_READS_SET = "public-github-reads"
 PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"

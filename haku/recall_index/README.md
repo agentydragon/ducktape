@@ -12,7 +12,7 @@ than a permission or query scope:
 | ---------- | ------------------------------------------------ | ----------------------- |
 | `git`      | files at a branch tip of a configured Git remote | a path and a byte range |
 
-When enabled, the deployment registry in `cluster/k8s/haku/console/config.yaml` declares Git
+When enabled, the deployment registry in `cluster/cdk8s/haku/console_config.py` declares Git
 indexes such as `haku-state` over Haku's Forgejo remote and `ducktape-public` over the public
 Ducktape `devel` branch. Adding another index is a reviewed configuration change; it is not an
 unscoped runtime default.
@@ -219,7 +219,7 @@ database schema and retained data stay in place until a separate data-retirement
   second whole-source reader in this server would be a second answer to "what does this file
   say", and the two would drift.
 
-  Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — a configured
+  Listing the server in `cluster/cdk8s/haku/console_config.py` is what builds it — a configured
   server with no builder fails `validate_in_process_server_bindings` at startup — and the console
   refuses to start if it is listed with no embedder configured, since search embeds its query and
   cannot run without somewhere to do that. When re-enabled, the catalog and access-profile policy
