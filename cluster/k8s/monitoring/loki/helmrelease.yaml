@@ -99,7 +99,7 @@ spec:
         size: 10Gi
       extraEnvFrom:
         - secretRef:
-            name: loki-s3-credentials
+            name: loki-seaweedfs-credentials
       resources:
         requests:
           cpu: 100m
@@ -127,7 +127,7 @@ spec:
                     operator: DoesNotExist
       extraEnvFrom:
         - secretRef:
-            name: loki-s3-credentials
+            name: loki-seaweedfs-credentials
       # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
       # upstream: grafana/loki#23514, grafana/loki#19586), so the Go GC never
       # gets a chance to work harder before the kernel OOM-kills the process —
@@ -169,7 +169,7 @@ spec:
         volumeClaimsEnabled: false
       extraEnvFrom:
         - secretRef:
-            name: loki-s3-credentials
+            name: loki-seaweedfs-credentials
       # backend runs the compactor + index-gateway + ruler. Its memory tracks
       # the size of the *retained index* (streams ever created x retention),
       # not the active stream count the ingesters see — which is why it was the
