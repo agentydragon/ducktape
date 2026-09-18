@@ -4,21 +4,20 @@ metadata:
   name: clickhouse-schema
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn:
+    - name: clickhouse
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: clickhouse-aiquota-schema-v10
+      namespace: clickhouse
   interval: 10m
   path: ./cluster/k8s/clickhouse/schema
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: clickhouse-schema
     namespace: ducktape-flux
   timeout: 20m
   wait: true
-  healthChecks:
-    - apiVersion: batch/v1
-      kind: Job
-      name: clickhouse-aiquota-schema-v9
-      namespace: clickhouse
-  dependsOn:
-    - name: clickhouse
-      namespace: ducktape-flux

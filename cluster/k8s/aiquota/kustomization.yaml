@@ -1,21 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - forgejo-images-creds-eso.yaml
+  - aiquota.k8s.yaml
   - aiquota-api-bearer.sops.yaml
-  - public-coder-bearer-eso.yaml
-  - haku-claude-bearer-eso.yaml
-  - haku-console-bearer-eso.yaml
-  - haku-sandbox-bearer-eso.yaml
-  - deployment.yaml
-  - httproute.yaml
-  - service.yaml
-  - servicemonitor.yaml
+components:
+  - ./image-pins
 configMapGenerator:
   - name: aiquota-api-config
     namespace: cli-proxy-api
     files:
-      - config.toml=config.toml
+      - config.toml
   - name: aiquota-schema
     namespace: cli-proxy-api
     files:

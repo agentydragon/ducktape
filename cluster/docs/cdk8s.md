@@ -10,7 +10,7 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 ## Three shapes of a directory
 
 1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
-   `agents/ha-mcp/app`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
+   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
    (`flux_constructs.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
@@ -35,6 +35,12 @@ directory: the generated `kustomization.yaml` lists it as a sibling resource
 (`Environment.extra_resources`), and the generated `flux-kustomization.yaml` carries the
 `decryption:` block when any such file is listed. `ExternalSecret` objects are
 generated outright; they carry only a pointer at a store key.
+
+A `configMapGenerator` input (`clickhouse/schema/schema.sql`, `aiquota/config.toml`)
+stays hand-written the same way: the generated `kustomization.yaml` carries the
+generator entry (`flux_constructs.ConfigMapArgs`), keeping kustomize's content-hash
+name suffix and reference rewriting, and the construct mounting it references the
+entry's `name`.
 
 ### `dependsOn` rationale
 

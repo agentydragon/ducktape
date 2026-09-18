@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Bootstraps the langfuse and aiquota databases with ClickHouse distributed DDL. Table/view schema inside each database is owned by its app.
+  labels:
+    app.kubernetes.io/component: schema
+    app.kubernetes.io/instance: clickhouse
+    app.kubernetes.io/name: clickhouse-schema
+  name: clickhouse-aiquota-schema-v10
+  namespace: clickhouse
+spec:
+  activeDeadlineSeconds: 1200
+  backoffLimit: 60
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: schema
+        app.kubernetes.io/instance: clickhouse
+        app.kubernetes.io/name: clickhouse-schema
+        cdk8s.io/metadata.addr: clickhouse-schema-job-c89d9b03
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --host=clickhouse.clickhouse.svc.cluster.local
+            - --port=9000
+            - --connect_timeout=10
+            - --receive_timeout=60
+            - --multiquery
+            - --queries-file=/schema/schema.sql
+          command:
+            - clickhouse-client
+          env:
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: clickhouse-admin-credentials
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: clickhouse-admin-credentials
+            - name: HOME
+              value: /tmp
+          image: clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04
+          imagePullPolicy: IfNotPresent
+          name: schema
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /schema
+              name: schema
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: false
+      hostNetwork: false
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: clickhouse-aiquota-schema
+          name: schema
+        - emptyDir: {}
+          name: tmp

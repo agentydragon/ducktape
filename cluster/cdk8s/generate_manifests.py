@@ -10,9 +10,8 @@ cluster/docs/cdk8s.md.
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
-from cdk8s import ApiObject, App, Chart, Yaml
+from cdk8s import App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
@@ -27,12 +26,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s import descheduler_constructs, haku_openclaw_spike_config, public_coder_agent_config, stateful_infra
+from cluster.cdk8s import (
+    aiquota_constructs,
+    clickhouse_schema_constructs,
+    descheduler_constructs,
+    haku_openclaw_spike_config,
+    public_coder_agent_config,
+    stateful_infra,
+)
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import json5_config
-from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from cluster.cdk8s.metadata import metadata
@@ -40,6 +46,8 @@ from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
+_CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
+_AIQUOTA_DIR = "cluster/k8s/aiquota"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -164,26 +172,112 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
+def _generate_clickhouse_schema(root: Path) -> None:
+    name = clickhouse_schema_constructs.NAME
+    out_dir = root / _CLICKHOUSE_SCHEMA_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = clickhouse_schema_constructs.chart(app)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            name,
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                timeout="20m",
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
+                ),
+                path=f"./{_CLICKHOUSE_SCHEMA_DIR}",
+                prune=True,
+                wait=True,
+                health_checks=health_checks(chart, ("Job",)),
+                depends_on=[KustomizationSpecDependsOn(name="clickhouse")],
+            ),
+        ),
+    )
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        # schema.sql stays hand-written; the generator entry renders it into the ConfigMap the
+        # Job mounts. See cluster/docs/cdk8s.md.
+        kustomize_kustomization(
+            resources=[f"{name}.k8s.yaml"], config_map_generator=[clickhouse_schema_constructs.SCHEMA_CONFIG_MAP]
+        ),
+    )
+
+
+def _generate_aiquota(root: Path) -> None:
+    name = aiquota_constructs.NAME
+    out_dir = root / _AIQUOTA_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    aiquota_constructs.chart(app)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            name,
+            description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                timeout="5m",
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
+                ),
+                path=f"./{_AIQUOTA_DIR}",
+                prune=True,
+                wait=True,
+                # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+                decryption=KustomizationSpecDecryption(
+                    provider=KustomizationSpecDecryptionProvider.SOPS,
+                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+                ),
+                depends_on=[
+                    KustomizationSpecDependsOn(name=dep)
+                    for dep in (
+                        "external-secrets-config",
+                        "forgejo-images",
+                        # Provides the shared namespace and the CLIProxyAPI management Secret.
+                        "cli-proxy-api",
+                        # Materializes the narrow mirrored copies of the API bearer for its
+                        # consumers; the source Secret stays SOPS-managed here.
+                        "external-secrets-operator",
+                        # Creates the aiquota database the migrate init container populates.
+                        "clickhouse-schema",
+                    )
+                ],
+            ),
+        ),
+    )
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        # aiquota-api-bearer.sops.yaml, config.toml and schema.sql stay hand-written; the
+        # generator entries render the latter two into the ConfigMaps the Deployment mounts.
+        # See cluster/docs/cdk8s.md.
+        kustomize_kustomization(
+            resources=[f"{name}.k8s.yaml", f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[aiquota_constructs.CONFIG_CONFIG_MAP, aiquota_constructs.SCHEMA_CONFIG_MAP],
+        ),
+    )
+
+
 def _agentplane_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
-    # `Chart.api_objects` is direct children only; every object here sits inside a Construct.
-    api_objects = [cast(ApiObject, node) for node in chart.node.find_all() if ApiObject.is_api_object(node)]
-    objects = sorted(
-        (obj for obj in api_objects if obj.kind in _HEALTH_CHECK_KINDS),
-        key=lambda obj: _HEALTH_CHECK_KINDS.index(obj.kind),
-    )
-    checks = [
-        KustomizationSpecHealthChecks(
-            api_version=obj.api_version, kind=obj.kind, name=obj.name, namespace=obj.metadata.namespace
-        )
-        for obj in objects
-    ]
+    checks = health_checks(chart, _HEALTH_CHECK_KINDS)
     # trust-manager names a Bundle's target ConfigMap after the Bundle.
-    checks.extend(
-        KustomizationSpecHealthChecks(api_version="v1", kind="ConfigMap", name=obj.name, namespace=namespace)
-        for obj in objects
-        if obj.kind == "Bundle"
-    )
-    return checks
+    return [
+        *checks,
+        *(
+            KustomizationSpecHealthChecks(api_version="v1", kind="ConfigMap", name=check.name, namespace=namespace)
+            for check in checks
+            if check.kind == "Bundle"
+        ),
+    ]
 
 
 def _generate_agentplane(root: Path, env: Environment) -> None:
@@ -313,6 +407,8 @@ def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
+    _generate_clickhouse_schema(root)
+    _generate_aiquota(root)
     for env in (staging.ENV, testing.ENV):
         _generate_agentplane(root, env)
     _generate_haku_openclaw_spike_config(root)

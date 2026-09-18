@@ -1,85 +1,39 @@
-"""Direct-file contract for ClickHouse's distributed DDL configuration."""
+"""Contract between the hand-written ClickHouseInstallation and the generated
+`clickhouse-client` containers that run distributed DDL against it."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
 
-import pytest
 import pytest_bazel
-import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-
-@pytest.fixture
-def schema_kustomization(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/kustomization.yaml").read_text()))
+from cluster.cdk8s import aiquota_constructs, clickhouse_schema_constructs
 
 
-@pytest.fixture
-def schema_job(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/schema-job.yaml").read_text()))
+def _native_ddl_containers() -> list[dict[str, Any]]:
+    """The schema Job's container and aiquota's `migrate` init container, synthesized in memory."""
+    schema_objects = cast(
+        list[dict[str, Any]], Cdk8sTesting.synth(clickhouse_schema_constructs.chart(Cdk8sTesting.app()))
+    )
+    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota_constructs.chart(Cdk8sTesting.app())))
+    job = one(obj for obj in schema_objects if obj["kind"] == "Job")
+    deployment = one(obj for obj in aiquota_objects if obj["kind"] == "Deployment")
+    return [
+        one(job["spec"]["template"]["spec"]["containers"]),
+        one(deployment["spec"]["template"]["spec"]["initContainers"]),
+    ]
 
 
-@pytest.fixture
-def schema_flux(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/flux-kustomization.yaml").read_text()))
-
-
-@pytest.fixture
-def aiquota_kustomization(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "aiquota/kustomization.yaml").read_text()))
-
-
-@pytest.fixture
-def aiquota_deployment(k8s_dir: Path) -> dict[str, Any]:
-    for document in yaml.safe_load_all((k8s_dir / "aiquota/deployment.yaml").read_text()):
-        if document["kind"] == "Deployment":
-            return cast(dict[str, Any], document)
-    raise AssertionError("no Deployment document in aiquota/deployment.yaml")
-
-
-def _assert_native_ddl_container(
-    container: dict[str, Any], pod_spec: dict[str, Any], kustomization: dict[str, Any], *, host: str, volume_name: str
-) -> None:
-    """A `clickhouse-client --queries-file=...` container's args, volume, and configMapGenerator agree.
-
-    Same port-9000 rationale as the module docstring: the Altinity operator
-    generates 9440 secure remote-server entries when ``secure: true`` is set,
-    but ClickHouse has no TLS listener unless one is configured separately, so
-    a 9440 remote entry cannot be recognized as local by DDLWorker.
-    """
-
-    args = container["args"]
-    assert f"--host={host}" in args
-    assert "--port=9000" in args
-
-    volume = one(v for v in pod_spec["volumes"] if v["name"] == volume_name)
-    config_map_name = volume["configMap"]["name"]
-    generator = one(g for g in kustomization["configMapGenerator"] if g["name"] == config_map_name)
-    mount = one(m for m in container["volumeMounts"] if m["name"] == volume_name)
-    query_file_arg = one(arg for arg in args if arg.startswith("--queries-file="))
-    query_file = Path(query_file_arg.removeprefix("--queries-file="))
-    assert query_file.parent == Path(mount["mountPath"])
-    assert query_file.name in generator["files"]
-
-
-def test_clickhouse_distributed_ddl_contract(
-    clickhouse_installation: dict[str, Any],
-    clickhouse_host: str,
-    schema_kustomization: dict[str, Any],
-    schema_job: dict[str, Any],
-    schema_flux: dict[str, Any],
-    aiquota_kustomization: dict[str, Any],
-    aiquota_deployment: dict[str, Any],
-) -> None:
+def test_clickhouse_distributed_ddl_contract(clickhouse_installation: dict[str, Any], clickhouse_host: str) -> None:
     """Central ClickHouse uses one plaintext native port consistently for ON CLUSTER DDL.
 
     The Altinity operator generates 9440 secure remote-server entries when
     ``secure: true`` is set, but ClickHouse has no TLS listener unless one is
     configured separately. A 9440 remote entry therefore cannot be recognized
-    as local by DDLWorker. Keep the manifest, schema Job/aiquota migrate init
-    container, and Flux health check pinned to the working port-9000 config.
+    as local by DDLWorker. Keep the manifest and the schema Job/aiquota migrate
+    init container pinned to the working port-9000 config.
     """
     configuration = clickhouse_installation["spec"]["configuration"]
     cluster_spec = one(item for item in configuration["clusters"] if item["name"] == "default")
@@ -102,28 +56,9 @@ def test_clickhouse_distributed_ddl_contract(
         "GRANT CLUSTER ON *.*",
     ]
 
-    schema_pod_spec = schema_job["spec"]["template"]["spec"]
-    _assert_native_ddl_container(
-        one(schema_pod_spec["containers"]),
-        schema_pod_spec,
-        schema_kustomization,
-        host=clickhouse_host,
-        volume_name="schema",
-    )
-
-    schema_health_check = one(schema_flux["spec"]["healthChecks"])
-    assert schema_health_check == {
-        "apiVersion": schema_job["apiVersion"],
-        "kind": schema_job["kind"],
-        "name": schema_job["metadata"]["name"],
-        "namespace": schema_job["metadata"]["namespace"],
-    }
-
-    aiquota_pod_spec = aiquota_deployment["spec"]["template"]["spec"]
-    migrate_container = one(c for c in aiquota_pod_spec["initContainers"] if c["name"] == "migrate")
-    _assert_native_ddl_container(
-        migrate_container, aiquota_pod_spec, aiquota_kustomization, host=clickhouse_host, volume_name="schema"
-    )
+    for container in _native_ddl_containers():
+        assert f"--host={clickhouse_host}" in container["args"]
+        assert "--port=9000" in container["args"]
 
 
 if __name__ == "__main__":
