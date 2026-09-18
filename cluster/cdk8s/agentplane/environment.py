@@ -6,7 +6,7 @@ written once.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from cdk8s import Chart, Duration
@@ -80,10 +80,8 @@ class AppProps:
 @dataclass(frozen=True)
 class ActionsProps:
     hostname: str
+    # x/agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
     settings: dict
-    action_federation: dict
-    action_federation_description: str
-    operator_oidc: dict
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
     extra_reload_secrets: Sequence[str] = ()
@@ -107,6 +105,9 @@ class Environment:
     depends_on: Sequence[str]
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
+    # Secrets Pods read that nothing in the chart creates, each with the dependency
+    # (one of `depends_on` or `extra_resources`) that does; fleet_rules checks both ends.
+    provided_secrets: Mapping[str, str]
     # Whether the operator Role may manage ActionPolicySet/Binding objects.
     include_action_policy_rule: bool
     replicas: ReplicaProfile

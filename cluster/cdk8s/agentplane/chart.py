@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.metadata import metadata
 from x.agentplane.app import main as app_main
 from x.agentplane.settings_contract import settings_file
@@ -38,4 +39,12 @@ def environment_chart(app: App, env: Environment) -> Chart:
     app_constructs.App(chart, "app", env)
     actions_constructs.Actions(chart, "actions", env)
     env.extra(chart)
+    add_fleet_rules(
+        chart,
+        provided_secrets=env.provided_secrets,
+        providers=frozenset({*env.depends_on, *env.extra_resources}),
+        # The interception proxy terminates TLS for the namespace; its allowlist is the
+        # EgressPolicy objects, not SNI on its own egress rule.
+        unpinned_https_egress=frozenset({egress_constructs.NAME}),
+    )
     return chart

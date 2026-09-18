@@ -30,9 +30,27 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
+_WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
+_LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 
+# The token the app exchanges its login for, and the one the Action Service accepts
+# from operators: the same Authentik application.
+_FEDERATION_TARGET = {
+    "issuer": f"{_ACTIONS_OIDC_APP}/",
+    "audience": "agentplane-actions",
+    "jwks_uri": f"{_ACTIONS_OIDC_APP}/jwks/",
+}
+_ACTION_FEDERATION = {
+    "mode": "exchange",
+    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
+    "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
+    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
+    "target": _FEDERATION_TARGET,
+    "scope": "openid",
+}
 _ACTIONS_SETTINGS = {
+    "operator_oidc": _FEDERATION_TARGET,
     "allowed_service_account_namespaces": [_NAMESPACE],
     "web_push": {
         "subject": "mailto:agentydragon@gmail.com",
@@ -101,13 +119,6 @@ _ACTIONS_SETTINGS = {
         },
     },
 }
-# The token the app exchanges its login for, and the one the Action Service accepts
-# from operators: the same Authentik application.
-_FEDERATION_TARGET = {
-    "issuer": f"{_ACTIONS_OIDC_APP}/",
-    "audience": "agentplane-actions",
-    "jwks_uri": f"{_ACTIONS_OIDC_APP}/jwks/",
-}
 
 ENV = Environment(
     namespace=_NAMESPACE,
@@ -118,10 +129,17 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    # Operator login federates through the shared Authentik (sso-providers-tf); the SSH
-    # action group reaches ssh-mcp.
-    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp"),
-    extra_resources=("web-push-vapid.sops.yaml",),
+    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console"),
+    extra_resources=(_WEB_PUSH_SECRET_FILE,),
+    provided_secrets={
+        "agentplane-oidc": "sso-providers-tf",
+        "agentplane-mcp-oauth": "sso-providers-tf",
+        _LITELLM_KEY_SECRET: "litellm-keys-tf",
+        "ssh-mcp-bearer": "ssh-mcp",
+        # Reflected from the haku namespace by reflector.
+        _GITHUB_MCP_CLIENT_SECRET: "haku-console",
+        _WEB_PUSH_SECRET: _WEB_PUSH_SECRET_FILE,
+    },
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
         count=2,
@@ -132,9 +150,9 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config=staging_config.config(),
+    app_config={**staging_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=2, pod_anti_affinity=True),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name="litellm-key-agentplane-staging"),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca"),
     app=AppProps(
         hostname=_HOSTNAME,
@@ -145,16 +163,6 @@ ENV = Environment(
     actions=ActionsProps(
         hostname="agentplane-actions-staging.allegedly.works",
         settings=_ACTIONS_SETTINGS,
-        action_federation={
-            "mode": "exchange",
-            "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
-            "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
-            "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
-            "target": _FEDERATION_TARGET,
-            "scope": "openid",
-        },
-        action_federation_description="OIDC federation configuration for the Agentplane app and Action Service",
-        operator_oidc=_FEDERATION_TARGET,
         extra_reload_secrets=(_GITHUB_MCP_CLIENT_SECRET, _WEB_PUSH_SECRET, "ssh-mcp-bearer"),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),

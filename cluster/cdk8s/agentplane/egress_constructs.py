@@ -87,10 +87,10 @@ from x.agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from x.agentplane.settings_contract import cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "agentplane-egress"
+NAME = "agentplane-egress"
 _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-migrate"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+_LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 ADMIN_PORT = 8081
 _AGENT_API_PORT = 8082
@@ -213,7 +213,7 @@ class Egress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
+            self, "serviceaccount", metadata=metadata(NAME, env.namespace), automount_token=True
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
@@ -234,7 +234,7 @@ class Egress(Construct):
             self,
             "token-reviewer",
             name=f"{self.env.namespace}-egress-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=NAME,
             namespace=self.env.namespace,
         )
         # What the proxy reads to decide a request: policies, bindings, credentials.
@@ -244,7 +244,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=metadata(NAME, self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -258,8 +258,8 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata(_NAME, self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", _NAME),
+            metadata=metadata(NAME, self.env.namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
 
     def _add_certificate_and_bundle(self) -> None:
@@ -331,7 +331,7 @@ class Egress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{_NAME}-settings", self.env.namespace),
+            metadata=metadata(f"{NAME}-settings", self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
                     settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
@@ -356,7 +356,7 @@ class Egress(Construct):
             self,
             "deployment",
             metadata=metadata(
-                _NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
@@ -422,7 +422,7 @@ class Egress(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=metadata(NAME, self.env.namespace),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=80, target_port=_AGENT_API_PORT, protocol=Protocol.TCP),
@@ -432,7 +432,7 @@ class Egress(Construct):
         Service(
             self,
             "service-admin",
-            metadata=metadata(f"{_NAME}-admin", self.env.namespace),
+            metadata=metadata(f"{NAME}-admin", self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
@@ -441,7 +441,7 @@ class Egress(Construct):
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=self.env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
                 min_available=k8s.IntOrString.from_number(min_available),
                 selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -453,7 +453,7 @@ class Egress(Construct):
         cilium_helpers.network_policy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             selector=_LABELS,
             ingress=[
                 cilium_helpers.ingress_from(
@@ -462,7 +462,7 @@ class Egress(Construct):
                 cilium_helpers.ingress_from(
                     cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]
                 ),
-                cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(namespace, _NAME), ports=[_AGENT_API_PORT]),
+                cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
             ],
             egress=[
                 cilium_helpers.egress_to(
@@ -471,7 +471,7 @@ class Egress(Construct):
                 ),
                 cilium_helpers.dns_egress(protocols=["ANY"], l7=True),
                 cilium_helpers.egress_to_entities("kube-apiserver"),
-                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, _NAME), _AGENT_API_PORT),
+                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
                 cilium_helpers.egress_to(
                     cilium_helpers.endpoint_labels(namespace, "agentplane-llm-ingress"),
                     llm_ingress_constructs.CONTAINER_PORT,
