@@ -2,6 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/mcp-oauth-facade
-    newTag: devel-20260917082758-5647a0e # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}
+    newTag: devel-20260918220629-facd899 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}
   - name: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner
     newTag: devel-20260915084053-a8b1ac6 # {"$imagepolicy": "flux-system:ha-mcp-token-provisioner:tag"}
