@@ -12,14 +12,14 @@ from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
 
 
 @dataclass(frozen=True)
-class AgentplaneReplicaProfile:
+class ReplicaProfile:
     replicas: int
     strategy: DeploymentStrategy
     topology_spread: bool
     min_ready_seconds: int | None
 
 
-STAGING = AgentplaneReplicaProfile(
+STAGING = ReplicaProfile(
     replicas=2,
     strategy=DeploymentStrategy.rolling_update(
         max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
@@ -27,6 +27,6 @@ STAGING = AgentplaneReplicaProfile(
     topology_spread=True,
     min_ready_seconds=5,
 )
-TESTING = AgentplaneReplicaProfile(
+TESTING = ReplicaProfile(
     replicas=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready_seconds=None
 )

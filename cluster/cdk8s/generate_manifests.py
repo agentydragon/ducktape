@@ -33,23 +33,22 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s import (
-    agentplane_actions_settings,
-    agentplane_replica_profile,
-    agentplane_staging_config,
-    agentplane_testing_config,
-    haku_openclaw_spike_config,
-    public_coder_agent_config,
+from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
+from cluster.cdk8s.agentplane import (
+    actions_constructs,
+    actions_settings,
+    actions_staging_policies,
+    actions_testing_fixtures,
+    app_constructs,
+    db_constructs,
+    dex_constructs,
+    egress_constructs,
+    llm_ingress_constructs,
+    namespace_rbac_constructs,
+    replica_profile,
+    staging_config,
+    testing_config,
 )
-from cluster.cdk8s.agentplane_actions_constructs import AgentplaneActions, AgentplaneActionsEnvSpec
-from cluster.cdk8s.agentplane_actions_staging_policies import add_staging_action_policies
-from cluster.cdk8s.agentplane_actions_testing_fixtures import add_testing_fixtures
-from cluster.cdk8s.agentplane_app_constructs import AgentplaneApp, AgentplaneAppEnvSpec
-from cluster.cdk8s.agentplane_constructs import AgentplaneAgentRbac, AgentplaneEnvSpec, AgentplaneNamespace
-from cluster.cdk8s.agentplane_db_constructs import AgentplaneDb, AgentplaneDbEnvSpec
-from cluster.cdk8s.agentplane_dex_constructs import AgentplaneDex
-from cluster.cdk8s.agentplane_egress_constructs import AgentplaneEgress, AgentplaneEgressEnvSpec
-from cluster.cdk8s.agentplane_llm_ingress_constructs import AgentplaneLlmIngress, AgentplaneLlmIngressEnvSpec
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
@@ -73,38 +72,42 @@ _AGENTPLANE_TESTING_ACTIONS_DIR = f"{_AGENTPLANE_TESTING_DIR}/actions"
 _AGENTPLANE_STAGING_ACTIONS_DIR = f"{_AGENTPLANE_STAGING_DIR}/actions"
 _AGENTPLANE_TESTING_DEX_DIR = f"{_AGENTPLANE_TESTING_DIR}/dex"
 
-_AGENTPLANE_STAGING_SPEC = AgentplaneEnvSpec(
+_AGENTPLANE_STAGING_SPEC = namespace_rbac_constructs.EnvSpec(
     namespace="agentplane-staging",
     description=(
         "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
     ),
 )
-_AGENTPLANE_TESTING_SPEC = AgentplaneEnvSpec(
+_AGENTPLANE_TESTING_SPEC = namespace_rbac_constructs.EnvSpec(
     namespace="agentplane-testing",
     description=(
         "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
     ),
     include_action_policy_rule=True,
 )
-_AGENTPLANE_STAGING_DB_SPEC = AgentplaneDbEnvSpec(namespace="agentplane-staging", instances=2, pod_anti_affinity=True)
-_AGENTPLANE_TESTING_DB_SPEC = AgentplaneDbEnvSpec(namespace="agentplane-testing", instances=1, pod_anti_affinity=False)
-_STAGING_REPLICAS = agentplane_replica_profile.STAGING
-_TESTING_REPLICAS = agentplane_replica_profile.TESTING
-_AGENTPLANE_STAGING_LLM_INGRESS_SPEC = AgentplaneLlmIngressEnvSpec(
+_AGENTPLANE_STAGING_DB_SPEC = db_constructs.DbEnvSpec(
+    namespace="agentplane-staging", instances=2, pod_anti_affinity=True
+)
+_AGENTPLANE_TESTING_DB_SPEC = db_constructs.DbEnvSpec(
+    namespace="agentplane-testing", instances=1, pod_anti_affinity=False
+)
+_STAGING_REPLICAS = replica_profile.STAGING
+_TESTING_REPLICAS = replica_profile.TESTING
+_AGENTPLANE_STAGING_LLM_INGRESS_SPEC = llm_ingress_constructs.LlmIngressEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
     topology_spread=_STAGING_REPLICAS.topology_spread,
     litellm_key_secret_name="litellm-key-agentplane-staging",
 )
-_AGENTPLANE_TESTING_LLM_INGRESS_SPEC = AgentplaneLlmIngressEnvSpec(
+_AGENTPLANE_TESTING_LLM_INGRESS_SPEC = llm_ingress_constructs.LlmIngressEnvSpec(
     namespace="agentplane-testing",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
     topology_spread=_TESTING_REPLICAS.topology_spread,
     litellm_key_secret_name="litellm-key-cheap-experiments",
 )
-_AGENTPLANE_STAGING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
+_AGENTPLANE_STAGING_EGRESS_SPEC = egress_constructs.EgressEnvSpec(
     namespace="agentplane-staging",
     ca_secret_name="agentplane-egress-ca",
     replicas=_STAGING_REPLICAS.replicas,
@@ -113,7 +116,7 @@ _AGENTPLANE_STAGING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
     topology_spread=_STAGING_REPLICAS.topology_spread,
     enable_pdb=True,
 )
-_AGENTPLANE_TESTING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
+_AGENTPLANE_TESTING_EGRESS_SPEC = egress_constructs.EgressEnvSpec(
     namespace="agentplane-testing",
     ca_secret_name="agentplane-testing-egress-ca",
     replicas=_TESTING_REPLICAS.replicas,
@@ -122,7 +125,7 @@ _AGENTPLANE_TESTING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
     topology_spread=_TESTING_REPLICAS.topology_spread,
     enable_pdb=False,
 )
-_AGENTPLANE_STAGING_APP_SPEC = AgentplaneAppEnvSpec(
+_AGENTPLANE_STAGING_APP_SPEC = app_constructs.AppEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
@@ -135,7 +138,7 @@ _AGENTPLANE_STAGING_APP_SPEC = AgentplaneAppEnvSpec(
     runner_zone="hil-ovh",
     runner_ca_configmap_name=_AGENTPLANE_STAGING_EGRESS_SPEC.ca_secret_name,
 )
-_AGENTPLANE_TESTING_APP_SPEC = AgentplaneAppEnvSpec(
+_AGENTPLANE_TESTING_APP_SPEC = app_constructs.AppEnvSpec(
     namespace="agentplane-testing",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
@@ -351,7 +354,7 @@ _AGENTPLANE_TESTING_ACTIONS_EXTRA_EGRESS = [
         ],
     ),
 ]
-_AGENTPLANE_STAGING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
+_AGENTPLANE_STAGING_ACTIONS_SPEC = actions_constructs.ActionsEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
@@ -359,7 +362,7 @@ _AGENTPLANE_STAGING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
     topology_spread=_STAGING_REPLICAS.topology_spread,
     enable_pdb=True,
     hostname="agentplane-actions-staging.allegedly.works",
-    settings=agentplane_actions_settings.staging_settings(),
+    settings=actions_settings.staging_settings(),
     action_federation=_AGENTPLANE_STAGING_ACTION_FEDERATION,
     action_federation_description="OIDC federation configuration for the Agentplane app and Action Service",
     operator_oidc=_AGENTPLANE_STAGING_OPERATOR_OIDC,
@@ -374,7 +377,7 @@ _AGENTPLANE_STAGING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
     ssh_mcp_bearer=True,
     extra_egress=_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS,
 )
-_AGENTPLANE_TESTING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
+_AGENTPLANE_TESTING_ACTIONS_SPEC = actions_constructs.ActionsEnvSpec(
     namespace="agentplane-testing",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
@@ -382,7 +385,7 @@ _AGENTPLANE_TESTING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
     topology_spread=_TESTING_REPLICAS.topology_spread,
     enable_pdb=False,
     hostname="agentplane-actions-testing.allegedly.works",
-    settings=agentplane_actions_settings.testing_settings(),
+    settings=actions_settings.testing_settings(),
     action_federation=_AGENTPLANE_TESTING_ACTION_FEDERATION,
     action_federation_description="Direct Dex operator federation pins for the isolated testing Action Service.",
     operator_oidc=_AGENTPLANE_TESTING_OPERATOR_OIDC,
@@ -501,7 +504,7 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
-def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: AgentplaneEnvSpec) -> None:
+def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: namespace_rbac_constructs.EnvSpec) -> None:
     """Synthesize into `app_dir`'s existing, otherwise hand-written top-level
     Kustomization -- same mixed generated/hand-written pattern as
     `_write_config_map_chart`, replacing what used to be the `namespace/` and
@@ -511,12 +514,12 @@ def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: Agentpla
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-namespace-rbac", disable_resource_name_hashes=True)
-    AgentplaneNamespace(chart, "namespace", spec)
-    AgentplaneAgentRbac(chart, "rbac", spec)
+    namespace_rbac_constructs.NamespaceQuota(chart, "namespace", spec)
+    namespace_rbac_constructs.AgentRbac(chart, "rbac", spec)
     app.synth()
 
 
-def _generate_agentplane_db(root: Path, db_dir: str, spec: AgentplaneDbEnvSpec) -> None:
+def _generate_agentplane_db(root: Path, db_dir: str, spec: db_constructs.DbEnvSpec) -> None:
     """Synthesize into `db_dir`'s existing, otherwise hand-written Kustomization --
     same mixed generated/hand-written pattern as `_generate_agentplane_namespace_rbac`,
     replacing what used to be role-secrets.yaml, postgres-cluster.yaml, and
@@ -526,11 +529,13 @@ def _generate_agentplane_db(root: Path, db_dir: str, spec: AgentplaneDbEnvSpec) 
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-db", disable_resource_name_hashes=True)
-    AgentplaneDb(chart, "db", spec)
+    db_constructs.Db(chart, "db", spec)
     app.synth()
 
 
-def _generate_agentplane_llm_ingress(root: Path, llm_ingress_dir: str, spec: AgentplaneLlmIngressEnvSpec) -> None:
+def _generate_agentplane_llm_ingress(
+    root: Path, llm_ingress_dir: str, spec: llm_ingress_constructs.LlmIngressEnvSpec
+) -> None:
     """Synthesize into `llm_ingress_dir` -- replaces clusterrole-token-reviewer.yaml,
     deployment.yaml, kustomization.yaml, networkpolicy.yaml, service.yaml, and
     serviceaccount.yaml. The sibling image-pins/ Component (never generated) stays
@@ -540,7 +545,7 @@ def _generate_agentplane_llm_ingress(root: Path, llm_ingress_dir: str, spec: Age
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-llm-ingress", disable_resource_name_hashes=True)
-    AgentplaneLlmIngress(chart, "llm-ingress", spec)
+    llm_ingress_constructs.LlmIngress(chart, "llm-ingress", spec)
     app.synth()
 
     _write_yaml(
@@ -549,7 +554,7 @@ def _generate_agentplane_llm_ingress(root: Path, llm_ingress_dir: str, spec: Age
     )
 
 
-def _generate_agentplane_egress(root: Path, egress_dir: str, spec: AgentplaneEgressEnvSpec) -> None:
+def _generate_agentplane_egress(root: Path, egress_dir: str, spec: egress_constructs.EgressEnvSpec) -> None:
     """Synthesize into `egress_dir` -- replaces certificate-agentplane-egress-ca.yaml,
     clusterrole-*-egress-token-reviewer.yaml, deployment-agentplane-egress.yaml,
     egresscredential-*.yaml, egresspolicy-*.yaml, kustomization.yaml,
@@ -563,7 +568,7 @@ def _generate_agentplane_egress(root: Path, egress_dir: str, spec: AgentplaneEgr
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-egress", disable_resource_name_hashes=True)
-    AgentplaneEgress(chart, "egress", spec)
+    egress_constructs.Egress(chart, "egress", spec)
     app.synth()
 
     _write_yaml(
@@ -572,7 +577,7 @@ def _generate_agentplane_egress(root: Path, egress_dir: str, spec: AgentplaneEgr
     )
 
 
-def _generate_agentplane_app(root: Path, app_dir: str, spec: AgentplaneAppEnvSpec) -> None:
+def _generate_agentplane_app(root: Path, app_dir: str, spec: app_constructs.AppEnvSpec) -> None:
     """Synthesize into `app_dir` -- replaces clusterrole-*-app-token-reviewer.yaml,
     deployment-agentplane-app.yaml, forgejo-images-creds-eso.yaml (both environments
     now generate it here, resolving the placement decision recorded in the plan;
@@ -589,7 +594,7 @@ def _generate_agentplane_app(root: Path, app_dir: str, spec: AgentplaneAppEnvSpe
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-app", disable_resource_name_hashes=True)
-    AgentplaneApp(chart, "app", spec)
+    app_constructs.App(chart, "app", spec)
     app.synth()
 
     _write_yaml(
@@ -603,7 +608,7 @@ def _generate_agentplane_app(root: Path, app_dir: str, spec: AgentplaneAppEnvSpe
 def _generate_agentplane_actions(
     root: Path,
     actions_dir: str,
-    spec: AgentplaneActionsEnvSpec,
+    spec: actions_constructs.ActionsEnvSpec,
     *,
     add_extra: Callable[[Chart], None],
     extra_resources: Sequence[str] = (),
@@ -621,7 +626,7 @@ def _generate_agentplane_actions(
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-actions", disable_resource_name_hashes=True)
-    AgentplaneActions(chart, "actions", spec)
+    actions_constructs.Actions(chart, "actions", spec)
     add_extra(chart)
     app.synth()
 
@@ -644,7 +649,7 @@ def _generate_agentplane_dex(root: Path, dex_dir: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, "agentplane-testing-dex", disable_resource_name_hashes=True)
-    AgentplaneDex(chart, "dex")
+    dex_constructs.Dex(chart, "dex")
     app.synth()
 
     _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=["agentplane-testing-dex.k8s.yaml"]))
@@ -675,7 +680,7 @@ def _generate_agentplane_testing_config(root: Path) -> None:
         chart_name="agentplane-app-config",
         configmap_name="agentplane-app-config",
         namespace="agentplane-testing",
-        data={"config.yaml": yaml_config(agentplane_testing_config.config())},
+        data={"config.yaml": yaml_config(testing_config.config())},
     )
 
 
@@ -686,7 +691,7 @@ def _generate_agentplane_staging_config(root: Path) -> None:
         chart_name="agentplane-app-config",
         configmap_name="agentplane-app-config",
         namespace="agentplane-staging",
-        data={"config.yaml": yaml_config(agentplane_staging_config.config())},
+        data={"config.yaml": yaml_config(staging_config.config())},
     )
 
 
@@ -735,11 +740,14 @@ def generate_manifests(root: Path) -> None:
         root,
         _AGENTPLANE_STAGING_ACTIONS_DIR,
         _AGENTPLANE_STAGING_ACTIONS_SPEC,
-        add_extra=add_staging_action_policies,
+        add_extra=actions_staging_policies.add_staging_action_policies,
         extra_resources=["web-push-vapid.sops.yaml"],
     )
     _generate_agentplane_actions(
-        root, _AGENTPLANE_TESTING_ACTIONS_DIR, _AGENTPLANE_TESTING_ACTIONS_SPEC, add_extra=add_testing_fixtures
+        root,
+        _AGENTPLANE_TESTING_ACTIONS_DIR,
+        _AGENTPLANE_TESTING_ACTIONS_SPEC,
+        add_extra=actions_testing_fixtures.add_testing_fixtures,
     )
     _generate_agentplane_dex(root, _AGENTPLANE_TESTING_DEX_DIR)
     _generate_haku_openclaw_spike_config(root)

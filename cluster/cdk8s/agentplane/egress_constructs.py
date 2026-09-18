@@ -119,14 +119,14 @@ _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see agentplane_constructs.py's `_custom`,
+# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
 # same cast for the same reason).
 def _custom(api_group: str, resource_type: str) -> IApiResource:
     return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
 @dataclass(frozen=True)
-class AgentplaneEgressEnvSpec:
+class EgressEnvSpec:
     """Per-environment values for the egress proxy."""
 
     namespace: str
@@ -242,13 +242,13 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     )
 
 
-class AgentplaneEgress(Construct):
+class Egress(Construct):
     """The central egress proxy: ServiceAccount, RBAC, interception CA/trust bundle,
     Deployment, Services, CiliumNetworkPolicy, optional PodDisruptionBudget, and the
     EgressCredential/EgressPolicy resources it reads.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneEgressEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: EgressEnvSpec) -> None:
         super().__init__(scope, id)
         self.spec = spec
 
@@ -479,7 +479,7 @@ class AgentplaneEgress(Construct):
 
         # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder --
         # patch the pod-level field directly (same escape hatch used elsewhere for
-        # this exact gap; see agentplane_llm_ingress_constructs.py).
+        # this exact gap; see llm_ingress_constructs.py).
         pod_spec_patches = [
             JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
         ]

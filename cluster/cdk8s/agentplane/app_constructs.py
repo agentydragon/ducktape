@@ -132,14 +132,14 @@ _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see agentplane_constructs.py's `_custom`,
+# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
 # same cast for the same reason).
 def _custom(api_group: str, resource_type: str) -> IApiResource:
     return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
 @dataclass(frozen=True)
-class AgentplaneAppEnvSpec:
+class AppEnvSpec:
     """Per-environment values for the integration app and its runner SandboxTemplate."""
 
     namespace: str
@@ -160,17 +160,17 @@ class AgentplaneAppEnvSpec:
     runner_zone: str | None
     # The interception CA ConfigMap the egress Bundle (Stage 3) publishes -- same
     # asymmetric (unprefixed staging / namespace-prefixed testing) name threaded
-    # through AgentplaneEgressEnvSpec.ca_secret_name.
+    # through EgressEnvSpec.ca_secret_name.
     runner_ca_configmap_name: str
 
 
-class AgentplaneApp(Construct):
+class App(Construct):
     """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneAppEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: AppEnvSpec) -> None:
         super().__init__(scope, id)
         self.spec = spec
 

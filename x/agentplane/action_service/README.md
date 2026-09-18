@@ -18,7 +18,7 @@ one of `allowed_service_account_namespaces` — a Pod-bound workload token and a
 ways to prove one account, and the label admits either. The integration app labels the account it
 mints per Sandbox; staging commits `claude-ai`, the principal for
 Connections enrolled from the Claude.ai MCP connector, alongside its policies in
-`cluster/cdk8s/agentplane_actions_staging_policies.py`. Testing commits none:
+`cluster/cdk8s/agentplane/actions_staging_policies.py`. Testing commits none:
 nothing there enrolls an external Connection, and the acceptance suite creates the objects it
 needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the `PolicyIndex`,
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
@@ -186,7 +186,7 @@ FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and
 paths through an `HTTPRoute` at
 `agentplane-actions-{staging,testing}.allegedly.works`
 (the `AgentplaneActions` construct's `HTTPRoute` in
-`cluster/cdk8s/agentplane_actions_constructs.py`); REST and operator endpoints
+`cluster/cdk8s/agentplane/actions_constructs.py`); REST and operator endpoints
 stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
 categorically rejecting requests carrying Origin; authority comes from the explicit validated
 bearer, not Origin or browser cookies.
@@ -448,7 +448,7 @@ The optional `web_push` configuration enables browser subscription storage and b
 - `public_base_url`: integration-app origin used for Action links;
 - `allowed_push_hosts`: exact reviewed HTTPS browser push-service hostnames.
 
-Staging enables it (`cluster/cdk8s/agentplane_actions_settings.py`'s `staging_settings()`): the VAPID key comes
+Staging enables it (`cluster/cdk8s/agentplane/actions_settings.py`'s `staging_settings()`): the VAPID key comes
 from the SOPS Secret `agentplane-staging-web-push-vapid` through
 `AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`, `public_base_url` is the staging app origin, and
 the allowed hosts are FCM and Mozilla's push service. Testing configures no `web_push`; its

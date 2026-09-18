@@ -105,7 +105,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     )
     # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder -- patch the
     # pod-level field directly (same escape hatch used elsewhere for this exact gap; see
-    # agentplane_llm_ingress_constructs.py).
+    # llm_ingress_constructs.py).
     ApiObject.of(deployment).add_json_patch(
         JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
     )

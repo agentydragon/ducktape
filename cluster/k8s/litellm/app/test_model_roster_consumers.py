@@ -3,7 +3,7 @@
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s import agentplane_staging_config
+from cluster.cdk8s.agentplane import staging_config
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS, CLIPROXY_MODELS, ApiShape, Provider, exposed_name
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
@@ -42,7 +42,7 @@ def test_terraform_claude_allowlist_matches_the_model_roster() -> None:
 
 
 def test_agentplane_staging_offers_all_native_subscription_models() -> None:
-    config = agentplane_staging_config.config()
+    config = staging_config.config()
     tf_locals = _model_key_locals()
     assert config["models"] == {
         "HARNESS_CLAUDE": tf_locals["claude_client_models"],

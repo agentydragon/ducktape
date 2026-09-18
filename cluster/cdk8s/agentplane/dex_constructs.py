@@ -326,7 +326,7 @@ def _add_deployment(scope: Construct) -> Deployment:
 
     # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder -- patch the
     # pod-level field directly (same escape hatch used elsewhere for this exact gap; see
-    # agentplane_llm_ingress_constructs.py).
+    # llm_ingress_constructs.py).
     ApiObject.of(deployment).add_json_patch(
         JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
     )
@@ -463,7 +463,7 @@ def _add_network_policy(scope: Construct) -> None:
     )
 
 
-class AgentplaneDex(Construct):
+class Dex(Construct):
     """Dex Deployment/Service/HTTPRoute/NetworkPolicy and the ESO-generated
     credentials for agentplane-testing's isolated OIDC provider.
     """

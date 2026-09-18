@@ -30,8 +30,8 @@ py_test(
     srcs = ["test_model_roster_consumers.py"],
     data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
-        "//cluster/cdk8s:agentplane_staging_config",
         "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s/agentplane:staging_config",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",

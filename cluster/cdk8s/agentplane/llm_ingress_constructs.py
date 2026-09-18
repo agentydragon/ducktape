@@ -72,7 +72,7 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 
 
 @dataclass(frozen=True)
-class AgentplaneLlmIngressEnvSpec:
+class LlmIngressEnvSpec:
     """Per-environment values for the LLM ingress Deployment."""
 
     namespace: str
@@ -84,12 +84,12 @@ class AgentplaneLlmIngressEnvSpec:
     litellm_key_secret_name: str
 
 
-class AgentplaneLlmIngress(Construct):
+class LlmIngress(Construct):
     """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
     Service, and CiliumNetworkPolicy for the LLM ingress.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneLlmIngressEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: LlmIngressEnvSpec) -> None:
         super().__init__(scope, id)
         self.spec = spec
 

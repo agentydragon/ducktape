@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane_settings import agentplane_settings
+from cluster.cdk8s.agentplane.app_settings import settings
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS, CLIPROXY_MODELS, ApiShape, Provider, exposed_name
 
 _NAMESPACE = "agentplane-staging"
@@ -17,7 +17,7 @@ _HARNESS_CODEX = [exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, m) for 
 
 
 def config() -> dict:
-    return agentplane_settings(
+    return settings(
         namespace=_NAMESPACE,
         harness_claude=_HARNESS_CLAUDE,
         harness_codex=_HARNESS_CODEX,

@@ -1,0 +1,177 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "namespace_rbac_constructs",
+    srcs = ["namespace_rbac_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//jsii",
+    ],
+)
+
+py_library(
+    name = "db_constructs",
+    srcs = ["db_constructs.py"],
+    deps = [
+        "//third_party/cnpg:cluster",
+        "//third_party/cnpg:database",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "dex_constructs",
+    srcs = ["dex_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:probes",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/external_secrets:passwordgenerator",
+        "//third_party/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress_constructs",
+    srcs = ["egress_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/agentplane_crds:egresscredential",
+        "//third_party/agentplane_crds:egresspolicy",
+        "//third_party/cert_manager:bundle",
+        "//third_party/cert_manager:certificate",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "llm_ingress_constructs",
+    srcs = ["llm_ingress_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "replica_profile",
+    srcs = ["replica_profile.py"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
+    name = "app_constructs",
+    srcs = ["app_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/agent_sandbox:sandboxtemplate",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "//third_party/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_settings",
+    srcs = ["actions_settings.py"],
+)
+
+py_library(
+    name = "actions_constructs",
+    srcs = ["actions_constructs.py"],
+    deps = [
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "//third_party/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_staging_policies",
+    srcs = ["actions_staging_policies.py"],
+    deps = [
+        "//third_party/agentplane_crds:actionpolicybinding",
+        "//third_party/agentplane_crds:actionpolicyset",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "actions_testing_fixtures",
+    srcs = ["actions_testing_fixtures.py"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "app_settings",
+    srcs = ["app_settings.py"],
+)
+
+py_library(
+    name = "testing_config",
+    srcs = ["testing_config.py"],
+    deps = [
+        ":app_settings",
+        "//cluster/cdk8s:model_rosters",
+    ],
+)
+
+py_library(
+    name = "staging_config",
+    srcs = ["staging_config.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":app_settings",
+        "//cluster/cdk8s:model_rosters",
+    ],
+)

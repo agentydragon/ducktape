@@ -113,14 +113,14 @@ _MCP_PATHS = (
 
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see agentplane_constructs.py's `_custom`,
+# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
 # same cast for the same reason).
 def _custom(api_group: str, resource_type: str) -> IApiResource:
     return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
 @dataclass(frozen=True)
-class AgentplaneActionsEnvSpec:
+class ActionsEnvSpec:
     """Per-environment values for the Action Service."""
 
     namespace: str
@@ -155,12 +155,12 @@ class AgentplaneActionsEnvSpec:
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 
-class AgentplaneActions(Construct):
+class Actions(Construct):
     """ServiceAccount, RBAC, ConfigMaps, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget for the Action Service.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneActionsEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: ActionsEnvSpec) -> None:
         super().__init__(scope, id)
         self.spec = spec
 

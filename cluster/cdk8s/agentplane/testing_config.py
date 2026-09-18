@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane_settings import agentplane_settings
+from cluster.cdk8s.agentplane.app_settings import settings
 from cluster.cdk8s.model_rosters import ApiShape, Provider, exposed_name
 
 _NAMESPACE = "agentplane-testing"
@@ -16,7 +16,7 @@ _HARNESS_CODEX = [exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-5.
 
 
 def config() -> dict:
-    return agentplane_settings(
+    return settings(
         namespace=_NAMESPACE,
         harness_claude=_HARNESS_CLAUDE,
         harness_codex=_HARNESS_CODEX,

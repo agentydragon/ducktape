@@ -1,6 +1,6 @@
 """Generates agentplane-{staging,testing}/actions/settings.yaml's content -- the Action
 Service's own `Settings.config_file` input (x/agentplane/actions), mounted read-only by
-the Deployment. Not related to agentplane_settings.py, which is the integration app's own
+the Deployment. Not related to app_settings.py, which is the integration app's own
 `Settings` shape.
 """
 

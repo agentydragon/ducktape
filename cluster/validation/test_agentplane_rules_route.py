@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s import agentplane_staging_config
+from cluster.cdk8s.agentplane import staging_config
 from util.bazel.runfiles import get_required_path
 
 
@@ -35,7 +35,7 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
 def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials() -> None:
     policy = egress_object("EgressPolicy", "basic")
     credential = egress_object("EgressCredential", "agentplane-workload")
-    config = agentplane_staging_config.config()
+    config = staging_config.config()
     rules = {one(rule["hosts"]): rule for rule in policy["spec"]["rules"]}
     rules_host = "agentplane-egress.agentplane-staging.svc.cluster.local"
     actions_host = "agentplane-actions.agentplane-staging.svc.cluster.local"

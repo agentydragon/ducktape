@@ -916,7 +916,7 @@ py_test(
     srcs = ["test_agentplane_rules_route.py"],
     data = ["//cluster/k8s:cluster_yaml_files"],
     deps = [
-        "//cluster/cdk8s:agentplane_staging_config",
+        "//cluster/cdk8s/agentplane:staging_config",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",

@@ -1,6 +1,6 @@
 """Shared x/agentplane/app/main.py `Settings` shape assembled by both
-agentplane_staging_config.py and agentplane_testing_config.py, which own the
-per-namespace model routes and policies passed in here.
+staging_config.py and testing_config.py, which own the per-namespace model
+routes and policies passed in here.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 
 
-def agentplane_settings(
+def settings(
     *,
     namespace: str,
     harness_claude: list[str],

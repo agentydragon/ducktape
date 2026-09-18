@@ -85,7 +85,7 @@ _OFF_CONTROL_PLANE_NODE_AFFINITY = ClusterSpecAffinityNodeAffinity(
 
 
 @dataclass(frozen=True)
-class AgentplaneDbEnvSpec:
+class DbEnvSpec:
     """Per-environment values for the shared Postgres Cluster."""
 
     namespace: str
@@ -142,12 +142,12 @@ def _role_credentials(scope: Construct, id: str, *, role: str, namespace: str) -
     )
 
 
-class AgentplaneDb(Construct):
+class Db(Construct):
     """Shared CNPG Postgres Cluster, its per-service Databases, and the ESO-generated
     credentials for the actions/egress managed roles.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneDbEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: DbEnvSpec) -> None:
         super().__init__(scope, id)
 
         for role in _ROLE_NAMES:

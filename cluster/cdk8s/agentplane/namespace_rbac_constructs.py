@@ -118,7 +118,7 @@ _ACTION_POLICY_RULE = RolePolicyRule(
 
 
 @dataclass(frozen=True)
-class AgentplaneEnvSpec:
+class EnvSpec:
     """Per-environment values for the namespace + operator RBAC."""
 
     namespace: str
@@ -126,12 +126,12 @@ class AgentplaneEnvSpec:
     include_action_policy_rule: bool = False
 
 
-class AgentplaneNamespace(Construct):
+class NamespaceQuota(Construct):
     """Namespace, ResourceQuota, and LimitRange bounding what Sandbox runner Pods
     and the integration app may consume.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: EnvSpec) -> None:
         super().__init__(scope, id)
         Namespace(
             self,
@@ -201,13 +201,13 @@ class AgentplaneNamespace(Construct):
         )
 
 
-class AgentplaneAgentRbac(Construct):
+class AgentRbac(Construct):
     """The operator Role/RoleBinding an agent needs to drive Agentplane without a
     human: Sandbox lifecycle, exec/port-forward into runner Pods, and the token used
     to call the app's own API.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AgentplaneEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, spec: EnvSpec) -> None:
         super().__init__(scope, id)
         rules = list(_SANDBOX_RULES[:2])
         if spec.include_action_policy_rule:

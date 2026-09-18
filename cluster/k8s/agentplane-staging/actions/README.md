@@ -4,7 +4,7 @@
 
 This environment's Git-managed `ActionPolicySet`s and the bindings for labeled caller
 ServiceAccounts such as `claude-ai` are defined in
-`cluster/cdk8s/agentplane_actions_staging_policies.py` and generated into
+`cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
 `agentplane-actions.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
 that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
 for Sandbox subjects are written by the integration app when it creates the Sandbox and
@@ -19,7 +19,7 @@ Action Service reads the private key through a Secret-backed environment variabl
 and derives the public subscription key at startup. Redeployment preserves the key;
 rotation requires browsers to register again. Do not reuse it for testing or Haku.
 
-The application allowlist in `agentplane_actions_settings.py`'s `staging_settings()`
+The application allowlist in `agentplane/actions_settings.py`'s `staging_settings()`
 and the HTTPS FQDN/SNI egress rules in `generate_manifests.py`'s
 `_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS` must agree. Currently Chrome/Chromium (FCM)
 and Firefox (Mozilla Autopush) are allowed. Other browser push services require explicit
