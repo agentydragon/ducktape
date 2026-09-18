@@ -282,6 +282,7 @@ py_library(
         ":llm_ingress_constructs",
         ":namespace_rbac_constructs",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:metadata",
         "//x/agentplane:settings_contract",
         "//x/agentplane/app:main",

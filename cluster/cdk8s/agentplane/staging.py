@@ -30,7 +30,9 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
+_WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
+_LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 
 _ACTIONS_SETTINGS = {
     "allowed_service_account_namespaces": [_NAMESPACE],
@@ -118,10 +120,17 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    # Operator login federates through the shared Authentik (sso-providers-tf); the SSH
-    # action group reaches ssh-mcp.
-    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp"),
-    extra_resources=("web-push-vapid.sops.yaml",),
+    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console"),
+    extra_resources=(_WEB_PUSH_SECRET_FILE,),
+    provided_secrets={
+        "agentplane-oidc": "sso-providers-tf",
+        "agentplane-mcp-oauth": "sso-providers-tf",
+        _LITELLM_KEY_SECRET: "litellm-keys-tf",
+        "ssh-mcp-bearer": "ssh-mcp",
+        # Reflected from the haku namespace by reflector.
+        _GITHUB_MCP_CLIENT_SECRET: "haku-console",
+        _WEB_PUSH_SECRET: _WEB_PUSH_SECRET_FILE,
+    },
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
         count=2,
@@ -134,7 +143,7 @@ ENV = Environment(
     ),
     app_config=staging_config.config(),
     db=DbProps(instances=2, pod_anti_affinity=True),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name="litellm-key-agentplane-staging"),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca"),
     app=AppProps(
         hostname=_HOSTNAME,

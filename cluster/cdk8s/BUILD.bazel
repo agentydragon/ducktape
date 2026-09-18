@@ -47,6 +47,30 @@ py_library(
 )
 
 py_library(
+    name = "fleet_rules",
+    srcs = ["fleet_rules.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//jsii",
+    ],
+)
+
+py_test(
+    name = "test_fleet_rules",
+    srcs = ["test_fleet_rules.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":fleet_rules",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "api_resource",
     srcs = ["api_resource.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
