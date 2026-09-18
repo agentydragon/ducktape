@@ -112,6 +112,10 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists
   (`TODO.md`).
+- `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
+  suffixes the others, regardless of which is the storage version: tofu-controller's
+  `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
+  (`//third_party/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 

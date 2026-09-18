@@ -1,6 +1,5 @@
 """Synthesize each converted directory's manifests with Python cdk8s, writing
-them directly into their `cluster/k8s` directory, plus the model-roster export
-`tf/gitops/litellm-keys` reads.
+them directly into their `cluster/k8s` directory.
 
 Every generated Deployment/Job/CronJob carries a placeholder image tag -- each
 environment's own hand-written `image-pins/kustomization.yaml` Kustomize
@@ -9,7 +8,6 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -36,6 +34,7 @@ from cluster.cdk8s import (
     haku_openclaw_spike_config,
     public_coder_agent_config,
     stateful_infra,
+    terraform_constructs,
 )
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -49,10 +48,11 @@ from cluster.cdk8s.metadata import metadata
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
-_LITELLM_KEYS_DIR = "tf/gitops/litellm-keys"
+_LITELLM_KEYS_TF_DIR = "cluster/k8s/litellm/keys-tf"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
+_DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -123,11 +123,25 @@ def _generate_litellm_app(root: Path) -> None:
     )
 
 
-def _generate_litellm_key_allowlists(root: Path) -> None:
-    """The per-key model allowlists tf/gitops/litellm-keys/main.tf `jsondecode`s."""
-    out_dir = root / _LITELLM_KEYS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "model_allowlists.json").write_text(json.dumps(model_allowlists(), indent=2) + "\n")
+def _litellm_keys_chart(app: App) -> Chart:
+    """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
+    Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
+    tofu-controller retries on its interval until LiteLLM is up.
+    """
+    chart = Chart(app, "litellm-keys", disable_resource_name_hashes=True)
+    terraform_constructs.gitops_terraform(
+        chart,
+        "terraform",
+        name="litellm-keys",
+        variables={"model_allowlists": model_allowlists()},
+        env=[
+            # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
+            # beside this CR) that decrypts the module's pinned client-key files for
+            # its `sops_file` data sources -- single-purpose, not the broad cluster key.
+            terraform_constructs.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
+        ],
+    )
+    return chart
 
 
 def _generate_ha_mcp(root: Path) -> None:
@@ -410,10 +424,22 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
     return chart
 
 
+def _dns_records_chart(app: App) -> Chart:
+    """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
+    chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
+    terraform_constructs.gitops_terraform(
+        chart,
+        "terraform",
+        name="dns-records",
+        variables={"route53_zone_id": "Z02901943N8ZFQFOD9P5I"},
+        env_from=[terraform_constructs.secret_env_from("aws-route53-credentials")],
+    )
+    return chart
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
-    _generate_litellm_key_allowlists(root)
     _generate_ha_mcp(root)
     _generate_clickhouse_schema(root)
     _generate_aiquota(root)
@@ -431,6 +457,8 @@ def generate_manifests(root: Path) -> None:
         egress_fences.haku_openclaw_spike,
     )
     _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
+    _write_charts(root, _DNS_AUTOMATION_DIR, _dns_records_chart)
+    _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
 
 
 def main() -> None:

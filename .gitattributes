@@ -61,9 +61,6 @@ cluster/schemas/**/*.json linguist-generated=true
 cluster/k8s/ssh-mcp/known_hosts linguist-generated=true
 cluster/k8s/ssh-mcp/settings.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.yaml linguist-generated=true
-# The model-roster export `bb run //cluster/cdk8s:generate_manifests` also writes, for
-# Terraform to jsondecode.
-tf/gitops/litellm-keys/model_allowlists.json linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true

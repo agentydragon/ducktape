@@ -44,14 +44,6 @@ provider "litellm" {
   api_key  = data.kubernetes_secret.litellm_master_key.data["api-key"]
 }
 
-locals {
-  # Per-key model allowlists ({provider}/{shape}/{model} names, cluster/cdk8s/model_rosters.py),
-  # one lane per key. Generated from cluster/cdk8s/litellm_keys.py -- which documents each lane
-  # and refuses any name the generated LiteLLM config does not serve -- by
-  # `bb run //cluster/cdk8s:generate_manifests`, pinned by //cluster/cdk8s:test_generate_manifests.
-  allowlists = jsondecode(file("${path.module}/model_allowlists.json"))
-}
-
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
 # they authenticate to the proxy with per-job tokens). Budgets are the coarse
 # lane-level cap; per-job budgets are enforced by the lane proxy.
@@ -70,7 +62,7 @@ locals {
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
-  models          = local.allowlists.cheap_experiments_models
+  models          = var.model_allowlists.cheap_experiments_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -94,7 +86,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(local.allowlists.oai_lane_models, local.allowlists.claude_client_models)
+  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -146,7 +138,7 @@ resource "kubernetes_secret" "cheap_experiments_agentplane_testing" {
 
 resource "litellm_key" "codex_pod" {
   key_alias       = "codex-pod"
-  models          = local.allowlists.oai_lane_models
+  models          = var.model_allowlists.oai_lane_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -193,7 +185,7 @@ resource "litellm_key" "public_coder_agent" {
   # hosting plus package indexes, and it should not gain one merely to embed.
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
   # this key never carries that credential either.
-  models = concat(local.allowlists.codex_client_models, local.allowlists.oai_lane_models, local.allowlists.gemini_client_models, local.allowlists.embedding_client_models)
+  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -231,7 +223,7 @@ resource "kubernetes_secret" "public_coder_agent" {
 
 resource "litellm_key" "haku_console_claude" {
   key_alias = "haku-console-claude"
-  models    = local.allowlists.claude_client_models
+  models    = var.model_allowlists.claude_client_models
   metadata = {
     consumer = "haku-console-claude"
   }
@@ -290,7 +282,7 @@ resource "litellm_team" "tana_clients" {
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = local.allowlists.tana_client_models
+  models    = var.model_allowlists.tana_client_models
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
@@ -317,7 +309,7 @@ data "sops_file" "claude_subscription_clients_key" {
 resource "litellm_key" "claude_subscription_clients" {
   key_alias = "claude-subscription-clients"
   key       = data.sops_file.claude_subscription_clients_key.data["litellm_claude_subscription_key"]
-  models    = local.allowlists.claude_client_models
+  models    = var.model_allowlists.claude_client_models
   metadata = {
     consumer = "laptop-litellm-claude"
   }
@@ -350,7 +342,7 @@ resource "litellm_team" "codex_clients" {
 resource "litellm_key" "codex_clients" {
   key_alias = "codex-clients"
   key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
-  models    = local.allowlists.codex_client_models
+  models    = var.model_allowlists.codex_client_models
   team_id   = litellm_team.codex_clients.id
   metadata = {
     consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
@@ -405,7 +397,7 @@ resource "litellm_team" "gemini_clients" {
 resource "litellm_key" "gemini_clients" {
   key_alias = "gemini-clients"
   key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
-  models    = local.allowlists.gemini_client_models
+  models    = var.model_allowlists.gemini_client_models
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
@@ -418,7 +410,7 @@ resource "litellm_key" "gemini_clients" {
 # the `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
-  models    = local.allowlists.oai_lane_models
+  models    = var.model_allowlists.oai_lane_models
   metadata = {
     consumer = "agent-workspaces codex-lane sandboxes"
   }

@@ -53,6 +53,8 @@ exports_files(
         "clickhouse/schema/flux-kustomization.yaml",
         "clickhouse/schema/kustomization.yaml",
         "descheduler/helmrelease.k8s.yaml",
+        "dns-automation/dns-records.k8s.yaml",
+        "litellm/keys-tf/litellm-keys.k8s.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],

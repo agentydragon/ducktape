@@ -1,7 +1,7 @@
 """The per-key model allowlists tf/gitops/litellm-keys/main.tf scopes its LiteLLM virtual
-keys to, derived from model_rosters.py and exported beside the module as
-`model_allowlists.json` (generate_manifests.py) for its `locals` to `jsondecode`. Every
-name is checked against what the main proxy serves before it is written.
+keys to, derived from model_rosters.py and handed to the module as the `model_allowlists`
+variable of its generated Terraform CR (generate_manifests.py). Every name is checked
+against what the main proxy serves before it is written.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ CHEAP_EXPERIMENTS_MODELS = [
 
 
 def model_allowlists() -> dict[str, list[str]]:
-    """The lanes keyed as main.tf's `local.allowlists` reads them."""
+    """The lanes keyed as main.tf's `var.model_allowlists` reads them."""
     served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     lanes = {
         "oai_lane_models": OAI_LANE_MODELS,

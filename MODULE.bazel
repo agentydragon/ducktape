@@ -935,6 +935,15 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_helmrepositories.yaml"],
 )
 
+# tofu-controller's Terraform CRD — see flux_kustomization_crd above; pinned to the chart
+# version cluster/k8s/tofu-controller/tofu-controller.yaml deploys.
+http_file(
+    name = "tofu_controller_terraform_crd",
+    downloaded_file_path = "infra.contrib.fluxcd.io_terraforms.yaml",
+    sha256 = "8562f1a62ab932dd34e84baa0a5163da92751cf9fabaf25d60308df500d97fe4",
+    urls = ["https://raw.githubusercontent.com/flux-iac/tofu-controller/v0.16.5/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml"],
+)
+
 # prometheus-operator's ServiceMonitor CRD — fetched verbatim so
 # //third_party/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
 # typed cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same

@@ -21,21 +21,24 @@ for writing a generator: <../cdk8s/AGENTS.md>.
    ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
    `agents/public-coder-agent/app`); the objects that carry a value another directory
    shares (`descheduler`'s HelmRepository + HelmRelease and `seaweedfs/cluster`'s
-   PriorityClass, both rendered from `stateful_infra.PRIORITY`); or the
+   PriorityClass, both rendered from `stateful_infra.PRIORITY`); the
    CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
    (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
-   name).
+   name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
+   `terraform_constructs.gitops_terraform` and `//third_party/tofu_controller`'s bindings).
 3. **Hand-written.**
 
 Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-only;
 `.gitattributes` marks every generated file `linguist-generated=true` (path-scoped
 lines for the shared filenames `flux-kustomization.yaml`/`kustomization.yaml`).
 
-The same run also writes a non-manifest: `tf/gitops/litellm-keys/model_allowlists.json`,
-the per-key model lanes `cluster/cdk8s/litellm_keys.py` derives from the roster, which
-that Terraform module's `locals` `jsondecode` instead of retyping model names in HCL. It
-is pinned by the same test and listed in `.prettierignore`, since prettier would collapse
-a lane short enough to fit one line.
+A value a `tf/gitops` module takes from the generators reaches it as an inline
+`spec.vars` entry on its generated CR (`litellm/keys-tf`'s `model_allowlists`, the
+per-key lanes `cluster/cdk8s/litellm_keys.py` derives from the roster), never as a
+generated file beside the module: `vars[].value` is written structurally into the
+runner's tfvars, so a map arrives typed, and a CR spec change reconciles immediately,
+whereas `varsFrom` ConfigMap values are stringified and picked up only on the interval
+(tofu-controller v0.16.5).
 
 ### SOPS secrets in a converted directory
 
