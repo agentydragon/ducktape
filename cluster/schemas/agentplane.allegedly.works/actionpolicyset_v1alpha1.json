@@ -1,6 +1,8 @@
 {
   "type": "object",
-  "required": ["spec"],
+  "required": [
+    "spec"
+  ],
   "properties": {
     "spec": {
       "type": "object",
@@ -11,12 +13,20 @@
           "items": {
             "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
-            "required": ["type", "actions"],
+            "required": [
+              "type",
+              "actions"
+            ],
             "properties": {
               "type": {
                 "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
+                "enum": [
+                  "exact_actions",
+                  "argument_schema",
+                  "github_repository",
+                  "github_public_repository"
+                ]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -51,19 +61,27 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["exact_actions"]
+                    "enum": [
+                      "exact_actions"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -71,17 +89,25 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["argument_schema"]
+                    "enum": [
+                      "argument_schema"
+                    ]
                   }
                 },
-                "required": ["schema"],
+                "required": [
+                  "schema"
+                ],
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -89,30 +115,45 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_repository"]
+                    "enum": [
+                      "github_repository"
+                    ]
                   }
                 },
-                "required": ["owner", "repository"],
+                "required": [
+                  "owner",
+                  "repository"
+                ],
                 "not": {
-                  "required": ["schema"]
+                  "required": [
+                    "schema"
+                  ]
                 }
               },
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_public_repository"]
+                    "enum": [
+                      "github_public_repository"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -126,12 +167,20 @@
           "items": {
             "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
-            "required": ["type", "actions"],
+            "required": [
+              "type",
+              "actions"
+            ],
             "properties": {
               "type": {
                 "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
+                "enum": [
+                  "exact_actions",
+                  "argument_schema",
+                  "github_repository",
+                  "github_public_repository"
+                ]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -166,19 +215,27 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["exact_actions"]
+                    "enum": [
+                      "exact_actions"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -186,17 +243,25 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["argument_schema"]
+                    "enum": [
+                      "argument_schema"
+                    ]
                   }
                 },
-                "required": ["schema"],
+                "required": [
+                  "schema"
+                ],
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -204,30 +269,45 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_repository"]
+                    "enum": [
+                      "github_repository"
+                    ]
                   }
                 },
-                "required": ["owner", "repository"],
+                "required": [
+                  "owner",
+                  "repository"
+                ],
                 "not": {
-                  "required": ["schema"]
+                  "required": [
+                    "schema"
+                  ]
                 }
               },
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_public_repository"]
+                    "enum": [
+                      "github_public_repository"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -241,12 +321,20 @@
           "items": {
             "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
-            "required": ["type", "actions"],
+            "required": [
+              "type",
+              "actions"
+            ],
             "properties": {
               "type": {
                 "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
+                "enum": [
+                  "exact_actions",
+                  "argument_schema",
+                  "github_repository",
+                  "github_public_repository"
+                ]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -281,19 +369,27 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["exact_actions"]
+                    "enum": [
+                      "exact_actions"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -301,17 +397,25 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["argument_schema"]
+                    "enum": [
+                      "argument_schema"
+                    ]
                   }
                 },
-                "required": ["schema"],
+                "required": [
+                  "schema"
+                ],
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -319,30 +423,45 @@
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_repository"]
+                    "enum": [
+                      "github_repository"
+                    ]
                   }
                 },
-                "required": ["owner", "repository"],
+                "required": [
+                  "owner",
+                  "repository"
+                ],
                 "not": {
-                  "required": ["schema"]
+                  "required": [
+                    "schema"
+                  ]
                 }
               },
               {
                 "properties": {
                   "type": {
-                    "enum": ["github_public_repository"]
+                    "enum": [
+                      "github_public_repository"
+                    ]
                   }
                 },
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["schema"]
+                      "required": [
+                        "schema"
+                      ]
                     },
                     {
-                      "required": ["owner"]
+                      "required": [
+                        "owner"
+                      ]
                     },
                     {
-                      "required": ["repository"]
+                      "required": [
+                        "repository"
+                      ]
                     }
                   ]
                 }
@@ -358,11 +477,19 @@
         "conditions": {
           "type": "array",
           "x-kubernetes-list-type": "map",
-          "x-kubernetes-list-map-keys": ["type"],
+          "x-kubernetes-list-map-keys": [
+            "type"
+          ],
           "items": {
             "description": "A metav1.Condition; the Action Service sets Ready.",
             "type": "object",
-            "required": ["type", "status", "lastTransitionTime", "reason", "message"],
+            "required": [
+              "type",
+              "status",
+              "lastTransitionTime",
+              "reason",
+              "message"
+            ],
             "properties": {
               "type": {
                 "type": "string",
@@ -371,7 +498,11 @@
               },
               "status": {
                 "type": "string",
-                "enum": ["True", "False", "Unknown"]
+                "enum": [
+                  "True",
+                  "False",
+                  "Unknown"
+                ]
               },
               "observedGeneration": {
                 "type": "integer",

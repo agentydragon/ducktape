@@ -136,14 +136,6 @@ find-and-replace.
   (`cluster/k8s/descheduler/helmrelease.yaml`, `cluster/k8s/seaweedfs/cluster/priorityclass.yaml`,
   plus `seaweed.yaml`'s several `priorityClassName` fields) — convert to cdk8s and
   share one constant.
-- **`test_agentplane_crd_schemas.py`'s two checks** — narrower than a cdk8s
-  conversion, since CRDs aren't cdk8s output, they're what `cdk8s_import` consumes:
-  (a) a binding CRD's subject schema block should be generated from
-  `TypeAdapter(ServiceAccountRef).json_schema()` (`x/agentplane/subjects.py`)
-  instead of hand-mirrored YAML; (b) `cluster/schemas/<group>/<kind>_<version>.json`
-  has no generator at all anywhere in the repo — it's a hand-maintained copy of the
-  CRD's own `openAPIV3Schema`. A small script dumping (b) from the real CRD file
-  would make both checks structural.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet
 

@@ -665,8 +665,8 @@ path waits on it, and it is what a tool-surface switch waits on rather than an e
 
 **Planned schema:** `EgressBinding.spec.subjects` is an array (`minItems: 1`); `ActionPolicyBinding`
 names one `subject`. Everything inside them is now the same `ServiceAccountRef`, so arity is the
-only difference left, and `cluster/validation:test_agentplane_crd_schemas` has to special-case
-array-versus-object to compare them.
+only difference left, and `x/agentplane/crds/generate.py` has to special-case array-versus-object
+to splice it in.
 
 Nothing writes the plural side. No `EgressBinding` manifest is checked in anywhere under
 `cluster/`, and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is an
