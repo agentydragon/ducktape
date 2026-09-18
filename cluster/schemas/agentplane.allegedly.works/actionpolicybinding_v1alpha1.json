@@ -1,15 +1,23 @@
 {
   "type": "object",
-  "required": ["spec"],
+  "required": [
+    "spec"
+  ],
   "properties": {
     "spec": {
       "type": "object",
-      "required": ["subject", "policySets"],
+      "required": [
+        "subject",
+        "policySets"
+      ],
       "properties": {
         "subject": {
           "description": "The ServiceAccount this binding grants to: what the caller's Pod runs as, or what an external OAuth Connection acts as. Every caller proving that account is this subject, so bind only an account dedicated to one.",
           "type": "object",
-          "required": ["namespace", "name"],
+          "required": [
+            "namespace",
+            "name"
+          ],
           "properties": {
             "namespace": {
               "type": "string",
@@ -43,11 +51,19 @@
         "conditions": {
           "type": "array",
           "x-kubernetes-list-type": "map",
-          "x-kubernetes-list-map-keys": ["type"],
+          "x-kubernetes-list-map-keys": [
+            "type"
+          ],
           "items": {
             "description": "A metav1.Condition; the Action Service sets Ready.",
             "type": "object",
-            "required": ["type", "status", "lastTransitionTime", "reason", "message"],
+            "required": [
+              "type",
+              "status",
+              "lastTransitionTime",
+              "reason",
+              "message"
+            ],
             "properties": {
               "type": {
                 "type": "string",
@@ -56,7 +72,11 @@
               },
               "status": {
                 "type": "string",
-                "enum": ["True", "False", "Unknown"]
+                "enum": [
+                  "True",
+                  "False",
+                  "Unknown"
+                ]
               },
               "observedGeneration": {
                 "type": "integer",
