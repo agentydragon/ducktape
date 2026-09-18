@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Scoped to the callers under this tree: the egress proxy's informer, the Action Service's policy
 # informer, and the app's live index.
@@ -32,5 +32,31 @@ py_library(
     visibility = [
         "//cluster/validation:__pkg__",
         "//x/agentplane:__subpackages__",
+    ],
+)
+
+py_library(
+    name = "settings_contract",
+    srcs = ["settings_contract.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_settings_contract",
+    srcs = ["test_settings_contract.py"],
+    deps = [
+        ":settings_contract",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

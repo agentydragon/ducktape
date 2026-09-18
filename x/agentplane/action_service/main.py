@@ -77,6 +77,10 @@ class GitHubVisibilitySettings(BaseModel):
     )
 
 
+# Names the YAML settings file a deployment mounts; not a field, so not a flag.
+CONFIG_FILE_ENV = "AGENTPLANE_ACTIONS_CONFIG_FILE"
+
+
 class Settings(BaseSettings):
     """The service's configuration.
 
@@ -133,7 +137,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get("AGENTPLANE_ACTIONS_CONFIG_FILE"):
+        if config_file := os.environ.get(CONFIG_FILE_ENV):
             # pydantic-settings silently ignores absent YAML files. An explicit deployment
             # binding must never turn into a healthy service with an empty catalog.
             if not Path(config_file).is_file():

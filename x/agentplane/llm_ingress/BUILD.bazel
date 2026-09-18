@@ -22,7 +22,7 @@ py_library(
     srcs = ["main.py"],
     # `cluster/validation` parses the deployed flags through this Settings, as it does the proxy's.
     visibility = [
-        "//cluster/validation:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//x/agentplane:__subpackages__",
     ],
     deps = [

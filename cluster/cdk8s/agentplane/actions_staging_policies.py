@@ -28,8 +28,23 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
+from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 
 _NAMESPACE = "agentplane-staging"
+_GITHUB_READS_SET = "github-reads"
+_GITHUB_IDENTITY_READS_SET = "github-identity-reads"
+
+
+def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
+    # The Action Service parses `spec` more strictly than the CRD schema (an unknown policy
+    # kind or key, an invalid JSON Schema); an object it refuses reports Ready=False on the
+    # cluster and contributes nothing, so it fails here instead.
+    PolicySetSpec.model_validate(ActionPolicySet(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
+
+
+def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicyBindingSpec) -> None:
+    BindingSpec.model_validate(ActionPolicyBinding(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
+
 
 # The console's `github_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action
 # policy set. GitHub MCP's normal endpoint exposes its default catalog, including writes.
@@ -102,7 +117,7 @@ _REPOSITORY_SCOPED_ACTIONS = [
 
 
 def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
-    ActionPolicySet(
+    _policy_set(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
@@ -139,11 +154,11 @@ def add_staging_action_policies(scope: Construct) -> None:
         automount_token=False,
     )
 
-    ActionPolicySet(
+    _policy_set(
         scope,
         "actionpolicyset-github-reads",
         metadata=ApiObjectMetadata(
-            name="github-reads",
+            name=_GITHUB_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
@@ -161,11 +176,11 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `get_me` returns only the authenticated caller's own GitHub identity and has no
     # repository or mutation surface. Kept separate so a caller can be granted the
     # identity read without widening repository-scoped GitHub sets.
-    ActionPolicySet(
+    _policy_set(
         scope,
         "actionpolicyset-github-identity-reads",
         metadata=ApiObjectMetadata(
-            name="github-identity-reads",
+            name=_GITHUB_IDENTITY_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
@@ -211,7 +226,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # allowlist. `github_public_repository` positively confirms the target
     # repository's visibility with a live, unauthenticated GitHub API call before
     # approving, rather than inferring "public" from the absence of a restriction.
-    ActionPolicySet(
+    _policy_set(
         scope,
         "actionpolicyset-public-github-reads",
         metadata=ApiObjectMetadata(
@@ -235,7 +250,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # github-identity-reads), attached to the Claude.ai connector's principal. The
     # binding's existence is the grant: deleting it, or the label on the
     # ServiceAccount, puts every GitHub Action back on the human path.
-    ActionPolicyBinding(
+    _binding(
         scope,
         "actionpolicybinding-claude-ai-github-reads",
         metadata=ApiObjectMetadata(
@@ -247,6 +262,6 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=ActionPolicyBindingSpec(
             subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-            policy_sets=["github-reads", "github-identity-reads"],
+            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET],
         ),
     )

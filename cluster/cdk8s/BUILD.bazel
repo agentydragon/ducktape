@@ -182,6 +182,8 @@ py_library(
         "//cluster/cdk8s/agentplane:staging_config",
         "//cluster/cdk8s/agentplane:testing_config",
         "//util/bazel:workspace",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/app:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -198,6 +200,8 @@ py_binary(
 
 py_test(
     name = "test_generate_manifests",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
     srcs = ["test_generate_manifests.py"],
     data = [
         "//cluster/k8s:agentplane-staging/agentplane.k8s.yaml",

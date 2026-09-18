@@ -99,8 +99,11 @@ py_library(
         "//third_party/cert_manager:bundle",
         "//third_party/cert_manager:certificate",
         "//third_party/cilium:ciliumnetworkpolicy",
+        "//x/agentplane:settings_contract",
         "//x/agentplane/crds:egresscredential",
         "//x/agentplane/crds:egresspolicy",
+        "//x/agentplane/egress:database_migrate",
+        "//x/agentplane/egress:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -121,6 +124,8 @@ py_library(
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
         "//third_party/cilium:ciliumnetworkpolicy",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/llm_ingress:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -154,6 +159,10 @@ py_library(
         "//third_party/agent_sandbox:sandboxtemplate",
         "//third_party/cilium:ciliumnetworkpolicy",
         "//third_party/gateway_api:httproute",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/app:main",
+        "//x/agentplane/app:oidc",
+        "//x/agentplane/egress:sidecar",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -185,6 +194,9 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//third_party/cilium:ciliumnetworkpolicy",
         "//third_party/gateway_api:httproute",
+        "//x/agentplane:settings_contract",
+        "//x/agentplane/action_service:main",
+        "//x/agentplane/app:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -196,6 +208,7 @@ py_library(
     srcs = ["actions_staging_policies.py"],
     deps = [
         ":staging_config",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/crds:actionpolicybinding",
         "//x/agentplane/crds:actionpolicyset",
         "@pypi//cdk8s",
@@ -262,6 +275,8 @@ py_library(
 # The conftest's in-memory synth needs jsii's Node runtime.
 py_test(
     name = "test_actions_constructs",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
     srcs = ["test_actions_constructs.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
@@ -276,6 +291,8 @@ py_test(
 
 py_test(
     name = "test_egress_constructs",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
     srcs = ["test_egress_constructs.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},

@@ -58,6 +58,8 @@ from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from cluster.cdk8s.metadata import metadata
 from util.bazel.workspace import get_build_workspace_directory
+from x.agentplane.app import main as app_main
+from x.agentplane.settings_contract import settings_file
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
@@ -567,7 +569,7 @@ def testing_chart(app: App) -> Chart:
     return _build_agentplane_chart(
         app,
         namespace_rbac_spec=_AGENTPLANE_TESTING_SPEC,
-        app_config_data={"config.yaml": yaml_config(testing_config.config())},
+        app_config_data={"config.yaml": yaml_config(settings_file(app_main.Settings, testing_config.config()))},
         db_spec=_AGENTPLANE_TESTING_DB_SPEC,
         llm_ingress_spec=_AGENTPLANE_TESTING_LLM_INGRESS_SPEC,
         egress_spec=_AGENTPLANE_TESTING_EGRESS_SPEC,
@@ -582,7 +584,7 @@ def staging_chart(app: App) -> Chart:
     return _build_agentplane_chart(
         app,
         namespace_rbac_spec=_AGENTPLANE_STAGING_SPEC,
-        app_config_data={"config.yaml": yaml_config(staging_config.config())},
+        app_config_data={"config.yaml": yaml_config(settings_file(app_main.Settings, staging_config.config()))},
         db_spec=_AGENTPLANE_STAGING_DB_SPEC,
         llm_ingress_spec=_AGENTPLANE_STAGING_LLM_INGRESS_SPEC,
         egress_spec=_AGENTPLANE_STAGING_EGRESS_SPEC,

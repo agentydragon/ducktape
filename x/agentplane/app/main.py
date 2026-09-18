@@ -90,6 +90,10 @@ class AppServer(uvicorn.Server):
         await super().shutdown(sockets)
 
 
+# Names the YAML settings file a deployment mounts; not a field, so not a flag.
+CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
+
+
 class Settings(BaseSettings):
     """The app's configuration.
 
@@ -177,7 +181,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get("AGENTPLANE_CONFIG_FILE"):
+        if config_file := os.environ.get(CONFIG_FILE_ENV):
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)
