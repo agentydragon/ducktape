@@ -8,7 +8,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20260919033753-ac3da7f # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20260919033649-ac3da7f # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20260919041811-b69d60e # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20260917094945-3286e89 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner
@@ -16,8 +16,8 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20260919033715-ac3da7f # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20260919033739-ac3da7f # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20260919041820-b69d60e # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20260919033738-ac3da7f # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
-    newTag: devel-20260918220206-f291352 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
+    newTag: devel-20260919041758-b69d60e # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}

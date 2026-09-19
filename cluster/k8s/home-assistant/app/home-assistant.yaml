@@ -25,7 +25,7 @@ spec:
         kubernetes.io/hostname: optiplex
       initContainers:
         - name: provision-components
-          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919010000-6eca0e6 # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919041754-b69d60e # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
           imagePullPolicy: Always
           command: ["/homeassistant/provisioner/provision_bin"]
           env:
