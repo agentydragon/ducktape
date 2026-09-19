@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: dreo-account
+    namespace: ducktape-flux
+    annotations:
+        description: Dreo account credentials for Home Assistant (for standing fan)
+type: Opaque
+stringData:
+    email: ENC[AES256_GCM,data:6WvbNu486lvsMZdOcfjjpZQKMW3GIw==,iv:AqhrwwB7cJMP00MNW6jWn0D2Gw6flQKfMIq4ZzMhq3o=,tag:4/lb9dJPtaXd1yih43uNrg==,type:str]
+    password: ENC[AES256_GCM,data:lSXPI0qX1Ig9mS9U9LAxt+tg2v0=,iv:J/YfcRH70srYtKLxTFqst4vBEhQJDjiYTa0wVpQyxqM=,tag:9rqKsIfYL0+JfzfmzgpQAA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRQ2VoMjVOSDlENTZ6N3Ay
+            OXA3ZGtNYldjV0YraVVGNTJuejdFUGFiZDIwCks3dW9LTC84Q0JZcncyN0VoWUhF
+            YTlPV3RaWkttNVlqWFZ5VVhnd0FxM0EKLS0tIC80c3IrZVNFaHY1bWM5cnJDUXV0
+            SFZ2SFhQS0cwemtVeUhOR2FEMEZzOW8KV4Uf2+DKUMQnw/7/9ija3nyKt3H3kcMQ
+            ReyydEUzowvoecbU8HwCANreAozTBf7IWFaZ6GK60YzfFZfeWeUqCw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2TTYycmMyaGQ2NlNnTlJY
+            dE81Ty9UWFRTWTBGZytsSW9KT2tWR1Z0V3dvCnloRTFvd3NTSUZ3NlpsdmZxQXFP
+            RjdTc3NPOExDVzFNY3RmZ2kranpDdXMKLS0tIGgxTHY4VkZERkJ5NjJWbFpzZG9V
+            WWUrYUtFN05WT2FBOVZZVFdLR045dFkKWft7OnrTNSR4WhiorsjsD8W0kqi13rW/
+            Fz+BAnwI43i+BbaFhVUpBy5NUm9+PlCflO6GpTgwWTRNwlhrUP5G3g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-19T06:08:57Z"
+    mac: ENC[AES256_GCM,data:TqbwnEy5/gu9Lh4/GvGjqhDLw3IuKzoz4BAU1suKiw/iNJSWhMwS/ISaqMVIqcNdZKGKNrddNS4d4vATJYZznh0ge4qX/J2cIIFuYTbVojbTsYQ950xKiDXswoya0xUZ9ORXP902RbuYCoWgBNfA8LKq6aiLVzNnKl5QWmY9VPY=,iv:n9T2Oci3I8DT3hGYlCsuS2e3ZbmR//fQ2m+bs7//Pp0=,tag:j23rHXgSIuQSFMhpDTU3Og==,type:str]
+    version: 3.13.3
