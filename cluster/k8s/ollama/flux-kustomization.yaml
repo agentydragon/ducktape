@@ -4,20 +4,6 @@ metadata:
   name: ollama
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/ollama
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: ollama-app
-    namespace: ducktape-flux
-  timeout: 10m
-  healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: ollama-direct-token
-      namespace: ollama
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
@@ -25,9 +11,23 @@ spec:
       namespace: ducktape-flux
     - name: nvidia-runtimeclass
       namespace: ducktape-flux
-    - name: external-secrets-config # langfuse ESO remains
+    - name: external-secrets-config
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: ollama-direct-token
+      namespace: ollama
+  interval: 10m
+  path: ./cluster/k8s/ollama
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: ollama-app
+    namespace: ducktape-flux
+  timeout: 10m
