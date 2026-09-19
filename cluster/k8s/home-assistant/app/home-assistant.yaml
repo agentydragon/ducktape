@@ -17,30 +17,28 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       nodeSelector:
         kubernetes.io/hostname: optiplex
       initContainers:
-        - name: initialize-config
-          image: ghcr.io/home-assistant/home-assistant:2026.9.2
-          command: ["python", "/bootstrap/install_oidc.py"]
-          args: ["--config-dir", "/config"]
+        - name: provision-components
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919010000-6eca0e6 # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
+          imagePullPolicy: Always
+          command: ["/homeassistant/provisioner/provision_bin"]
+          env:
+            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+              value: /etc/homeassistant/provisioner.yaml
+            - name: HOME_ASSISTANT_PROVISIONER_ONBOARDING_ENABLED
+              value: "false"
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: bootstrap
-              mountPath: /bootstrap
-              readOnly: true
-        - name: install-dreo
-          image: ghcr.io/home-assistant/home-assistant:2026.9.2
-          command: ["python", "/bootstrap/install_dreo.py"]
-          args: ["--config-dir", "/config"]
-          volumeMounts:
-            - name: config
-              mountPath: /config
-            - name: bootstrap
-              mountPath: /bootstrap
+            - name: provisioner-config
+              mountPath: /etc/homeassistant/provisioner.yaml
+              subPath: provisioner.yaml
               readOnly: true
       containers:
         - name: home-assistant
@@ -117,9 +115,9 @@ spec:
         - name: configuration
           configMap:
             name: home-assistant-configuration
-        - name: bootstrap
+        - name: provisioner-config
           configMap:
-            name: home-assistant-bootstrap
+            name: home-assistant-provisioner-config
         - name: caddy-config
           configMap:
             name: home-assistant-caddy

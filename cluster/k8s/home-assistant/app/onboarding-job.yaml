@@ -24,7 +24,10 @@ spec:
         - name: onboarding
           image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919010000-6eca0e6 # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
           imagePullPolicy: Always
+          command: ["/homeassistant/provisioner/provision_bin"]
           env:
+            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+              value: /etc/homeassistant/provisioner.yaml
             - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -36,3 +39,17 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: provisioner-config
+              mountPath: /etc/homeassistant/provisioner.yaml
+              subPath: provisioner.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: home-assistant-config
+        - name: provisioner-config
+          configMap:
+            name: home-assistant-provisioner-config

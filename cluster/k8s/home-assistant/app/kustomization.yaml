@@ -22,11 +22,10 @@ configMapGenerator:
       disableNameSuffixHash: false
     files:
       - configuration.yaml=configuration.yaml.conf
-  - name: home-assistant-bootstrap
+  - name: home-assistant-provisioner-config
     namespace: home-assistant
     files:
-      - install_dreo.py
-      - install_oidc.py
+      - provisioner.yaml
   - name: home-assistant-caddy
     namespace: home-assistant
     files:
