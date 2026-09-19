@@ -23,7 +23,7 @@ spec:
           image: ghcr.io/home-assistant/home-assistant:2026.9.2
           command:
             - python
-            - /bootstrap/bootstrap_onboarding.py
+            - /bootstrap/provision.py
           env:
             - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
               valueFrom:

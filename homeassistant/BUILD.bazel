@@ -3,6 +3,28 @@
 
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "provision",
+    srcs = ["provision.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi_homeassistant//aiohttp"],
+)
+
+py_test(
+    name = "test_provision",
+    srcs = ["test_provision.py"],
+    imports = ["."],
+    deps = [
+        ":provision",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+exports_files(["provision.py"])
 
 exports_files([
     "requirements.in",

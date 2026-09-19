@@ -24,7 +24,10 @@ configMapGenerator:
   - name: home-assistant-bootstrap
     namespace: home-assistant
     files:
-      - bootstrap_onboarding.py
+      # Kustomize requires generator inputs to stay under this directory. The
+      # home-assistant artifact generator replaces this mirror with the
+      # canonical homeassistant/provision.py source before deployment.
+      - provision.py
       - install_dreo.py
       - install_oidc.py
   - name: home-assistant-caddy
