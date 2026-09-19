@@ -1,16 +1,14 @@
 """The console's three Flux Kustomizations -- database, migration gate, and the console
-itself with its Kubernetes API proxy -- each as one chart, shared by generate_manifests
-(writes them to disk) and the tests (synthesize them in memory via `cdk8s.Testing`).
+itself with its Kubernetes API proxy -- each as one `directory.Directory`, shared by
+generate_manifests (writes them to disk) and the tests (synthesize them in memory via
+`cdk8s.Testing`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from cdk8s import Chart
 
-from cdk8s import App, Chart
-
-from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.directory import Directory
 from cluster.cdk8s.flux_constructs import ConfigMapArgs
 from cluster.cdk8s.haku import console_constructs, db_constructs
 from cluster.cdk8s.haku.console_constructs import Console
@@ -21,49 +19,6 @@ from cluster.cdk8s.haku.migration_constructs import Migration
 _NAMESPACE_KUSTOMIZATION = "haku-console-namespace"
 
 
-@dataclass(frozen=True)
-class Directory:
-    """One Flux Kustomization directory: what it renders and what it waits on."""
-
-    # The Flux Kustomization, chart and `<name>.k8s.yaml`.
-    name: str
-    path: str
-    build: Callable[[Chart], object]
-    depends_on: tuple[str, ...]
-    # Secrets and ConfigMaps Pods read that the chart does not create, each with the
-    # dependency or sibling file that does; fleet_rules checks both ends.
-    provided_secrets: Mapping[str, str]
-    timeout: str
-    provided_config_maps: Mapping[str, str] = field(default_factory=dict)
-    # Hand-written files listed beside the generated one.
-    extra_resources: tuple[str, ...] = ()
-    config_map_generator: tuple[ConfigMapArgs, ...] = ()
-    # Whether a hand-written image-pins/ Component overrides the placeholder image tags.
-    image_pins: bool = False
-    # The kustomization.yaml `namespace`, which the configMapGenerator output needs.
-    namespace: str | None = None
-    # Kinds whose readiness the Flux Kustomization lists explicitly on top of `wait: true`.
-    health_check_kinds: tuple[str, ...] = ()
-
-
-def chart(app: App, directory: Directory) -> Chart:
-    chart = Chart(app, directory.name, disable_resource_name_hashes=True)
-    directory.build(chart)
-    add_fleet_rules(
-        chart,
-        provided_secrets=directory.provided_secrets,
-        provided_config_maps=directory.provided_config_maps,
-        providers=frozenset(
-            {
-                *directory.depends_on,
-                *directory.extra_resources,
-                *(file for generator in directory.config_map_generator for file in generator.files),
-            }
-        ),
-    )
-    return chart
-
-
 def _console(chart: Chart) -> None:
     Console(chart, "console")
     KubeApiProxy(chart, "kube-api-proxy")
@@ -72,7 +27,7 @@ def _console(chart: Chart) -> None:
 DB = Directory(
     name="haku-console-db",
     path="cluster/k8s/haku/console/db",
-    build=lambda chart: Db(chart, "db"),
+    populate=lambda chart: Db(chart, "db"),
     depends_on=(
         _NAMESPACE_KUSTOMIZATION,
         "cnpg",
@@ -87,7 +42,7 @@ DB = Directory(
 MIGRATION = Directory(
     name="haku-console-migration",
     path="cluster/k8s/haku/console/migration",
-    build=lambda chart: Migration(chart, "migration"),
+    populate=lambda chart: Migration(chart, "migration"),
     depends_on=(
         # The namespace layer ships the forgejo-images-creds ExternalSecret the Job pulls its
         # private image with, from the ClusterSecretStore forgejo-images provides.
@@ -105,7 +60,7 @@ MIGRATION = Directory(
 CONSOLE = Directory(
     name="haku-console",
     path="cluster/k8s/haku/console",
-    build=_console,
+    populate=_console,
     depends_on=(
         # Runtime namespace/template changes must become Ready before the console starts
         # creating claims against their new namespace: a namespace migration fails closed
@@ -156,7 +111,9 @@ CONSOLE = Directory(
     provided_config_maps={
         console_constructs.STATIC_METADATA_CONFIG_MAP: "static-metadata.yaml",
         console_constructs.IMAGE_METADATA_CONFIG_MAP: "image-metadata.yaml",
-        console_constructs.INDEXER_SQL_CONFIG_MAP: "indexer-role.sql",
+        # INDEXER_SQL_CONFIG_MAP isn't listed: `directory.chart()` derives it automatically
+        # from `config_map_generator` below -- a `config_map_generator` entry always
+        # provides its own ConfigMap.
     },
     extra_resources=(
         "haku-console-google-calendar-client-credentials.sops.yaml",

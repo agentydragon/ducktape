@@ -11,11 +11,13 @@ from __future__ import annotations
 from cdk8s import ApiObject, JsonPatch
 from cdk8s_plus_34 import Deployment, k8s
 
+_POD_SPEC_PATH = "/spec/template/spec"
+# A CronJob nests its pod template one level deeper, under the Job template it stamps out.
+CRON_JOB_POD_SPEC_PATH = "/spec/jobTemplate/spec/template/spec"
 
-def runtime_default_seccomp_patch() -> JsonPatch:
-    return JsonPatch.add(
-        "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
-    )
+
+def runtime_default_seccomp_patch(*, pod_spec_path: str = _POD_SPEC_PATH) -> JsonPatch:
+    return JsonPatch.add(f"{pod_spec_path}/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
 
 
 def topology_spread_patch(labels: dict[str, str]) -> JsonPatch:

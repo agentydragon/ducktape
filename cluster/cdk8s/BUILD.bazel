@@ -82,6 +82,21 @@ py_test(
 )
 
 py_library(
+    name = "directory",
+    srcs = ["directory.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":fleet_rules",
+        ":flux_constructs",
+        "//third_party/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -193,6 +208,7 @@ py_library(
         ":gateway",
         ":litellm_config",
         ":metadata",
+        ":pod_spec_patches",
         ":probes",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -208,6 +224,7 @@ py_library(
         ":cilium",
         ":forgejo_images",
         ":metadata",
+        ":pod_spec_patches",
         ":probes",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -342,6 +359,7 @@ py_library(
         ":clickhouse_schema_constructs",
         ":config_format",
         ":descheduler_constructs",
+        ":directory",
         ":egress_fences",
         ":etcd_constructs",
         ":flux_constructs",
@@ -354,7 +372,6 @@ py_library(
         ":stateful_infra",
         ":terraform_constructs",
         "//cluster/cdk8s/agentplane:chart",
-        "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/haku:charts",

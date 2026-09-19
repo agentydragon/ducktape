@@ -10,7 +10,8 @@ from typing import Any, cast
 import pytest
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s.haku.charts import CONSOLE, chart
+from cluster.cdk8s.directory import chart
+from cluster.cdk8s.haku.charts import CONSOLE
 
 
 @pytest.fixture(scope="session")

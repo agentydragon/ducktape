@@ -7,7 +7,8 @@ from typing import Any, cast
 import pytest
 from cdk8s import Testing
 
-from cluster.cdk8s.haku.charts import DIRECTORIES, chart
+from cluster.cdk8s.directory import chart
+from cluster.cdk8s.haku.charts import DIRECTORIES
 
 
 @pytest.fixture(scope="session")

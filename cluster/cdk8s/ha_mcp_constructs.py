@@ -18,7 +18,7 @@ cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, Cron, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Cron, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     Capability,
@@ -62,6 +62,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import CRON_JOB_POD_SPEC_PATH, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "ha-mcp"
@@ -186,6 +187,7 @@ class HaMcpCredentialsProvisioner(Construct):
             # K8s API (via the RBAC role above) to patch its own Secret, so it needs one.
             automount_service_account_token=True,
         )
+        ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
         self._add_container(job, break_glass_secret)
 
     def _add_cronjob(self, service_account: ServiceAccount, break_glass_secret: ISecret, pull_secret: ISecret) -> None:
@@ -205,6 +207,7 @@ class HaMcpCredentialsProvisioner(Construct):
             docker_registry_auth=pull_secret,
             automount_service_account_token=True,
         )
+        ApiObject.of(cronjob).add_json_patch(runtime_default_seccomp_patch(pod_spec_path=CRON_JOB_POD_SPEC_PATH))
         self._add_container(cronjob, break_glass_secret)
 
 
@@ -278,6 +281,7 @@ class HaMcpApp(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             automount_service_account_token=False,
         )
+        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
 
         tmp_volume = Volume.from_empty_dir(self, "tmp-volume", "tmp")
         data_volume = Volume.from_empty_dir(self, "data-volume", "data")

@@ -8,7 +8,8 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from itertools import groupby
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
@@ -18,10 +19,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDeletionPolicy,
     KustomizationSpecDependsOn,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -38,17 +36,18 @@ from cluster.cdk8s import (
     terraform_constructs,
 )
 from cluster.cdk8s.agentplane import staging, testing
-from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.chart import environment_directory
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.directory import Directory, chart
 from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
-from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
+from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from cluster.cdk8s.litellm_keys import model_allowlists
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
+from cluster.scripts.nebula_mesh import Mesh
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -59,15 +58,6 @@ _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
-
-# The chart objects whose readiness gates the environment, in the order the checks are
-# listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
-# the rendered input, so that ConfigMap is checked explicitly rather than via `wait`.
-_HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
-_CNPG_DATABASE_READY = (
-    "has(status.applied) && status.applied && "
-    "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
-)
 _HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
 _PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
 _DESCHEDULER_DIR = "cluster/k8s/descheduler"
@@ -78,240 +68,6 @@ _MITMPROXY_DIR = "cluster/k8s/agents/mitmproxy"
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
     path.write_text(Yaml.format_objects([manifest]))
-
-
-def _generate_litellm_app(root: Path) -> None:
-    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
-
-    app_dir = root / _LITELLM_APP_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    LiteLLMProxy(chart, "proxy", spec)
-    LiteLLMServiceMonitor(chart, "monitoring")
-    app.synth()
-
-    _write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            "litellm",
-            spec=KustomizationSpec(
-                interval="10m",
-                path=f"./{_LITELLM_APP_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
-                ),
-                timeout="10m",
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        "litellm-secrets",
-                        "litellm-db",
-                        "gateway",
-                        "cert-manager-environment",
-                        "langfuse-secrets",
-                        "reflector",
-                        "tana-mcp",
-                        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-                        # litellm-servicemonitor Kustomization, #7103).
-                        "monitoring-crds",
-                    )
-                ],
-            ),
-        ),
-    )
-    _write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
-def _litellm_keys_chart(app: App) -> Chart:
-    """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
-    Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
-    tofu-controller retries on its interval until LiteLLM is up.
-    """
-    chart = Chart(app, "litellm-keys", disable_resource_name_hashes=True)
-    terraform_constructs.gitops_terraform(
-        chart,
-        "terraform",
-        name="litellm-keys",
-        variables={"model_allowlists": model_allowlists()},
-        env=[
-            # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
-            # beside this CR) that decrypts the module's pinned client-key files for
-            # its `sops_file` data sources -- single-purpose, not the broad cluster key.
-            terraform_constructs.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
-        ],
-    )
-    return chart
-
-
-def _generate_ha_mcp(root: Path) -> None:
-    name = "ha-mcp"
-    app_dir = root / _HA_MCP_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
-    HaMcp(chart, "ha-mcp")
-    app.synth()
-
-    _write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-                path=f"./{_HA_MCP_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=[
-                    KustomizationSpecHealthChecks(
-                        api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                    ),
-                    KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-                ],
-                # bearer.sops.yaml (hand-written, stays alongside this generated output --
-                # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
-                # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        "home-assistant",
-                        "monitoring-crds",  # the ServiceMonitor CRD
-                    )
-                ],
-            ),
-        ),
-    )
-    _write_yaml(
-        app_dir / "kustomization.yaml",
-        # bearer.sops.yaml stays hand-written; this generated file just lists it as a plain
-        # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
-    )
-
-
-def _generate_clickhouse_schema(root: Path) -> None:
-    name = clickhouse_schema_constructs.NAME
-    out_dir = root / _CLICKHOUSE_SCHEMA_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = clickhouse_schema_constructs.chart(app)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="20m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-                path=f"./{_CLICKHOUSE_SCHEMA_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=health_checks(chart, ("Job",)),
-                depends_on=[KustomizationSpecDependsOn(name="clickhouse")],
-            ),
-        ),
-    )
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        # schema.sql stays hand-written; the generator entry renders it into the ConfigMap the
-        # Job mounts. See cluster/docs/cdk8s.md.
-        kustomize_kustomization(
-            resources=[f"{name}.k8s.yaml"], config_map_generator=[clickhouse_schema_constructs.SCHEMA_CONFIG_MAP]
-        ),
-    )
-
-
-def _generate_aiquota(root: Path) -> None:
-    name = aiquota_constructs.NAME
-    out_dir = root / _AIQUOTA_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    aiquota_constructs.chart(app)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-                path=f"./{_AIQUOTA_DIR}",
-                prune=True,
-                wait=True,
-                # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        # Provides the shared namespace and the CLIProxyAPI management Secret.
-                        "cli-proxy-api",
-                        # Materializes the narrow mirrored copies of the API bearer for its
-                        # consumers; the source Secret stays SOPS-managed here.
-                        "external-secrets-operator",
-                        # Creates the aiquota database the migrate init container populates.
-                        "clickhouse-schema",
-                    )
-                ],
-            ),
-        ),
-    )
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        # aiquota-api-bearer.sops.yaml, config.toml and schema.sql stay hand-written; the
-        # generator entries render the latter two into the ConfigMaps the Deployment mounts.
-        # See cluster/docs/cdk8s.md.
-        kustomize_kustomization(
-            resources=[f"{name}.k8s.yaml", f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml"],
-            components=["./image-pins"],
-            config_map_generator=[aiquota_constructs.CONFIG_CONFIG_MAP, aiquota_constructs.SCHEMA_CONFIG_MAP],
-        ),
-    )
-
-
-def _agentplane_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
-    checks = health_checks(chart, _HEALTH_CHECK_KINDS)
-    # trust-manager names a Bundle's target ConfigMap after the Bundle.
-    return [
-        *checks,
-        *(
-            KustomizationSpecHealthChecks(api_version="v1", kind="ConfigMap", name=check.name, namespace=namespace)
-            for check in checks
-            if check.kind == "Bundle"
-        ),
-    ]
 
 
 def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | None:
@@ -325,119 +81,203 @@ def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | 
     )
 
 
-def _generate_haku_console(root: Path) -> None:
-    """Each of the console's Kustomization directories: its chart, the Flux Kustomization
-    (health checks from the chart's own objects), and the root Kustomization listing the
-    generated file beside the hand-written siblings."""
-    for directory in haku_charts.DIRECTORIES:
-        out_dir = root / directory.path
-        out_dir.mkdir(parents=True, exist_ok=True)
-        app = App(outdir=str(out_dir))
-        chart = haku_charts.chart(app, directory)
-        app.synth()
-        _write_yaml(
-            out_dir / "flux-kustomization.yaml",
-            flux_kustomization(
-                directory.name,
-                spec=KustomizationSpec(
-                    interval="10m",
-                    retry_interval="1m",
-                    timeout=directory.timeout,
-                    path=f"./{directory.path}",
-                    prune=True,
-                    wait=True,
-                    source_ref=KustomizationSpecSourceRef(
-                        kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE
-                    ),
-                    decryption=_sops_decryption(directory.extra_resources),
-                    health_checks=health_checks(chart, directory.health_check_kinds) or None,
-                    depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on],
-                ),
-            ),
-        )
-        _write_yaml(
-            out_dir / "kustomization.yaml",
-            kustomize_kustomization(
-                namespace=directory.namespace,
-                resources=[f"{directory.name}.k8s.yaml", *directory.extra_resources],
-                components=["./image-pins"] if directory.image_pins else (),
-                config_map_generator=directory.config_map_generator,
-            ),
-        )
-
-
-def _generate_agentplane(root: Path, env: Environment) -> None:
-    """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
-    `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
-    `Cluster` -- accepted for both non-production environments.
-
-    Also (re)writes the directory's Flux Kustomization (health checks derived from the
-    chart's own objects) and its root Kustomization: the one generated file plus the
-    environment's hand-written `extra_resources`. The sibling image-pins/ Component stays
-    hand-written, same as litellm/ha-mcp.
+def _write_directories(root: Path, directories: Sequence[Directory]) -> None:
+    """Synthesize every directory sharing one `path` into a single `App`/`app.synth()`
+    call -- cdk8s writes one file per chart, so a hand-written directory whose several
+    generated charts must land together (`_HAKU_EGRESS_PROXY_DIR`'s fences) is one group
+    of `Directory` entries, not several independent synth passes. Each `generate_flux`
+    directory then gets its own `flux-kustomization.yaml`/`kustomization.yaml`.
     """
-    env_dir = f"cluster/k8s/{env.namespace}"
-    out_dir = root / env_dir
+    out_dir = root / directories[0].path
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart = environment_chart(app, env)
+    built = [(directory, chart(app, directory)) for directory in directories]
     app.synth()
+    for directory, built_chart in built:
+        if directory.generate_flux:
+            _write_flux_wiring(out_dir, built_chart, directory)
 
+
+def _write_flux_wiring(out_dir: Path, built_chart: Chart, directory: Directory) -> None:
+    chart_id = built_chart.node.id
     _write_yaml(
         out_dir / "flux-kustomization.yaml",
         flux_kustomization(
-            env.namespace,
-            description=env.flux_description,
+            directory.name,
+            description=directory.description,
             spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="10m",
-                path=f"./{env_dir}",
+                interval=directory.interval,
+                retry_interval=directory.retry_interval,
+                timeout=directory.timeout,
+                path=f"./{directory.path}",
                 prune=True,
-                # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
-                # deletion would take the database with them.
-                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-                health_checks=_agentplane_health_checks(chart, env.namespace),
-                health_check_exprs=[
-                    KustomizationSpecHealthCheckExprs(
-                        api_version="postgresql.cnpg.io/v1", kind="Database", current=_CNPG_DATABASE_READY
-                    )
-                ],
-                decryption=_sops_decryption(env.extra_resources),
+                wait=directory.wait,
+                deletion_policy=directory.deletion_policy,
                 source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=env.namespace, namespace=NAMESPACE
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
+                    name=directory.source_ref_name or directory.name,
+                    namespace=NAMESPACE,
                 ),
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in env.depends_on],
+                decryption=_sops_decryption(directory.extra_resources),
+                health_checks=directory.health_checks(built_chart) or None,
+                health_check_exprs=list(directory.health_check_exprs) or None,
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on] or None,
             ),
         ),
     )
     _write_yaml(
         out_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]),
+        kustomize_kustomization(
+            namespace=directory.namespace,
+            resources=[f"{chart_id}.k8s.yaml", *directory.extra_resources],
+            components=["./image-pins"] if directory.image_pins else (),
+            config_map_generator=directory.config_map_generator,
+        ),
+    )
+
+
+def _litellm_app_directory() -> Directory:
+    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
+    return Directory(
+        name=spec.name,
+        path=_LITELLM_APP_DIR,
+        populate=lambda chart: (LiteLLMProxy(chart, "proxy", spec), LiteLLMServiceMonitor(chart, "monitoring")),
+        depends_on=(
+            "external-secrets-config",
+            "forgejo-images",
+            "litellm-secrets",
+            "litellm-db",
+            "gateway",
+            "cert-manager-environment",
+            "langfuse-secrets",
+            "reflector",
+            "tana-mcp",
+            # The ServiceMonitor/PodMonitor CRD (folded in from the retired
+            # litellm-servicemonitor Kustomization, #7103).
+            "monitoring-crds",
+        ),
+        provided_secrets={
+            "litellm-master-key": "litellm-secrets",
+            "litellm-salt-key": "litellm-secrets",
+            "litellm-anthropic-key": "litellm-secrets",
+            "litellm-groq-key": "litellm-secrets",
+            "litellm-gemini-key": "litellm-secrets",
+            "litellm-mistral-key": "litellm-secrets",
+            "litellm-cliproxy-key": "litellm-secrets",
+            "litellm-db-app": "litellm-db",
+            "langfuse-secrets": "langfuse-secrets",
+            "tana-firebase-refresh-token": "tana-mcp",
+        },
+        timeout="10m",
+        retry_interval=None,
+        wait=None,
+        namespace="litellm",
+        image_pins=True,
+    )
+
+
+def _ha_mcp_directory() -> Directory:
+    return Directory(
+        name="ha-mcp",
+        path=_HA_MCP_DIR,
+        populate=lambda chart: HaMcp(chart, "ha-mcp"),
+        depends_on=(
+            "external-secrets-config",
+            "forgejo-images",
+            "home-assistant",
+            "monitoring-crds",  # the ServiceMonitor CRD
+        ),
+        provided_secrets={
+            "home-assistant-break-glass": "home-assistant",
+            # bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted; without a
+            # decryption block Flux applies the ENC[...] ciphertext literally.
+            "ha-mcp-bearer": "bearer.sops.yaml",
+            # Created imperatively by this directory's own token-provisioner Job, not by any
+            # static manifest -- `directory.chart()` always accepts a directory as its own
+            # provider.
+            "ha-mcp-home-assistant-token": "ha-mcp",
+        },
+        extra_resources=("bearer.sops.yaml",),
+        timeout="5m",
+        health_check_kinds=("Job", "Deployment"),
+        image_pins=True,
+    )
+
+
+def _clickhouse_schema_directory() -> Directory:
+    name = clickhouse_schema_constructs.NAME
+    return Directory(
+        name=name,
+        path=_CLICKHOUSE_SCHEMA_DIR,
+        build=clickhouse_schema_constructs.chart,
+        depends_on=("clickhouse",),
+        provided_secrets={"clickhouse-admin-credentials": "clickhouse"},
+        timeout="20m",
+        health_check_kinds=("Job",),
+        # schema.sql stays hand-written; this generator entry renders it into the ConfigMap
+        # the Job mounts. See cluster/docs/cdk8s.md.
+        config_map_generator=(clickhouse_schema_constructs.SCHEMA_CONFIG_MAP,),
+    )
+
+
+def _aiquota_directory() -> Directory:
+    name = aiquota_constructs.NAME
+    return Directory(
+        name=name,
+        path=_AIQUOTA_DIR,
+        build=aiquota_constructs.chart,
+        description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
+        depends_on=(
+            "external-secrets-config",
+            "forgejo-images",
+            # Provides the shared namespace and the CLIProxyAPI management Secret.
+            "cli-proxy-api",
+            # Materializes the narrow mirrored copies of the API bearer for its consumers;
+            # the source Secret stays SOPS-managed here.
+            "external-secrets-operator",
+            # Creates the aiquota database the migrate init container populates.
+            "clickhouse-schema",
+            # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+            "agent-machine-access-tf",
+            # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+            "reflector",
+        ),
+        provided_secrets={
+            aiquota_constructs.BEARER_SECRET_NAME: f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml",
+            "cli-proxy-api-management": "cli-proxy-api",
+            "aiquota-oidc": "agent-machine-access-tf",
+            "clickhouse-aiquota-credentials": "reflector",
+        },
+        # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+        extra_resources=(f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml",),
+        timeout="5m",
+        # aiquota-api-bearer.sops.yaml, config.toml and schema.sql stay hand-written; the
+        # generator entries render the latter two into the ConfigMaps the Deployment mounts.
+        # See cluster/docs/cdk8s.md.
+        config_map_generator=(aiquota_constructs.CONFIG_CONFIG_MAP, aiquota_constructs.SCHEMA_CONFIG_MAP),
+        image_pins=True,
+    )
+
+
+def _etcd_monitoring_directory(mesh: Mesh) -> Directory:
+    return Directory(
+        name="etcd-monitoring",
+        path=_ETCD_MONITORING_DIR,
+        populate=lambda chart: TalosEtcdMetrics(chart, "etcd", mesh),
+        depends_on=("monitoring-crds",),  # the ServiceMonitor CRD
+        timeout="2m",
+        health_check_kinds=("ServiceMonitor",),
+        namespace=etcd_constructs.NAMESPACE,
+        source_ref_name="monitoring-etcd",
     )
 
 
 def _build_config_map_chart(
     app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]
 ) -> Chart:
-    """Build a single-ConfigMap chart without synthesizing it -- shared by
-    `_write_charts` (writes it to disk) and tests (in-memory synth)."""
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
     ConfigMap(chart, "config", metadata=metadata(configmap_name, namespace), data=data)
     return chart
-
-
-def _write_charts(root: Path, app_dir: str, *chart_builders: Callable[[App], Chart]) -> None:
-    """Synthesize each builder's chart into `app_dir` as `<chart id>.k8s.yaml`; the directory's
-    `flux-kustomization.yaml` and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md
-    § Three shapes of a directory).
-    """
-    out_dir = root / app_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    for build in chart_builders:
-        build(app)
-    app.synth()
 
 
 def _haku_openclaw_spike_config_chart(app: App) -> Chart:
@@ -475,7 +315,7 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
     return chart
 
 
-def _dns_records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
+def _dns_records_chart(app: App, mesh: Mesh) -> Chart:
     """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
     chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
     terraform_constructs.gitops_terraform(
@@ -498,65 +338,113 @@ def _dns_records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     return chart
 
 
-def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
-    name = "etcd-monitoring"
-    out_dir = root / _ETCD_MONITORING_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
-    TalosEtcdMetrics(chart, "etcd", mesh)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                interval="10m",
-                retry_interval="1m",
-                timeout="2m",
-                path=f"./{_ETCD_MONITORING_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-etcd", namespace=NAMESPACE
-                ),
-                depends_on=[KustomizationSpecDependsOn(name="monitoring-crds")],  # the ServiceMonitor CRD
-                wait=True,
-                health_checks=health_checks(chart, ("ServiceMonitor",)),
-            ),
-        ),
+def _litellm_keys_chart(app: App) -> Chart:
+    """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
+    Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
+    tofu-controller retries on its interval until LiteLLM is up.
+    """
+    chart = Chart(app, "litellm-keys", disable_resource_name_hashes=True)
+    terraform_constructs.gitops_terraform(
+        chart,
+        "terraform",
+        name="litellm-keys",
+        variables={"model_allowlists": model_allowlists()},
+        env=[
+            # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
+            # beside this CR) that decrypts the module's pinned client-key files for
+            # its `sops_file` data sources -- single-purpose, not the broad cluster key.
+            terraform_constructs.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
+        ],
     )
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(namespace=etcd_constructs.NAMESPACE, resources=[f"{name}.k8s.yaml"]),
+    return chart
+
+
+def _shape_two_directories(mesh: Mesh) -> tuple[Directory, ...]:
+    """Directories that generate only their `.k8s.yaml` file(s) beside a hand-written
+    `flux-kustomization.yaml`/`kustomization.yaml` (cluster/docs/cdk8s.md § Three shapes
+    of a directory, shape 2)."""
+    return (
+        Directory(
+            name="haku-openclaw-spike-config",
+            path=_HAKU_OPENCLAW_SPIKE_APP_DIR,
+            build=_haku_openclaw_spike_config_chart,
+            generate_flux=False,
+        ),
+        Directory(
+            name="public-coder-agent-config",
+            path=_PUBLIC_CODER_AGENT_APP_DIR,
+            build=_public_coder_agent_config_chart,
+            generate_flux=False,
+        ),
+        Directory(name="descheduler", path=_DESCHEDULER_DIR, build=_descheduler_chart, generate_flux=False),
+        Directory(
+            name="seaweedfs-cluster-priorityclass",
+            path=_SEAWEEDFS_CLUSTER_DIR,
+            build=_stateful_infra_priority_class_chart,
+            generate_flux=False,
+        ),
+        # The three fences below all live in _HAKU_EGRESS_PROXY_DIR: kept adjacent so
+        # `_write_directories` synthesizes them together into that one directory.
+        #
+        # None of the four fences here pin HTTPS SNI: `cilium.fqdn_fence` deliberately
+        # never sets `serverNames` (a group may hold wildcard patterns SNI can't carry --
+        # its own docstring), and haku_claude/haku_openclaw_spike additionally reach
+        # remote-node/host/world on 443 for destinations toFQDNs cannot select by node
+        # identity (their own docstrings). Each is still bounded, by the DNS-layer fence
+        # and, for haku_openclaw_spike, the iron proxy's own L7 allowlist.
+        Directory(
+            name="cnp-haku-cloud-api-egress",
+            path=_HAKU_EGRESS_PROXY_DIR,
+            build=egress_fences.haku_cloud_api,
+            unpinned_https_egress=("allow-haku-cloud-api-egress",),
+            generate_flux=False,
+        ),
+        Directory(
+            name="cnp-haku-claude-egress",
+            path=_HAKU_EGRESS_PROXY_DIR,
+            build=egress_fences.haku_claude,
+            unpinned_https_egress=("allow-haku-claude-oauth-proxy-egress",),
+            generate_flux=False,
+        ),
+        Directory(
+            name="openclaw-spike-cnp-egress",
+            path=_HAKU_EGRESS_PROXY_DIR,
+            build=egress_fences.haku_openclaw_spike,
+            unpinned_https_egress=("allow-haku-openclaw-spike-proxy-egress",),
+            generate_flux=False,
+        ),
+        Directory(
+            name="cnp-cloud-api-egress",
+            path=_MITMPROXY_DIR,
+            build=egress_fences.mitmproxy_cloud_api,
+            unpinned_https_egress=("allow-cloud-api-egress",),
+            generate_flux=False,
+        ),
+        Directory(
+            name="dns-records",
+            path=_DNS_AUTOMATION_DIR,
+            build=lambda app: _dns_records_chart(app, mesh),
+            generate_flux=False,
+        ),
+        Directory(name="litellm-keys", path=_LITELLM_KEYS_TF_DIR, build=_litellm_keys_chart, generate_flux=False),
     )
 
 
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
-    _generate_litellm_app(root)
-    _generate_ha_mcp(root)
-    _generate_clickhouse_schema(root)
-    _generate_aiquota(root)
-    for env in (staging.ENV, testing.ENV):
-        _generate_agentplane(root, env)
-    _generate_haku_console(root)
-    _write_charts(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
-    _write_charts(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
-    _write_charts(root, _DESCHEDULER_DIR, _descheduler_chart)
-    _write_charts(root, _SEAWEEDFS_CLUSTER_DIR, _stateful_infra_priority_class_chart)
-    _write_charts(
-        root,
-        _HAKU_EGRESS_PROXY_DIR,
-        egress_fences.haku_cloud_api,
-        egress_fences.haku_claude,
-        egress_fences.haku_openclaw_spike,
+    directories = (
+        _litellm_app_directory(),
+        _ha_mcp_directory(),
+        _clickhouse_schema_directory(),
+        _aiquota_directory(),
+        *(environment_directory(env) for env in (staging.ENV, testing.ENV)),
+        *haku_charts.DIRECTORIES,
+        _etcd_monitoring_directory(mesh),
+        *_shape_two_directories(mesh),
     )
-    _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
-    _write_charts(root, _DNS_AUTOMATION_DIR, lambda app: _dns_records_chart(app, mesh))
-    _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
-    _generate_etcd_monitoring(root, mesh)
+    for _, group in groupby(directories, key=lambda directory: directory.path):
+        _write_directories(root, list(group))
 
 
 def main() -> None:

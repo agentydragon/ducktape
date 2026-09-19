@@ -6,7 +6,7 @@ instead of an admission denial or a CreateContainerConfigError on the cluster.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from typing import Any, cast
 
 import jsii
@@ -54,7 +54,7 @@ def pod_hardening(objects: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
-def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[str]) -> list[str]:
+def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: Collection[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
     "any HTTPS server". `unpinned` names the policies allowed through by design -- a
@@ -154,7 +154,7 @@ class FleetRules:
         provided_secrets: Mapping[str, str],
         providers: frozenset[str],
         provided_config_maps: Mapping[str, str] = {},
-        unpinned_https_egress: frozenset[str] = frozenset(),
+        unpinned_https_egress: Collection[str] = (),
     ) -> None:
         self._chart = chart
         self._provided_secrets = provided_secrets
@@ -184,7 +184,7 @@ def add_fleet_rules(
     provided_secrets: Mapping[str, str],
     providers: frozenset[str],
     provided_config_maps: Mapping[str, str] = {},
-    unpinned_https_egress: frozenset[str] = frozenset(),
+    unpinned_https_egress: Collection[str] = (),
 ) -> None:
     chart.node.add_validation(
         FleetRules(
