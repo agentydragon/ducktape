@@ -4,21 +4,21 @@ metadata:
   name: reloader
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn:
+    - name: kyverno
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: reloader
+      namespace: kube-system
   interval: 10m0s
   path: ./cluster/k8s/reloader
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: reloader
     namespace: ducktape-flux
   timeout: 5m
   wait: true
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: reloader
-      namespace: kube-system
-  dependsOn:
-    - name: kyverno
-      namespace: ducktape-flux
