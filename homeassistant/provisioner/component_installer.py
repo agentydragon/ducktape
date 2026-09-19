@@ -12,7 +12,7 @@ import zipfile
 from collections.abc import Iterable
 from pathlib import Path
 
-import aiohttp
+import httpx2
 from settings import ComponentConfig
 
 
@@ -89,22 +89,22 @@ def _installed_version(manifest: Path) -> str | None:
 
 
 async def install_component_from_url(
-    session: aiohttp.ClientSession, config_dir: Path, component: ComponentConfig
+    http_client: httpx2.AsyncClient, config_dir: Path, component: ComponentConfig
 ) -> None:
     """Install one configured component unless its requested version is present."""
     await initialize_component_config(config_dir, component)
     manifest = config_dir / "custom_components" / component.install_dir / "manifest.json"
     if manifest.exists() and await asyncio.to_thread(_installed_version, manifest) == component.version:
         return
-    async with session.get(component.url, timeout=aiohttp.ClientTimeout(total=60)) as response:
-        response.raise_for_status()
-        payload = await response.read()
+    response = await http_client.get(component.url, timeout=60, follow_redirects=True)
+    response.raise_for_status()
+    payload = response.content
     await install_component(config_dir, payload, component)
 
 
 async def install_components(
-    session: aiohttp.ClientSession, config_dir: Path, components: Iterable[ComponentConfig]
+    http_client: httpx2.AsyncClient, config_dir: Path, components: Iterable[ComponentConfig]
 ) -> None:
     """Install all configured custom components."""
     for component in components:
-        await install_component_from_url(session, config_dir, component)
+        await install_component_from_url(http_client, config_dir, component)

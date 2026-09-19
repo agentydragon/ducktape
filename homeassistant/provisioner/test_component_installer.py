@@ -4,10 +4,13 @@ import json
 import zipfile
 from pathlib import Path
 
+import httpx2
 import pytest
 import pytest_bazel
-from component_installer import initialize_component_config, install_component
+from component_installer import initialize_component_config, install_component, install_component_from_url
 from settings import ComponentConfig
+
+pytestmark = pytest.mark.httpx2(base_url="https://example.test", assert_all_called=False)
 
 
 def _archive(files: dict[str, str]) -> bytes:
@@ -108,6 +111,27 @@ async def test_initialize_config_creates_only_missing_files(tmp_path: Path):
     assert existing.read_text() == "- id: keep-me\n"
     assert (tmp_path / "scripts.yaml").read_text() == "[]\n"
     assert (tmp_path / "scenes.yaml").read_text() == "[]\n"
+
+
+async def test_install_component_downloads_with_httpx2_mock(tmp_path: Path, httpx2_mock):
+    payload = _archive(
+        {
+            "source/custom_components/example/manifest.json": json.dumps({"domain": "example", "version": "2.2.1"}),
+            "source/custom_components/example/__init__.py": "# installed\n",
+        }
+    )
+    component = _component(sha256=hashlib.sha256(payload).hexdigest())
+    redirect = httpx2_mock.get("/component.zip").respond(
+        status_code=302, headers={"Location": "/redirected-component.zip"}
+    )
+    download = httpx2_mock.get("/redirected-component.zip").respond(content=payload)
+
+    async with httpx2.AsyncClient() as http_client:
+        await install_component_from_url(http_client, tmp_path, component)
+
+    assert redirect.called
+    assert download.called
+    assert (tmp_path / "custom_components/example/__init__.py").read_text() == "# installed\n"
 
 
 if __name__ == "__main__":

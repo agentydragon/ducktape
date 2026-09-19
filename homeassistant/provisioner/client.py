@@ -7,17 +7,10 @@ from http import HTTPStatus
 from urllib import parse
 
 import aiohttp
+import httpx2
 from pydantic import BaseModel, StrictBool, TypeAdapter
 from settings import ProvisionerSettings
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
-
-
-class HomeAssistantApiError(RuntimeError):
-    """An unsuccessful response from the Home Assistant API."""
-
-    def __init__(self, status: int, reason: str) -> None:
-        super().__init__(f"Home Assistant API returned HTTP {status}: {reason}")
-        self.status = status
 
 
 class OnboardingStep(StrEnum):
@@ -37,19 +30,22 @@ class OnboardingStepStatus(BaseModel):
 
 
 def _is_retryable_readiness_error(exc: BaseException) -> bool:
-    if isinstance(exc, HomeAssistantApiError):
-        return exc.status != HTTPStatus.UNAUTHORIZED
-    return isinstance(exc, (aiohttp.ClientError, TimeoutError))
+    if isinstance(exc, httpx2.HTTPStatusError):
+        return exc.response.status_code != HTTPStatus.UNAUTHORIZED
+    return isinstance(exc, (httpx2.TransportError, TimeoutError))
 
 
 class HomeAssistantClient:
-    """Home Assistant API operations using an injected settings object and session."""
+    """Home Assistant API operations using injected HTTP and WebSocket clients."""
 
     readiness_timeout_secs = 300
     readiness_retry_interval_secs = 5
 
-    def __init__(self, session: aiohttp.ClientSession, settings: ProvisionerSettings) -> None:
-        self.session = session
+    def __init__(
+        self, http_client: httpx2.AsyncClient, websocket_session: aiohttp.ClientSession, settings: ProvisionerSettings
+    ) -> None:
+        self.http_client = http_client
+        self.websocket_session = websocket_session
         self.settings = settings
         self._access_token: str | None = None
 
@@ -64,20 +60,14 @@ class HomeAssistantClient:
                 raise RuntimeError("Home Assistant client has no access token; log in first")
             headers["Authorization"] = f"Bearer {self._access_token}"
         url = f"{self.settings.home_assistant_url}{path}"
-        timeout = aiohttp.ClientTimeout(total=30)
         if data is None:
-            request_context = self.session.request(method, url, headers=headers, timeout=timeout)
+            response = await self.http_client.request(method, url, headers=headers, timeout=30)
         elif form:
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            request_context = self.session.request(
-                method, url, headers=headers, timeout=timeout, data=parse.urlencode(data).encode()
-            )
+            response = await self.http_client.request(method, url, headers=headers, timeout=30, data=data)
         else:
-            request_context = self.session.request(method, url, headers=headers, timeout=timeout, json=data)
-        async with request_context as response:
-            if response.status >= 400:
-                raise HomeAssistantApiError(response.status, response.reason or "")
-            return await response.json()
+            response = await self.http_client.request(method, url, headers=headers, timeout=30, json=data)
+        response.raise_for_status()
+        return response.json()
 
     async def wait_until_ready(self) -> set[OnboardingStep] | None:
         """Wait for the API and return completed onboarding steps, or None if complete."""
@@ -90,11 +80,11 @@ class HomeAssistantClient:
             ):
                 with attempt:
                     await self._verify_api_ready()
-        except HomeAssistantApiError as exc:
-            if exc.status == HTTPStatus.UNAUTHORIZED:
+        except httpx2.HTTPStatusError as exc:
+            if exc.response.status_code == HTTPStatus.UNAUTHORIZED:
                 return await self.onboarding_status()
             raise TimeoutError("Home Assistant did not become available within 5 minutes") from exc
-        except (aiohttp.ClientError, TimeoutError) as exc:
+        except (httpx2.TransportError, TimeoutError) as exc:
             raise TimeoutError("Home Assistant did not become available within 5 minutes") from exc
         raise RuntimeError("Home Assistant API unexpectedly allowed an unauthenticated request")
 
@@ -105,8 +95,8 @@ class HomeAssistantClient:
         """Return completed onboarding steps, or None when onboarding views are absent."""
         try:
             response = await self.request_json("/api/onboarding", authenticated=False)
-        except HomeAssistantApiError as exc:
-            if exc.status == HTTPStatus.NOT_FOUND:
+        except httpx2.HTTPStatusError as exc:
+            if exc.response.status_code == HTTPStatus.NOT_FOUND:
                 return None
             raise
         statuses = TypeAdapter(list[OnboardingStepStatus]).validate_python(response)
@@ -182,7 +172,7 @@ class HomeAssistantClient:
         """Authenticate to Home Assistant and execute one WebSocket command."""
         if self._access_token is None:
             raise RuntimeError("Home Assistant client has no access token; log in first")
-        async with self.session.ws_connect(
+        async with self.websocket_session.ws_connect(
             self.websocket_url(), timeout=aiohttp.ClientWSTimeout(ws_receive=30)
         ) as websocket:
             auth_required = await websocket.receive_json()

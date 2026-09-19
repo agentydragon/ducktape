@@ -24,7 +24,7 @@ py_library(
     imports = ["."],
     deps = [
         ":settings",
-        "@pypi//aiohttp",
+        "@pypi//httpx2",
     ],
 )
 
@@ -35,6 +35,7 @@ py_library(
     deps = [
         ":settings",
         "@pypi//aiohttp",
+        "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
@@ -50,6 +51,7 @@ py_library(
         ":component_installer",
         ":settings",
         "@pypi//aiohttp",
+        "@pypi//httpx2",
     ],
 )
 
@@ -63,9 +65,12 @@ py_test(
         ":settings",
         "//:conftest",
         "@pypi//aiohttp",
+        "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
+        "@pypi//respx",
     ],
 )
 
@@ -76,8 +81,10 @@ py_test(
     deps = [
         ":component_installer",
         "//:conftest",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
     ],
 )
 

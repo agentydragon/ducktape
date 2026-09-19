@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 
 import aiohttp
+import httpx2
 from client import HomeAssistantClient, OnboardingStep
 from component_installer import install_components
 from settings import load_settings
@@ -42,13 +43,14 @@ async def main() -> None:
     """Install configured components and complete configured onboarding."""
     settings = load_settings()
     config_dir = Path("/config")
-    async with aiohttp.ClientSession() as session:
-        await install_components(session, config_dir, settings.components)
+    async with httpx2.AsyncClient() as http_client:
+        await install_components(http_client, config_dir, settings.components)
         if settings.onboarding_enabled:
             if settings.local_admin_password is None:
                 raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required for onboarding")
-            client = HomeAssistantClient(session, settings)
-            await provision(client, settings.local_admin_password.get_secret_value())
+            async with aiohttp.ClientSession() as websocket_session:
+                client = HomeAssistantClient(http_client, websocket_session, settings)
+                await provision(client, settings.local_admin_password.get_secret_value())
 
 
 if __name__ == "__main__":

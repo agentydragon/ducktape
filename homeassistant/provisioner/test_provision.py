@@ -1,13 +1,20 @@
+import json
 from http import HTTPStatus
 from typing import cast
+from urllib.parse import parse_qs
 
 import aiohttp
+import httpx2
 import provision
 import pytest
 import pytest_bazel
-from client import HomeAssistantApiError, HomeAssistantClient
+import respx
+from client import HomeAssistantClient
 from pydantic import ValidationError
 from settings import ComponentConfig, HttpConfig, ProvisionerSettings
+
+BASE_URL = "http://home-assistant.test:8123"
+pytestmark = pytest.mark.httpx2(base_url=BASE_URL, assert_all_called=False)
 
 
 @pytest.fixture
@@ -54,12 +61,9 @@ def provisioner_settings() -> ProvisionerSettings:
 
 
 @pytest.fixture
-def home_assistant_client(provisioner_settings: ProvisionerSettings) -> HomeAssistantClient:
-    return HomeAssistantClient(cast(aiohttp.ClientSession, object()), provisioner_settings)
-
-
-def http_error(path: str, code: HTTPStatus) -> HomeAssistantApiError:
-    return HomeAssistantApiError(code, code.phrase)
+async def home_assistant_client(provisioner_settings: ProvisionerSettings):
+    async with httpx2.AsyncClient() as http_client:
+        yield HomeAssistantClient(http_client, cast(aiohttp.ClientSession, object()), provisioner_settings)
 
 
 def disable_http_configuration(monkeypatch):
@@ -69,182 +73,155 @@ def disable_http_configuration(monkeypatch):
     monkeypatch.setattr(HomeAssistantClient, "configure_http", fake_configure_http)
 
 
+def assert_request_paths(router: respx.Router, paths: list[str]) -> None:
+    assert [call.request.url.path for call in router.calls] == paths
+
+
+def http_status_error(status: HTTPStatus) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("GET", f"{BASE_URL}/api/")
+    response = httpx2.Response(status, request=request)
+    return httpx2.HTTPStatusError(f"HTTP {status}", request=request, response=response)
+
+
 async def test_fresh_install_creates_owner_and_completes_onboarding(
-    monkeypatch, home_assistant_client, provisioner_settings
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, provisioner_settings
 ):
     disable_http_configuration(monkeypatch)
-    calls: list[tuple[str, dict[str, object] | None, bool, bool]] = []
+    httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
+    httpx2_mock.get("/api/onboarding").respond(json=[{"step": "user", "done": False}])
+    owner = httpx2_mock.post("/api/onboarding/users").respond(json={"auth_code": "owner-code"})
+    token = httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
+    core_config = httpx2_mock.post("/api/onboarding/core_config").respond(json={})
+    integration = httpx2_mock.post("/api/onboarding/integration").respond(json={})
+    analytics = httpx2_mock.post("/api/onboarding/analytics").respond(json={})
 
-    async def fake_request(
-        self, path: str, *, data: dict[str, object] | None = None, authenticated: bool = True, form: bool = False
-    ) -> object:
-        calls.append((path, data, authenticated, form))
-        if path == "/api/":
-            raise http_error(path, HTTPStatus.UNAUTHORIZED)
-        if path == "/api/onboarding":
-            return [{"step": "user", "done": False}]
-        if path == "/api/onboarding/users":
-            return {"auth_code": "owner-code"}
-        if path == "/auth/token":
-            return {"access_token": "bootstrap-token"}
-        return {}
-
-    monkeypatch.setattr(HomeAssistantClient, "request_json", fake_request)
     await provision.provision(home_assistant_client, "secret-password")
 
-    assert calls == [
-        ("/api/", None, False, False),
-        ("/api/onboarding", None, False, False),
-        (
+    assert_request_paths(
+        httpx2_mock,
+        [
+            "/api/",
+            "/api/onboarding",
             "/api/onboarding/users",
-            {
-                "name": provisioner_settings.display_name,
-                "username": provisioner_settings.username,
-                "password": "secret-password",
-                "client_id": provisioner_settings.client_id,
-                "language": "en",
-            },
-            False,
-            False,
-        ),
-        (
             "/auth/token",
-            {"grant_type": "authorization_code", "code": "owner-code", "client_id": provisioner_settings.client_id},
-            False,
-            True,
-        ),
-        ("/api/onboarding/core_config", {}, True, False),
-        (
+            "/api/onboarding/core_config",
             "/api/onboarding/integration",
-            {"client_id": provisioner_settings.client_id, "redirect_uri": provisioner_settings.redirect_uri},
-            True,
-            False,
-        ),
-        ("/api/onboarding/analytics", {}, True, False),
-    ]
+            "/api/onboarding/analytics",
+        ],
+    )
+    assert json.loads(owner.calls.last.request.content) == {
+        "name": provisioner_settings.display_name,
+        "username": provisioner_settings.username,
+        "password": "secret-password",
+        "client_id": provisioner_settings.client_id,
+        "language": "en",
+    }
+    assert parse_qs(token.calls.last.request.content.decode()) == {
+        "grant_type": ["authorization_code"],
+        "code": ["owner-code"],
+        "client_id": [provisioner_settings.client_id],
+    }
+    assert owner.calls.last.request.headers.get("Authorization") is None
+    assert token.calls.last.request.headers.get("Authorization") is None
+    for route in (core_config, integration, analytics):
+        assert route.calls.last.request.headers["Authorization"] == "Bearer bootstrap-token"
 
 
 async def test_partial_run_logs_in_and_finishes_remaining_steps(
-    monkeypatch, home_assistant_client, provisioner_settings
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
 ):
     disable_http_configuration(monkeypatch)
-    calls: list[str] = []
+    httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
+    httpx2_mock.get("/api/onboarding").respond(
+        json=[
+            {"step": "user", "done": True},
+            {"step": "core_config", "done": True},
+            {"step": "integration", "done": False},
+            {"step": "analytics", "done": False},
+        ]
+    )
+    login_flow = httpx2_mock.post("/auth/login_flow").respond(json={"flow_id": "login-flow"})
+    login_result = httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
+    token = httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
+    integration = httpx2_mock.post("/api/onboarding/integration").respond(json={})
+    analytics = httpx2_mock.post("/api/onboarding/analytics").respond(json={})
 
-    async def fake_request(
-        self, path: str, *, data: dict[str, object] | None = None, authenticated: bool = True, form: bool = False
-    ) -> object:
-        calls.append(path)
-        if path == "/api/":
-            raise http_error(path, HTTPStatus.UNAUTHORIZED)
-        if path == "/api/onboarding":
-            return [
-                {"step": "user", "done": True},
-                {"step": "core_config", "done": True},
-                {"step": "integration", "done": False},
-                {"step": "analytics", "done": False},
-            ]
-        if path == "/auth/login_flow":
-            return {"flow_id": "login-flow"}
-        if path == "/auth/login_flow/login-flow":
-            return {"result": "login-code"}
-        if path == "/auth/token":
-            return {"access_token": "bootstrap-token"}
-        return {}
-
-    monkeypatch.setattr(HomeAssistantClient, "request_json", fake_request)
     await provision.provision(home_assistant_client, "secret-password")
 
-    assert calls == [
-        "/api/",
-        "/api/onboarding",
-        "/auth/login_flow",
-        "/auth/login_flow/login-flow",
-        "/auth/token",
-        "/api/onboarding/integration",
-        "/api/onboarding/analytics",
-    ]
+    assert_request_paths(
+        httpx2_mock,
+        [
+            "/api/",
+            "/api/onboarding",
+            "/auth/login_flow",
+            "/auth/login_flow/login-flow",
+            "/auth/token",
+            "/api/onboarding/integration",
+            "/api/onboarding/analytics",
+        ],
+    )
+    assert json.loads(login_flow.calls.last.request.content) == {
+        "client_id": "https://home.test/",
+        "handler": ["homeassistant", None],
+        "redirect_uri": "https://home.test/",
+    }
+    assert json.loads(login_result.calls.last.request.content) == {
+        "client_id": "https://home.test/",
+        "username": "test-admin",
+        "password": "secret-password",
+    }
+    assert parse_qs(token.calls.last.request.content.decode())["code"] == ["login-code"]
+    assert integration.calls.last.request.headers["Authorization"] == "Bearer bootstrap-token"
+    assert analytics.calls.last.request.headers["Authorization"] == "Bearer bootstrap-token"
 
 
 async def test_completed_onboarding_converges_http_configuration(
-    monkeypatch, home_assistant_client, provisioner_settings
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
 ):
     disable_http_configuration(monkeypatch)
-    calls: list[str] = []
+    httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
+    httpx2_mock.get("/api/onboarding").respond(status_code=HTTPStatus.NOT_FOUND)
+    httpx2_mock.post("/auth/login_flow").respond(json={"flow_id": "login-flow"})
+    httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
+    httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
 
-    async def fake_request(
-        self, path: str, *, data: dict[str, object] | None = None, authenticated: bool = True, form: bool = False
-    ) -> object:
-        calls.append(path)
-        if path == "/api/":
-            raise http_error(path, HTTPStatus.UNAUTHORIZED)
-        if path == "/api/onboarding":
-            raise http_error(path, HTTPStatus.NOT_FOUND)
-        if path == "/auth/login_flow":
-            return {"flow_id": "login-flow"}
-        if path == "/auth/login_flow/login-flow":
-            return {"result": "login-code"}
-        if path == "/auth/token":
-            return {"access_token": "bootstrap-token"}
-        raise AssertionError(f"unexpected request: {path}")
-
-    monkeypatch.setattr(HomeAssistantClient, "request_json", fake_request)
     await provision.provision(home_assistant_client, "secret-password")
 
-    assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
+    assert_request_paths(
+        httpx2_mock, ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
+    )
 
 
 async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(
-    monkeypatch, home_assistant_client, provisioner_settings
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
 ):
     disable_http_configuration(monkeypatch)
-    calls: list[str] = []
-
-    async def fake_request(
-        self, path: str, *, data: dict[str, object] | None = None, authenticated: bool = True, form: bool = False
-    ) -> object:
-        calls.append(path)
-        if calls == ["/api/"]:
-            raise http_error(path, HTTPStatus.NOT_FOUND)
-        if path == "/api/":
-            raise http_error(path, HTTPStatus.UNAUTHORIZED)
-        if path == "/api/onboarding":
-            raise http_error(path, HTTPStatus.NOT_FOUND)
-        if path == "/auth/login_flow":
-            return {"flow_id": "login-flow"}
-        if path == "/auth/login_flow/login-flow":
-            return {"result": "login-code"}
-        if path == "/auth/token":
-            return {"access_token": "bootstrap-token"}
-        raise AssertionError(f"unexpected request: {path}")
-
-    monkeypatch.setattr(HomeAssistantClient, "request_json", fake_request)
-
+    httpx2_mock.get("/api/").mock(
+        side_effect=[http_status_error(HTTPStatus.NOT_FOUND), http_status_error(HTTPStatus.UNAUTHORIZED)]
+    )
+    httpx2_mock.get("/api/onboarding").respond(status_code=HTTPStatus.NOT_FOUND)
+    httpx2_mock.post("/auth/login_flow").respond(json={"flow_id": "login-flow"})
+    httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
+    httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
     home_assistant_client.readiness_retry_interval_secs = 0
     await provision.provision(home_assistant_client, "secret-password")
 
-    assert calls == [
-        "/api/",
-        "/api/",
-        "/api/onboarding",
-        "/auth/login_flow",
-        "/auth/login_flow/login-flow",
-        "/auth/token",
-    ]
+    assert_request_paths(
+        httpx2_mock,
+        ["/api/", "/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"],
+    )
 
 
 @pytest.mark.parametrize(
     "response",
     [[{"step": "future_step", "done": False}], [{"step": "user", "done": 1}], {"step": "user", "done": True}],
 )
-async def test_onboarding_status_validates_response(monkeypatch, home_assistant_client, response):
-    async def fake_request(self, path: str, **kwargs) -> object:
-        assert path == "/api/onboarding"
-        return response
-
-    monkeypatch.setattr(HomeAssistantClient, "request_json", fake_request)
+async def test_onboarding_status_validates_response(httpx2_mock: respx.Router, home_assistant_client, response):
+    route = httpx2_mock.get("/api/onboarding").respond(json=response)
 
     with pytest.raises(ValidationError):
         await home_assistant_client.onboarding_status()
+    assert route.called
 
 
 async def test_configure_http_is_idempotent(monkeypatch, home_assistant_client, provisioner_settings):
