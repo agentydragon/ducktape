@@ -282,11 +282,15 @@ retried. Each service replica may own its own current FastMCP connection; the da
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
 attempt from being replayed. The existing no-retry state machine is unchanged.
 
-`runtime.running_executor` owns one typed `McpActionGroupExecutor` per reviewed group, using
-`isinstance(McpExecutorBinding)` and the stdio or streamable-HTTP config below. It passes a group-keyed
-executor mapping to the service and shares the same catalog objects with discovery. MCP `tools/list`
-refreshes child Actions; execution rechecks the live schema. Echo is only an explicitly injected test
-executor, never a production default or factory option.
+`runtime.running_executor` builds one typed executor per reviewed group by matching on its binding,
+passes a group-keyed mapping to the service, and shares the same catalog objects with discovery. An
+`McpExecutorBinding` becomes a supervised `McpActionGroupExecutor` over the stdio or
+streamable-HTTP config below, whose `tools/list` refreshes child Actions and whose execution
+rechecks the live schema. A `SandboxExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
+than supervised: its roster is its own models, so it is offered from the moment configuration
+validates rather than after a handshake, and it needs Kubernetes access or startup fails
+([sandbox Actions](../docs/sandbox_actions.md)). Echo is only an explicitly injected test executor,
+never a production default or factory option.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail

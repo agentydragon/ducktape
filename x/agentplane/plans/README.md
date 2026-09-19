@@ -11,7 +11,6 @@ execution sequence. This is a priority decision, not a technical dependency.
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities: deployed command acceptance, UI usability/history, native recovery, and deferred cluster-browser/subagent work
-- [Sandbox Actions](sandbox_actions.md) — agreed design for exec-target Sandboxes provisioned as the calling ServiceAccount, for agents hosted outside the cluster
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
@@ -30,6 +29,9 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
+[Sandbox Actions](../docs/sandbox_actions.md) owns the exec-target contract for agents hosted
+outside the cluster: sandboxes that run as the calling ServiceAccount, and Kubernetes reach from
+inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
 architecture, pending Thread identity continuity, native recovery, and optional
 app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
