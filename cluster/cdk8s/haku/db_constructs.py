@@ -69,7 +69,12 @@ class Db(Construct):
         Cluster(
             self,
             "cluster",
-            metadata=metadata(CLUSTER_NAME, NAMESPACE),
+            # CNPG owns the data PVCs through this object, and nothing backs this database
+            # up, so a prune is unrecoverable. The annotation exempts it whichever
+            # Kustomization's inventory lists it (cluster/cdk8s/AGENTS.md) -- including
+            # while ownership moves between them. Removing this Cluster is a deliberate
+            # `kubectl delete`, never a manifest edit.
+            metadata=metadata(CLUSTER_NAME, NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}),
             spec=ClusterSpec(
                 instances=2,
                 image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",

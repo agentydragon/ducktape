@@ -404,7 +404,8 @@ def _generate_haku_console_directory(
                 retry_interval="1m",
                 timeout=directory.timeout,
                 path=f"./{directory.path}",
-                prune=True,
+                prune=not directory.retain_objects,
+                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN if directory.retain_objects else None,
                 wait=True,
                 source_ref=KustomizationSpecSourceRef(
                     kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE

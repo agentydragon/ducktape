@@ -43,6 +43,11 @@ class Directory:
     namespace: str | None = None
     # Kinds whose readiness the Flux Kustomization lists explicitly on top of `wait: true`.
     health_check_kinds: tuple[str, ...] = ()
+    # Flux never deletes this directory's objects -- not when one leaves the rendered
+    # output (`prune: false`), not when the Kustomization itself goes
+    # (`deletionPolicy: Orphan`). For a directory owning persistent state, where cleanup
+    # is a deliberate operator action; the two settings only have meaning together.
+    retain_objects: bool = False
 
 
 def _chart(app: App, directory: Directory) -> Chart:
@@ -76,6 +81,8 @@ DB = Directory(
     ),
     provided_secrets={},
     timeout="5m",
+    # Owns the CNPG Cluster holding the console's approval ledger, which has no backup.
+    retain_objects=True,
 )
 
 MIGRATION = Directory(

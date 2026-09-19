@@ -4,6 +4,7 @@ metadata:
   name: haku-console-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: haku-console-namespace
     - name: cnpg
@@ -11,7 +12,7 @@ spec:
     - name: external-secrets-config
   interval: 10m
   path: ./cluster/k8s/haku/console/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
