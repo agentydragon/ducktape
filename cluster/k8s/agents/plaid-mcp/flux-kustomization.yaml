@@ -4,33 +4,10 @@ metadata:
   name: plaid-mcp
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 10m
-  sourceRef:
-    kind: ExternalArtifact
-    name: plaid-mcp
-    namespace: ducktape-flux
-  path: ./cluster/k8s/agents/plaid-mcp
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: plaid-mcp-db
-      namespace: plaid-mcp
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: plaid-mcp
-      namespace: plaid-mcp
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: plaid-db-mcp
-      namespace: plaid-mcp
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
@@ -48,5 +25,28 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: monitoring-crds # ServiceMonitor
+    - name: monitoring-crds
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: plaid-mcp-db
+      namespace: plaid-mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: plaid-mcp
+      namespace: plaid-mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: plaid-db-mcp
+      namespace: plaid-mcp
+  interval: 10m
+  path: ./cluster/k8s/agents/plaid-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: plaid-mcp
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

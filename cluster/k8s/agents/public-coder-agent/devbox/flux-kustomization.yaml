@@ -1,20 +1,11 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: public-coder-agent-devbox
-  namespace: ducktape-flux
   annotations:
     description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root apart from the sshd host key and SSH access through ../sshpiper.
+  name: public-coder-agent-devbox
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 30m
-  path: ./cluster/k8s/agents/public-coder-agent/devbox
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-devbox
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -22,16 +13,24 @@ spec:
   dependsOn:
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
-    # Owns the public-coder-agent-proxy-ca-cert ConfigMap this VM mounts as a guest disk.
     - name: public-coder-agent-proxy
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine
       name: public-coder-devbox
       namespace: public-coder-agent
+  interval: 10m
+  path: ./cluster/k8s/agents/public-coder-agent/devbox
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-devbox
+    namespace: ducktape-flux
+  timeout: 30m
+  wait: true

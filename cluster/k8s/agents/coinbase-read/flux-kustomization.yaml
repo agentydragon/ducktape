@@ -4,23 +4,20 @@ metadata:
   name: coinbase-read
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: reflector
+      namespace: ducktape-flux
+    - name: haku-namespace
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/coinbase-read
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: coinbase-read
-
     namespace: ducktape-flux
   timeout: 5m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    # Reflector mirrors the Secret into haku-sandbox; haku-namespace creates
-    # haku-sandbox (the reflection target).
-    - name: reflector
-      namespace: ducktape-flux
-    - name: haku-namespace
-      namespace: ducktape-flux

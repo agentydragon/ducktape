@@ -1,33 +1,33 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agent-workspaces-app
-  namespace: ducktape-flux
   annotations:
     description: Disposable agent workspace template + warm pool in agent-workspaces. See agents/agent-sandbox/README.md for usage.
+  name: agent-workspaces-app
+  namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: agent-workspaces-app
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: agent-workspaces
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: agent-sandbox-controller # CRDs + controller
+    - name: agent-sandbox-controller
       namespace: ducktape-flux
-    - name: litellm-keys-tf # mints + reflects the Codex workspace key
+    - name: litellm-keys-tf
       namespace: ducktape-flux
-    - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
+    - name: kyverno-policies
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agent-workspaces
+  interval: 10m
+  path: ./cluster/k8s/agents/agent-sandbox/workspaces
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agent-workspaces-app
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
