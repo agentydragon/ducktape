@@ -20,7 +20,13 @@ from pydantic import BaseModel, JsonValue, ValidationError
 
 from mcp_infra.exec.kubernetes import PodExecError
 from x.agentplane.action_service.catalog import ActionDefinition
-from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
+from x.agentplane.action_service.models import (
+    ExecutionLease,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutionState,
+    Executor,
+)
 from x.agentplane.sandbox_actions.binding import SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from x.agentplane.sandbox_actions.models import (
@@ -106,19 +112,16 @@ def _failed(kind: str, message: str) -> ExecutionResult:
     return ExecutionResult(state=ExecutionState.FAILED, error={"kind": kind, "message": message})
 
 
-class SandboxExecutor:
-    """Runs the sandbox Actions in this process, against the caller the request names."""
+class SandboxExecutor(Executor):
+    """Runs the sandbox Actions in this process, against the caller the request names.
+
+    Inherits the no-op `begin_drain`: a sandbox outlives any one call and is the caller's to
+    dispose of, so shutdown must not touch one.
+    """
 
     def __init__(self, binding: SandboxExecutorBinding, inventory: SandboxInventory) -> None:
         self._binding = binding
         self._inventory = inventory
-
-    def begin_drain(self) -> None:
-        """Nothing to wind down: this executor holds no connection and no work of its own.
-
-        A sandbox outlives any one call and is the caller's to dispose of, so shutdown must not
-        touch one; what stops new dispatches reaching here is the service's own drain.
-        """
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         """One dispatch. A refusal the caller can act on is a failed Execution with a reason; only

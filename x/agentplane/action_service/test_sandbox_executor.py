@@ -2,7 +2,7 @@
 
 The inventory is a fake rather than a fake API server: these pin the executor's own decisions --
 whose sandbox it acts on, which failures become a reason the agent can act on, and which are not
-its to answer -- and the Kubernetes wire is `test_inventory.py`'s.
+its to answer -- and the Kubernetes wire is the inventory's own.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from mcp_infra.exec.kubernetes import CommandResult, PodExecError
 from mcp_infra.exec.models import Exited
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
+from x.agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
-from x.agentplane.sandbox_actions.executor import SandboxAction, SandboxExecutor, actions
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
 from x.agentplane.sandbox_actions.models import SandboxInfo, SandboxState
 from x.agentplane.subjects import ServiceAccountRef

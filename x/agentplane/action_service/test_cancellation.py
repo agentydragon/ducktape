@@ -21,6 +21,7 @@ from x.agentplane.action_service.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
+    Executor,
     OperatorPrincipal,
     Principal,
     ProviderOutcome,
@@ -226,10 +227,7 @@ class GatedProvider:
         return ProviderOutcome(verdict=self.verdict, reason_code="test-gated-vote")
 
 
-class UnreachableExecutor:
-    def begin_drain(self) -> None:
-        """No backend to wind down."""
-
+class UnreachableExecutor(Executor):
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         raise AssertionError("cancelled request reached executor")
 

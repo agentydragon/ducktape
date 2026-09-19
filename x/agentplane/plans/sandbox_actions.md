@@ -206,8 +206,9 @@ otherwise misreads every call:
 
 ## Work
 
-Landed: the `sandbox` executor kind (<../action_service/catalog.py>), the Actions and their
-caller-scoped inventory (<../sandbox_actions/>), the Action Service's Sandbox and `pods/exec` grant,
+Landed: the `sandbox` executor kind (<../action_service/catalog.py>), the Actions
+(<../action_service/sandbox_executor.py>) and their caller-scoped inventory
+(<../sandbox_actions/inventory.py>), the Action Service's Sandbox and `pods/exec` grant,
 the `sandbox-self` policy set and `claude-ai`'s binding and `EgressBinding`, and Kubernetes reach
 through the egress proxy.
 

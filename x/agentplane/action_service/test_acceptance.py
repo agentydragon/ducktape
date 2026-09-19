@@ -30,6 +30,7 @@ from x.agentplane.action_service.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
+    Executor,
     OperatorPrincipal,
     Principal,
     Verdict,
@@ -82,10 +83,7 @@ class FakeOperatorAuthenticator:
         return OPERATOR if token == "operator-bff" else None
 
 
-class CountingExecutor:
-    def begin_drain(self) -> None:
-        """No backend to wind down."""
-
+class CountingExecutor(Executor):
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
 

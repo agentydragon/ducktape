@@ -28,6 +28,7 @@ from x.agentplane.action_service.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
+    Executor,
     OperatorPrincipal,
     ReconciliationSource,
     UnknownOutcomeReason,
@@ -42,10 +43,7 @@ ACTION_ID = ActionIdentity(group="agentplane", name="echo")
 ALREADY_EXPIRED = timedelta(seconds=-1)
 
 
-class SlowSilentExecutor:
-    def begin_drain(self) -> None:
-        """No backend to wind down."""
-
+class SlowSilentExecutor(Executor):
     """Never heartbeats; sleeps past its own lease so the sweep must catch it mid-flight."""
 
     def __init__(self, sleep_seconds: float) -> None:
@@ -289,10 +287,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         await service.close()
 
 
-class GatedExecutor:
-    def begin_drain(self) -> None:
-        """No backend to wind down."""
-
+class GatedExecutor(Executor):
     def __init__(self) -> None:
         self.started = asyncio.Event()
         self.release = asyncio.Event()

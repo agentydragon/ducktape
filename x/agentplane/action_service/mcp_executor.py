@@ -39,7 +39,13 @@ from x.agentplane.action_service.catalog import (
     McpUnavailableReason,
 )
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
-from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
+from x.agentplane.action_service.models import (
+    ExecutionLease,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutionState,
+    Executor,
+)
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
 logger = logging.getLogger(__name__)
@@ -152,7 +158,7 @@ class _Connection:
         self.idle.set()
 
 
-class McpActionGroupExecutor:
+class McpActionGroupExecutor(Executor):
     """Implements `Executor` for exactly one `ActionGroup` backed by one MCP server connection."""
 
     def __init__(
