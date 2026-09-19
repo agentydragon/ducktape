@@ -490,7 +490,7 @@ class Console(Construct):
             metadata=metadata(NAME, NAMESPACE),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels=LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", interval="30s")],
+                endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics")],
             ),
         )
 
