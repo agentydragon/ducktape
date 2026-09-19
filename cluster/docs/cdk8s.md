@@ -114,7 +114,7 @@ Python bindings are build-time output, never committed. Put each import declarat
 its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
 upstream CRD source pins in `MODULE.bazel`. Current providers are
 `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher}`.
-`//x/agentplane/crds` owns its CRD constructs directly and is a separate case.
+`//agentplane/crds` owns its CRD constructs directly and is a separate case.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux-system/gotk-components.yaml`, keeping the binding aligned with the

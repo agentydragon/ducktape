@@ -1,0 +1,704 @@
+"""Real OAuth HTTP and PostgreSQL consent/grant authority, with a hermetic upstream IdP."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+import secrets
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
+from unittest.mock import AsyncMock
+from urllib.parse import parse_qs, urlsplit
+
+import httpx
+import pytest
+import pytest_bazel
+import uvicorn
+from cryptography.fernet import Fernet
+from fastapi import HTTPException
+from fastmcp.server.auth.cimd import CIMDDocument
+from fastmcp.server.auth.ssrf import SSRFFetchResponse
+from key_value.aio.wrappers.base import BaseWrapper
+from mcp.shared.auth import OAuthClientInformationFull
+from mcp.types import CallToolResult
+from pydantic import AnyHttpUrl
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.applications import Starlette
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+
+from util.net import bind_free_port, pick_free_port
+from util.testing.asgi import serve_app
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from agentplane.acceptance.dcr import register_client
+from agentplane.action_service.api import create_app
+from agentplane.action_service.auth import DisabledOperatorAuthenticator
+from agentplane.action_service.catalog import ActionCatalog
+from agentplane.action_service.connections import ConnectionAuthority, GrantRejectedError, GrantStatus, NewConnection
+from agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
+from agentplane.action_service.enrollments import (
+    ConfirmedReconnectConnection,
+    EnrollmentAllow,
+    EnrollmentAuthority,
+    EnrollmentConnection,
+    EnrollmentPreviewInput,
+)
+from agentplane.action_service.models import (
+    ActionRequestView,
+    CallerPrincipal,
+    CancellationResult,
+    Executor,
+    OperatorPrincipal,
+)
+from agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
+from agentplane.action_service.policy_informer import PolicyIndex
+from agentplane.action_service.service import ActionService
+from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
+from agentplane.action_service.updates import ActionUpdates
+from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
+
+CALLBACK = "https://client.example.test/callback"
+SCOPES = "openid email profile offline_access"
+OPERATOR = OperatorPrincipal(issuer="https://operator.example.test/", subject="operator")
+
+
+@dataclass
+class OAuthFixture:
+    proxy: ActionsOAuthProxy
+    callers: PolicyIndex
+    connections: ConnectionAuthority
+    enrollments: EnrollmentAuthority
+    browser: httpx.AsyncClient
+    base_url: str
+    metadata: dict[str, str]
+    settings: OAuthSettings
+
+    async def register(self) -> str:
+        response = await self.browser.post(
+            self.metadata["registration_endpoint"],
+            json={
+                "client_name": "Example external harness",
+                "redirect_uris": [CALLBACK],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none",
+                "scope": SCOPES,
+            },
+        )
+        assert response.status_code == 201, response.text
+        client_id = OAuthClientInformationFull.model_validate(response.json()).client_id
+        assert client_id is not None
+        return client_id
+
+    async def authorize(self, client_id: str) -> tuple[str, str]:
+        verifier = secrets.token_urlsafe(32)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        response = await self.browser.get(
+            self.metadata["authorization_endpoint"],
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": CALLBACK,
+                "scope": SCOPES,
+                "state": "client-state-preserved",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": f"{self.base_url}/mcp",
+            },
+        )
+        assert response.status_code == 302, response.text
+        assert response.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
+        return response.headers["location"].rsplit("/", 1)[1], verifier
+
+    async def approve(
+        self,
+        handle: str,
+        *,
+        connection: EnrollmentConnection | None = None,
+        service_account: ServiceAccountRef = PERSONAL,
+    ) -> str:
+        binding = secrets.token_urlsafe(32)
+        preview = await self.enrollments.preview(handle, EnrollmentPreviewInput(browser_binding=binding), OPERATOR)
+        decision = await self.enrollments.decide(
+            handle,
+            EnrollmentAllow(
+                browser_binding=binding,
+                expected_version=preview.version,
+                idempotency_key=secrets.token_urlsafe(16),
+                connection=connection if connection is not None else NewConnection(display_name="Test external client"),
+                service_account=service_account,
+            ),
+            OPERATOR,
+        )
+        assert decision.redirect_url is not None
+        return decision.redirect_url
+
+    async def callback(self, upstream_url: str) -> str:
+        async with httpx.AsyncClient(follow_redirects=False) as upstream_browser:
+            upstream = await upstream_browser.get(upstream_url)
+        assert upstream.status_code == 302, upstream.text
+        callback = await self.browser.get(upstream.headers["location"])
+        assert callback.status_code == 302, callback.text
+        destination = urlsplit(callback.headers["location"])
+        assert f"{destination.scheme}://{destination.netloc}{destination.path}" == CALLBACK
+        values = parse_qs(destination.query)
+        assert values["state"] == ["client-state-preserved"]
+        return values["code"][0]
+
+    async def exchange(self, client_id: str, code: str, verifier: str) -> httpx.Response:
+        return await self.browser.post(
+            self.metadata["token_endpoint"],
+            data={
+                "grant_type": "authorization_code",
+                "client_id": client_id,
+                "code": code,
+                "code_verifier": verifier,
+                "redirect_uri": CALLBACK,
+            },
+        )
+
+
+@pytest.fixture
+async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterator[OAuthFixture]:
+    private_key, public_key = generate_rsa_keypair()
+    oidc_sock, service_port = bind_free_port(), pick_free_port()
+    issuer = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}/application/o/actions/"
+    base_url = f"http://127.0.0.1:{service_port}"
+    secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
+    secret.write_text("test-only-upstream-secret")
+    signing.write_text(secrets.token_urlsafe(48))
+    encryption.write_bytes(Fernet.generate_key())
+    settings = OAuthSettings(
+        config_url=f"{issuer}.well-known/openid-configuration",
+        upstream_client_id="actions-upstream-client",
+        upstream_client_secret_file=secret,
+        base_url=base_url,
+        integration_app_url="https://integration.example.test",
+        jwt_signing_key_file=signing,
+        encryption_key_file=encryption,
+        upstream_issuer=issuer,
+        upstream_subject="test-user",
+        approving_operator=OPERATOR,
+    )
+    callers = admitted_callers(PERSONAL, OTHER)
+    connections = ConnectionAuthority(make_sessionmaker(engine), callers)
+    enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
+    idp = build_mock_oidc_app(
+        issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
+    )
+    async with serve_app(idp, sock=oidc_sock), running_oauth(settings, db_url, enrollments, connections) as proxy:
+        app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url=base_url, follow_redirects=False
+        ) as browser:
+            response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
+            response.raise_for_status()
+            yield OAuthFixture(proxy, callers, connections, enrollments, browser, base_url, response.json(), settings)
+
+
+async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    client_id = "https://client.example.test/oauth/client-metadata"
+    document = CIMDDocument(
+        client_id=AnyHttpUrl(client_id),
+        client_name="Test CIMD client",
+        redirect_uris=[CALLBACK],
+        grant_types=["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+    )
+    fetch = AsyncMock(
+        return_value=SSRFFetchResponse(
+            content=document.model_dump_json().encode(),
+            status_code=200,
+            headers={"content-type": "application/json", "cache-control": "max-age=3600"},
+        )
+    )
+    # Only the external HTTPS document fetch is replaced. The pinned library still
+    # validates metadata/client identity; our consent, PKCE and grant stores are real.
+    monkeypatch.setattr("fastmcp.server.auth.cimd.ssrf_safe_fetch_response", fetch)
+    metadata = await oauth.browser.get(f"{oauth.base_url}/.well-known/oauth-authorization-server")
+    assert metadata.json()["client_id_metadata_document_supported"] is True
+    assert "none" in metadata.json()["token_endpoint_auth_methods_supported"]
+    assert metadata.json()["registration_endpoint"]  # DCR remains available.
+    handle, verifier = await oauth.authorize(client_id)
+    fetch.assert_awaited_once()
+    assert fetch.call_args.args == (client_id,)
+    assert await oauth.connections.list() == []
+    code = await oauth.callback(await oauth.approve(handle))
+    wrong_pkce = await oauth.exchange(client_id, code, "incorrect-verifier")
+    assert wrong_pkce.status_code == 401
+    issued = await oauth.exchange(client_id, code, verifier)
+    assert issued.status_code == 200
+    grant = await oauth.proxy.authenticate(issued.json()["access_token"])
+    assert grant is not None
+    assert grant.client_id == client_id
+    assert grant.caller == PERSONAL
+    await oauth.connections.revoke(grant.id)
+    assert await oauth.proxy.authenticate(issued.json()["access_token"]) is None
+
+
+@pytest.mark.parametrize(
+    "client_id",
+    [
+        "http://client.example.test/oauth/metadata",
+        "https://127.0.0.1/oauth/metadata",
+        "https://169.254.169.254/latest/meta-data",
+    ],
+)
+async def test_cimd_refuses_insecure_and_private_metadata_urls(oauth: OAuthFixture, client_id: str) -> None:
+    assert await oauth.proxy.get_client(client_id) is None
+    assert await oauth.connections.list() == []
+
+
+@pytest.mark.parametrize("redirect_uri", ["http://127.0.0.1:49152/callback", CALLBACK])
+async def test_real_sdk_dcr_over_http_persists_client_metadata(
+    oauth: OAuthFixture,
+    engine: AsyncEngine,
+    db_url: str,
+    echo_catalog: ActionCatalog,
+    echo_executor: Executor,
+    redirect_uri: str,
+) -> None:
+    store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
+    service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
+    # Only the unrelated Kubernetes TokenReview boundary is fake. The request has
+    # no workload token; OAuth routes, SDK HTTP, and PostgreSQL are real.
+    app = create_app(
+        service,
+        _no_workload(),
+        DisabledOperatorAuthenticator(),
+        echo_catalog,
+        callers=oauth.callers,
+        updates=ActionUpdates(db_url),
+        connections=oauth.connections,
+        enrollments=oauth.enrollments,
+        oauth=oauth.proxy,
+    )
+    port = urlsplit(oauth.base_url).port
+    assert port is not None
+    # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False))
+    serving = asyncio.create_task(server.serve())
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
+        ):
+            with attempt:
+                _, writer = await asyncio.open_connection("127.0.0.1", port)
+                writer.close()
+                await writer.wait_closed()
+        registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
+        assert registered.client.client_id is not None
+        # A separately constructed provider reads durable server metadata, not the
+        # client's cache or the registering provider's in-process objects.
+        async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
+            restored = await replacement.get_client(registered.client.client_id)
+            assert restored is not None
+            assert restored.client_name == registered.client.client_name
+            assert restored.redirect_uris == registered.client.redirect_uris
+            assert restored.scope == registered.client.scope
+            assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
+        consent = await oauth.browser.get(registered.authorization_url)
+        assert consent.status_code == 302
+        assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
+        assert await oauth.connections.list() == []
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(serving, timeout=10)
+        await service.close()
+
+
+async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_url: str, engine: AsyncEngine) -> None:
+    client_id = await oauth.register()
+    assert await oauth.connections.list() == []  # Registration is not caller authority.
+    handle, verifier = await oauth.authorize(client_id)
+    assert await oauth.connections.list() == []
+    upstream_url = await oauth.approve(handle)
+    assert await oauth.connections.list() == []  # Consent alone is not an activated token family.
+    code = await oauth.callback(upstream_url)
+    wrong_pkce = await oauth.exchange(client_id, code, "incorrect-verifier")
+    assert wrong_pkce.status_code == 401
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200, response.text
+    tokens = response.json()
+    grant = await oauth.proxy.authenticate(tokens["access_token"])
+    assert grant is not None
+    assert (grant.caller, grant.client_id) == (PERSONAL, client_id)
+    assert grant.principal() == CallerPrincipal(account=PERSONAL)
+    assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
+    async with make_sessionmaker(engine)() as db:
+        stored_values = list(await db.scalars(text("SELECT value::text FROM agentplane_oauth_kv")))
+    assert stored_values
+    assert all("Example external harness" not in value and '"access_token"' not in value for value in stored_values)
+    # A replacement process uses the same encrypted PostgreSQL credentials and signing key.
+    async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
+        replacement.set_mcp_path("/mcp")
+        restored = await replacement.authenticate(tokens["access_token"])
+        assert restored is not None
+        assert restored.provenance() == grant.provenance()
+
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"]},
+    )
+    assert refresh.status_code == 200, refresh.text
+    refreshed = await oauth.proxy.authenticate(refresh.json()["access_token"])
+    assert refreshed is not None
+    assert refreshed.id == grant.id
+    connection = await oauth.connections.get(grant.connection_id)
+    await oauth.connections.unbind(connection.id, expected_version=connection.version)
+    assert await oauth.proxy.authenticate(tokens["access_token"]) is None
+    assert await oauth.proxy.authenticate(refresh.json()["access_token"]) is None
+    refused = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": refresh.json()["refresh_token"]},
+    )
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error_description"] == "grant is not authorized"
+
+
+async def test_concurrent_code_exchange_issues_at_most_one_family(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    responses = await asyncio.gather(*(oauth.exchange(client_id, code, verifier) for _ in range(2)))
+    assert sorted(response.status_code for response in responses) == [200, 401]
+    assert len(await oauth.connections.list()) == 1
+
+
+@pytest.mark.parametrize("caller", [PERSONAL, OTHER])
+@pytest.mark.parametrize("fail_activation", [False, True])
+async def test_fresh_oauth_reconnect_never_retargets_old_tokens(
+    oauth: OAuthFixture, caller: ServiceAccountRef, fail_activation: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_client = await oauth.register()
+    handle, verifier = await oauth.authorize(old_client)
+    code = await oauth.callback(await oauth.approve(handle))
+    old_tokens = (await oauth.exchange(old_client, code, verifier)).json()
+    old_grant = await oauth.proxy.authenticate(old_tokens["access_token"])
+    assert old_grant is not None
+    connection = await oauth.connections.get(old_grant.connection_id)
+    new_client = await oauth.register()
+    handle, verifier = await oauth.authorize(new_client)
+    code = await oauth.callback(
+        await oauth.approve(
+            handle,
+            service_account=caller,
+            connection=ConfirmedReconnectConnection(
+                connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+            ),
+        )
+    )
+    assert await oauth.proxy.authenticate(old_tokens["access_token"]) == old_grant
+    with monkeypatch.context() as patch:
+        if fail_activation:
+            patch.setattr(
+                oauth.connections, "activate", AsyncMock(side_effect=GrantRejectedError("test activation refused"))
+            )
+        result = await oauth.exchange(new_client, code, verifier)
+    if fail_activation:
+        assert result.status_code == 401, result.text
+        new_grant = (await oauth.connections.get(connection.id)).grants[-1]
+        assert new_grant.status == GrantStatus.PENDING
+    else:
+        assert result.status_code == 200, result.text
+        verified = await oauth.proxy.authenticate(result.json()["access_token"])
+        assert verified is not None
+        new_grant = verified
+    assert new_grant.caller == caller
+    assert new_grant.client_id == new_client
+    assert new_grant.connection_id == old_grant.connection_id
+    assert new_grant.revision == old_grant.revision + 1
+    assert await oauth.proxy.authenticate(old_tokens["access_token"]) is None
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": old_client, "refresh_token": old_tokens["refresh_token"]},
+    )
+    assert refresh.status_code == 401
+    assert (await oauth.exchange(new_client, code, verifier)).status_code == 401
+    assert (await oauth.connections.get(connection.id)).grants[0].provenance() == old_grant.provenance()
+
+
+async def test_stale_reconnect_code_is_invalid_grant_without_revoking_current_authority(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    tokens = (await oauth.exchange(client_id, code, verifier)).json()
+    grant = await oauth.proxy.authenticate(tokens["access_token"])
+    assert grant is not None
+    connection = await oauth.connections.get(grant.connection_id)
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(
+        await oauth.approve(
+            handle,
+            connection=ConfirmedReconnectConnection(
+                connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+            ),
+        )
+    )
+    await oauth.connections.rename(
+        connection.id, expected_version=connection.version, display_name="Changed concurrently"
+    )
+    refused = await oauth.exchange(client_id, code, verifier)
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error"] == "invalid_grant"
+    assert refused.json()["error_description"] == "Connection version changed"
+    assert await oauth.proxy.authenticate(tokens["access_token"]) == grant
+
+
+async def test_bearer_storage_outage_is_retryable_not_a_false_invalid_token(
+    oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200, response.text
+    token = response.json()["access_token"]
+    assert isinstance(oauth.proxy._client_storage, BaseWrapper)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            oauth.proxy._client_storage.key_value, "get", AsyncMock(side_effect=RuntimeError("test store outage"))
+        )
+        with pytest.raises(HTTPException) as error:
+            await oauth.proxy.authenticate(token)
+        assert error.value.status_code == 503
+    assert await oauth.proxy.authenticate(token) is not None
+
+
+@pytest.mark.parametrize("token_type", ["access_token", "refresh_token"])
+async def test_token_revocation_ends_the_canonical_grant(oauth: OAuthFixture, token_type: str) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200, response.text
+    access_token = response.json()["access_token"]
+    verified = await oauth.proxy.load_access_token(access_token)
+    assert verified is not None
+    assert verified.token == access_token
+    other_client_id = await oauth.register()
+    wrong_client = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": other_client_id, "token": response.json()[token_type], "token_type_hint": token_type},
+    )
+    assert wrong_client.status_code == 200, wrong_client.text
+    assert await oauth.proxy.authenticate(access_token) is not None
+    revoked = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": client_id, "token": response.json()[token_type], "token_type_hint": token_type},
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert await oauth.proxy.authenticate(access_token) is None
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": response.json()["refresh_token"]},
+    )
+    assert refresh.status_code == 401
+    repeated = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": client_id, "token": response.json()[token_type], "token_type_hint": token_type},
+    )
+    assert repeated.status_code == 200, repeated.text
+
+
+async def test_one_registration_can_authorize_distinct_connections_to_same_service_account(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    grants = []
+    for _ in range(2):
+        handle, verifier = await oauth.authorize(client_id)
+        code = await oauth.callback(await oauth.approve(handle))
+        response = await oauth.exchange(client_id, code, verifier)
+        assert response.status_code == 200, response.text
+        grant = await oauth.proxy.authenticate(response.json()["access_token"])
+        assert grant is not None
+        grants.append(grant)
+    assert grants[0].principal() == grants[1].principal()
+    assert grants[0].connection_id != grants[1].connection_id
+    assert grants[0].id != grants[1].id
+
+
+async def test_upstream_login_without_approved_consent_cannot_issue_tokens(
+    oauth: OAuthFixture, engine: AsyncEngine
+) -> None:
+    client_id = await oauth.register()
+    _, verifier = await oauth.authorize(client_id)
+    # Deliberately bypass the UI via test-only database inspection. Knowing the upstream
+    # redirect, or successfully authenticating to the IdP, is not an approved grant.
+    async with make_sessionmaker(engine)() as db:
+        row = (await db.scalars(select(EnrollmentRow))).one()
+        upstream_url = row.upstream_url
+    code = await oauth.callback(upstream_url)
+    refused = await oauth.exchange(client_id, code, verifier)
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error_description"] == "enrollment was not approved"
+    assert await oauth.connections.list() == []
+
+
+async def test_consent_approver_must_match_verified_upstream_mapping(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    browser_binding = secrets.token_urlsafe(32)
+    different_operator = OPERATOR.model_copy(update={"subject": "another-operator"})
+    preview = await oauth.enrollments.preview(
+        handle, EnrollmentPreviewInput(browser_binding=browser_binding), different_operator
+    )
+    approved = await oauth.enrollments.decide(
+        handle,
+        EnrollmentAllow(
+            browser_binding=browser_binding,
+            expected_version=preview.version,
+            idempotency_key="different-operator",
+            connection=NewConnection(display_name="Wrong operator"),
+            service_account=PERSONAL,
+        ),
+        different_operator,
+    )
+    assert approved.redirect_url is not None
+    code = await oauth.callback(approved.redirect_url)
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 401
+    assert await oauth.connections.list() == []
+
+
+async def test_wrong_upstream_subject_is_refused_before_code_consumption(
+    oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    with monkeypatch.context() as patch:
+        patch.setattr(oauth.proxy, "_settings", oauth.settings.model_copy(update={"upstream_subject": "another-user"}))
+        refused = await oauth.exchange(client_id, code, verifier)
+        assert refused.status_code == 401, refused.text
+        assert (
+            refused.json()["error_description"] == "The upstream account that signed in is not this service's operator."
+        )
+        assert await oauth.connections.list() == []
+    # The pre-consumption check did not burn a valid code on the configuration mismatch.
+    corrected = await oauth.exchange(client_id, code, verifier)
+    assert corrected.status_code == 200, corrected.text
+
+
+async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
+    oauth: OAuthFixture,
+    engine: AsyncEngine,
+    db_url: str,
+    echo_catalog: ActionCatalog,
+    echo_executor: Executor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    issued = await oauth.exchange(client_id, code, verifier)
+    assert issued.status_code == 200, issued.text
+    bearer = issued.json()["access_token"]
+    grant = await oauth.proxy.authenticate(bearer)
+    assert grant is not None
+    store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
+    service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
+    sandbox = _no_workload()
+    app = create_app(
+        service,
+        sandbox,
+        DisabledOperatorAuthenticator(),
+        echo_catalog,
+        callers=oauth.callers,
+        updates=ActionUpdates(db_url),
+        connections=oauth.connections,
+        enrollments=oauth.enrollments,
+        oauth=oauth.proxy,
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=oauth.base_url) as http,
+    ):
+        unauthenticated = await http.post("/mcp", json={})
+        assert unauthenticated.status_code == 401
+        # RFC 6750 §3.1: no error attribute without credentials; the challenge names metadata this app serves.
+        metadata_url = f"{oauth.base_url}/.well-known/oauth-protected-resource/mcp"
+        assert unauthenticated.headers["www-authenticate"] == f'Bearer resource_metadata="{metadata_url}"'
+        metadata = await http.get(metadata_url)
+        assert metadata.status_code == 200, metadata.text
+        assert metadata.json()["resource"] == f"{oauth.base_url}/mcp"
+        sandbox.reset_mock()
+        key = "external-original-key"
+        request = {
+            "idempotency_key": key,
+            "title": "test title for external-original-key",
+            "action": {"group": "agentplane", "name": "echo"},
+            "arguments": {"message": "external-test"},
+        }
+        receipt = ActionRequestView.model_validate(
+            await _call_mcp(http, bearer, "request_action", {"request": request})
+        )
+        assert receipt.external_grant == grant.provenance()
+        assert receipt.caller is None, "a caller reading its own receipt is not shown the caller column"
+        assert (await store.get(receipt.id, OPERATOR)).caller == grant.caller
+        cancelled = CancellationResult.model_validate(
+            await _call_mcp(http, bearer, "cancel_action_request", {"request_id": str(receipt.id)})
+        )
+        assert cancelled.request.external_grant == grant.provenance()
+        repeat = await _call_mcp_result(http, bearer, "request_action", {"request": request})
+        assert repeat.is_error, repeat
+        recovered = ActionRequestView.model_validate(
+            await _call_mcp(http, bearer, "get_action_request", {"idempotency_key": key})
+        )
+        assert recovered == cancelled.request
+        assert isinstance(oauth.proxy._client_storage, BaseWrapper)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                oauth.proxy._client_storage.key_value, "get", AsyncMock(side_effect=RuntimeError("test store outage"))
+            )
+            outage = await http.post("/mcp", headers={"Authorization": f"Bearer {bearer}"}, json={})
+        assert outage.status_code == 503, outage.text
+        assert "retry-after" in outage.headers
+        await oauth.connections.revoke(grant.id)
+        refused = await http.post("/mcp", headers={"Authorization": f"Bearer {bearer}"}, json={})
+        assert refused.status_code == 401
+        assert 'error="invalid_token"' in refused.headers["www-authenticate"]
+        refresh_bearer = await http.post(
+            "/mcp", headers={"Authorization": f"Bearer {issued.json()['refresh_token']}"}, json={}
+        )
+        assert refresh_bearer.status_code == 401
+        sandbox.resolve_workload.assert_not_awaited()  # Failed local OAuth credentials never reach TokenReview.
+    await service.close()
+
+
+def _no_workload() -> AsyncMock:
+    """The unrelated Kubernetes TokenReview boundary, accepting no bearer at all."""
+    resolver = AsyncMock(spec=WorkloadPrincipalResolver)
+    resolver.resolve_workload.side_effect = WorkloadPrincipalRejectedError("test: no workload")
+    return resolver
+
+
+async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    result = await _call_mcp_result(http, bearer, name, arguments)
+    assert not result.is_error, result
+    assert result.structured_content is not None
+    return cast(dict[str, Any], result.structured_content)
+
+
+async def _call_mcp_result(
+    http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]
+) -> CallToolResult:
+    response = await http.post(
+        "/mcp",
+        headers={
+            "Authorization": f"Bearer {bearer}",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-11-25",
+        },
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}},
+    )
+    assert response.status_code == 200, response.text
+    data = next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: "))
+    return CallToolResult.model_validate(json.loads(data)["result"])
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -1,8 +1,8 @@
 """The Agent Sandbox CRDs' vocabulary, as the upstream controller publishes it.
 
 Three components read these objects — haku's sandbox client (<../haku/sandbox/kubernetes_client.py>),
-the Agentplane integration app's inventory (<../x/agentplane/app/inventory.py>) and the sandbox
-Actions' (<../x/agentplane/sandbox_actions/inventory.py>) — and each re-derived the API's
+the Agentplane integration app's inventory (<../agentplane/app/inventory.py>) and the sandbox
+Actions' (<../agentplane/sandbox_actions/inventory.py>) — and each re-derived the API's
 coordinates and its own way of reading a status condition. That is how the sandbox Actions shipped
 searching for a Pod by a label the controller does not write: the annotation that actually links
 the two objects was declared correctly in one consumer and absent from the next.

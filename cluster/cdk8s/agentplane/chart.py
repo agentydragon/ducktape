@@ -15,7 +15,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.metadata import metadata
 from util.settings_contract import settings_file
-from x.agentplane.app import main as app_main
+from agentplane.app import main as app_main
 
 
 def environment_chart(app: App, env: Environment) -> Chart:

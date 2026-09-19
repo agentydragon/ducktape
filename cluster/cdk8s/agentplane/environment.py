@@ -78,7 +78,7 @@ class AppProps:
 @dataclass(frozen=True)
 class ActionsProps:
     hostname: str
-    # x/agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
+    # agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
     settings: dict
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
@@ -109,7 +109,7 @@ class Environment:
     # Whether the operator Role may manage ActionPolicySet/Binding objects.
     include_action_policy_rule: bool
     replicas: ReplicaProfile
-    # x/agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
+    # agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
     app_config: dict
     db: DbProps
     llm_ingress: LlmIngressProps

@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = [
+        "//agentplane/action_service:__pkg__",
+        "//agentplane/egress:__pkg__",
+        "//agentplane/llm_ingress:__pkg__",
+    ],
+)
+
+py_library(
+    name = "fake_apiserver",
+    srcs = ["fake_apiserver.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane/egress:resources",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+    ],
+)

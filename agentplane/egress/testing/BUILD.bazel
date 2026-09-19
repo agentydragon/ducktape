@@ -1,0 +1,22 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/egress:__pkg__"],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = ["@pypi//cryptography"],
+)
+
+py_library(
+    name = "replica",
+    srcs = ["replica.py"],
+    deps = [
+        "//agentplane/egress:main",
+        "@pypi//aiohttp",
+        "@pypi//tenacity",
+    ],
+)

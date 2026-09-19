@@ -1,0 +1,333 @@
+"""Serve the Agentplane app over one namespace's sandbox inventory."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import mimetypes
+import os
+import socket
+from collections.abc import MutableMapping
+from pathlib import Path
+from typing import Any, cast
+
+import httpx
+import uvicorn
+from fastapi import Response
+from fastapi.staticfiles import StaticFiles
+from jinja2 import StrictUndefined, Template
+from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
+from pydantic import Field
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+
+from util.bazel.runfiles import get_required_path
+from util.kubernetes import CustomObjectsClient
+from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
+from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.api import ModelCatalog, create_app
+from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
+from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress import EgressInventory
+from agentplane.app.identity import TokenReviewer
+from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.live import LiveIndex, watch_for
+from agentplane.app.oidc import load_settings
+from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.shutdown import Drain, drain_of
+from agentplane.app.trajectory import TrajectoryStore
+from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
+
+# The built frontend, a runfiles data dependency of this module's library.
+# The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
+FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
+DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE = "_main/agentplane/app/agent_instructions.j2"
+SERVICE_WORKER = "_main/agentplane/app/frontend/sw.js"
+
+
+logger = logging.getLogger(__name__)
+
+
+class SpaFiles(StaticFiles):
+    """The SPA, served so a browser never keeps a deploy-old copy.
+
+    The bundle keeps one name and Bazel stamps every file with the same fixed mtime, so a plain
+    `StaticFiles` mount lets the browser's heuristic freshness reuse `main.js` for months and
+    answers a same-sized `index.html` with a false 304 from its mtime-and-size ETag.
+    """
+
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: MutableMapping[str, Any],
+        status_code: int = 200,
+    ) -> Response:
+        path = Path(full_path)
+        return Response(
+            content=path.read_bytes(),
+            media_type=mimetypes.guess_type(path.name)[0],
+            headers={"Cache-Control": "no-store"},
+            status_code=status_code,
+        )
+
+
+class AppServer(uvicorn.Server):
+    """Uvicorn, with the app's drain begun as its shutdown starts."""
+
+    def __init__(self, config: uvicorn.Config, drain: Drain) -> None:
+        super().__init__(config)
+        self._drain = drain
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        # Before Uvicorn waits on what is open: the streams end now rather than at its budget, and
+        # /readyz fails. Here rather than in `handle_exit`, whose signal context can interrupt the
+        # loop mid-`Event.wait` and lose the waiter; the tick between the signal and this is 0.1s.
+        self._drain.begin()
+        await super().shutdown(sockets)
+
+
+# Names the YAML settings file a deployment mounts; not a field, so not a flag.
+CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
+
+
+class Settings(BaseSettings):
+    """The app's configuration.
+
+    Each field is a `--flag`, an `AGENTPLANE_*` environment variable, and a key of the YAML file
+    `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
+    catalog in that file.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
+
+    namespace: str = Field(description="The app's own namespace, holding the egress policies and bindings.")
+    sandbox_namespace: str = Field(
+        description="Namespace the app stamps Sandboxes into and dials runners in. Separate from the app's own "
+        "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
+    )
+    runner_port: int = Field(description="The port every runner Pod listens on.")
+    host: str = Field(default="127.0.0.1", description="Bind address.")
+    port: int = Field(default=8080, description="Bind port.")
+    kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+    action_federation: ActionFederationSettings | None = None
+    database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    models: ModelCatalog = Field(
+        description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
+    )
+    sandbox_presets: dict[str, SandboxPreset] = Field(
+        default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
+    )
+    thread_presets: dict[str, ThreadPreset] = Field(
+        default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
+    )
+    agent_instructions: str | None = Field(
+        default=None,
+        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
+    )
+    agent_egress_api_url: str | None = Field(
+        default=None,
+        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
+    )
+    agent_actions_service_url: str | None = Field(
+        default=None,
+        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
+    )
+    default_policies: list[str] = Field(
+        default_factory=list,
+        description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
+        "what no sandbox works without, the model endpoint above all.",
+    )
+    egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
+    egress_admin_timeout: float = Field(
+        default=5, description="Seconds to wait for the proxy before showing rules only."
+    )
+    shutdown_timeout: int = Field(
+        default=5,
+        description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
+        "them; the rest of the Deployment's grace period is the bridge's lease release and the store's.",
+    )
+    resync_seconds: int = Field(
+        default=300,
+        description="Watch lifetime; every kind the live stream pushes is relisted this often, and a "
+        "kind that misses several cycles is what the stream reports as stale.",
+    )
+    token_audience: str = Field(
+        default="agentplane",
+        description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
+    )
+    token_subjects: frozenset[str] = Field(
+        default=frozenset(),
+        description="The Kubernetes usernames a token caller may present, as JSON: "
+        '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
+        "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
+    )
+
+    def __init__(self, **values: Any) -> None:
+        # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
+        # derives a required-argument signature from the fields.
+        super().__init__(**values)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get(CONFIG_FILE_ENV):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
+
+
+def resolved_agent_instructions(
+    configured: str | None, *, egress_api_url: str | None, actions_service_url: str | None
+) -> str:
+    """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
+    if configured is not None:
+        return configured
+    if egress_api_url is None or actions_service_url is None:
+        raise ValueError("image-owned agent instructions require agent_egress_api_url and agent_actions_service_url")
+    template = Template(
+        get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
+    )
+    return str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    asyncio.run(async_main(Settings()))
+
+
+async def async_main(settings: Settings) -> None:
+    oidc = load_settings()
+    if settings.action_federation is not None and oidc is None:
+        raise ValueError("Action federation requires operator OIDC login")
+    configuration = k8s_client.Configuration()
+    if settings.kubeconfig is None:
+        k8s_config.load_incluster_config(client_configuration=configuration)
+    else:
+        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
+    async with (
+        ApiClient(configuration=configuration) as api,
+        httpx.AsyncClient(
+            base_url=settings.action_federation.service_url
+            if settings.action_federation
+            else "http://disabled.invalid",
+            timeout=10,
+        ) as actions_http,
+        httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+    ):
+        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
+        inventory = SandboxInventory(
+            namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=CoreV1Api(api)
+        )
+        egress = EgressInventory(
+            namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
+        )
+        # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
+        # binding to the authenticated Sandbox, and where the owner reference cascades.
+        action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
+        live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES))
+        watch = watch_for(
+            live,
+            custom_objects=custom_objects,
+            core_v1=CoreV1Api(api),
+            namespace=settings.namespace,
+            sandbox_namespace=settings.sandbox_namespace,
+            resync_seconds=settings.resync_seconds,
+        )
+        store = TrajectoryStore.connect(settings.database_url)
+        await store.start_updates()
+
+        async def running_sandboxes() -> list[str]:
+            return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
+
+        bridge = RunnerBridge(
+            address_of=runner_address(live, settings.runner_port),
+            store=store,
+            discover_sandboxes=running_sandboxes,
+            sandbox_changes=live.changes,
+        )
+        operator_actions = (
+            FederatedOperatorActions(settings.action_federation, oidc, actions_http)
+            if settings.action_federation is not None and oidc is not None
+            else None
+        )
+        logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
+        app = create_app(
+            inventory,
+            bridge,
+            store,
+            settings.models,
+            egress,
+            DecisionsClient(admin_http),
+            live,
+            action_policy,
+            oidc,
+            TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
+            operator_actions=operator_actions,
+            presets=PresetCatalog(
+                sandboxes=settings.sandbox_presets,
+                threads=settings.thread_presets,
+                agent_instructions=resolved_agent_instructions(
+                    settings.agent_instructions,
+                    egress_api_url=settings.agent_egress_api_url,
+                    actions_service_url=settings.agent_actions_service_url,
+                ),
+            ),
+        )
+        worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
+
+        @app.get("/sw.js")
+        async def service_worker() -> Response:
+            return Response(content=worker, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+        # The SPA, mounted last so the API routes above it win; index.html answers the rest.
+        app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
+        watch_task = asyncio.create_task(watch.run(), name="live-watch")
+        try:
+            await serve_then_close(
+                AppServer(
+                    uvicorn.Config(
+                        app,
+                        host=settings.host,
+                        port=settings.port,
+                        access_log=False,
+                        timeout_graceful_shutdown=settings.shutdown_timeout,
+                    ),
+                    drain_of(app),
+                ),
+                bridge=bridge,
+                store=store,
+                sandboxes=running_sandboxes,
+            )
+        finally:
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
+
+
+async def serve_then_close(
+    server: uvicorn.Server, *, bridge: RunnerBridge, store: TrajectoryStore, sandboxes: DiscoverSandboxes
+) -> None:
+    """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
+    timeout bounds the requests and streams still open, and the bridge's lease release and the store's
+    close have the rest of the Pod's grace period to themselves."""
+    try:
+        await bridge.start(await sandboxes())
+        await server.serve()
+    finally:
+        await bridge.close()
+        await store.close()
+
+
+if __name__ == "__main__":
+    main()

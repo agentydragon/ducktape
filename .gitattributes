@@ -68,8 +68,8 @@ cluster/k8s/ntfy/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
-# kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
-# output, pinned by //x/agentplane/crds:test_generate.
+# kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
+# output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/flux-kustomization.yaml linguist-generated=true

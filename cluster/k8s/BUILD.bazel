@@ -146,9 +146,9 @@ exports_files(
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
     visibility = [
+        "//agentplane/crds:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
-        "//x/agentplane/crds:__pkg__",
     ],
 )
 

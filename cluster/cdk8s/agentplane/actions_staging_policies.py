@@ -34,8 +34,8 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
-from x.agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
+from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
+from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"

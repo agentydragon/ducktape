@@ -1,0 +1,1031 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+TSCONFIG = ":tsconfig"
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+# TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
+# proto-JSON bodies are plain objects there; the runner's shared protocol types them.
+js_openapi_schema(
+    name = "schema",
+    generator = "//agentplane/app:export_schema_bin",
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":operator_login",
+        ":schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/openapi-fetch",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "client_test",
+    testonly = True,
+    srcs = ["client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":operator_login",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "operator_login",
+    srcs = ["operator_login.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "consent_client",
+    srcs = ["consent_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+ts_library(
+    name = "consent",
+    srcs = ["consent.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":consent_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "consent_test",
+    testonly = True,
+    srcs = ["consent.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":connections_fixture",
+        ":consent",
+        ":consent_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions",
+    srcs = ["actions.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_test",
+    testonly = True,
+    srcs = ["actions.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":actions_testing",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_history",
+    srcs = ["actions_history.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":client",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_history_test",
+    testonly = True,
+    srcs = ["actions_history.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":actions_history",
+        ":actions_testing",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_testing",
+    testonly = True,
+    srcs = ["actions_testing.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "connections",
+    srcs = ["settings/connections.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "mcp_servers",
+    srcs = ["settings/mcp_servers.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "mcp_servers_test",
+    testonly = True,
+    srcs = ["settings/mcp_servers.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":mcp_servers",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "connections_fixture",
+    testonly = True,
+    srcs = ["connections_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "settings",
+    srcs = ["settings/dialog.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":connections",
+        ":mcp_servers",
+        ":push",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "settings_test",
+    testonly = True,
+    srcs = ["settings/dialog.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":settings",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "connections_test",
+    testonly = True,
+    srcs = ["settings/connections.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":connections",
+        ":connections_fixture",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "events",
+    srcs = ["events.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//agentplane/runner:protocol_pb"],
+)
+
+ts_library(
+    name = "launch_presets",
+    srcs = ["launch_presets.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "launch_presets_test",
+    srcs = ["launch_presets.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":launch_presets",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "events_test",
+    srcs = ["events.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":events",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "event_stream",
+    srcs = ["event_stream.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":events",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "event_stream_test",
+    testonly = True,
+    srcs = ["event_stream.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":event_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "command_state",
+    srcs = ["command_state.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+    ],
+)
+
+ts_library(
+    name = "command_submission",
+    srcs = ["command_submission.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":command_state",
+        ":event_stream",
+        ":local_commands",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/protocol:command_pb",
+    ],
+)
+
+ts_library(
+    name = "pending_commands",
+    srcs = ["pending_commands.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_state",
+        ":command_submission",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/protocol:command_pb",
+    ],
+)
+
+ts_library(
+    name = "command_state_test",
+    testonly = True,
+    srcs = ["command_state.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_state",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands",
+    srcs = ["local_commands.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands_test",
+    testonly = True,
+    srcs = ["local_commands.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+# The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
+ts_library(
+    name = "lifecycle",
+    srcs = [
+        "lifecycle.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths lifecycle.tsx imports; see
+        # the note in the file itself.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "sandboxes",
+    srcs = [
+        "sandboxes.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        ":launch_presets",
+        ":lifecycle",
+        ":live",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "thread_groups",
+    srcs = ["thread_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "thread_groups_test",
+    testonly = True,
+    srcs = ["thread_groups.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_groups",
+        "//:node_modules/vitest",
+    ],
+)
+
+# sidebar.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "sidebar_css",
+    srcs = ["sidebar.css"],
+)
+
+# app.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "shell_css",
+    srcs = ["shell.css"],
+)
+
+ts_library(
+    name = "sidebar",
+    srcs = [
+        "sidebar.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live",
+        ":sandboxes",
+        ":sidebar_css",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "sidebar_test",
+    testonly = True,
+    srcs = ["sidebar.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live",
+        ":sidebar",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "egress",
+    srcs = ["egress.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "action_policy",
+    srcs = ["action_policy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":egress",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "action_policy_test",
+    testonly = True,
+    srcs = ["action_policy.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "sandbox_page",
+    srcs = [
+        "sandbox_page.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        ":egress",
+        ":json_view",
+        ":launch_presets",
+        ":lifecycle",
+        ":live",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_page_test",
+    testonly = True,
+    srcs = ["sandbox_page.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live",
+        ":sandbox_page",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "markdown",
+    srcs = ["markdown.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/marked",
+        "//:node_modules/react",
+    ],
+)
+
+# json_view.tsx imports this for the bundler; esbuild resolves it beside the emitted json_view.js
+# and folds it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+js_library(
+    name = "json_view_css",
+    srcs = ["json_view.css"],
+)
+
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
+# (actions.tsx, actions_history.tsx, session.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+ts_library(
+    name = "json_view",
+    srcs = [
+        "json_view.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "json_view_test",
+    testonly = True,
+    srcs = ["json_view.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+# frame.tsx imports this for the bundler; esbuild resolves it beside the emitted frame.js and folds
+# it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+js_library(
+    name = "frame_css",
+    srcs = ["frame.css"],
+)
+
+ts_library(
+    name = "frame",
+    srcs = [
+        "frame.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_state",
+        ":frame_css",
+        ":json_view",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "frame_test",
+    testonly = True,
+    srcs = ["frame.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":frame",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+# session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "session_css",
+    srcs = ["session.css"],
+)
+
+ts_library(
+    name = "conversation_scroll",
+    srcs = ["conversation_scroll.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "session",
+    srcs = [
+        "session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # The ambient declaration for the @tabler/icons-react subpaths session.tsx imports; see the
+        # note in the file itself.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":command_submission",
+        ":conversation_scroll",
+        ":event_stream",
+        ":events",
+        ":frame",
+        ":json_view",
+        ":live",
+        ":markdown",
+        ":pending_commands",
+        ":session_css",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_pb",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "session_test",
+    testonly = True,
+    srcs = ["session.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":session",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "push",
+    srcs = ["settings/push.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+filegroup(
+    name = "service_worker",
+    srcs = ["sw.js"],
+)
+
+ts_library(
+    name = "app",
+    srcs = [
+        "app.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # The ambient declaration for the @tabler/icons-react subpath app.tsx imports; see the note
+        # in the file itself.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":actions_history",
+        ":consent",
+        ":sandbox_page",
+        ":sandboxes",
+        ":session",
+        ":settings",
+        ":shell_css",
+        ":sidebar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "main_lib",
+    srcs = ["main.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":operator_login",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# The served directory: index.html beside main.js and main.css, mounted by the app.
+spa_bundle(
+    name = "bundle",
+    entry_point = "main.js",
+    jsx = "automatic",
+    deps = [":main_lib"],
+)
+
+ts_library(
+    name = "sandboxes_test",
+    testonly = True,
+    srcs = ["sandboxes.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":sandboxes",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "test_setup.ts",
+        "vitest.config.mts",
+        ":action_policy_test",
+        ":actions_history_test",
+        ":actions_test",
+        ":client_test",
+        ":command_state_test",
+        ":connections_test",
+        ":consent_test",
+        ":event_stream_test",
+        ":events_test",
+        ":frame_test",
+        ":json_view_test",
+        ":launch_presets_test",
+        ":local_commands_test",
+        ":mcp_servers_test",
+        ":push_test",
+        ":sandbox_page_test",
+        ":sandboxes_test",
+        ":session_test",
+        ":settings_test",
+        ":sidebar_test",
+        ":thread_groups_test",
+        "//:node_modules/happy-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+# Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
+# events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
+# visual/scenarios.ts, the PNGs published for PR visual review on the shared
+# //util/testing/frontend_visual machinery.
+ts_library(
+    name = "visual_scenarios",
+    testonly = True,
+    srcs = ["visual/scenarios.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//util/testing/frontend_visual:visual_test_lib"],
+)
+
+ts_library(
+    name = "visual_harness_lib",
+    testonly = True,
+    srcs = [
+        "visual/harness.tsx",
+        "visual/network.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":client",
+        ":connections_fixture",
+        ":live",
+        ":local_commands",
+        ":visual_scenarios",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+# A classic script (iife) so visual/index.html loads it from file:// without module CORS.
+esbuild(
+    name = "visual_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "visual/harness.js",
+    format = "iife",
+    minify = False,
+    output = "visual/bundle.js",
+    output_css = "visual/bundle.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":visual_harness_lib"],
+)
+
+# Single-file views so $(rootpath) resolves to one path each.
+filegroup(
+    name = "visual_bundle_js",
+    testonly = True,
+    srcs = ["visual/bundle.js"],
+)
+
+filegroup(
+    name = "visual_bundle_css",
+    testonly = True,
+    srcs = ["visual/bundle.css"],
+)
+
+# Every scenario in visual/scenarios.ts, swept on one browser per shard -- `shard_count` buys the
+# parallelism per-scenario targets used to give, without BUILD repeating the scenario list. Run one
+# with `--test_filter=<scenario>`; see AGENTS.md.
+#
+# medium: a shard renders 4-5 scenarios on one Chromium, measured at 10-16s per shard
+# (invocation 4493681a-c750-49ba-af99-d756df6e956e) -- against 30-40s for a single scenario when
+# each one paid its own browser launch and input staging.
+visual_test(
+    name = "visual",
+    size = "medium",
+    assets = [
+        "visual/index.html",
+        ":visual_bundle_css",
+    ],
+    entry_point = "visual/runner.mjs",
+    harness = ":visual_bundle_js",
+    scenarios = ":visual_scenarios",
+    shard_count = 6,
+)
+
+js_test(
+    name = "sw_test",
+    size = "small",
+    data = [":service_worker"],
+    entry_point = "sw_test.mjs",
+    env = {"SW_SOURCE": "$(rootpath :service_worker)"},
+)
+
+ts_library(
+    name = "push_test",
+    testonly = True,
+    srcs = ["settings/push.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":push",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)

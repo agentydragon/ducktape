@@ -89,9 +89,9 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
-from x.agentplane.app.main import CONFIG_FILE_ENV, Settings
-from x.agentplane.app.oidc import OIDCSettings
-from x.agentplane.egress import sidecar
+from agentplane.app.main import CONFIG_FILE_ENV, Settings
+from agentplane.app.oidc import OIDCSettings
+from agentplane.egress import sidecar
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.

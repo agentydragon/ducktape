@@ -1,0 +1,21 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+        "//agentplane/egress/migrations/versions:0001_decisions.py",
+        "//agentplane/egress/migrations/versions:0002_service_account_subject.py",
+    ],
+    visibility = ["//agentplane/egress:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/egress:decision_store",
+        "@pypi//alembic",
+    ],
+)

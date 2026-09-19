@@ -1,0 +1,59 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+py_library(
+    name = "process",
+    srcs = ["process.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "async_process",
+    srcs = ["async_process.py"],
+    deps = [
+        ":process",
+        ":transport",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "transport",
+    srcs = ["transport.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "tagged",
+    srcs = ["tagged.py"],
+)
+
+py_test(
+    name = "test_process",
+    srcs = ["test_process.py"],
+    deps = [
+        ":process",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_async_process",
+    srcs = ["test_async_process.py"],
+    deps = [
+        ":async_process",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "omit_none",
+    srcs = ["omit_none.py"],
+    deps = ["@pypi//pydantic"],
+)

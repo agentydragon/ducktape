@@ -46,7 +46,7 @@ from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
-from x.agentplane.action_service.main import CONFIG_FILE_ENV, Settings
+from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
@@ -130,7 +130,7 @@ class Actions(Construct):
                 ),
                 # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
                 # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-                # the executor's own label check (x/agentplane/sandbox_actions/inventory.py), which
+                # the executor's own label check (agentplane/sandbox_actions/inventory.py), which
                 # is why it is an application rule tested as one rather than something RBAC states.
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
