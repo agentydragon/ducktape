@@ -27,6 +27,14 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
+    - name: ntfy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ntfy/**"
+          to: "@artifact/cluster/k8s/ntfy/"
+          exclude:
+            - flux-kustomization.yaml
+
     - name: agentplane-testing
       originRevision: "@repo"
       copy:

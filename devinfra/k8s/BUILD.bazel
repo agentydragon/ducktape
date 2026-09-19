@@ -26,6 +26,16 @@ py_binary(
 )
 
 py_test(
+    name = "test_extract_crd",
+    srcs = ["test_extract_crd.py"],
+    deps = [
+        ":extract_crd",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_kubeconfig",
     srcs = ["test_kubeconfig.py"],
     deps = [

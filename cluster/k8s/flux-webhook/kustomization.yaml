@@ -6,4 +6,4 @@ resources:
   - allow-gateway-webhook-ingress.yaml
   - ntfy-alerts.yaml
   - grafana-alerts.yaml
-  - ntfy-webhook.sops.yaml
+  - ntfy-webhook-eso.yaml

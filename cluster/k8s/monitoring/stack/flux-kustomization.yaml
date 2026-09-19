@@ -39,3 +39,7 @@ spec:
     # the CRDs exist, and the chart no longer installs them itself.
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: ntfy
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
