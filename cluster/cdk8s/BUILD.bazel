@@ -411,6 +411,7 @@ py_library(
         ":public_coder_agent_config",
         ":public_coder_devbox",
         ":stateful_infra",
+        "//cluster/cdk8s/activitywatch:flux_kustomizations",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
@@ -467,6 +468,7 @@ py_test(
     size = "medium",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s:activitywatch/flux-kustomization.yaml",
         "//cluster/k8s:agentplane-staging/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-staging/flux-kustomization.yaml",
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
