@@ -71,6 +71,12 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/authentik/app/flux-kustomization.yaml",
+    "cluster/k8s/authentik/db-backups/flux-kustomization.yaml",
+    "cluster/k8s/authentik/db/flux-kustomization.yaml",
+    "cluster/k8s/authentik/namespace/flux-kustomization.yaml",
+    "cluster/k8s/authentik/proxy-routes/flux-kustomization.yaml",
+    "cluster/k8s/authentik/sso-providers-tf/flux-kustomization.yaml",
 )
 
 
