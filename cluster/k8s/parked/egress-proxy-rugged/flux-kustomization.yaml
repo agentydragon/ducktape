@@ -6,16 +6,14 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  # Decommissioned by operator request; keep its configuration but stop reconciliation.
-  suspend: true
   interval: 10m
+  path: ./cluster/k8s/parked/egress-proxy-rugged
+  prune: true
   retryInterval: 1m
-  timeout: 5m
   sourceRef:
     kind: ExternalArtifact
     name: egress-proxy-rugged
-
     namespace: ducktape-flux
-  path: ./cluster/k8s/parked/egress-proxy-rugged
-  prune: true
+  suspend: true
+  timeout: 5m
   wait: true

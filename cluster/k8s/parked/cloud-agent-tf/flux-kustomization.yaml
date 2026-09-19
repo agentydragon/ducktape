@@ -6,29 +6,10 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/parked/cloud-agent-tf
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-cloud-agent
-    # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
-    # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
-    # bogus key/token (401).
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: haku-cloud-agent
-      namespace: flux-system
   dependsOn:
     - name: external-creds
       namespace: ducktape-flux
@@ -38,7 +19,21 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    # The agent reaches the cluster through this MCP; its first deployment run
-    # needs it serving.
     - name: kubectl-machine-mcp
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: haku-cloud-agent
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/parked/cloud-agent-tf
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-cloud-agent
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 10m
+  wait: true

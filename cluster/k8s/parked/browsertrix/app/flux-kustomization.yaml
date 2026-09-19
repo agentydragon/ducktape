@@ -6,21 +6,10 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 25m
-  path: ./cluster/k8s/parked/browsertrix/app
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  sourceRef:
-    kind: ExternalArtifact
-    name: browsertrix-app
-    namespace: ducktape-flux
   dependsOn:
     - name: browsertrix-namespace
       namespace: ducktape-flux
@@ -39,3 +28,14 @@ spec:
       kind: HelmRelease
       name: browsertrix
       namespace: browsertrix
+  interval: 10m
+  path: ./cluster/k8s/parked/browsertrix/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: browsertrix-app
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 25m
+  wait: true

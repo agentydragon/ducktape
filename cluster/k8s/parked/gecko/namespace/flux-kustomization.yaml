@@ -6,21 +6,18 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  # The retired VM stack and its namespace were intentionally deleted.
-  # Keep this controller paused so Flux does not recreate the empty namespace.
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 2m
-  path: ./cluster/k8s/parked/gecko/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: gecko-namespace
-
-    namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: v1
       kind: Namespace
       name: gecko
+  interval: 10m
+  path: ./cluster/k8s/parked/gecko/namespace
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: gecko-namespace
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 2m
+  wait: true

@@ -6,19 +6,6 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  # Suspended — currently using Grocy instead.
-  suspend: true
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: tandoor-app
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/parked/tandoor/app
-  prune: true
-  wait: true
   dependsOn:
     - name: tandoor-namespace
     - name: tandoor-db
@@ -26,3 +13,14 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/parked/tandoor/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: tandoor-app
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

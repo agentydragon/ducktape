@@ -6,17 +6,11 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: osm-mcp
-    namespace: ducktape-flux
-  path: ./cluster/k8s/parked/osm-mcp
-  prune: true
-  wait: true
+  dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: v1
       kind: Namespace
@@ -25,10 +19,14 @@ spec:
       kind: Deployment
       name: osm-mcp
       namespace: osm-mcp
-  dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    # forgejo-images-creds-eso.yaml extracts the source Secret from the
-    # forgejo-images namespace, so it must exist first.
-    - name: forgejo-images
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/parked/osm-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: osm-mcp
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true
