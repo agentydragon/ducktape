@@ -65,13 +65,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import (
-    actions_constructs,
-    container_security,
-    db_constructs,
-    llm_ingress_constructs,
-    node_scheduling,
-)
+from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -108,7 +102,7 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
-# (app_constructs.py) must name the same key.
+# (app.py) must name the same key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
 
 
@@ -441,7 +435,7 @@ class Egress(Construct):
                 ca_cert="/etc/agentplane-egress/ca/tls.crt",
                 ca_key="/etc/agentplane-egress/ca/tls.key",
                 confdir="/var/lib/agentplane-egress",
-                token_audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+                token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables={
                 env_name(Settings, "database_url"): EnvValue.from_secret_value(
@@ -515,17 +509,15 @@ class Egress(Construct):
             egress=[
                 cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    db_constructs.POSTGRES_PORT,
+                    database.POSTGRES_PORT,
                 ),
                 cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
                 cilium.egress_to_entities("kube-apiserver"),
                 cilium.egress_to(cilium.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
                 cilium.egress_to(
-                    cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress_constructs.CONTAINER_PORT
+                    cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress.CONTAINER_PORT
                 ),
-                cilium.egress_to(
-                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
-                ),
+                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
                 cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )

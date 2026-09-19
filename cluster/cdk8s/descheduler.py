@@ -7,6 +7,9 @@ and its `DeschedulerPolicy` is a Go type with no CRD for `cdk8s_import` to inges
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from cdk8s import App, Chart
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
@@ -21,10 +24,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s import stateful_infra
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
 NAME = "descheduler"
 NAMESPACE = "kube-system"
+OUTPUT_DIR = "cluster/k8s/descheduler"
 
 
 def _values() -> dict[str, object]:
@@ -112,3 +117,13 @@ class Descheduler(Construct):
                 values=_values(),
             ),
         )
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
+    Descheduler(chart, "descheduler")
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)

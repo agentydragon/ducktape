@@ -32,7 +32,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security, db_constructs, llm_ingress_constructs, node_scheduling
+from cluster.cdk8s.agentplane import container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -235,10 +235,7 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(
-                Settings,
-                host="0.0.0.0",
-                port=CONTAINER_PORT,
-                token_audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+                Settings, host="0.0.0.0", port=CONTAINER_PORT, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
             ),
             env_variables=env,
             ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
@@ -333,7 +330,7 @@ class Actions(Construct):
                 cilium.egress_to_entities("kube-apiserver"),
                 cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    db_constructs.POSTGRES_PORT,
+                    database.POSTGRES_PORT,
                 ),
                 *self.env.actions.extra_egress,
             ],

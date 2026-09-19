@@ -121,7 +121,7 @@ its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
 upstream panel updater.
 
 The namespace's `forgejo-images-creds` pull Secret belongs to the aiquota chart
-(`cluster/cdk8s/aiquota_constructs.py`). A Forgejo outage prevents uncached replacement
+(`cluster/cdk8s/aiquota.py`). A Forgejo outage prevents uncached replacement
 image pulls but does not interrupt a running process.
 
 ## Secrets

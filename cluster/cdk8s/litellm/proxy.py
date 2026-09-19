@@ -10,8 +10,9 @@ cluster/docs/cdk8s.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
@@ -46,6 +47,12 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -55,14 +62,18 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
+APP_DIR = "cluster/k8s/litellm/app"
 _CONTAINER_PORT = 4000
 _CONFIG_DIR = "/etc/litellm"
 
@@ -400,3 +411,70 @@ class LiteLLMServiceMonitor(Construct):
                 ],
             ),
         )
+
+
+def write_app(root: Path) -> None:
+    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
+
+    # The Flux Kustomizations this directory waits on, and the Secret each one provides
+    # that a Pod here reads -- shared between the depends_on list below and the fleet
+    # rules' provider check, so the two can't drift.
+    depends_on = (
+        "external-secrets-config",
+        "forgejo-images",
+        "litellm-secrets",
+        "litellm-db",
+        "gateway",
+        "cert-manager-environment",
+        "langfuse-secrets",
+        "reflector",
+        "tana-mcp",
+        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
+        # litellm-servicemonitor Kustomization, #7103).
+        "monitoring-crds",
+    )
+
+    app_dir = root / APP_DIR
+    app_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(app_dir))
+    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy", spec)
+    LiteLLMServiceMonitor(chart, "monitoring")
+    add_fleet_rules(
+        chart,
+        provided_secrets={
+            "litellm-master-key": "litellm-secrets",
+            "litellm-salt-key": "litellm-secrets",
+            "litellm-anthropic-key": "litellm-secrets",
+            "litellm-groq-key": "litellm-secrets",
+            "litellm-gemini-key": "litellm-secrets",
+            "litellm-mistral-key": "litellm-secrets",
+            "litellm-cliproxy-key": "litellm-secrets",
+            "litellm-db-app": "litellm-db",
+            "langfuse-secrets": "langfuse-secrets",
+            "tana-firebase-refresh-token": "tana-mcp",
+        },
+        providers=frozenset(depends_on),
+    )
+    app.synth()
+
+    write_yaml(
+        app_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            "litellm",
+            spec=KustomizationSpec(
+                interval="10m",
+                path=f"./{APP_DIR}",
+                prune=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
+                ),
+                timeout="10m",
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+            ),
+        ),
+    )
+    write_yaml(
+        app_dir / "kustomization.yaml",
+        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
+    )

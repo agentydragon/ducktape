@@ -12,7 +12,7 @@ metadata:
 spec:
   # Idempotent fetch-and-write, safe to re-run; the TTL lets a failed run retry
   # instead of holding this Kustomization unready forever. Rationale in
-  # cluster/cdk8s/ha_mcp_constructs.py's HaMcpCredentialsProvisioner._add_job.
+  # cluster/cdk8s/ha_mcp.py's HaMcpCredentialsProvisioner._add_job.
   ttlSecondsAfterFinished: 3600
   backoffLimit: 5
   template:

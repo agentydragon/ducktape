@@ -23,7 +23,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 
-from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
 
 _ARTIFACT_GENERATORS_DIR = "cluster/k8s/artifact-generators"
 _DUCKTAPE_SOURCE = ArtifactGeneratorSpecSources(

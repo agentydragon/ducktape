@@ -12,10 +12,10 @@ cdk8s-generated YAML file, plus every `cluster/validation/` test) that are **not
 reachable from cdk8s** — the manifests/configs on one or both sides are still
 hand-written, so unifying them needs a YAML→cdk8s conversion before the drift can be
 closed by construction. Candidates where both sides were already cdk8s-generated Python were
-fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm_config.py`,
+fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm/config.py`,
 `model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
-`app_constructs.py`, `egress_constructs.py`, `dex_constructs.py`,
-`ha_mcp_constructs.py`, and the validation tests that pinned the now-redundant
+`app.py`, `egress.py`, `dex.py`,
+`ha_mcp.py`, and the validation tests that pinned the now-redundant
 equalities).
 
 Entries are removed once landed — this is a burn-down, not a changelog.
@@ -51,7 +51,7 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   the same host key/hostname. `ssh_keys/public-coder-devbox-host.pub` is the natural
   canonical source; a small generator reading it and writing both `known_hosts` and
   sshpiper's base64 blob is the same "mostly hand-written directory, one generated
-  file" shape `ha_mcp_constructs.py` already uses for `bearer.sops.yaml`'s sibling
+  file" shape `ha_mcp.py` already uses for `bearer.sops.yaml`'s sibling
   files — doesn't need the whole `ssh-mcp/` directory converted.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet

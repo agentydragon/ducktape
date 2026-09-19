@@ -27,7 +27,7 @@ reconciliation in the staging and testing environments, using these criteria:
 - **Prefer small, boilerplate-heavy directories over large, bespoke ones.** Every
   `flux-kustomization.yaml` hand-repeats the same constant fields; a directory with
   one Deployment/Service, or a namespace-only Kustomization, converts with the least
-  risk and starts amortizing `flux_constructs.py`'s shared helpers immediately.
+  risk and starts amortizing `flux.py`'s shared helpers immediately.
 - **A directory whose config already lives in Python is a natural fit.** litellm/app
   had `ProxySpec` and the model rosters driving its ConfigMap by hand already; cdk8s
   let the Deployment/Service render that same model directly instead of staying

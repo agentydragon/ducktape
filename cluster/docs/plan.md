@@ -573,7 +573,7 @@ which exposed cluster-wide BestEffort hygiene gaps:
 - **Generalize the `stateful-infra` PriorityClass** (added for SeaweedFS in
   `cdk8s/stateful_infra.py`, value 1_000_000) into the tiered
   set above, and apply it to the stateful workloads that need it.
-- **Review the descheduler config** (`cdk8s/descheduler_constructs.py`):
+- **Review the descheduler config** (`cdk8s/descheduler.py`):
   `LowNodeUtilization` is metrics/usage-based and evicts BestEffort first;
   consider `ignorePvcPods` and/or requests-based utilization so transient CPU
   bursts (e.g. a runaway agent) don't trigger eviction of stateful pods.

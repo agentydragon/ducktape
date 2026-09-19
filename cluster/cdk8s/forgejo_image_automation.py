@@ -10,6 +10,9 @@ the selected tags back into each directory's `image-pins/` Component lives in
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from cdk8s import App, Chart
 from constructs import Construct
 from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
     ImagePolicy,
@@ -25,12 +28,22 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
 NAMESPACE = "flux-system"
+OUTPUT_DIR = "cluster/k8s/flux-image-automation-forgejo"
 _REGISTRY = "git.allegedly.works/ducktape-ci"
 _SCAN_INTERVAL = "5m"
 # The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;
@@ -133,3 +146,42 @@ class ForgejoImageAutomation(Construct):
                     ),
                 ),
             )
+
+
+def write_manifests(root: Path) -> None:
+    """The ImageRepository/ImagePolicy pair per CI image, as one chart. The directory had
+    one hand-written file per pair; a single generated file keeps each pair adjacent
+    (cluster/AGENTS.md § Colocating image repository and policy)."""
+    out_dir = root / OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    ForgejoImageAutomation(chart, "images")
+    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    app.synth()
+
+    write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            NAME,
+            description=(
+                "Image automation for images hosted in our Forgejo registry "
+                "(authenticated scans via the reflected ducktape-ci credential)."
+            ),
+            spec=KustomizationSpec(
+                interval="10m",
+                path=f"./{OUTPUT_DIR}",
+                prune=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
+                ),
+                depends_on=[
+                    # The source credential, reflected into flux-system.
+                    KustomizationSpecDependsOn(name="forgejo-images", namespace=FLUX_NAMESPACE),
+                    # The all-images ImageUpdateAutomation lives there.
+                    KustomizationSpecDependsOn(name="flux-image-automation-ghcr", namespace=FLUX_NAMESPACE),
+                ],
+            ),
+        ),
+    )
+    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

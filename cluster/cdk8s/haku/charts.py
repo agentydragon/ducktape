@@ -4,26 +4,43 @@ disk) and the tests (synthesize it in memory via `cdk8s.Testing`).
 
 The database and migration used to be Kustomizations of their own, ordered ahead of the
 console by `dependsOn`. One Kustomization has no such ordering, so the two Jobs in here
-retry until their preconditions hold (migration_constructs.py, `_add_indexer_provisioner`)
+retry until their preconditions hold (migration.py, `_add_indexer_provisioner`)
 rather than relying on the layer beneath them already being Ready.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
+    KustomizationSpecDependsOn,
+    KustomizationSpecHealthCheckExprs,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux_constructs import ConfigMapArgs
-from cluster.cdk8s.haku import console_constructs
-from cluster.cdk8s.haku.console_constructs import Console
-from cluster.cdk8s.haku.db_constructs import Db
-from cluster.cdk8s.haku.kube_api_proxy_constructs import KubeApiProxy
-from cluster.cdk8s.haku.migration_constructs import Migration
+from cluster.cdk8s.flux import (
+    NAMESPACE as FLUX_NAMESPACE,
+    ConfigMapArgs,
+    flux_kustomization,
+    health_checks,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption, write_yaml
+from cluster.cdk8s.haku import console
+from cluster.cdk8s.haku.console import Console
+from cluster.cdk8s.haku.database import Db
+from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
+from cluster.cdk8s.haku.migration import Migration
 
 _NAMESPACE_KUSTOMIZATION = "haku-console-namespace"
 
-NAME = console_constructs.NAME
-NAMESPACE = console_constructs.NAMESPACE
+NAME = console.NAME
+NAMESPACE = console.NAMESPACE
 PATH = "cluster/k8s/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
 # then the migration and the GRANTs converging on their retries behind it.
@@ -71,11 +88,7 @@ EXTRA_RESOURCES = (
 )
 
 CONFIG_MAP_GENERATOR = (
-    ConfigMapArgs(
-        name=console_constructs.INDEXER_SQL_CONFIG_MAP,
-        namespace=console_constructs.NAMESPACE,
-        files=["indexer-role.sql"],
-    ),
+    ConfigMapArgs(name=console.INDEXER_SQL_CONFIG_MAP, namespace=console.NAMESPACE, files=["indexer-role.sql"]),
 )
 
 # Secrets and ConfigMaps Pods read that the chart does not create, each with the dependency
@@ -99,9 +112,9 @@ _PROVIDED_SECRETS = {
 }
 
 _PROVIDED_CONFIG_MAPS = {
-    console_constructs.STATIC_METADATA_CONFIG_MAP: "static-metadata.yaml",
-    console_constructs.IMAGE_METADATA_CONFIG_MAP: "image-metadata.yaml",
-    console_constructs.INDEXER_SQL_CONFIG_MAP: "indexer-role.sql",
+    console.STATIC_METADATA_CONFIG_MAP: "static-metadata.yaml",
+    console.IMAGE_METADATA_CONFIG_MAP: "image-metadata.yaml",
+    console.INDEXER_SQL_CONFIG_MAP: "indexer-role.sql",
 }
 
 
@@ -120,3 +133,54 @@ def console_chart(app: App) -> Chart:
         ),
     )
     return chart
+
+
+def write_manifests(root: Path) -> None:
+    """The console's one Kustomization directory: database, migration, console and API
+    proxy in a single chart, its Flux Kustomization (health checks from the chart's own
+    objects), and the root Kustomization listing the generated file beside the
+    hand-written siblings."""
+    out_dir = root / PATH
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = console_chart(app)
+    app.synth()
+    write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            NAME,
+            spec=KustomizationSpec(
+                interval="10m",
+                retry_interval="1m",
+                timeout=TIMEOUT,
+                path=f"./{PATH}",
+                prune=True,
+                # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
+                # would take the console's approval ledger with them.
+                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+                wait=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
+                ),
+                decryption=sops_decryption(EXTRA_RESOURCES),
+                # The two Jobs gate every dependent Kustomization: nothing downstream
+                # reconciles until the schema is migrated and the indexer GRANTs applied.
+                health_checks=health_checks(chart, ("Cluster", "Job")),
+                health_check_exprs=[
+                    KustomizationSpecHealthCheckExprs(
+                        api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
+                    )
+                ],
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in DEPENDS_ON],
+            ),
+        ),
+    )
+    write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            namespace=NAMESPACE,
+            resources=[f"{NAME}.k8s.yaml", *EXTRA_RESOURCES],
+            components=["./image-pins"],
+            config_map_generator=CONFIG_MAP_GENERATOR,
+        ),
+    )

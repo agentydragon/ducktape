@@ -18,7 +18,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict
 
-from cluster.cdk8s.litellm_config import main_proxy_config
+from cluster.cdk8s.litellm.config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"

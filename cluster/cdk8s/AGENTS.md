@@ -7,6 +7,12 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 Model with constructs, deploy with one props object per environment.
 
+- **Keep shared helpers and single-module components at the package root.** A component
+  with several related modules gets a named subpackage (`agentplane/`, `haku/`,
+  `clickhouse/`, `litellm/`); don't add a directory for one file or an `agents/` layer.
+  Use descriptive module and Bazel target names (`agentplane/actions.py`,
+  `litellm/proxy.py`) without a repeated `_constructs` suffix.
+
 - **One `Environment` per deployed namespace** (`agentplane/environment.py`;
   `agentplane/staging.py` and `agentplane/testing.py` each hold one frozen instance).
   Every construct takes the whole environment and reads what it needs
@@ -25,7 +31,7 @@ Model with constructs, deploy with one props object per environment.
 - **References, not names.** `Service(selector=deployment)`,
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
-  (`cilium.endpoint_labels(namespace, egress_constructs.NAME)`), never the
+  (`cilium.endpoint_labels(namespace, egress.NAME)`), never the
   string spelled again.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
@@ -216,7 +222,7 @@ typed, including `resourceNames`:
 
 - **Resource type, no name scoping**: `ApiResource.<CONSTANT>` (60+ constants — `dir(cdk8s_plus_34.ApiResource)`) or `ApiResource.custom(api_group=..., resource_type=...)` for anything else, subresources included (`"pods/exec"`, `"serviceaccounts/token"`).
 - **Scoped to one named object**: pass that kind's own `from_*_name` reference (`Secret.from_secret_name(...)`, `Role.from_role_name(...)`, ...) as the `IApiResource` — its `resource_name` is already wired.
-- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_34.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane/namespace_rbac_constructs.py`'s `_NamedApiResource`; the plain
+- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_34.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane/rbac.py`'s `_NamedApiResource`; the plain
   `ApiResource.custom()` cast lives once in `api_resource.custom_resource`.
 - **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
 

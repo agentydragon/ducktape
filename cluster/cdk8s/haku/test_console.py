@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.haku import console_constructs
+from cluster.cdk8s.haku import console
 from haku.console.settings import Settings
 from util.settings_contract import env_name
 
@@ -28,9 +28,7 @@ def test_recall_stays_unwired(haku_console_manifests: list[dict[str, Any]]) -> N
     for profile in config["access_profiles"]:
         assert not profile.get("recall_index_ids")
         assert "haku_index" not in profile.get("in_process_server_ids", [])
-    deployment = one(
-        o for o in objects if o["kind"] == "Deployment" and o["metadata"]["name"] == console_constructs.NAME
-    )
+    deployment = one(o for o in objects if o["kind"] == "Deployment" and o["metadata"]["name"] == console.NAME)
     server = one(deployment["spec"]["template"]["spec"]["containers"])
     embedder = f"{env_name(Settings, 'embedder')}__"
     assert not any(entry["name"].startswith(embedder) for entry in server["env"])

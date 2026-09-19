@@ -5,8 +5,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
-    name = "namespace_rbac_constructs",
-    srcs = ["namespace_rbac_constructs.py"],
+    name = "rbac",
+    srcs = ["rbac.py"],
     deps = [
         ":environment",
         "//cluster/cdk8s:api_resource",
@@ -52,8 +52,8 @@ py_library(
 )
 
 py_library(
-    name = "db_constructs",
-    srcs = ["db_constructs.py"],
+    name = "database",
+    srcs = ["database.py"],
     deps = [
         ":environment",
         ":node_scheduling",
@@ -68,8 +68,8 @@ py_library(
 )
 
 py_library(
-    name = "dex_constructs",
-    srcs = ["dex_constructs.py"],
+    name = "dex",
+    srcs = ["dex.py"],
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -86,15 +86,15 @@ py_library(
 )
 
 py_library(
-    name = "egress_constructs",
-    srcs = ["egress_constructs.py"],
+    name = "egress",
+    srcs = ["egress.py"],
     deps = [
-        ":actions_constructs",
+        ":actions",
         ":app_settings",
         ":container_security",
-        ":db_constructs",
+        ":database",
         ":environment",
-        ":llm_ingress_constructs",
+        ":llm_ingress",
         ":migrate_container",
         ":node_scheduling",
         ":pod_disruption_budget",
@@ -120,8 +120,8 @@ py_library(
 )
 
 py_library(
-    name = "llm_ingress_constructs",
-    srcs = ["llm_ingress_constructs.py"],
+    name = "llm_ingress",
+    srcs = ["llm_ingress.py"],
     deps = [
         ":container_security",
         ":environment",
@@ -142,15 +142,15 @@ py_library(
 )
 
 py_library(
-    name = "app_constructs",
-    srcs = ["app_constructs.py"],
+    name = "app",
+    srcs = ["app.py"],
     deps = [
-        ":actions_constructs",
+        ":actions",
         ":container_security",
-        ":db_constructs",
-        ":egress_constructs",
+        ":database",
+        ":egress",
         ":environment",
-        ":llm_ingress_constructs",
+        ":llm_ingress",
         ":migrate_container",
         ":node_scheduling",
         ":pod_disruption_budget",
@@ -175,13 +175,13 @@ py_library(
 )
 
 py_library(
-    name = "actions_constructs",
-    srcs = ["actions_constructs.py"],
+    name = "actions",
+    srcs = ["actions.py"],
     deps = [
         ":container_security",
-        ":db_constructs",
+        ":database",
         ":environment",
-        ":llm_ingress_constructs",
+        ":llm_ingress",
         ":migrate_container",
         ":node_scheduling",
         ":pod_disruption_budget",
@@ -246,7 +246,7 @@ py_library(
     srcs = ["testing_config.py"],
     deps = [
         ":app_settings",
-        "//cluster/cdk8s:litellm_keys",
+        "//cluster/cdk8s/litellm:keys",
     ],
 )
 
@@ -259,8 +259,8 @@ py_library(
     ],
     deps = [
         ":app_settings",
-        "//cluster/cdk8s:litellm_keys",
         "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s/litellm:keys",
     ],
 )
 
@@ -275,16 +275,29 @@ py_library(
 )
 
 py_library(
+    name = "generation",
+    srcs = ["generation.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":environment",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "chart",
     srcs = ["chart.py"],
     deps = [
-        ":actions_constructs",
-        ":app_constructs",
-        ":db_constructs",
-        ":egress_constructs",
+        ":actions",
+        ":app",
+        ":database",
+        ":egress",
         ":environment",
-        ":llm_ingress_constructs",
-        ":namespace_rbac_constructs",
+        ":llm_ingress",
+        ":rbac",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:metadata",
@@ -303,7 +316,7 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
-        ":actions_constructs",
+        ":actions",
         ":actions_staging_policies",
         ":chart",
         ":environment",
@@ -322,10 +335,10 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
-        ":actions_constructs",
+        ":actions",
         ":actions_testing_fixtures",
         ":chart",
-        ":dex_constructs",
+        ":dex",
         ":environment",
         ":testing_config",
         "//cluster/cdk8s:cilium",
@@ -348,10 +361,10 @@ py_library(
 
 # The conftest's in-memory synth needs jsii's Node runtime.
 py_test(
-    name = "test_actions_constructs",
+    name = "test_actions",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
-    srcs = ["test_actions_constructs.py"],
+    srcs = ["test_actions.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
@@ -364,10 +377,10 @@ py_test(
 )
 
 py_test(
-    name = "test_egress_constructs",
+    name = "test_egress",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
-    srcs = ["test_egress_constructs.py"],
+    srcs = ["test_egress.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [

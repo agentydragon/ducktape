@@ -140,7 +140,7 @@ an `EgressCredential` the central proxy substitutes, and a rule admitting `kuber
 The workload holds no Kubernetes credential, exactly as it holds no Forgejo one.
 
 The gap is the audience. The only token in play is projected with the proxy's own
-(`agentplane-egress`, <../../../cluster/cdk8s/agentplane/llm_ingress_constructs.py>), which is what
+(`agentplane-egress`, <../../../cluster/cdk8s/agentplane/llm_ingress.py>), which is what
 `authenticatedWorkloadToken` retains and substitutes, and the API server validates against its own
 `--api-audiences`, so that bearer is refused there.
 [Workload authentication](../docs/workload_authentication.md) already defers exactly this as
@@ -182,7 +182,7 @@ extend to a portable credential for that account. It also breaks the sidecar-onl
 - Ordinary requests should pass, but `exec`, `attach` and `port-forward` upgrade to SPDY or
   WebSocket through a bumping proxy and a watch streams chunked. Haku's own API proxy answers `501`
   to the upgrade verbs, so this is where to expect trouble.
-- `KUBERNETES_AUDIENCE` (<../../../cluster/cdk8s/agentplane/egress_constructs.py>) must equal this
+- `KUBERNETES_AUDIENCE` (<../../../cluster/cdk8s/agentplane/egress.py>) must equal this
   cluster's `--api-audiences`. It is not pinned anywhere in the repository and was not read off the
   running cluster, so it is the one value here taken on the default rather than on evidence: wrong,
   it yields tokens the API server refuses with `401` inside the box rather than any proxy denial.

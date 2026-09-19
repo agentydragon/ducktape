@@ -1,0 +1,39 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
+    ],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "schema",
+    srcs = ["schema.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":client",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)

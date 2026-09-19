@@ -6,7 +6,7 @@ model_rosters.py for the model-name scheme.
 from __future__ import annotations
 
 from cluster.cdk8s.agentplane.app_settings import settings
-from cluster.cdk8s.litellm_keys import CHEAP_EXPERIMENTS_CLAUDE_MODEL, CHEAP_EXPERIMENTS_CODEX_MODEL
+from cluster.cdk8s.litellm.keys import CHEAP_EXPERIMENTS_CLAUDE_MODEL, CHEAP_EXPERIMENTS_CODEX_MODEL
 
 _NAMESPACE = "agentplane-testing"
 

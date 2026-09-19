@@ -48,7 +48,7 @@ from constructs import Construct
 from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.haku import console_constructs
+from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
@@ -62,7 +62,7 @@ _TLS_PORT = 8443
 _TLS_SECRET = "haku-kube-api-proxy-tls"
 _TLS_DIR = "/etc/haku-kube-api-proxy-tls"
 LABELS = {"app.kubernetes.io/name": NAME}
-_SERVICE_FQDN = f"{NAME}.{console_constructs.NAMESPACE}.svc.cluster.local"
+_SERVICE_FQDN = f"{NAME}.{console.NAMESPACE}.svc.cluster.local"
 
 
 class KubeApiProxy(Construct):
@@ -70,7 +70,7 @@ class KubeApiProxy(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        namespace = console_constructs.NAMESPACE
+        namespace = console.NAMESPACE
         Certificate(
             self,
             "certificate",
@@ -139,7 +139,7 @@ class KubeApiProxy(Construct):
             "deployment",
             metadata=metadata(
                 NAME,
-                console_constructs.NAMESPACE,
+                console.NAMESPACE,
                 labels=LABELS,
                 annotations={
                     "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
@@ -172,7 +172,7 @@ class KubeApiProxy(Construct):
             # authorization timeout after release or revocation.
             env_variables={
                 "HAKU_KUBE_AUTHORIZATION_URL": EnvValue.from_value(
-                    f"{console_constructs.PUBLIC_BASE_URL}/api/internal/kubernetes/authorize"
+                    f"{console.PUBLIC_BASE_URL}/api/internal/kubernetes/authorize"
                 ),
                 "HAKU_KUBE_AUTHORIZATION_TIMEOUT": EnvValue.from_value("3s"),
                 "HAKU_KUBE_REQUEST_TIMEOUT": EnvValue.from_value("30s"),
@@ -224,7 +224,7 @@ class KubeApiProxy(Construct):
         cilium.network_policy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, console_constructs.NAMESPACE),
+            metadata=metadata(NAME, console.NAMESPACE),
             selector=LABELS,
             ingress=[
                 cilium.ingress_from_gateway(_HTTP_PORT),
@@ -234,10 +234,10 @@ class KubeApiProxy(Construct):
                 ),
             ],
             egress=[
-                cilium.dns_egress(protocols=("ANY",), resolves=[console_constructs.HOSTNAME]),
+                cilium.dns_egress(protocols=("ANY",), resolves=[console.HOSTNAME]),
                 cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
                 # The console's public origin resolves to Gateway node addresses; the process
                 # is configured with exactly one authorization URL and rejects redirects.
-                cilium.egress_via_gateway(console_constructs.HOSTNAME),
+                cilium.egress_via_gateway(console.HOSTNAME),
             ],
         )

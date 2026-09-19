@@ -8,7 +8,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions_constructs, dex_constructs, testing_config
+from cluster.cdk8s.agentplane import actions, dex, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -34,7 +34,7 @@ _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 # The ESO ExternalSecret replicating the Terraform-owned key into this namespace,
-# a sibling resource in the same Kustomization -- see cheap_experiments_credentials.py.
+# a sibling resource in the same Kustomization -- see litellm/credentials.py.
 _LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
@@ -46,7 +46,7 @@ _FEDERATION_TARGET = {
 }
 _ACTION_FEDERATION = {
     "mode": "direct",
-    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
+    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
     "login_jwks_uri": f"{_DEX_ISSUER}/keys",
     "login_token_profile": "dex",
     "target": _FEDERATION_TARGET,
@@ -135,5 +135,5 @@ ENV = Environment(
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_testing_fixtures(chart)
-    dex_constructs.Dex(chart, "dex")
+    dex.Dex(chart, "dex")
     return chart

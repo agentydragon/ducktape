@@ -6,7 +6,13 @@ against what the main proxy serves before it is written.
 
 from __future__ import annotations
 
-from cluster.cdk8s.litellm_config import main_proxy_config
+from pathlib import Path
+
+from cdk8s import App, Chart
+
+from cluster.cdk8s import terraform
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -24,6 +30,8 @@ from cluster.cdk8s.model_rosters import (
     exposed_name,
     ollama_chat_variant,
 )
+
+OUTPUT_DIR = "cluster/k8s/litellm/keys-tf"
 
 # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
 # (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
@@ -104,3 +112,28 @@ def model_allowlists() -> dict[str, list[str]]:
         if unserved:
             raise ValueError(f"{lane=} allowlists models the proxy does not serve: {unserved}")
     return lanes
+
+
+def keys_chart(app: App) -> Chart:
+    """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
+    Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
+    tofu-controller retries on its interval until LiteLLM is up.
+    """
+    chart = Chart(app, "litellm-keys", disable_resource_name_hashes=True)
+    terraform.gitops_terraform(
+        chart,
+        "terraform",
+        name="litellm-keys",
+        variables={"model_allowlists": model_allowlists()},
+        env=[
+            # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
+            # beside this CR) that decrypts the module's pinned client-key files for
+            # its `sops_file` data sources -- single-purpose, not the broad cluster key.
+            terraform.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
+        ],
+    )
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, keys_chart)

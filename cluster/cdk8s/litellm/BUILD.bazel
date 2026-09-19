@@ -1,0 +1,69 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//cluster/cdk8s/litellm:__pkg__",
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//debug/litellm_probe:__pkg__",
+    ],
+    deps = ["//cluster/cdk8s:model_rosters"],
+)
+
+py_library(
+    name = "keys",
+    srcs = ["keys.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
