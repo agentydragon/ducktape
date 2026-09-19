@@ -1,8 +1,3 @@
-# Typed cdk8s Python constructs generated from Flux's upstream CRDs (fetched via
-# MODULE.bazel's flux_*_crd http_files, never vendored). See cluster/docs/cdk8s.md.
-
-# flux_kustomize/flux_helm/flux_source are generated at build time by cdk8s_import
-# below, not pip packages -- gazelle can't resolve them from the requirements manifest.
 # gazelle:resolve py flux_kustomize //cluster/cdk8s/crd_bindings/flux:kustomization
 # gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
 # gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository

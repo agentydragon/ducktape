@@ -1,9 +1,3 @@
-# Typed cdk8s Python constructs generated from cert-manager's and trust-manager's
-# upstream CRDs (fetched via MODULE.bazel's cert_manager_certificate_crd/
-# trust_manager_bundle_crd http_files, never vendored). See cluster/docs/cdk8s.md.
-
-# cert_manager_crds and trust_manager_crds are generated at build time by cdk8s_import
-# below, not pip packages -- gazelle can't resolve them from the requirements manifest.
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:certificate
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:bundle
 

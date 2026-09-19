@@ -1,18 +1,11 @@
-# Typed cdk8s Python constructs generated from external-secrets' upstream CRDs (fetched
-# via MODULE.bazel's external_secrets_crds_bundle http_file, never vendored). See
-# cluster/docs/cdk8s.md.
-
-# external_secrets_crds and eso_password_generator_crds are generated at build time by
-# cdk8s_import below, not pip packages -- gazelle can't resolve them from the
-# requirements manifest.
 # gazelle:resolve py external_secrets_crds //cluster/cdk8s/crd_bindings/external_secrets:externalsecret
 # gazelle:resolve py external_secret_store_crds //cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore
 # gazelle:resolve py eso_password_generator_crds //cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
-# external-secrets ships its CRDs in one multi-document file. cdk8s import consumes
-# one CRD, and importing the whole bundle fails on unrelated jsii-incompatible field names.
+# The bundle has multiple CRDs; cdk8s imports one per rule and fails on unrelated
+# JSII-incompatible fields.
 cdk8s_import(
     name = "externalsecret",
     crd = "@external_secrets_crds_bundle//file",
@@ -25,11 +18,9 @@ cdk8s_import(
     visibility = ["//visibility:public"],
 )
 
-# ClusterSecretStore is app-owned for services whose credential source is local to
-# the application package. Keep its bindings in a unique Python module to avoid
-# collisions with the ExternalSecret bindings above. Trim the unrelated KeeperSecurity
-# branch from this import-only schema: its `getByTitleFallback` property violates JSII's
-# Java-getter naming rule. The installed ESO CRD is not modified.
+# App-local ClusterSecretStore bindings use a separate Python package to avoid collisions.
+# Omit KeeperSecurity from this generated schema because `getByTitleFallback` violates
+# JSII's Java getter rules; the installed CRD is unchanged.
 
 cdk8s_import(
     name = "clustersecretstore",
@@ -43,7 +34,6 @@ cdk8s_import(
     visibility = ["//visibility:public"],
 )
 
-# generators.external-secrets.io's Password CRD comes from the same upstream bundle.
 cdk8s_import(
     name = "passwordgenerator",
     crd = "@external_secrets_crds_bundle//file",

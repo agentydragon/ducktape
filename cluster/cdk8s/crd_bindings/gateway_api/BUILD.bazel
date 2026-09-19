@@ -1,9 +1,3 @@
-# Typed cdk8s Python constructs generated from the Gateway API's upstream CRDs (fetched via
-# MODULE.bazel's gateway_api_httproute_crd http_file, never vendored). See
-# cluster/docs/cdk8s.md.
-
-# gateway_api_crds is generated at build time by cdk8s_import below, not a pip package --
-# gazelle can't resolve it from the requirements manifest.
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/crd_bindings/gateway_api:httproute
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
