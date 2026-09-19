@@ -4,21 +4,20 @@ metadata:
   name: grafana-operator
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-operator
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: grafana-operator
-
-    namespace: ducktape-flux
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: grafana-operator
       namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/grafana-operator
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: grafana-operator
+    namespace: ducktape-flux
   timeout: 5m
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux

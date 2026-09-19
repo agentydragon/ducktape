@@ -4,19 +4,17 @@ metadata:
   name: monitoring-namespace
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-namespace
-
-    namespace: ducktape-flux
-  wait: true
-  # Health check ensures monitoring namespace exists before dependents deploy
+  dependsOn: []
   healthChecks:
     - apiVersion: v1
       kind: Namespace
       name: monitoring
-  dependsOn: []
+  interval: 10m
+  path: ./cluster/k8s/monitoring/namespace
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-namespace
+    namespace: ducktape-flux
+  wait: true

@@ -4,21 +4,6 @@ metadata:
   name: grafana-instance
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: grafana-instance
-
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: grafana-deployment
-      namespace: monitoring
-  timeout: 5m
   dependsOn:
     - name: grafana-operator
       namespace: ducktape-flux
@@ -26,3 +11,17 @@ spec:
       namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: grafana-deployment
+      namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/grafana-instance
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: grafana-instance
+    namespace: ducktape-flux
+  timeout: 5m
