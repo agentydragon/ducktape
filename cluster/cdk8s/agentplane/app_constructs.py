@@ -84,6 +84,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import (
     SECRET_NAME,
@@ -333,7 +334,7 @@ class App(Construct):
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
         node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
+        apply_pod_spec_patches(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -411,14 +412,13 @@ class App(Construct):
         )
 
     def _add_pdb(self, min_available: int) -> None:
-        k8s.KubePodDisruptionBudget(
+        add_pod_disruption_budget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
-            spec=k8s.PodDisruptionBudgetSpec(
-                min_available=k8s.IntOrString.from_number(min_available),
-                selector=k8s.LabelSelector(match_labels=_LABELS),
-            ),
+            name=_NAME,
+            namespace=self.env.namespace,
+            min_available=min_available,
+            selector=_LABELS,
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:

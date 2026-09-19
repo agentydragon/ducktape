@@ -96,8 +96,9 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   silently discarded: container resources are re-rendered from the construct's props
   after patches apply.
 - `Deployment.scheduling.spread()` is pod anti-affinity, not
-  `topologySpreadConstraints` (`pod_spec_patches.py` patches those). Pod-level seccomp
-  is a patch (`PodSecurityContextProps` has no field); container-level is typed.
+  `topologySpreadConstraints`; custom topology spread in LiteLLM uses typed `k8s` structs
+  in a patch. Pod-level seccomp is a patch (`PodSecurityContextProps` has no field);
+  container-level is typed.
 - `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
   `automount_service_account_token=False` on a workload, both to set for a TokenReview
   caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened

@@ -89,7 +89,7 @@ def _add_mcp_everything(scope: Construct) -> None:
             capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
         ),
     )
-    apply_pod_spec_patches(deployment, labels=_MCP_EVERYTHING_LABELS, topology_spread=False)
+    apply_pod_spec_patches(deployment)
     Service(
         scope,
         "mcp-everything-service",
@@ -187,7 +187,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         # constraint).
         security_context=container_security.WRITABLE_ROOT,
     )
-    apply_pod_spec_patches(deployment, labels=_OAUTH_FIXTURE_LABELS, topology_spread=False)
+    apply_pod_spec_patches(deployment)
     Service(
         scope,
         "oauth-fixture-service",
