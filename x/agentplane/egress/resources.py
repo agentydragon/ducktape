@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -28,9 +29,14 @@ SANDBOXES_PLURAL = "sandboxes"
 
 
 class _Wire(BaseModel):
-    """Read off the API server (camelCase aliases), constructed by field name in tests."""
+    """Read off the API server, constructed by field name in tests.
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
+    The wire is camelCase and these fields are snake_case, so the alias is derived rather than
+    spelled: a hand-written one is a second spelling of the field name that can disagree with it,
+    and every field here is the plain camelCase of its own name.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True, alias_generator=to_camel)
 
 
 class ObjectMeta(_Wire):
@@ -145,11 +151,9 @@ class CredentialSource(_Wire):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    secret_ref: SecretKeyRef | None = Field(default=None, alias="secretRef")
-    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = Field(
-        default=None, alias="authenticatedWorkloadToken"
-    )
-    projected_workload_token: ProjectedWorkloadTokenSource | None = Field(default=None, alias="projectedWorkloadToken")
+    secret_ref: SecretKeyRef | None = None
+    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = None
+    projected_workload_token: ProjectedWorkloadTokenSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
@@ -192,10 +196,9 @@ class Rule(_Wire):
     paths: list[str] | None = Field(
         default=None, description="Path globs: `*` within one segment, `**` across segments; absent admits any."
     )
-    credential_ref: CredentialRef | None = Field(default=None, alias="credentialRef")
+    credential_ref: CredentialRef | None = None
     cluster_internal: bool = Field(
         default=False,
-        alias="clusterInternal",
         description="This rule's hosts are inside the cluster and meant to be, so the proxy's refusal "
         "of private addresses does not apply to them. Off by default: that refusal is what stops an "
         "admitted name from resolving into the cluster, DNS rebinding included.",
@@ -217,7 +220,7 @@ class BindingSpec(_Wire):
         description="EgressPolicy names in the same namespace; the order only breaks ties between rules "
         "that would decide alike."
     )
-    expires_at: AwareDatetime | None = Field(default=None, alias="expiresAt")
+    expires_at: AwareDatetime | None = None
 
 
 class ActiveReason(StrEnum):

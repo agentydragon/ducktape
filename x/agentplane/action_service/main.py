@@ -35,7 +35,6 @@ from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from x.agentplane.action_service.connections import ConnectionAuthority
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.enrollments import EnrollmentAuthority
-from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
@@ -214,11 +213,8 @@ async def async_main(settings: Settings) -> None:
             push_notifier.start()
 
         def drain_backends() -> None:
-            # Only a supervised MCP client has a connection to wind down; a sandbox executor holds
-            # none, and the service's own drain is what stops dispatching to it.
             for executor in executors.values():
-                if isinstance(executor, McpActionGroupExecutor):
-                    executor.begin_drain()
+                executor.begin_drain()
 
         service = ActionService(
             ActionStore(make_sessionmaker(engine), external_grants=connections),

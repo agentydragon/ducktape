@@ -83,6 +83,9 @@ class FakeOperatorAuthenticator:
 
 
 class CountingExecutor:
+    def begin_drain(self) -> None:
+        """No backend to wind down."""
+
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
 

@@ -227,6 +227,9 @@ class GatedProvider:
 
 
 class UnreachableExecutor:
+    def begin_drain(self) -> None:
+        """No backend to wind down."""
+
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         raise AssertionError("cancelled request reached executor")
 

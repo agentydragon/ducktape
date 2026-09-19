@@ -111,6 +111,13 @@ class SandboxExecutor:
         self._binding = binding
         self._inventory = inventory
 
+    def begin_drain(self) -> None:
+        """Nothing to wind down: this executor holds no connection and no work of its own.
+
+        A sandbox outlives any one call and is the caller's to dispose of, so shutdown must not
+        touch one; what stops new dispatches reaching here is the service's own drain.
+        """
+
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         """One dispatch. A refusal the caller can act on is a failed Execution with a reason; only
         an outcome this cannot characterise is allowed to propagate."""

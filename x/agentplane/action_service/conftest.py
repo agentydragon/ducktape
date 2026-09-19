@@ -82,6 +82,9 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
 
+    def begin_drain(self) -> None:
+        """Nothing to wind down; the protocol's other half is what these tests exercise."""
+
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
         return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})

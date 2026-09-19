@@ -65,20 +65,22 @@ def _object_name(caller: ServiceAccountRef, name: str) -> str:
     return f"{caller.name}-{name}"[:63].rstrip("-")
 
 
-def _state(sandbox: dict[str, Any], pod: dict[str, Any] | None) -> tuple[SandboxState, str | None]:
-    """Ready means a Pod whose containers are all ready; anything else says why not."""
-    if pod is None:
-        conditions = cast(list[dict[str, Any]], sandbox.get("status", {}).get("conditions", []))
-        failed = next((c for c in conditions if c.get("status") == "False" and c.get("reason")), None)
-        return SandboxState.PROVISIONING, failed.get("reason") if failed else None
-    phase = pod.get("status", {}).get("phase")
-    statuses = cast(list[dict[str, Any]], pod.get("status", {}).get("containerStatuses", []))
-    if phase == "Running" and statuses and all(status.get("ready") for status in statuses):
+def _state(sandbox: dict[str, Any]) -> tuple[SandboxState, str | None]:
+    """The controller's own Ready condition, not a second opinion derived from the Pod.
+
+    The Agent Sandbox controller owns this lifecycle and publishes its verdict; re-deciding
+    readiness here from Pod phase and container statuses would be a weaker copy that can disagree
+    with the authority, and its reasons would be poorer than the ones the controller writes. So the
+    reason is passed through verbatim rather than re-worded: `WarmPoolNotFound` tells its reader
+    what to do, where "pod phase Pending" does not.
+    """
+    conditions = cast(list[dict[str, Any]], sandbox.get("status", {}).get("conditions", []))
+    ready = next((condition for condition in conditions if condition.get("type") == "Ready"), None)
+    if ready is None:
+        return SandboxState.NOT_READY, None
+    if ready.get("status") == "True":
         return SandboxState.READY, None
-    if phase in {"Failed", "Succeeded"}:
-        return SandboxState.UNHEALTHY, f"pod phase {phase}"
-    waiting = next((status["state"]["waiting"] for status in statuses if status.get("state", {}).get("waiting")), None)
-    return SandboxState.PROVISIONING, waiting.get("reason") if waiting else phase
+    return SandboxState.NOT_READY, ready.get("message") or ready.get("reason")
 
 
 class SandboxInventory:
@@ -136,8 +138,9 @@ class SandboxInventory:
 
     async def _info(self, caller: ServiceAccountRef, sandbox: dict[str, Any]) -> SandboxInfo:
         metadata = sandbox["metadata"]
-        pod = await self._pod(metadata["name"])
-        state, reason = _state(sandbox, pod)
+        state, reason = _state(sandbox)
+        # Only for the name to exec into; readiness is the controller's answer above.
+        pod = await self._pod(metadata["name"]) if state is SandboxState.READY else None
         return SandboxInfo(
             name=metadata["labels"][NAME_LABEL],
             state=state,
@@ -211,7 +214,7 @@ class SandboxInventory:
             if sandbox is None:
                 raise SandboxActionError(f"sandbox {name!r} disappeared while coming up")
             info = await self._info(caller, sandbox)
-            if info.state is not SandboxState.PROVISIONING or datetime.now(UTC).timestamp() >= deadline:
+            if info.state is not SandboxState.NOT_READY or datetime.now(UTC).timestamp() >= deadline:
                 return info
             await asyncio.sleep(_POLL_SECONDS)
 

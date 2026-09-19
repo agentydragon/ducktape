@@ -29,11 +29,16 @@ SandboxName = Annotated[
 
 
 class SandboxState(StrEnum):
-    """Where a sandbox is between asking for it and being able to run something in it."""
+    """Whether a sandbox can run something, as the Agent Sandbox controller reports it.
 
-    PROVISIONING = "provisioning"
+    Two states and not three, because the controller publishes one Ready condition and this is a
+    faithful reading of it: whether a not-ready box is still coming up or will never come up is
+    what its `reason` says, in the controller's own words, and deciding that here would be a
+    second opinion that can disagree with the authority.
+    """
+
+    NOT_READY = "not_ready"
     READY = "ready"
-    UNHEALTHY = "unhealthy"
 
 
 class SandboxInfo(BaseModel):
@@ -46,7 +51,11 @@ class SandboxInfo(BaseModel):
     environment: str = Field(description="The reviewed environment name this box was created from.")
     created_at: datetime | None = None
     pod_name: str | None = Field(default=None, description="Absent until the sandbox has a Pod.")
-    reason: str | None = Field(default=None, description="Why it is not ready, when it is not.")
+    reason: str | None = Field(
+        default=None,
+        description="The controller's own message or reason when it is not ready — whether it is "
+        "still coming up or has failed for good is what this says.",
+    )
 
 
 class ExecResult(BaseModel):

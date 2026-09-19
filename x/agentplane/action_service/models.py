@@ -370,6 +370,15 @@ class ExecutionLease(Protocol):
 class Executor(Protocol):
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
 
+    def begin_drain(self) -> None:
+        """Stop offering this backend, without waiting for anything.
+
+        Deliberately synchronous and deliberately only the first half: shutdown marks every
+        executor unavailable in one pass and awaits their teardown afterwards, so that the second
+        backend stops being advertised at the same moment as the first rather than after it has
+        finished closing. Awaiting the rest is `close`'s, where a backend has one.
+        """
+
 
 class ProviderVerdict(StrEnum):
     """A synchronous provider's own disposition; distinct from the aggregated Decision Verdict."""

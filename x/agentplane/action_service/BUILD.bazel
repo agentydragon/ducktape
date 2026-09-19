@@ -184,7 +184,6 @@ py_library(
         ":connections",
         ":db",
         ":enrollments",
-        ":mcp_executor",
         ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
