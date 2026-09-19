@@ -73,6 +73,8 @@ spec:
       disabled:
         KubeNodeNotReady: true
         KubeNodeUnreachable: true
+        KubePodNotReady: true
+        KubeletInstanceUnreachable: true
         TargetDown: true
       rules:
         alertmanager: true
