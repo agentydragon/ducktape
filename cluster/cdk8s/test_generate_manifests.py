@@ -71,6 +71,21 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/seaweedfs/cluster/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/db/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/external-credentials/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/forgejo-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/langfuse-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/loom-gym-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/monitoring/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/namespace/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/operator/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/pr-visuals-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/public-s3/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/registry-cache-bucket/flux-kustomization.yaml",
+    "cluster/k8s/seaweedfs/secrets/flux-kustomization.yaml",
 )
 
 

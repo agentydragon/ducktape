@@ -4,16 +4,16 @@ metadata:
   name: seaweedfs-public-coder-agent-backups-bucket
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   interval: 10m
-  retryInterval: 1m
   path: ./cluster/k8s/seaweedfs/public-coder-agent-backups-bucket
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: seaweedfs-public-coder-agent-backups-bucket
     namespace: ducktape-flux
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  wait: true
   timeout: 5m
+  wait: true
