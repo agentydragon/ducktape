@@ -2,14 +2,6 @@
 
 Audit findings deferred for later.
 
-## Grafana image rendering
-
-- [ ] Reconsider deploying the standalone `grafana/grafana-image-renderer` service
-      for verifier and scheduled screenshots. First measure idle RSS and render-time
-      CPU/RAM, then pin the image, configure its token/callback, add a NetworkPolicy,
-      and scrape renderer metrics; do not install the deprecated in-process plugin
-      solely for occasional checks.
-
 ## Study Casino database backups
 
 - [ ] Choose and deploy the backup/restore path for the CNPG

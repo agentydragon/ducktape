@@ -24,8 +24,10 @@ bb run //cluster/skills/grafana:verify_dashboard -- \
   --screenshot-dir /tmp/grafana-<dashboard>-verify
 ```
 
-This uses the live Grafana API and a real headless Chrome browser. It reads the
-admin credentials from the Kubernetes Secret named
+This uses the live Grafana API and a real headless Chromium browser. Under
+Bazel, it uses the repository's pinned `@playwright_browsers` binary; direct
+invocations may set `GRAFANA_CHROME_PATH` as a fallback. It reads the admin
+credentials from the Kubernetes Secret named
 `monitoring/grafana-admin-password`; values are never printed. The candidate
 mode creates a uniquely named temporary dashboard through Grafana's HTTP API,
 renders that dashboard, and deletes it in a `finally` path. It never overwrites

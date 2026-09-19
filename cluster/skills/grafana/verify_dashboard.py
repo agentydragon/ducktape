@@ -28,6 +28,9 @@ from playwright.sync_api import Page, sync_playwright
 
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
+# TODO: Consider a standalone grafana-image-renderer service for verifier and scheduled
+# screenshots. First measure idle RSS and render-time CPU/RAM, then pin the image,
+# configure its token/callback, add a NetworkPolicy, and scrape renderer metrics.
 # TODO: Replace admin-secret auth with narrower identities: Viewer for deployed-dashboard
 # checks and the minimum write-capable scope needed for temporary candidate dashboards.
 DATASOURCE_PLACEHOLDERS = {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}
@@ -354,9 +357,17 @@ def dashboard_url(base_url: str, uid: str, dashboard: dict[str, Any], from_range
 def browser_verify(
     url: str, dashboard: dict[str, Any], screenshot_dir: Path, wait_seconds: float, user: str, password: str
 ) -> dict[str, Any]:
-    chrome = os.environ.get("GRAFANA_CHROME_PATH") or shutil.which("google-chrome") or shutil.which("chromium")
+    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
+    chrome = (
+        str(Path(chromium_root) / "chrome-linux" / "headless_shell")
+        if chromium_root
+        else os.environ.get("GRAFANA_CHROME_PATH") or shutil.which("google-chrome") or shutil.which("chromium")
+    )
     if not chrome:
-        raise VerificationError("no Chrome/Chromium executable found; set GRAFANA_CHROME_PATH")
+        raise VerificationError(
+            "no Chrome/Chromium executable found; Bazel should set CHROMIUM_HEADLESS_SHELL "
+            "or set GRAFANA_CHROME_PATH for a direct invocation"
+        )
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     screenshot = screenshot_dir / f"{dashboard.get('uid', 'dashboard')}.png"
     console_errors: list[str] = []
@@ -426,18 +437,21 @@ def browser_verify(
 
     print(f"screenshot={screenshot}")
     bad_console = [message for message in console_errors + page_errors if BAD_BROWSER_TEXT.search(message)]
+    browser_errors: list[str] = []
     if bad_query_payloads:
-        raise VerificationError(f"browser sent unresolved query expressions: {bad_query_payloads}")
+        browser_errors.append(f"browser sent unresolved query expressions: {bad_query_payloads}")
     if failed_requests:
-        raise VerificationError(f"browser request failures: {failed_requests}")
+        browser_errors.append(f"browser request failures: {failed_requests}")
     if bad_responses:
-        raise VerificationError(f"browser datasource responses failed: {bad_responses}")
+        browser_errors.append(f"browser datasource responses failed: {bad_responses}")
     if bad_console:
-        raise VerificationError(f"browser console/page errors: {bad_console}")
+        browser_errors.append(f"browser console/page errors: {bad_console}")
     if visible_no_data:
-        raise VerificationError(f"browser visibly rendered {visible_no_data} 'No data' panel(s)")
+        browser_errors.append(f"browser visibly rendered {visible_no_data} 'No data' panel(s)")
     if missing_titles:
-        raise VerificationError(f"dashboard panel titles were not rendered: {missing_titles}")
+        browser_errors.append(f"dashboard panel titles were not rendered: {missing_titles}")
+    if browser_errors:
+        raise VerificationError("browser verification failures:\n- " + "\n- ".join(browser_errors))
     return {
         "screenshot": str(screenshot),
         "body_text_bytes": len(body_text.encode()),
