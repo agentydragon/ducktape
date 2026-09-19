@@ -121,7 +121,7 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
-  (`//third_party/tofu_controller:test_terraform_import` pins it).
+  (`//cluster/cdk8s/crd_bindings/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 
@@ -155,9 +155,14 @@ typed alternative exists. Three tiers, in order:
 3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
    `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
    (`devinfra/js/cdk8s_import.bzl`;
-   `//third_party/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are
+   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are
    the examples) — this is the same generator tier 2 already ran for you on the core
    API, just pointed at the CRD's own schema instead.
+
+   Put each `cdk8s_import` declaration and any import smoke test in
+   `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`. Keep pinned upstream CRD
+   schemas in `MODULE.bazel`; generated Python bindings are Bazel outputs and are
+   never checked in.
 
 All three give synth-time validation; a raw dict fails only at `kubectl apply`, if at
 all. Check `dir(...)` on the relevant tier — built by cloning `cdk8s-team/cdk8s-plus`
@@ -254,7 +259,7 @@ first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire names
 self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
 `reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
 
-Fix: `//third_party/flux:kustomization`'s `KustomizationSpec` has
+Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing

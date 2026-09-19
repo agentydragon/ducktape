@@ -906,10 +906,7 @@ filegroup(
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
 )
 
-# Flux's Kustomization CRD — fetched verbatim from the upstream repo so
-# //third_party/flux:kustomization (devinfra/js/cdk8s_import.bzl) can generate typed
-# cdk8s Python constructs from it without vendoring the CRD in-tree. Refresh by
-# bumping the tag and updating the sha256.
+# Flux CRD pins follow the controller versions in cluster/k8s/flux-system/gotk-components.yaml.
 http_file(
     name = "flux_kustomization_crd",
     downloaded_file_path = "kustomize.toolkit.fluxcd.io_kustomizations.yaml",
@@ -917,8 +914,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/kustomize-controller/v1.9.5/config/crd/bases/kustomize.toolkit.fluxcd.io_kustomizations.yaml"],
 )
 
-# Flux's HelmRelease CRD — see flux_kustomization_crd above; pinned to the helm-controller
-# tag cluster/k8s/flux-system/gotk-components.yaml deploys.
 http_file(
     name = "flux_helmrelease_crd",
     downloaded_file_path = "helm.toolkit.fluxcd.io_helmreleases.yaml",
@@ -926,8 +921,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/helm-controller/v1.6.4/config/crd/bases/helm.toolkit.fluxcd.io_helmreleases.yaml"],
 )
 
-# Flux's HelmRepository CRD — see flux_kustomization_crd above; pinned to the
-# source-controller tag cluster/k8s/flux-system/gotk-components.yaml deploys.
 http_file(
     name = "flux_helmrepository_crd",
     downloaded_file_path = "source.toolkit.fluxcd.io_helmrepositories.yaml",
@@ -935,8 +928,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_helmrepositories.yaml"],
 )
 
-# Flux's ImageRepository and ImagePolicy CRDs — see flux_kustomization_crd above; pinned to
-# the image-reflector-controller tag cluster/k8s/flux-system/gotk-components.yaml deploys.
 http_file(
     name = "flux_imagerepository_crd",
     downloaded_file_path = "image.toolkit.fluxcd.io_imagerepositories.yaml",
@@ -951,8 +942,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/image-reflector-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imagepolicies.yaml"],
 )
 
-# tofu-controller's Terraform CRD — see flux_kustomization_crd above; pinned to the chart
-# version cluster/k8s/tofu-controller/tofu-controller.yaml deploys.
+# Match the deployed version in cluster/k8s/tofu-controller/tofu-controller.yaml.
 http_file(
     name = "tofu_controller_terraform_crd",
     downloaded_file_path = "infra.contrib.fluxcd.io_terraforms.yaml",
@@ -960,11 +950,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/flux-iac/tofu-controller/v0.16.5/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml"],
 )
 
-# prometheus-operator's ServiceMonitor CRD — fetched verbatim so
-# //third_party/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
-# typed cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same
-# v0.94.0 tag as cluster/k8s/monitoring/crds/gitrepository.yaml (which tracks
-# kube-prometheus-stack's appVersion) -- bump both together.
+# Match kube-prometheus-stack's operator version tracked by
+# cluster/k8s/monitoring/crds/gitrepository.yaml.
 http_file(
     name = "prometheus_operator_servicemonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
@@ -972,11 +959,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
 )
 
-# Gateway API's HTTPRoute CRD — fetched verbatim so //third_party/gateway_api:httproute
-# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
-# vendoring the CRD in-tree. Pinned to the same v1.5.1 experimental channel this cluster
-# installs directly (cluster/terraform/main/cilium.tf's gateway_api_version -- experimental,
-# not standard, because Cilium 1.19 needs the v1alpha2 TLSRoute the standard channel dropped).
+# Match gateway_api_version in cluster/terraform/main/cilium.tf. Cilium 1.19 requires
+# the experimental channel for TLSRoute v1alpha2.
 http_file(
     name = "gateway_api_httproute_crd",
     downloaded_file_path = "gateway.networking.k8s.io_httproutes.yaml",
@@ -984,12 +968,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
-# external-secrets' CRD bundle (all its CRDs in one multi-document file -- it doesn't
-# publish per-kind files) -- fetched verbatim so //third_party/external_secrets:externalsecret
-# can extract just the ExternalSecret CRD (devinfra/k8s/extract_crd.py; `cdk8s import` only
-# ingests one CRD per invocation, and importing the whole bundle fails on unrelated CRDs'
-# jsii-incompatible field names) and generate typed cdk8s Python constructs from it, without
-# vendoring the CRD in-tree. Pinned to the same v2.10.0 tag as
+# Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
 # cluster/k8s/external-secrets/crds/gitrepository.yaml.
 http_file(
     name = "external_secrets_crds_bundle",
@@ -998,10 +977,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
-# Cilium's CiliumNetworkPolicy CRD — fetched verbatim so
-# //third_party/cilium:ciliumnetworkpolicy (devinfra/js/cdk8s_import.bzl) can generate typed
-# cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same
-# v1.19.6 tag as cluster/terraform/main/cilium.tf's local.cilium_version -- bump both together.
+# Match cluster/terraform/main/cilium.tf's local.cilium_version.
 http_file(
     name = "cilium_networkpolicy_crd",
     downloaded_file_path = "cilium.io_ciliumnetworkpolicies.yaml",
@@ -1009,10 +985,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumnetworkpolicies.yaml"],
 )
 
-# CloudNativePG's Cluster CRD — fetched verbatim so //third_party/cnpg:cluster
-# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
-# vendoring the CRD in-tree. Pinned to the CNPG operator's appVersion 1.30.0 (chart 0.29.0,
-# cluster/k8s/cnpg/helmrelease.yaml) -- bump both together.
+# CloudNativePG CRDs follow the operator appVersion in cluster/k8s/cnpg/helmrelease.yaml.
 http_file(
     name = "cnpg_cluster_crd",
     downloaded_file_path = "postgresql.cnpg.io_clusters.yaml",
@@ -1020,7 +993,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_clusters.yaml"],
 )
 
-# CloudNativePG's Database CRD — see cnpg_cluster_crd above; same pin.
 http_file(
     name = "cnpg_database_crd",
     downloaded_file_path = "postgresql.cnpg.io_databases.yaml",
@@ -1028,10 +1000,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_databases.yaml"],
 )
 
-# cert-manager's Certificate CRD — fetched verbatim so //third_party/cert_manager:certificate
-# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
-# vendoring the CRD in-tree. Pinned to the same v1.21.2 tag as
-# cluster/k8s/cert-manager/app/helmrelease.yaml.
+# Match the deployed version in cluster/k8s/cert-manager/app/helmrelease.yaml.
 http_file(
     name = "cert_manager_certificate_crd",
     downloaded_file_path = "cert-manager.io_certificates.yaml",
@@ -1039,10 +1008,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificates.yaml"],
 )
 
-# trust-manager's Bundle CRD — fetched verbatim so //third_party/cert_manager:bundle
-# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
-# vendoring the CRD in-tree. Pinned to the same 0.25.* series as
-# cluster/k8s/cert-manager/trust/helmrelease.yaml (exact patch tag v0.25.0).
+# Match the deployed version in cluster/k8s/cert-manager/trust/helmrelease.yaml.
 http_file(
     name = "trust_manager_bundle_crd",
     downloaded_file_path = "trust.cert-manager.io_bundles.yaml",
@@ -1050,13 +1016,9 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/trust-manager/v0.25.0/deploy/crds/trust.cert-manager.io_bundles.yaml"],
 )
 
-# kubernetes-sigs/agent-sandbox's combined release asset (Sandbox, SandboxTemplate,
-# SandboxClaim, SandboxWarmPool CRDs plus controller manifests in one file) — same asset
-# cluster/k8s/agents/agent-sandbox/controller/kustomization.yaml installs from. Extracted down
-# to just the SandboxTemplate CRD (devinfra/k8s/extract_crd.py) for
-# //third_party/agent_sandbox:sandboxtemplate (devinfra/js/cdk8s_import.bzl); `cdk8s import`
-# only ingests one CRD per invocation. Pinned to the same v0.5.5 tag as that
-# kustomization.yaml.
+# Same combined release asset installed by
+# cluster/k8s/agents/agent-sandbox/controller/kustomization.yaml; the bindings BUILD
+# extracts SandboxTemplate.
 http_file(
     name = "agent_sandbox_release_bundle",
     downloaded_file_path = "sandbox-with-extensions.yaml",

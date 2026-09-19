@@ -6,7 +6,7 @@ files under cluster/k8s (committed because Flux reads them from git), this is a
 compile-time codegen dependency -- outputs are pure build artifacts, never committed.
 
 "Generated bindings load and synthesize under Bazel" is a property of this mechanism,
-not of any one CRD -- proven once by //third_party/flux:test_kustomization_import.
+not of any one CRD -- proven once by //cluster/cdk8s/crd_bindings/flux:test_kustomization_import.
 A caller importing another CRD doesn't need its own copy of that smoke test.
 """
 

@@ -1,0 +1,20 @@
+# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/crd_bindings/cnpg:cluster
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/crd_bindings/cnpg:database
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "cluster",
+    crd = "@cnpg_cluster_crd//file",
+    module_name = "cnpg_cluster_crds",
+    module_path = "io/cnpg/postgresql",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "database",
+    crd = "@cnpg_database_crd//file",
+    module_name = "cnpg_database_crds",
+    module_path = "io/cnpg/postgresql",
+    visibility = ["//visibility:public"],
+)

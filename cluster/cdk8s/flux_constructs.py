@@ -1,7 +1,7 @@
 """Builds the Flux `Kustomization` custom resource each converted directory needs,
 plus the (kustomize) `kustomization.yaml` referencing its manifests.
 
-The Flux `Kustomization` CR is built from //third_party/flux:kustomization's
+The Flux `Kustomization` CR is built from //cluster/cdk8s/crd_bindings/flux:kustomization's
 generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
 dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
 of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io
@@ -43,7 +43,7 @@ def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecH
 def flux_kustomization(name: str, *, spec: KustomizationSpec, description: str | None = None) -> dict[str, object]:
     """Return a Flux `Kustomization` custom resource as a plain manifest dict.
 
-    `spec` is the generated typed `KustomizationSpec` (//third_party/flux:kustomization) --
+    `spec` is the generated typed `KustomizationSpec` (//cluster/cdk8s/crd_bindings/flux:kustomization) --
     build it directly rather than through a hand-rolled subset of its fields; this only
     supplies the metadata/chart/synth plumbing that isn't part of the CRD's own spec.
     `description` becomes the `description` annotation (cluster/AGENTS.md).

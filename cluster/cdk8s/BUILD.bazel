@@ -7,7 +7,7 @@ py_library(
     srcs = ["flux_constructs.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//third_party/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pydantic",
     ],
@@ -85,7 +85,7 @@ py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//third_party/cnpg:cluster"],
+    deps = ["//cluster/cdk8s/crd_bindings/cnpg:cluster"],
 )
 
 py_library(
@@ -111,7 +111,7 @@ py_library(
     srcs = ["cilium.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//third_party/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -167,7 +167,7 @@ py_library(
     srcs = ["forgejo_images.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//third_party/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -179,7 +179,7 @@ py_library(
     srcs = ["gateway.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//third_party/gateway_api:httproute",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -190,8 +190,8 @@ py_library(
     srcs = ["cheap_experiments_credentials.py"],
     deps = [
         "//cluster/cdk8s:metadata",
-        "//third_party/external_secrets:clustersecretstore",
-        "//third_party/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -219,7 +219,7 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
-        "//third_party/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -235,7 +235,7 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
-        "//third_party/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -258,8 +258,8 @@ py_library(
     deps = [
         ":metadata",
         ":stateful_infra",
-        "//third_party/flux:helmrelease",
-        "//third_party/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "@pypi//constructs",
     ],
 )
@@ -300,8 +300,8 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
-        "//third_party/external_secrets:externalsecret",
-        "//third_party/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -315,7 +315,7 @@ py_library(
     deps = [
         ":cilium",
         ":metadata",
-        "//third_party/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
     ],
 )
@@ -325,7 +325,7 @@ py_library(
     srcs = ["terraform_constructs.py"],
     deps = [
         ":metadata",
-        "//third_party/tofu_controller:terraform",
+        "//cluster/cdk8s/crd_bindings/tofu_controller:terraform",
         "@pypi//constructs",
     ],
 )
@@ -335,8 +335,8 @@ py_library(
     srcs = ["forgejo_image_automation.py"],
     deps = [
         ":metadata",
-        "//third_party/flux:imagepolicy",
-        "//third_party/flux:imagerepository",
+        "//cluster/cdk8s/crd_bindings/flux:imagepolicy",
+        "//cluster/cdk8s/crd_bindings/flux:imagerepository",
         "@pypi//constructs",
     ],
 )
@@ -346,8 +346,8 @@ py_library(
     srcs = ["etcd_constructs.py"],
     deps = [
         ":metadata",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/scripts:nebula_mesh",
-        "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -378,10 +378,10 @@ py_library(
         ":pod_spec_patches",
         ":probes",
         "//cluster/cdk8s/agentplane:node_scheduling",
-        "//third_party/cnpg:cluster",
-        "//third_party/external_secrets:clustersecretstore",
-        "//third_party/external_secrets:externalsecret",
-        "//third_party/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -431,9 +431,9 @@ py_library(
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/haku:charts",
         "//cluster/scripts:nebula_mesh",
-        "//third_party/flux:kustomization",
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
         "@pypi//cdk8s",
