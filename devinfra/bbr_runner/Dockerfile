@@ -50,7 +50,7 @@ RUN mkdir -p ~/.config/nix \
     && printf '%s\n' \
          'build-users-group =' \
          'experimental-features = nix-command flakes' \
-         'sandbox = false' \
+         'sandbox = true' \
          'max-jobs = auto' \
        > ~/.config/nix/nix.conf \
     && curl -fsSL https://nixos.org/nix/install -o /tmp/nix-install.sh \
@@ -61,13 +61,10 @@ RUN mkdir -p ~/.config/nix \
     # Use nix build (not nix profile install) to avoid the profile manifest
     # keeping a reference to the nixpkgs source tree (~457MB).
     #
-    # --max-jobs 2: nix/packages' packageOverrides fixpoint (see its own
-    # top-of-file comment) can pull a large slice of nixpkgs' Python set into
-    # a from-source rebuild. With sandbox = false and no Nix daemon to throttle
-    # it, the default auto (= nproc, 4 on ubuntu-latest) parallel derivations
-    # of native-code packages can exceed this runner's memory, killing one
-    # build uncleanly and leaving Nix's unsandboxed-root HOME marker
-    # (/homeless-shelter) behind for the next derivation to trip over.
+    # Keep sandboxing enabled: without it, a single-user install running as
+    # root lets package builds create Nix's synthetic HOME (/homeless-shelter),
+    # which makes later derivations fail. Cap parallelism too: this closure
+    # rebuilds a substantial Python set and the hosted runner has limited RAM.
     && RBETOOLS=$(nix build .#rbetools \
          --max-jobs 2 --no-link --print-out-paths) \
     # Register as GC root so nix-collect-garbage keeps the closure.
