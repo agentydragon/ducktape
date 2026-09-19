@@ -178,11 +178,9 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     )
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
-    assert settings.action_groups["remote"].executor.config == {
-        "transport": "streamable-http",
-        "url": "http://test-peer.invalid/mcp",
-        "auth": "none",
-    }
+    executor = settings.action_groups["remote"].executor
+    assert isinstance(executor, McpExecutorBinding)
+    assert executor.config == {"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"}
     path.write_text(
         path.read_text()
         .replace("kind: mcp", "kind: unsupported")

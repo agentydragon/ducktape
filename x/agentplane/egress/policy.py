@@ -109,6 +109,10 @@ class AuthenticatedWorkloadContext:
     bearer: str = field(repr=False)
     caller: ServiceAccountRef
     pod_uid: str
+    projected: Mapping[str, str] = field(default_factory=dict, repr=False)
+    """Audience to the token the sidecar presented for it, each already reviewed as belonging to the
+    same Pod as the hop bearer. An audience that did not review is absent rather than present and
+    unusable, so a rule naming it denies `credential-unavailable` at the point of use."""
 
     def is_bound_to(self, caller: ServiceAccountRef) -> bool:
         return self.caller == caller
@@ -275,15 +279,20 @@ def evaluate(
     # `_resolves` admitted exactly one presented credential, and every presented one is in the index.
     credential = index.credentials[one(presented)]
     source = credential.spec.source
+    # Both token sources are the caller's own identity, so each is usable only while the context
+    # still belongs to the caller being decided; a Secret is the proxy's and needs no such binding.
+    bound = (
+        authenticated_workload
+        if authenticated_workload is not None and authenticated_workload.is_bound_to(caller)
+        else None
+    )
     if (secret_ref := source.secret_ref) is not None:
         secret = index.secrets.get(secret_ref.name)
         value = secret.data.get(secret_ref.key) if secret is not None else None
+    elif (projected := source.projected_workload_token) is not None:
+        value = bound.projected.get(projected.audience) if bound is not None else None
     else:
-        value = (
-            authenticated_workload.bearer
-            if authenticated_workload is not None and authenticated_workload.is_bound_to(caller)
-            else None
-        )
+        value = bound.bearer if bound is not None else None
     if value is None:
         return Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     return Allowed(

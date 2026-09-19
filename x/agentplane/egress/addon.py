@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -21,7 +21,7 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
     Allowed,
@@ -41,6 +41,10 @@ from x.agentplane.workload_auth.principal import WorkloadPrincipal
 logger = logging.getLogger(__name__)
 
 DENIED_HEADER = "x-agentplane-egress"
+# Audience-scoped tokens the sidecar offers for substitution, one `<audience> <token>` per value.
+# The hop bearer travels in Proxy-Authorization and is not one of these: it authenticates the hop,
+# where these are only ever candidates to substitute, and are worth nothing until reviewed.
+PROJECTED_TOKEN_HEADER = "x-agentplane-workload-token"
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,30 @@ class _AuthenticatedConnection:
 
     token: str = field(repr=False)
     identity: WorkloadPrincipal
+    projected: Mapping[str, str] = field(default_factory=dict, repr=False)
+
+
+def _take_projected_tokens(request: http.Request) -> dict[str, str] | None:
+    """The audience-tagged tokens this request presents, removed from it for this proxy alone.
+
+    `None` when it carried the header not at all, which is what a request inside a tunnel looks
+    like: its headers are behind the tunnel's TLS, so what the CONNECT presented is what applies.
+    An empty mapping is a request that carried the header and nothing usable in it, which inherits
+    nothing -- a presentation that arrives malformed must not resolve to an earlier one.
+    """
+    values = request.headers.get_all(PROJECTED_TOKEN_HEADER)
+    if not values:
+        return None
+    del request.headers[PROJECTED_TOKEN_HEADER]
+    presented: dict[str, str] = {}
+    for value in values:
+        audience, separator, token = value.partition(" ")
+        if separator and audience and token:
+            presented[audience] = token
+        else:
+            # Never the value: it is a bearer for some audience even when we cannot read the pair.
+            logger.warning("ignoring a malformed %s entry", PROJECTED_TOKEN_HEADER)
+    return presented
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -65,12 +93,14 @@ class EgressAddon:
         decision_log: DecisionLog,
         resolver: UpstreamResolver,
         stale_after_seconds: float,
+        projected: ProjectedTokenVerifier,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._producer_id = uuid4()
         self._index = index
         self._stale_after_seconds = stale_after_seconds
         self._verifier = verifier
+        self._projected = projected
         self._decision_log = decision_log
         self._resolver = resolver
         self._clock = clock
@@ -145,11 +175,13 @@ class EgressAddon:
 
     async def _caller_of(self, flow: http.HTTPFlow) -> ServiceAccountRef:
         """The subject this connection's token proves, or IdentityRejectedError saying why not."""
-        caller, _ = await self._authenticate(flow)
+        caller, _ = await self._authenticate(flow, _take_projected_tokens(flow.request))
         return caller
 
-    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[ServiceAccountRef, AuthenticatedWorkloadContext]:
-        """Authenticate this hop or tunnel context and bind its bearer to the resulting caller."""
+    async def _authenticate(
+        self, flow: http.HTTPFlow, presented_projected: Mapping[str, str] | None
+    ) -> tuple[ServiceAccountRef, AuthenticatedWorkloadContext]:
+        """Authenticate this hop or tunnel context and bind its credentials to the resulting caller."""
         client_id = flow.client_conn.id
         previous = (
             self._authenticated.get(client_id) if flow.request.headers.get("proxy-authorization") is None else None
@@ -165,14 +197,25 @@ class EgressAddon:
         if previous is not None and previous.identity != identity:
             self._authenticated.pop(client_id, None)
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, "authenticated tunnel identity changed")
-        self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
+        # Read after `_token_for_authentication`, which drops the entry when a new hop bearer
+        # arrives: projected tokens are that hop's to present again, never the previous hop's to keep.
+        retained = self._authenticated.get(client_id)
+        if presented_projected is None:
+            projected = dict(retained.projected) if retained is not None else {}
+        else:
+            projected = await self._projected.verified(presented_projected, identity)
+        self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity, projected=projected)
         return identity.account, AuthenticatedWorkloadContext(
-            bearer=token, caller=identity.account, pod_uid=identity.pod_uid
+            bearer=token, caller=identity.account, pod_uid=identity.pod_uid, projected=projected
         )
 
     async def _gate(self, flow: http.HTTPFlow) -> None:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
         request = flow.request
+        # Before the request is read for anything else: these are this proxy's to consume, so they
+        # reach neither credential detection nor the upstream, whatever the decision below turns out
+        # to be.
+        presented_projected = _take_projected_tokens(request)
         egress = EgressRequest(
             method=request.method,
             host=request.host,
@@ -185,7 +228,7 @@ class EgressAddon:
         pin: Pin | None = None
         decision: Decision
         try:
-            caller, authenticated_workload = await self._authenticate(flow)
+            caller, authenticated_workload = await self._authenticate(flow, presented_projected)
             subject = caller
             if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")

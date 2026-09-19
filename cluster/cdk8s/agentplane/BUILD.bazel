@@ -195,10 +195,13 @@ py_library(
     name = "actions_staging_policies",
     srcs = ["actions_staging_policies.py"],
     deps = [
+        ":app_settings",
         ":staging_config",
+        "//x/agentplane/action_service:sandbox_executor",
         "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/crds:actionpolicybinding",
         "//x/agentplane/crds:actionpolicyset",
+        "//x/agentplane/crds:egressbinding",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

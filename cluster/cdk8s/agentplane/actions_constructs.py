@@ -127,6 +127,21 @@ class Actions(Construct):
                     ],
                     verbs=["patch"],
                 ),
+                # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
+                # namespace-wide and cannot say "only the boxes this Action made": that boundary is
+                # the executor's own label check (x/agentplane/sandbox_actions/inventory.py), which
+                # is why it is an application rule tested as one rather than something RBAC states.
+                RolePolicyRule(
+                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
+                    verbs=["create", "get", "list", "watch", "delete"],
+                ),
+                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["get", "list"]),
+                # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,
+                # where kubectl POSTs.
+                RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
             ],
         )
         RoleBinding(

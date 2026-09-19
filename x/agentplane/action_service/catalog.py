@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
+from x.agentplane.sandbox_actions.binding import SandboxExecutorBinding
+
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
 
@@ -84,6 +86,18 @@ class McpHealth(BaseModel):
     failures: int = 0
 
 
+type ExecutorBinding = Annotated[McpExecutorBinding | SandboxExecutorBinding, Field(discriminator="kind")]
+"""Where a group's Actions run. `mcp` reaches a reviewed upstream server; `sandbox` runs in this
+service, because the caller's own identity is what it acts as and an MCP hop would have to carry
+that assertion over the wire.
+
+A PEP 695 alias and not a bare `Annotated`, so the discriminator survives on the field's own
+annotation: pydantic folds `Annotated` metadata into its `FieldInfo`, where a deployment rendering
+this settings model (`util/settings_contract.py`) reads the annotation and would find a union it
+cannot pick a member of.
+"""
+
+
 class ActionGroup(BaseModel):
     """The discovery and ownership unit: one executor binding, many namespaced child Actions."""
 
@@ -91,7 +105,7 @@ class ActionGroup(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=2000)
-    executor: McpExecutorBinding = Field(discriminator="kind")
+    executor: ExecutorBinding
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     health: McpHealth | None = Field(default=None, exclude=True)
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)

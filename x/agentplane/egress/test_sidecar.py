@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from x.agentplane.egress.sidecar import REFUSED_HEADER, RefusalReason, SidecarRelay
+from x.agentplane.egress.sidecar import PROJECTED_TOKEN_HEADER, REFUSED_HEADER, RefusalReason, SidecarRelay
 
 REFUSED_HOST = "refused.test"
 CONNECT_REFUSAL_HEADER = "x-agentplane-egress"
@@ -31,6 +31,12 @@ class SeenRequest:
     def token(self) -> str | None:
         scheme, _, token = self.headers.get("proxy-authorization", "").partition(" ")
         return token if scheme == "Bearer" else None
+
+    @property
+    def projected(self) -> list[str]:
+        """Every projected-token line verbatim, so a forwarded client copy is visible beside ours."""
+        prefix = f"{PROJECTED_TOKEN_HEADER.lower()}:"
+        return [line.split(":", 1)[1].strip() for line in self.header_lines if line.lower().startswith(prefix)]
 
 
 @dataclass
@@ -174,6 +180,87 @@ async def test_malformed_request_is_refused(relay: SidecarRelay, central: FakeCe
     assert head.startswith(b"HTTP/1.1 400 ")
     assert f"{REFUSED_HEADER}: reason={RefusalReason.BAD_REQUEST}".encode() in head
     assert central.connections == 0
+    writer.close()
+    await writer.wait_closed()
+
+
+AUDIENCE = "https://kubernetes.test.invalid"
+
+
+@pytest.fixture
+def audience_file(tmp_path: Path) -> Path:
+    path = tmp_path / "kubernetes-token"
+    path.write_text("api-server-token-1\n")
+    return path
+
+
+@pytest.fixture
+async def audience_relay(
+    central: FakeCentralProxy, token_file: Path, audience_file: Path
+) -> AsyncIterator[SidecarRelay]:
+    async with SidecarRelay(
+        proxy_host="127.0.0.1",
+        proxy_port=central.port,
+        token_file=token_file,
+        audience_token_files={AUDIENCE: audience_file},
+    ) as relay:
+        yield relay
+
+
+async def test_a_configured_audience_is_offered_beside_the_hop_token(
+    audience_relay: SidecarRelay, central: FakeCentralProxy
+) -> None:
+    await get_through(audience_relay, "/path")
+    seen = one(central.seen)
+    assert (seen.token, seen.projected) == ("token-1", [f"{AUDIENCE} api-server-token-1"])
+
+
+async def test_a_clients_own_projected_header_is_never_forwarded(
+    audience_relay: SidecarRelay, central: FakeCentralProxy
+) -> None:
+    """The workload's headers pass through this relay, so a forged entry would otherwise arrive
+    looking exactly like the sidecar's own."""
+    await get_through(
+        audience_relay, "/path", headers={PROJECTED_TOKEN_HEADER: f"{AUDIENCE} stolen-token-of-another-pod"}
+    )
+    assert one(central.seen).projected == [f"{AUDIENCE} api-server-token-1"]
+
+
+async def test_a_projected_token_is_reread_between_requests(
+    audience_relay: SidecarRelay, central: FakeCentralProxy, audience_file: Path
+) -> None:
+    """kubelet rotates it in place like the hop token, so a relay that read it once would start
+    offering an expired one."""
+    await get_through(audience_relay, "/one")
+    await asyncio.to_thread(audience_file.write_text, "api-server-token-2")
+    await get_through(audience_relay, "/two")
+    assert [seen.projected for seen in central.seen] == [
+        [f"{AUDIENCE} api-server-token-1"],
+        [f"{AUDIENCE} api-server-token-2"],
+    ]
+
+
+async def test_an_unreadable_audience_is_left_out_rather_than_offered_blank(
+    central: FakeCentralProxy, token_file: Path, tmp_path: Path
+) -> None:
+    """The hop still authenticates, so the request is relayed; the rule naming that audience is what
+    denies, where an empty value would read as a rejected token instead."""
+    async with SidecarRelay(
+        proxy_host="127.0.0.1",
+        proxy_port=central.port,
+        token_file=token_file,
+        audience_token_files={AUDIENCE: tmp_path / "absent"},
+    ) as relay:
+        status, _, _ = await get_through(relay, "/path")
+    assert status == 200
+    assert one(central.seen).projected == []
+
+
+async def test_a_connect_carries_the_projected_token(audience_relay: SidecarRelay, central: FakeCentralProxy) -> None:
+    """Requests inside the tunnel are behind its TLS, so the CONNECT is the only place the central
+    proxy can be told what this Pod holds."""
+    _, _, writer = await connect_through(audience_relay, "tunnel.test")
+    assert one(central.seen).projected == [f"{AUDIENCE} api-server-token-1"]
     writer.close()
     await writer.wait_closed()
 

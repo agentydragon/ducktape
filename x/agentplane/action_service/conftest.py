@@ -21,7 +21,13 @@ from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition,
 from x.agentplane.action_service.database_migrate import RUNNER
 from x.agentplane.action_service.db import make_engine
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
+from x.agentplane.action_service.models import (
+    ExecutionLease,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutionState,
+    Executor,
+)
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
@@ -78,7 +84,7 @@ def execution_lease() -> ExecutionLease:
     return AlwaysLiveLease()
 
 
-class RecordingExecutor:
+class RecordingExecutor(Executor):
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
 

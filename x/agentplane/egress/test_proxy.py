@@ -28,7 +28,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from util.net import pick_free_port
-from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
+from x.agentplane.egress.addon import DENIED_HEADER, PROJECTED_TOKEN_HEADER, EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
     AUDIENCE,
@@ -37,6 +37,9 @@ from x.agentplane.egress.conftest import (
     POD_A_IP,
     POD_A_UID,
     POD_B_UID,
+    PROJECTED_AUDIENCE,
+    PROJECTED_TOKEN_A,
+    PROJECTED_TOKEN_B,
     SANDBOX_A,
     SANDBOX_B,
     SCHEME,
@@ -52,7 +55,7 @@ from x.agentplane.egress.conftest import (
 )
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import Phase
-from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
 from x.agentplane.egress.main import Settings
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -92,6 +95,7 @@ from x.agentplane.testing.fake_apiserver import (
     fake_apiserver,
     pod_for,
     policy,
+    projected_workload_credential,
     sandbox,
     secret,
 )
@@ -307,6 +311,15 @@ async def proxy(
         allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
     )
     verifier = WorkloadIdentityVerifier(workload_resolver)
+    projected_verifier = ProjectedTokenVerifier(
+        resolvers={
+            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
+                authentication=AuthenticationV1Api(api_client),
+                audience=PROJECTED_AUDIENCE,
+                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            )
+        }
+    )
     informer_task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
@@ -323,6 +336,7 @@ async def proxy(
                     verifier=verifier,
                     decision_log=decision_log,
                     resolver=resolver,
+                    projected=projected_verifier,
                 ),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
@@ -1089,6 +1103,96 @@ async def test_drain_closes_listener_but_completes_admitted_request(proxy: Proxy
     finally:
         proxy.upstream.slow_release.set()
         await asyncio.gather(pending, draining, return_exceptions=True)
+
+
+PROJECTED_CREDENTIAL = "kubernetes-workload"
+PROJECTED_PLACEHOLDER = placeholder_of(PROJECTED_CREDENTIAL)
+PROJECTED_POLICY = "projected-workload"
+
+
+async def install_projected_credential(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+    fake.put(
+        CREDENTIALS_PLURAL,
+        projected_workload_credential(
+            PROJECTED_CREDENTIAL,
+            audience=PROJECTED_AUDIENCE,
+            targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            PROJECTED_POLICY,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "methods": ["GET"],
+                    "paths": ["/projected/**"],
+                    "credentialRef": {"name": PROJECTED_CREDENTIAL},
+                }
+            ],
+        ),
+    )
+    fake.put(
+        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, PROJECTED_POLICY])
+    )
+    await proxy.index.wait_for(
+        lambda: (
+            PROJECTED_CREDENTIAL in proxy.index.credentials
+            and PROJECTED_POLICY in proxy.index.policies
+            and PROJECTED_POLICY in proxy.index.bindings[BINDING].spec.policies
+        )
+    )
+
+
+async def _projected_get(proxy: ProxyUnderTest, path: str, offered: str | None) -> Response:
+    """A request presenting the placeholder, with the sidecar's projected-token header as given."""
+    proxy_headers = {"Proxy-Authorization": f"Bearer {TOKEN_A}"}
+    if offered is not None:
+        proxy_headers[PROJECTED_TOKEN_HEADER] = f"{PROJECTED_AUDIENCE} {offered}"
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(
+            proxy.url(path),
+            proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+            proxy_headers=proxy_headers,
+            ssl=client_tls_context(proxy.interception_ca),
+            headers={"Authorization": f"Bearer {PROJECTED_PLACEHOLDER}"},
+        ) as response,
+    ):
+        return Response(status=response.status, headers=dict(response.headers), body=await response.read())
+
+
+async def test_projected_token_is_substituted_and_never_forwarded(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+    """The caller sends an inert placeholder and its own audience-scoped token; the upstream sees the
+    token and no trace of how it got there."""
+    await install_projected_credential(fake, proxy)
+    response = await _projected_get(proxy, "/projected/api", PROJECTED_TOKEN_A)
+    assert response.status == 200
+    _, _, headers = one(proxy.upstream.requests)
+    assert headers["authorization"] == f"Bearer {PROJECTED_TOKEN_A}"
+    assert PROJECTED_TOKEN_HEADER.lower() not in headers
+    assert "proxy-authorization" not in headers
+
+
+async def test_another_pods_projected_token_is_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+    """The hop authenticates as Pod A, so a token belonging to Pod B is not A's to spend -- and the
+    proxy is the only route to that destination, which is what makes the check load-bearing."""
+    await install_projected_credential(fake, proxy)
+    response = await _projected_get(proxy, "/projected/api", PROJECTED_TOKEN_B)
+    assert response.status == 403
+    assert response.headers[DENIED_HEADER] == f"denied; reason={DenyReason.CREDENTIAL_UNAVAILABLE}"
+    assert proxy.upstream.requests == []
+
+
+async def test_a_placeholder_with_no_projected_token_offered_is_refused(
+    fake: FakeApiServer, proxy: ProxyUnderTest
+) -> None:
+    await install_projected_credential(fake, proxy)
+    response = await _projected_get(proxy, "/projected/api", None)
+    assert response.status == 403
+    assert response.headers[DENIED_HEADER] == f"denied; reason={DenyReason.CREDENTIAL_UNAVAILABLE}"
+    assert proxy.upstream.requests == []
 
 
 if __name__ == "__main__":

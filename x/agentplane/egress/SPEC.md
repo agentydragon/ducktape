@@ -36,10 +36,21 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior, or `authenticatedWorkloadToken`, the
-  bearer retained from successful authentication of this request or CONNECT tunnel. The latter is
-  resolved per request and must still be bound to the caller being decided; absent, stale, or
-  mismatched context refuses with `credential-unavailable`.
+  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, the
+  bearer retained from successful authentication of this request or CONNECT tunnel; or
+  `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
+  latter two are resolved per request and must still be bound to the caller being decided; absent,
+  stale, or mismatched context refuses with `credential-unavailable`.
+- **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
+  carries this proxy's audience, so a destination validating its own — the API server against
+  `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
+  presents each as `X-Agentplane-Workload-Token: <audience> <token>`, and the proxy consumes that
+  header rather than forwarding it. A presented token is kept only when a TokenReview for that
+  audience resolves it to the same Pod the hop authenticated, and only for an audience this
+  deployment configured; one that fails either is dropped, so the rule naming it refuses with
+  `credential-unavailable` rather than substituting something else. The sidecar drops a client's own
+  copy of the header, and the workload can read neither token: both are projected into the sidecar
+  alone. A tunnel's inner requests inherit what its CONNECT presented, as they inherit its identity.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -67,7 +78,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   proxy recognised is never one it forwards. A value of that header the request sent alongside and
   did not present the placeholder in is forwarded untouched. A credential whose Secret or key is
   absent, or whose authenticated workload context is unavailable or unbound, denies with
-  `credential-unavailable` rather than forwarding. `authenticatedWorkloadToken` never copies a raw
+  `credential-unavailable` rather than forwarding. Neither token source copies a raw
   `Proxy-Authorization` value and never appends `Authorization`; the declared target and exact
   placeholder presentation remain the only substitution authority.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,

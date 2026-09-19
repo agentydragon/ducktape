@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -367,8 +368,30 @@ class ExecutionLease(Protocol):
         ...
 
 
-class Executor(Protocol):
+class Executor(ABC):
+    """One backend the service dispatches Executions to.
+
+    A base class and not a Protocol because the implementers are nameable and few, and because
+    winding down is the rarer half: inheriting supplies it, so a backend holding nothing says so by
+    not overriding rather than by restating the no-op.
+    """
+
+    @abstractmethod
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
+
+    def begin_drain(self) -> None:
+        """Stop offering this backend, without waiting for anything.
+
+        Deliberately synchronous and deliberately only the first half: shutdown marks every
+        executor unavailable in one pass and awaits their teardown afterwards, so that the second
+        backend stops being advertised at the same moment as the first rather than after it has
+        finished closing. Awaiting the rest is `close`'s, where a backend has one.
+
+        Nothing by default, which is what a backend owning no connection and no work of its own
+        has to do: what stops new dispatches reaching it is the service's own drain. The explicit
+        return says the empty body is the implementation and not a missing `abstractmethod`.
+        """
+        return
 
 
 class ProviderVerdict(StrEnum):

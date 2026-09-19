@@ -18,7 +18,10 @@ py_library(
 py_library(
     name = "catalog",
     srcs = ["catalog.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//x/agentplane/sandbox_actions:binding",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -191,8 +194,10 @@ py_library(
         ":service",
         ":updates",
         "//github_policy:visibility",
+        "//mcp_infra/exec:kubernetes",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/sandbox_actions:inventory",
         "//x/agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -442,6 +447,10 @@ py_library(
         ":catalog",
         ":mcp_executor",
         ":mcp_linkage",
+        ":models",
+        ":sandbox_executor",
+        "//x/agentplane/sandbox_actions:binding",
+        "//x/agentplane/sandbox_actions:inventory",
         "@pypi//pydantic",
     ],
 )
@@ -1040,5 +1049,47 @@ py_library(
         "//x/agentplane/action_service/policies:registry",
         "//x/agentplane/action_service/policies:resources",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sandbox_executor",
+    srcs = ["sandbox_executor.py"],
+    # The group key and its Action names, so the staging policy that auto-approves them is written
+    # from the roster that offers them rather than from a second copy.
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = [
+        ":catalog",
+        ":models",
+        "//mcp_infra/exec:kubernetes",
+        "//x/agentplane:subjects",
+        "//x/agentplane/sandbox_actions:binding",
+        "//x/agentplane/sandbox_actions:inventory",
+        "//x/agentplane/sandbox_actions:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sandbox_executor",
+    srcs = ["test_sandbox_executor.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":models",
+        ":sandbox_executor",
+        "//:conftest",
+        "//mcp_infra/exec:kubernetes",
+        "//mcp_infra/exec:models",
+        "//x/agentplane:subjects",
+        "//x/agentplane/sandbox_actions:binding",
+        "//x/agentplane/sandbox_actions:inventory",
+        "//x/agentplane/sandbox_actions:models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

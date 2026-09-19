@@ -700,6 +700,8 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-testing
+    projected_token_audiences:
+      - https://localhost:7445
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1024,6 +1026,21 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: kubernetes-workload
+  namespace: agentplane-testing
+spec:
+  description: "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server rather than for this proxy. Requests carrying it are authorized by the API server as that account and by nothing here: what the sandbox may do is the RBAC bound to it, and this proxy adds only the rule's hosts, methods and paths on top."
+  source:
+    projectedWorkloadToken:
+      audience: https://localhost:7445
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: basic
@@ -1064,6 +1081,19 @@ spec:
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: kubernetes
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - kubernetes.default.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -1728,6 +1758,8 @@ spec:
               value: "3128"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           resources:
@@ -1767,6 +1799,10 @@ spec:
                   audience: agentplane-egress
                   expirationSeconds: 600
                   path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
   volumeClaimTemplates:
     - metadata:
         name: state
@@ -1853,6 +1889,36 @@ rules:
       - actionpolicybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

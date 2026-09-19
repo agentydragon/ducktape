@@ -11,6 +11,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities: deployed command acceptance, UI usability/history, native recovery, and deferred cluster-browser/subagent work
+- [Sandbox Actions](sandbox_actions.md) — agreed design for exec-target Sandboxes provisioned as the calling ServiceAccount, for agents hosted outside the cluster
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices

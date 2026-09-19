@@ -23,6 +23,7 @@ from github_policy.visibility import (
     REQUEST_TIMEOUT_SECONDS,
     RepositoryVisibilityService,
 )
+from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
@@ -44,6 +45,7 @@ from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from x.agentplane.sandbox_actions.inventory import SandboxClients
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -191,7 +193,14 @@ async def async_main(settings: Settings) -> None:
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
         stack.push_async_callback(mcp_linkage.close)
-        executors = await stack.enter_async_context(running_executor(catalog, mcp_linkage))
+        # Built unconditionally: a configured sandbox group must fail at startup rather than at the
+        # first dispatch, and an API client this process already holds costs nothing when unused.
+        sandboxes = SandboxClients(
+            custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+            core_v1=CoreV1Api(api),
+            exec_runner=KubernetesWebSocketExecRunner(configuration),
+        )
+        executors = await stack.enter_async_context(running_executor(catalog, mcp_linkage, sandboxes))
         push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
             push_notifier = ActionPushNotifier(
