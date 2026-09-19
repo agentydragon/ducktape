@@ -42,6 +42,7 @@ from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
+from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.haku import charts as haku_charts
@@ -83,12 +84,46 @@ def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
 def _generate_litellm_app(root: Path) -> None:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
 
+    # The Flux Kustomizations this directory waits on, and the Secret each one provides
+    # that a Pod here reads -- shared between the depends_on list below and the fleet
+    # rules' provider check, so the two can't drift.
+    depends_on = (
+        "external-secrets-config",
+        "forgejo-images",
+        "litellm-secrets",
+        "litellm-db",
+        "gateway",
+        "cert-manager-environment",
+        "langfuse-secrets",
+        "reflector",
+        "tana-mcp",
+        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
+        # litellm-servicemonitor Kustomization, #7103).
+        "monitoring-crds",
+    )
+
     app_dir = root / _LITELLM_APP_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring")
+    add_fleet_rules(
+        chart,
+        provided_secrets={
+            "litellm-master-key": "litellm-secrets",
+            "litellm-salt-key": "litellm-secrets",
+            "litellm-anthropic-key": "litellm-secrets",
+            "litellm-groq-key": "litellm-secrets",
+            "litellm-gemini-key": "litellm-secrets",
+            "litellm-mistral-key": "litellm-secrets",
+            "litellm-cliproxy-key": "litellm-secrets",
+            "litellm-db-app": "litellm-db",
+            "langfuse-secrets": "langfuse-secrets",
+            "tana-firebase-refresh-token": "tana-mcp",
+        },
+        providers=frozenset(depends_on),
+    )
     app.synth()
 
     _write_yaml(
@@ -103,23 +138,7 @@ def _generate_litellm_app(root: Path) -> None:
                     kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
                 ),
                 timeout="10m",
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        "litellm-secrets",
-                        "litellm-db",
-                        "gateway",
-                        "cert-manager-environment",
-                        "langfuse-secrets",
-                        "reflector",
-                        "tana-mcp",
-                        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-                        # litellm-servicemonitor Kustomization, #7103).
-                        "monitoring-crds",
-                    )
-                ],
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
             ),
         ),
     )
@@ -152,11 +171,32 @@ def _litellm_keys_chart(app: App) -> Chart:
 
 def _generate_ha_mcp(root: Path) -> None:
     name = "ha-mcp"
+    depends_on = (
+        "external-secrets-config",
+        "forgejo-images",
+        "home-assistant",
+        "monitoring-crds",  # the ServiceMonitor CRD
+    )
+
     app_dir = root / _HA_MCP_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     HaMcp(chart, "ha-mcp")
+    add_fleet_rules(
+        chart,
+        provided_secrets={
+            "home-assistant-break-glass": "home-assistant",
+            # bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted; without a
+            # decryption block Flux applies the ENC[...] ciphertext literally.
+            "ha-mcp-bearer": "bearer.sops.yaml",
+            # Created imperatively by this directory's own token-provisioner Job, not by
+            # any static manifest in the chart -- this directory is always a valid
+            # provider of its own such Secrets.
+            "ha-mcp-home-assistant-token": name,
+        },
+        providers=frozenset({name, "bearer.sops.yaml", *depends_on}),
+    )
     app.synth()
 
     _write_yaml(
@@ -186,15 +226,7 @@ def _generate_ha_mcp(root: Path) -> None:
                     provider=KustomizationSpecDecryptionProvider.SOPS,
                     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
                 ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        "home-assistant",
-                        "monitoring-crds",  # the ServiceMonitor CRD
-                    )
-                ],
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
             ),
         ),
     )
@@ -212,6 +244,15 @@ def _generate_clickhouse_schema(root: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = clickhouse_schema_constructs.chart(app)
+    add_fleet_rules(
+        chart,
+        provided_secrets={"clickhouse-admin-credentials": "clickhouse"},
+        # schema.sql (hand-written, listed below) always provides its own ConfigMap: the
+        # generated kustomization.yaml's config_map_generator entry renders it from
+        # exactly that file.
+        provided_config_maps={clickhouse_schema_constructs.SCHEMA_CONFIG_MAP.name: "schema.sql"},
+        providers=frozenset({"clickhouse", "schema.sql"}),
+    )
     app.synth()
 
     _write_yaml(
@@ -245,10 +286,42 @@ def _generate_clickhouse_schema(root: Path) -> None:
 
 def _generate_aiquota(root: Path) -> None:
     name = aiquota_constructs.NAME
+    depends_on = (
+        "external-secrets-config",
+        "forgejo-images",
+        # Provides the shared namespace and the CLIProxyAPI management Secret.
+        "cli-proxy-api",
+        # Materializes the narrow mirrored copies of the API bearer for its
+        # consumers; the source Secret stays SOPS-managed here.
+        "external-secrets-operator",
+        # Creates the aiquota database the migrate init container populates.
+        "clickhouse-schema",
+        # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+        "agent-machine-access-tf",
+        # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+        "reflector",
+    )
+
     out_dir = root / _AIQUOTA_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    aiquota_constructs.chart(app)
+    chart = aiquota_constructs.chart(app)
+    add_fleet_rules(
+        chart,
+        provided_secrets={
+            aiquota_constructs.BEARER_SECRET_NAME: f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml",
+            "cli-proxy-api-management": "cli-proxy-api",
+            "aiquota-oidc": "agent-machine-access-tf",
+            "clickhouse-aiquota-credentials": "reflector",
+        },
+        provided_config_maps={
+            aiquota_constructs.CONFIG_CONFIG_MAP.name: "config.toml",
+            aiquota_constructs.SCHEMA_CONFIG_MAP.name: "schema.sql",
+        },
+        providers=frozenset(
+            {f"{aiquota_constructs.BEARER_SECRET_NAME}.sops.yaml", "config.toml", "schema.sql", *depends_on}
+        ),
+    )
     app.synth()
 
     _write_yaml(
@@ -271,20 +344,7 @@ def _generate_aiquota(root: Path) -> None:
                     provider=KustomizationSpecDecryptionProvider.SOPS,
                     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
                 ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in (
-                        "external-secrets-config",
-                        "forgejo-images",
-                        # Provides the shared namespace and the CLIProxyAPI management Secret.
-                        "cli-proxy-api",
-                        # Materializes the narrow mirrored copies of the API bearer for its
-                        # consumers; the source Secret stays SOPS-managed here.
-                        "external-secrets-operator",
-                        # Creates the aiquota database the migrate init container populates.
-                        "clickhouse-schema",
-                    )
-                ],
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
             ),
         ),
     )
@@ -505,6 +565,7 @@ def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
     app = App(outdir=str(out_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     TalosEtcdMetrics(chart, "etcd", mesh)
+    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
     app.synth()
 
     _write_yaml(

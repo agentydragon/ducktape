@@ -782,6 +782,8 @@ spec:
       securityContext:
         fsGroupChangePolicy: Always
         runAsNonRoot: false
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: litellm
       setHostnameAsFQDN: false
       shareProcessNamespace: false
