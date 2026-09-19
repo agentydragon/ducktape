@@ -170,7 +170,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance) (rate(node_network_carrier_changes_total{instance=~\"$instance\",device=~\"$device\"}[$__rate_interval])) * 3600",
+          "expr": "sum by (instance) (rate(node_network_carrier_changes_total{instance=~\"$instance\",device=~\"$interface_scope\",device=~\"$device\"}[$__rate_interval])) * 3600",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -202,18 +202,18 @@
       "options": {
         "alignValue": "center",
         "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto",
+        "rowHeight": 0.7,
+        "showValue": "never",
         "tooltip": { "mode": "single" }
       },
       "targets": [
         {
-          "expr": "node_network_carrier{instance=~\"$instance\",device=~\"$device\"}",
+          "expr": "node_network_carrier{instance=~\"$instance\",device=~\"$interface_scope\",device=~\"$device\"}",
           "legendFormat": "{{instance}} / {{device}}",
           "refId": "A"
         }
       ],
-      "title": "Current carrier state for scraped interfaces",
+      "title": "Current carrier state (physical by default)",
       "type": "state-timeline"
     },
     {
@@ -273,16 +273,34 @@
         "type": "query"
       },
       {
+        "current": {
+          "text": "Physical",
+          "value": "^(eno|enp|ens|enx|eth|em|wl|wwan|bond).*"
+        },
+        "label": "Interface scope",
+        "name": "interface_scope",
+        "options": [
+          {
+            "selected": true,
+            "text": "Physical",
+            "value": "^(eno|enp|ens|enx|eth|em|wl|wwan|bond).*"
+          },
+          { "selected": false, "text": "All", "value": ".*" }
+        ],
+        "query": "Physical : ^(eno|enp|ens|enx|eth|em|wl|wwan|bond).*,All : .*",
+        "type": "custom"
+      },
+      {
         "allValue": ".*",
         "current": { "text": "All", "value": ["$__all"] },
         "datasource": "${DS_PROMETHEUS}",
-        "definition": "label_values(node_network_carrier{instance=~\"$instance\"}, device)",
+        "definition": "label_values(node_network_carrier{instance=~\"$instance\",device=~\"$interface_scope\"}, device)",
         "includeAll": true,
         "label": "Interface",
         "multi": true,
         "name": "device",
         "options": [],
-        "query": "label_values(node_network_carrier{instance=~\"$instance\"}, device)",
+        "query": "label_values(node_network_carrier{instance=~\"$instance\",device=~\"$interface_scope\"}, device)",
         "refresh": 1,
         "sort": 1,
         "type": "query"
