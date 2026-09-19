@@ -72,6 +72,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     FORGEJO_HAKU_POLICY,
     GITHUB_PUBLIC_POLICY,
     KUBERNETES_POLICY,
+    PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -287,6 +288,57 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     hosts=[FORGEJO_HOST],
                     cluster_internal=True,
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
+                )
+            ]
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-packages",
+        metadata=ApiObjectMetadata(name=PACKAGES_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # The package and toolchain mirrors a box needs to install anything: without them
+                # `pip install`, `npm install`, a cargo fetch and every Bazel download fail in a
+                # sandbox whose whole purpose is running commands. Taken from the set haku's own
+                # agent reaches (cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron.yaml).
+                #
+                # No credentialRef: these are public, unauthenticated reads, so there is nothing to
+                # substitute and a compromised box gains no identity here. That is also why the
+                # methods are narrowed, unlike the Kubernetes and Forgejo rules -- with no
+                # credential behind it, GET and HEAD genuinely bound what this admits rather than
+                # bounding the request while the authority stays whole. HEAD is here because an OCI
+                # pull checks a manifest with it before fetching.
+                #
+                # Deliberately absent: `codeload.github.com` and the `objects`/`release-assets`
+                # githubusercontent hosts, which are where an `http_archive` of a GitHub tag
+                # actually downloads from. They belong to the GitHub question below, so a Bazel
+                # fetch from a GitHub URL still fails until that is decided.
+                EgressPolicySpecRules(
+                    hosts=[
+                        "pypi.org",
+                        "files.pythonhosted.org",
+                        "registry.npmjs.org",
+                        "nodejs.org",
+                        "index.crates.io",
+                        "static.crates.io",
+                        "static.rust-lang.org",
+                        "releases.bazel.build",
+                        "bcr.bazel.build",
+                        "cache.nixos.org",
+                        "nixos.org",
+                        "channels.nixos.org",
+                        "ftp.gnu.org",
+                        "snapshot.debian.org",
+                        "code.forgejo.org",
+                        "data.forgejo.org",
+                        "ghcr.io",
+                        # ghcr.io redirects blob reads here, so a pull fails without it. A
+                        # githubusercontent host in this policy rather than the GitHub one because
+                        # it carries container layers, not repository content, and needs no token.
+                        "pkg-containers.githubusercontent.com",
+                    ],
+                    methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
                 )
             ]
         ),
