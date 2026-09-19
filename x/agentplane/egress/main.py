@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
+    upstream_ca_file: Path | None = Field(
+        default=None,
+        description="PEM bundle this proxy verifies destinations against. Needs the cluster's own CA on "
+        "top of the public roots for a `clusterInternal` rule to reach the API server, whose serving "
+        "certificate no public root signs. Unset falls back to mitmproxy's bundled roots, which reach "
+        "public hosts only.",
+    )
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
@@ -184,7 +191,11 @@ async def async_main(settings: Settings) -> None:
         try:
             async with (
                 EgressProxyServer(
-                    addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
+                    addon,
+                    confdir=settings.confdir,
+                    upstream_ca_file=settings.upstream_ca_file,
+                    listen_host=settings.listen_host,
+                    listen_port=settings.listen_port,
                 ),
                 serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
                 # Admitted last, so that /healthz answering at all means the two listeners above

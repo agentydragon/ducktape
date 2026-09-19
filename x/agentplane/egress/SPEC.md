@@ -124,6 +124,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   host and port alone, so the check runs again on a cached address: one pinned for a rule that
   declared its host internal is not served to a rule that did not. A host that does not resolve is
   refused with `host-unresolved` (`502`).
+- **The destination's own certificate is verified**, against a bundle the deployment supplies and
+  not against the interception root, which the proxy issues rather than trusts. That bundle carries
+  the public roots plus this cluster's CA, which is what lets a `clusterInternal` rule reach the API
+  server; a destination it does not cover fails the connection rather than being carried unverified.
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
   between the check and the connect. A dial for a target the gate did not admit is not made.

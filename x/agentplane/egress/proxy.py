@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -62,19 +61,17 @@ class EgressProxyServer:
         addon: EgressAddon,
         *,
         confdir: Path,
+        upstream_ca_file: Path | None = None,
         listen_host: str = "127.0.0.1",
         listen_port: int = 0,
         drain_seconds: float = 20,
-        extra_options: Mapping[str, object] | None = None,
     ) -> None:
         self._addon = addon
         self._drain_seconds = drain_seconds
         self._confdir = confdir
+        self._upstream_ca_file = upstream_ca_file
         self._listen_host = listen_host
         self._listen_port = listen_port
-        # Applied before the pinned options below, which always win: nothing passed here can weaken
-        # the gate. The tests use it to trust their throwaway upstream CA.
-        self._extra_options = dict(extra_options or {})
         self._master: Master | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._bound_port: int | None = None
@@ -86,11 +83,13 @@ class EgressProxyServer:
         master.addons.add(*addons.default_addons())
         signal = _RunningSignal()
         master.addons.add(self._addon, signal)
-        if self._extra_options:
-            master.options.update(**self._extra_options)
         # lazy: the eager default dials the upstream before the gate's hook runs. The onboarding app
         # (mit.it) is an ungated response surface nothing here needs.
         master.options.update(connection_strategy="lazy", onboarding=False)
+        if self._upstream_ca_file is not None:
+            # mitmproxy's bundled store holds public roots only, so a destination inside the
+            # cluster -- the API server above all -- fails to verify until this replaces it.
+            master.options.update(ssl_verify_upstream_trusted_ca=str(self._upstream_ca_file))
         self._master = master
         self._run_task = asyncio.create_task(master.run(), name="egress-proxy-master")
         try:

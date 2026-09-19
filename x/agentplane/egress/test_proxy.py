@@ -339,7 +339,9 @@ async def proxy(
                     projected=projected_verifier,
                 ),
                 confdir=tmp_path / "confdir",
-                extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
+                # The parameter the deployment uses, so every case here runs the shipped path: the
+                # proxy verifies its upstream against a bundle it was handed, not mitmproxy's own.
+                upstream_ca_file=upstream_ca_cert,
             ) as server,
             serve_admin(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
         ):
