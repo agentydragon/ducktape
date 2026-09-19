@@ -4,15 +4,6 @@ metadata:
   name: cli-proxy-api
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/cli-proxy-api
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: cli-proxy-api
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
   decryption:
     provider: sops
     secretRef:
@@ -28,3 +19,12 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/cli-proxy-api
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: cli-proxy-api
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
