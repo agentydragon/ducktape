@@ -20,11 +20,7 @@ patches:
       - op: add
         path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs
         value: "true"
-  # Keep flux controller disk I/O (git clones, artifacts, image automation — all on
-  # emptyDir, i.e. the host disk) off the control-plane nodes, whose etcd lives on slow
-  # rotational HDDs. Soft (preferred) so these system-cluster-critical controllers keep a
-  # scheduling fallback if both NVMe workers are down. See
-  # cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md
+  # Prefer ordinary workers; this soft rule only affects controllers that tolerate CPs.
   - target:
       kind: Deployment
     patch: |

@@ -231,7 +231,7 @@ spec:
     # postgres2 store (seaweedfs-filer-db-ssd), so both replicas serve identical
     # data and concurrent writes are handled by enableUpsert. HA lets the filer
     # roll / drain without a SeaweedFS-wide metadata stall, and (with the
-    # affinity below) keeps it off the control-plane HDD nodes.
+    # affinity below) keeps it off control-plane system disks.
     # NOTE: the metadata DB still has no off-cluster WAL/PITR backup — only the
     # 2-instance CNPG streaming replication. That gap is independent of the
     # filer replica count but worth closing (it is the SSOT for all SeaweedFS
@@ -301,9 +301,7 @@ spec:
                 app.kubernetes.io/component: filer
                 app.kubernetes.io/name: seaweedfs
             topologyKey: kubernetes.io/hostname
-      # Soft off the control-plane HDD nodes: in normal operation both filers
-      # land on the NVMe workers; CP stays a fallback if both workers are down.
-      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      # Prefer ordinary workers; this soft rule only affects filer CP fallback.
       nodeAffinity:
         preferredDuringSchedulingIgnoredDuringExecution:
           - weight: 100

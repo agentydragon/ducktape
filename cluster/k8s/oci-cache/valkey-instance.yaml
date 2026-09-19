@@ -41,8 +41,7 @@ spec:
               - key: topology.kubernetes.io/zone
                 operator: In
                 values: ["hil-ovh"]
-      # Soft off control-plane nodes (their etcd is on a rotational HDD;
-      # co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # Prefer ordinary workers; this workload writes node-local cache state.
       preferredDuringSchedulingIgnoredDuringExecution:
         - weight: 100
           preference:
