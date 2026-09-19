@@ -71,9 +71,16 @@ spec:
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
       name: agentplane-egress-ca
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-egress-upstream-ca
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-egress-ca
+      namespace: agentplane-staging
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-egress-upstream-ca
       namespace: agentplane-staging
   interval: 10m
   path: ./cluster/k8s/agentplane-staging

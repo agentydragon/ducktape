@@ -339,7 +339,9 @@ async def proxy(
                     projected=projected_verifier,
                 ),
                 confdir=tmp_path / "confdir",
-                extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
+                # The parameter the deployment uses, so every case here runs the shipped path: the
+                # proxy verifies its upstream against a bundle it was handed, not mitmproxy's own.
+                upstream_ca_file=upstream_ca_cert,
             ) as server,
             serve_admin(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
         ):
@@ -1004,6 +1006,45 @@ async def test_existing_tls_connection_rechecks_every_admission(
         rows = await decision_log.store.recent(SUBJECT_A)
         assert len({row.connection_id for row in rows}) == 1
         assert sum(row.phase is Phase.CONNECT for row in rows) == 1
+
+
+async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:
+    """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic.
+
+    mitmproxy binds appreciably later than the admin server does, so an admin server started first
+    answered /healthz -- reporting the Pod ready, and a rollout's new endpoint live -- while the
+    tunnel port still refused connections. `replica` waits for that 200 and nothing else, so the
+    window showed up as an intermittent refused connection in the two-replica test below rather
+    than as itself.
+    """
+    ca = make_ca("test-readiness-ca")
+    cert, key = write_ca(ca, tmp_path, "readiness")
+    async with fake_apiserver() as api:
+        seed(api)
+        settings = Settings(
+            _cli_parse_args=False,
+            rules_namespace=NAMESPACE,
+            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            credentials_namespace=CREDENTIALS_NAMESPACE,
+            kubeconfig=kubeconfig(tmp_path / "kube-readiness.yaml", api.port),
+            ca_cert=cert,
+            ca_key=key,
+            confdir=tmp_path / "readiness",
+            listen_host="127.0.0.1",
+            listen_port=pick_free_port(),
+            admin_host="127.0.0.1",
+            admin_port=pick_free_port(),
+            agent_api_host="127.0.0.1",
+            agent_api_port=pick_free_port(),
+            token_audience=AUDIENCE,
+            resync_seconds=1,
+            database_url=history_db_url,
+            exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
+        )
+        async with replica(settings) as running:
+            _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
+            writer.close()
+            await writer.wait_closed()
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(

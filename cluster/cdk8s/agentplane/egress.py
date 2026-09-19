@@ -56,6 +56,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
     BundleSpec,
     BundleSpecSources,
+    BundleSpecSourcesConfigMap,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
     BundleSpecTargetConfigMap,
@@ -104,6 +105,9 @@ _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
+# The proxy's own upstream trust, separate from the bundle a runner mounts.
+_UPSTREAM_CA_BUNDLE = "agentplane-egress-upstream-ca"
+_UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
@@ -263,6 +267,7 @@ class Egress(Construct):
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
+        self._add_upstream_bundle()
         settings_cm = self._add_settings_configmap()
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
@@ -373,6 +378,50 @@ class Egress(Construct):
             ),
         )
 
+    def _add_upstream_bundle(self) -> None:
+        """What this proxy verifies destinations against, as distinct from what a runner trusts.
+
+        The runner's bundle carries the interception root, because the proxy is what answers it.
+        This one must not: the proxy is that interceptor, and it dials the real destination. What it
+        needs instead is the cluster's own CA, since a `clusterInternal` rule reaches the API
+        server, whose serving certificate no public root signs.
+
+        `kube-root-ca.crt` is the ConfigMap kube-controller-manager publishes into every namespace,
+        and is the Kubernetes CA -- not `cluster-root-ca-secret`, which is cert-manager's own root
+        for issuing internal leaves and signs nothing the API server presents.
+        """
+        Bundle(
+            self,
+            "upstream-bundle",
+            metadata=ApiObjectMetadata(name=_UPSTREAM_CA_BUNDLE),
+            spec=BundleSpec(
+                sources=[
+                    BundleSpecSources(use_default_c_as=True),
+                    BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
+                ],
+                target=BundleSpecTarget(
+                    config_map=BundleSpecTargetConfigMap(
+                        key=CA_BUNDLE_KEY,
+                        metadata=BundleSpecTargetConfigMapMetadata(
+                            annotations={
+                                "description": (
+                                    f"Trust bundle the {self.env.namespace} egress proxy verifies "
+                                    "destinations with: public roots plus this cluster's CA"
+                                )
+                            }
+                        ),
+                    ),
+                    namespace_selector=BundleSpecTargetNamespaceSelector(
+                        match_expressions=[
+                            BundleSpecTargetNamespaceSelectorMatchExpressions(
+                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+                            )
+                        ]
+                    ),
+                ),
+            ),
+        )
+
     def _add_settings_configmap(self) -> ConfigMap:
         return ConfigMap(
             self,
@@ -395,6 +444,12 @@ class Egress(Construct):
         ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
+        upstream_ca_volume = Volume.from_config_map(
+            self,
+            "upstream-ca-volume",
+            ConfigMap.from_config_map_name(self, "upstream-ca-ref", _UPSTREAM_CA_BUNDLE),
+            name="upstream-ca",
+        )
 
         migrate_env = {
             env_name(MigrationSettings, "database_url"): EnvValue.from_secret_value(
@@ -435,6 +490,7 @@ class Egress(Construct):
                 ca_cert="/etc/agentplane-egress/ca/tls.crt",
                 ca_key="/etc/agentplane-egress/ca/tls.key",
                 confdir="/var/lib/agentplane-egress",
+                upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
                 token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables={
@@ -461,6 +517,7 @@ class Egress(Construct):
             security_context=container_security.WRITABLE_ROOT,
         )
         deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
+        deployment.containers[0].mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)

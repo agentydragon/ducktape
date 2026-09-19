@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
+    upstream_ca_file: Path | None = Field(
+        default=None,
+        description="PEM bundle this proxy verifies destinations against. Needs the cluster's own CA on "
+        "top of the public roots for a `clusterInternal` rule to reach the API server, whose serving "
+        "certificate no public root signs. Unset falls back to mitmproxy's bundled roots, which reach "
+        "public hosts only.",
+    )
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
@@ -183,15 +190,23 @@ async def async_main(settings: Settings) -> None:
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (
+                EgressProxyServer(
+                    addon,
+                    confdir=settings.confdir,
+                    upstream_ca_file=settings.upstream_ca_file,
+                    listen_host=settings.listen_host,
+                    listen_port=settings.listen_port,
+                ),
+                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
+                # Admitted last, so that /healthz answering at all means the two listeners above
+                # are bound. It is the readiness probe, and readiness gates every Service this Pod
+                # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
+                # of the two to bind, still refuses connections on the tunnel port.
                 serve_admin(
                     create_admin_app(decision_log, index, resync_seconds=settings.resync_seconds),
                     settings.admin_host,
                     settings.admin_port,
                 ) as admin_port,
-                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
-                EgressProxyServer(
-                    addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
-                ),
             ):
                 logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
                 logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
