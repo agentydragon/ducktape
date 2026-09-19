@@ -357,7 +357,7 @@
         pkgs.llvmPackages.bintools-unwrapped
         # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
         # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
-        pkgs.talosctl
+        pkgsUnstable.talosctl
         pkgs.awscli2 # AWS CLI for Route 53 management
         pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
         pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
