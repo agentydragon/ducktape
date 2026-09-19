@@ -2802,11 +2802,11 @@ spec:
     - type: exact_actions
       actions:
         sandbox:
+          - create
           - dispose
           - exec
           - info
           - list
-          - provision
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding

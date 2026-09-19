@@ -22,7 +22,7 @@ from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest,
 from x.agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
-from x.agentplane.sandbox_actions.models import SandboxInfo, SandboxState
+from x.agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -40,6 +40,10 @@ BINDING = SandboxExecutorBinding(
     },
     default_environment="default",
 )
+
+
+def _ready() -> SandboxCondition:
+    return SandboxCondition(type=READY_CONDITION, status="True", reason="DependenciesReady", message="Pod is Ready")
 
 
 @dataclass
@@ -61,17 +65,17 @@ class FakeInventory:
         if self.raises is not None:
             raise self.raises
 
-    async def provision(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
+    async def create(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, state=SandboxState.READY, environment=environment_name or "default")
+        return SandboxInfo(name=name, conditions=[_ready()], environment=environment_name or "default")
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, state=SandboxState.READY, environment="default")
+        return SandboxInfo(name=name, conditions=[_ready()], environment="default")
 
     async def list(self, caller: ServiceAccountRef) -> list[SandboxInfo]:
         self._record(caller)
-        return [SandboxInfo(name="one", state=SandboxState.READY, environment="default")]
+        return [SandboxInfo(name="one", conditions=[_ready()], environment="default")]
 
     async def dispose(self, caller: ServiceAccountRef, name: str) -> bool:
         self._record(caller)
@@ -119,11 +123,11 @@ def executor(inventory: FakeInventory) -> SandboxExecutor:
 async def test_every_action_acts_as_the_request_caller(executor: SandboxExecutor, inventory: FakeInventory) -> None:
     """The identity comes from the authenticated request and never from an argument, so a caller
     cannot reach another account's boxes by asking for them."""
-    await executor.execute(_request(SandboxAction.PROVISION, {"name": "box"}), LEASE)
+    await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.LIST, {}), LEASE)
     await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
-    await executor.execute(_request(SandboxAction.PROVISION, {"name": "box"}, caller=OTHER), LEASE)
+    await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}, caller=OTHER), LEASE)
     assert inventory.callers == [CALLER, CALLER, CALLER, CALLER, OTHER]
 
 
@@ -131,7 +135,7 @@ async def test_an_account_named_in_arguments_is_not_read(executor: SandboxExecut
     """`extra="forbid"` is what keeps the argument schema from carrying an identity at all, so an
     attempt to name one is refused rather than quietly ignored."""
     result = await executor.execute(
-        _request(SandboxAction.PROVISION, {"name": "box", "caller": OTHER.name, "namespace": NAMESPACE}), LEASE
+        _request(SandboxAction.CREATE, {"name": "box", "caller": OTHER.name, "namespace": NAMESPACE}), LEASE
     )
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
@@ -142,7 +146,7 @@ async def test_an_account_named_in_arguments_is_not_read(executor: SandboxExecut
 async def test_a_caller_from_another_namespace_is_refused(executor: SandboxExecutor, inventory: FakeInventory) -> None:
     """A Pod runs as an account in its own namespace or not at all, so a caller from elsewhere
     cannot be given a sandbox that is it -- and must not be given one that is somebody else."""
-    result = await executor.execute(_request(SandboxAction.PROVISION, {"name": "box"}, caller=ELSEWHERE), LEASE)
+    result = await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}, caller=ELSEWHERE), LEASE)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "caller_not_local"
@@ -195,10 +199,10 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
 
 def test_the_offered_actions_name_the_configured_environments() -> None:
     """The environment roster is deployment configuration an agent cannot otherwise see, and naming
-    one that does not exist is the likeliest way to get provision wrong."""
+    one that does not exist is the likeliest way to get create wrong."""
     offered = actions(BINDING)
     assert set(offered) == set(SandboxAction)
-    assert "the test box" in offered[SandboxAction.PROVISION].description
+    assert "the test box" in offered[SandboxAction.CREATE].description
     assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False
 
 

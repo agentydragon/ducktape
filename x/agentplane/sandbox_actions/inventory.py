@@ -8,11 +8,9 @@ have. What is shared is the CRD, not the code.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, cast
 
 from kubernetes_asyncio import client as k8s_client
@@ -22,7 +20,7 @@ from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, condition, pod_name
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
-from x.agentplane.sandbox_actions.models import SandboxInfo, SandboxState
+from x.agentplane.sandbox_actions.models import READY_CONDITION, SandboxInfo
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
@@ -36,8 +34,6 @@ CALLER_LABEL = f"{_PREFIX}/caller"
 CALLER_NAMESPACE_LABEL = f"{_PREFIX}/caller-namespace"
 ENVIRONMENT_LABEL = f"{_PREFIX}/environment"
 NAME_LABEL = f"{_PREFIX}/name"
-
-_POLL_SECONDS = 2.0
 
 
 class SandboxActionError(Exception):
@@ -59,25 +55,19 @@ def _labels(caller: ServiceAccountRef, name: str, environment: str) -> dict[str,
 
 
 def _object_name(caller: ServiceAccountRef, name: str) -> str:
-    """Deterministic, so provisioning the same name twice reaches the same box rather than a second one."""
+    """Deterministic, so creating the same name twice reaches the same box rather than a second one."""
     return f"{caller.name}-{name}"[:63].rstrip("-")
 
 
-def _state(sandbox: dict[str, Any]) -> tuple[SandboxState, str | None]:
-    """The controller's own Ready condition, not a second opinion derived from the Pod.
+def _ready(sandbox: dict[str, Any]) -> dict[str, Any] | None:
+    """The controller's Ready condition when it says yes, else None.
 
-    The Agent Sandbox controller owns this lifecycle and publishes its verdict; re-deciding
-    readiness here from Pod phase and container statuses would be a weaker copy that can disagree
-    with the authority, and its reasons would be poorer than the ones the controller writes. So the
-    reason is passed through verbatim rather than re-worded: `WarmPoolNotFound` tells its reader
-    what to do, where "pod phase Pending" does not.
+    The one reading this surface takes, because `exec` has to decide something; every condition
+    reaches the caller untouched either way. Re-deciding readiness here from Pod phase and
+    container statuses would be a weaker copy that can disagree with the authority.
     """
-    ready = condition(sandbox, "Ready")
-    if ready is None:
-        return SandboxState.NOT_READY, None
-    if ready.get("status") == "True":
-        return SandboxState.READY, None
-    return SandboxState.NOT_READY, ready.get("message") or ready.get("reason")
+    ready = condition(sandbox, READY_CONDITION)
+    return ready if ready is not None and ready.get("status") == "True" else None
 
 
 class SandboxInventory:
@@ -145,19 +135,25 @@ class SandboxInventory:
 
     async def _info(self, caller: ServiceAccountRef, sandbox: dict[str, Any]) -> SandboxInfo:
         metadata = sandbox["metadata"]
-        state, reason = _state(sandbox)
+        status = cast(dict[str, Any], sandbox.get("status") or {})
         return SandboxInfo(
             name=metadata["labels"][NAME_LABEL],
-            state=state,
             environment=metadata["labels"][ENVIRONMENT_LABEL],
+            conditions=cast(list[Any], status.get("conditions") or []),
             created_at=metadata.get("creationTimestamp"),
-            # Only for the name to exec into; readiness is the controller's answer above.
-            pod_name=await self._pod_name(sandbox) if state is SandboxState.READY else None,
-            reason=reason,
+            # Only for the name to exec into; whether the box is usable is the conditions' answer.
+            pod_name=await self._pod_name(sandbox) if _ready(sandbox) is not None else None,
+            node_name=status.get("nodeName"),
+            pod_ips=cast(list[str], status.get("podIPs") or []),
         )
 
-    async def provision(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
-        """Create the caller's sandbox if it has none by that name, then wait for it to come up.
+    async def create(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
+        """Stamp the caller's sandbox if it has none by that name, and report where it got to.
+
+        Returns once the object exists rather than waiting for the box to come up: a cold start
+        outlasts the execution lease the Action Service grants, so waiting here reports an unknown
+        outcome for a box that is in fact fine. `info` is how a caller follows one from `not_ready`
+        to `ready`, carrying the controller's own reason.
 
         Idempotent: an existing sandbox of that name is returned as it stands, whatever environment
         it was created from. Deciding that the shape is wrong is the caller's, and `dispose` is how
@@ -165,12 +161,15 @@ class SandboxInventory:
         """
         key, environment = self.environment(environment_name)
         if (existing := await self._sandbox(caller, name)) is None:
-            await self._create(caller, name, key, environment)
+            await self._stamp(caller, name, key, environment)
         elif existing["metadata"]["labels"][ENVIRONMENT_LABEL] != key:
             logger.info("sandbox %r exists from environment %r; returning it as it stands", name, key)
-        return await self._await_ready(caller, name)
+        sandbox = await self._sandbox(caller, name)
+        if sandbox is None:
+            raise SandboxActionError(f"sandbox {name!r} disappeared as it was created")
+        return await self._info(caller, sandbox)
 
-    async def _create(self, caller: ServiceAccountRef, name: str, key: str, environment: SandboxEnvironment) -> None:
+    async def _stamp(self, caller: ServiceAccountRef, name: str, key: str, environment: SandboxEnvironment) -> None:
         template = cast(
             dict[str, Any],
             await self._custom_objects.get_namespaced_custom_object(
@@ -200,30 +199,14 @@ class SandboxInventory:
             )
         except ApiException as error:
             if error.status == 409:
-                # Another replica admitted the same provision; its object is as good as ours.
+                # Another replica stamped the same box; its object is as good as ours.
                 return
             raise
-
-    async def _await_ready(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
-        """Poll until the box is usable or the budget runs out; a timeout is reported, not raised.
-
-        Not-ready with the controller's reason is a truthful answer an agent can poll on, where an
-        exception would lose the sandbox it just created.
-        """
-        deadline = datetime.now(UTC).timestamp() + self._binding.provisioning_timeout_seconds
-        while True:
-            sandbox = await self._sandbox(caller, name)
-            if sandbox is None:
-                raise SandboxActionError(f"sandbox {name!r} disappeared while coming up")
-            info = await self._info(caller, sandbox)
-            if info.state is not SandboxState.NOT_READY or datetime.now(UTC).timestamp() >= deadline:
-                return info
-            await asyncio.sleep(_POLL_SECONDS)
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         sandbox = await self._sandbox(caller, name)
         if sandbox is None:
-            raise SandboxActionError(f"no sandbox named {name!r}; provision it first")
+            raise SandboxActionError(f"no sandbox named {name!r}; create it first")
         return await self._info(caller, sandbox)
 
     async def list(self, caller: ServiceAccountRef) -> list[SandboxInfo]:
@@ -268,12 +251,12 @@ class SandboxInventory:
     ) -> CommandResult:
         sandbox = await self._sandbox(caller, name)
         if sandbox is None:
-            raise SandboxActionError(f"no sandbox named {name!r}; provision it first")
+            raise SandboxActionError(f"no sandbox named {name!r}; create it first")
+        if _ready(sandbox) is None:
+            unready = condition(sandbox, READY_CONDITION) or {}
+            said = unready.get("message") or unready.get("reason") or "the controller has not said why"
+            raise SandboxActionError(f"sandbox {name!r} is not ready ({said})")
         info = await self._info(caller, sandbox)
-        if info.state is not SandboxState.READY:
-            raise SandboxActionError(
-                f"sandbox {name!r} is not ready ({info.reason or 'the controller gives no reason'})"
-            )
         if info.pod_name is None:
             # Ready but no Pod to reach: the controller has not published one yet, or the one it
             # published is gone. Distinct from not-ready, and a caller that conflates them polls

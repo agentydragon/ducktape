@@ -9,10 +9,10 @@ identity -- the caller's is the only one available and the executor reads it off
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from mcp_infra.exec.models import ExecStream, ExitStatus
 
@@ -28,36 +28,48 @@ SandboxName = Annotated[
 ]
 
 
-class SandboxState(StrEnum):
-    """Whether a sandbox can run something, as the Agent Sandbox controller reports it.
+# The condition the controller publishes for "this box can run something", and what `exec`
+# requires. Named here because the executor gates on it and the Action descriptions tell an agent
+# to poll it; those two must be the same predicate.
+READY_CONDITION = "Ready"
 
-    Two states and not three, because the controller publishes one Ready condition and this is a
-    faithful reading of it: whether a not-ready box is still coming up or will never come up is
-    what its `reason` says, in the controller's own words, and deciding that here would be a
-    second opinion that can disagree with the authority.
+
+class SandboxCondition(BaseModel):
+    """One status condition, as the Agent Sandbox controller wrote it.
+
+    Passed through rather than summarised: the controller owns this lifecycle, and a reading taken
+    here would be a second opinion that can disagree with the authority and carries less than it
+    did. `reason` is the machine-readable half an agent can branch on (`DependenciesReady`,
+    `WarmPoolNotFound`); `message` is the sentence a human wants.
     """
 
-    NOT_READY = "not_ready"
-    READY = "ready"
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    type: str
+    status: str = Field(description='"True", "False" or "Unknown", as Kubernetes spells a condition.')
+    reason: str | None = None
+    message: str | None = None
+    last_transition_time: datetime | None = None
 
 
 class SandboxInfo(BaseModel):
-    """Compact, non-secret state of one sandbox this surface created."""
+    """Non-secret state of one sandbox this surface created, as the API server reports it."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName
-    state: SandboxState
     environment: str = Field(description="The reviewed environment name this box was created from.")
+    conditions: list[SandboxCondition] = Field(
+        description=f"The controller's own conditions, verbatim. {READY_CONDITION!r} with "
+        'status "True" is what `exec` requires; until then that condition says why, and a '
+        '"Suspended" condition means a box that is stopped rather than still coming up.'
+    )
     created_at: datetime | None = None
     pod_name: str | None = Field(
         default=None, description="Absent until the sandbox has a Pod, and again if that Pod goes away."
     )
-    reason: str | None = Field(
-        default=None,
-        description="The controller's own message or reason when it is not ready — whether it is "
-        "still coming up or has failed for good is what this says.",
-    )
+    node_name: str | None = Field(default=None, description="Where the controller placed the Pod.")
+    pod_ips: list[str] = Field(default_factory=list)
 
 
 class ExecResult(BaseModel):
@@ -86,7 +98,7 @@ class DisposeResult(BaseModel):
     existed: bool
 
 
-class ProvisionArgs(BaseModel):
+class CreateArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName

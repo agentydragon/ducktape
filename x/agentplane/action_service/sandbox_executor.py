@@ -31,14 +31,14 @@ from x.agentplane.action_service.models import (
 from x.agentplane.sandbox_actions.binding import SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from x.agentplane.sandbox_actions.models import (
+    READY_CONDITION,
+    CreateArgs,
     DisposeResult,
     ExecArgs,
     ExecResult,
     NameArgs,
     NoArgs,
-    ProvisionArgs,
     SandboxList,
-    SandboxState,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -54,7 +54,7 @@ class SandboxAction(StrEnum):
     """This group's roster. A StrEnum and not bare strings because `match` below compares against
     these by value, which a module-level constant would silently capture into instead."""
 
-    PROVISION = "provision"
+    CREATE = "create"
     EXEC = "exec"
     LIST = "list"
     INFO = "info"
@@ -70,19 +70,20 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
 
     The environment list is rendered into the description because it is deployment configuration an
     agent cannot otherwise see, and naming an environment that does not exist is the most likely way
-    to get `provision` wrong.
+    to get `create` wrong.
     """
     offered = json.dumps({name: environment.description for name, environment in sorted(binding.environments.items())})
     return {
-        SandboxAction.PROVISION: ActionDefinition(
+        SandboxAction.CREATE: ActionDefinition(
             description=(
-                "Create or reach a sandbox that runs as your own ServiceAccount, and wait for it to "
-                f"come up. Idempotent on the name. Environments: {offered}. Defaults to "
-                f"{binding.default_environment!r}. May return state={SandboxState.NOT_READY} with the "
-                f"controller's reason if the box is slow; poll {SandboxAction.INFO} rather than "
-                "provisioning again."
+                "Create or reach a sandbox that runs as your own ServiceAccount. Returns as soon as "
+                "the object exists, before the box can run anything, so poll "
+                f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
+                f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
+                f"tells you nothing more. Environments: {offered}. Defaults to "
+                f"{binding.default_environment!r}."
             ),
-            input_schema=_schema(ProvisionArgs),
+            input_schema=_schema(CreateArgs),
         ),
         SandboxAction.EXEC: ActionDefinition(
             description=(
@@ -97,7 +98,11 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
             input_schema=_schema(NoArgs),
         ),
         SandboxAction.INFO: ActionDefinition(
-            description="Inspect one sandbox of yours without changing it; use it to poll a box that is not ready yet.",
+            description=(
+                "Inspect one sandbox of yours without changing it: the controller's own conditions, "
+                f'verbatim. Poll it until {READY_CONDITION!r} has status "True"; until then that '
+                "condition's reason and message say what it is waiting on."
+            ),
             input_schema=_schema(NameArgs),
         ),
         SandboxAction.DISPOSE: ActionDefinition(
@@ -151,9 +156,9 @@ class SandboxExecutor(Executor):
         self, action: str, caller: ServiceAccountRef, arguments: dict[str, JsonValue]
     ) -> ExecutionResult:
         match action:
-            case SandboxAction.PROVISION:
-                args = ProvisionArgs.model_validate(arguments)
-                info = await self._inventory.provision(caller, args.name, args.environment)
+            case SandboxAction.CREATE:
+                args = CreateArgs.model_validate(arguments)
+                info = await self._inventory.create(caller, args.name, args.environment)
                 return _succeeded(info)
             case SandboxAction.EXEC:
                 exec_args = ExecArgs.model_validate(arguments)

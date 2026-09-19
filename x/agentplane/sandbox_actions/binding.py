@@ -48,7 +48,6 @@ class SandboxExecutorBinding(BaseModel):
     default_environment: str = Field(min_length=1, description="Which of them a caller that names none gets.")
     max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
     max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
-    provisioning_timeout_seconds: int = Field(default=300, gt=0, le=3600)
 
     @model_validator(mode="after")
     def _default_exists(self) -> SandboxExecutorBinding:
