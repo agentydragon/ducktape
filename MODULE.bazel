@@ -907,7 +907,7 @@ filegroup(
 )
 
 # Flux's Kustomization CRD — fetched verbatim from the upstream repo so
-# //third_party/flux:kustomization (devinfra/js/cdk8s_import.bzl) can generate typed
+# //cluster/cdk8s/crd_bindings/flux:kustomization (devinfra/js/cdk8s_import.bzl) can generate typed
 # cdk8s Python constructs from it without vendoring the CRD in-tree. Refresh by
 # bumping the tag and updating the sha256.
 http_file(
@@ -961,7 +961,7 @@ http_file(
 )
 
 # prometheus-operator's ServiceMonitor CRD — fetched verbatim so
-# //third_party/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
+# //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
 # typed cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same
 # v0.94.0 tag as cluster/k8s/monitoring/crds/gitrepository.yaml (which tracks
 # kube-prometheus-stack's appVersion) -- bump both together.
@@ -972,7 +972,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
 )
 
-# Gateway API's HTTPRoute CRD — fetched verbatim so //third_party/gateway_api:httproute
+# Gateway API's HTTPRoute CRD — fetched verbatim so //cluster/cdk8s/crd_bindings/gateway_api:httproute
 # (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
 # vendoring the CRD in-tree. Pinned to the same v1.5.1 experimental channel this cluster
 # installs directly (cluster/terraform/main/cilium.tf's gateway_api_version -- experimental,
@@ -985,7 +985,7 @@ http_file(
 )
 
 # external-secrets' CRD bundle (all its CRDs in one multi-document file -- it doesn't
-# publish per-kind files) -- fetched verbatim so //third_party/external_secrets:externalsecret
+# publish per-kind files) -- fetched verbatim so //cluster/cdk8s/crd_bindings/external_secrets:externalsecret
 # can extract just the ExternalSecret CRD (devinfra/k8s/extract_crd.py; `cdk8s import` only
 # ingests one CRD per invocation, and importing the whole bundle fails on unrelated CRDs'
 # jsii-incompatible field names) and generate typed cdk8s Python constructs from it, without
@@ -999,7 +999,7 @@ http_file(
 )
 
 # Cilium's CiliumNetworkPolicy CRD — fetched verbatim so
-# //third_party/cilium:ciliumnetworkpolicy (devinfra/js/cdk8s_import.bzl) can generate typed
+# //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy (devinfra/js/cdk8s_import.bzl) can generate typed
 # cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same
 # v1.19.6 tag as cluster/terraform/main/cilium.tf's local.cilium_version -- bump both together.
 http_file(
@@ -1009,7 +1009,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumnetworkpolicies.yaml"],
 )
 
-# CloudNativePG's Cluster CRD — fetched verbatim so //third_party/cnpg:cluster
+# CloudNativePG's Cluster CRD — fetched verbatim so //cluster/cdk8s/crd_bindings/cnpg:cluster
 # (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
 # vendoring the CRD in-tree. Pinned to the CNPG operator's appVersion 1.30.0 (chart 0.29.0,
 # cluster/k8s/cnpg/helmrelease.yaml) -- bump both together.
@@ -1028,7 +1028,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_databases.yaml"],
 )
 
-# cert-manager's Certificate CRD — fetched verbatim so //third_party/cert_manager:certificate
+# cert-manager's Certificate CRD — fetched verbatim so //cluster/cdk8s/crd_bindings/cert_manager:certificate
 # (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
 # vendoring the CRD in-tree. Pinned to the same v1.21.2 tag as
 # cluster/k8s/cert-manager/app/helmrelease.yaml.
@@ -1039,7 +1039,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificates.yaml"],
 )
 
-# trust-manager's Bundle CRD — fetched verbatim so //third_party/cert_manager:bundle
+# trust-manager's Bundle CRD — fetched verbatim so //cluster/cdk8s/crd_bindings/cert_manager:bundle
 # (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
 # vendoring the CRD in-tree. Pinned to the same 0.25.* series as
 # cluster/k8s/cert-manager/trust/helmrelease.yaml (exact patch tag v0.25.0).
@@ -1054,7 +1054,7 @@ http_file(
 # SandboxClaim, SandboxWarmPool CRDs plus controller manifests in one file) — same asset
 # cluster/k8s/agents/agent-sandbox/controller/kustomization.yaml installs from. Extracted down
 # to just the SandboxTemplate CRD (devinfra/k8s/extract_crd.py) for
-# //third_party/agent_sandbox:sandboxtemplate (devinfra/js/cdk8s_import.bzl); `cdk8s import`
+# //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate (devinfra/js/cdk8s_import.bzl); `cdk8s import`
 # only ingests one CRD per invocation. Pinned to the same v0.5.5 tag as that
 # kustomization.yaml.
 http_file(

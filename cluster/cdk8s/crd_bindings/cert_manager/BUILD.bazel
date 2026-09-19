@@ -4,8 +4,8 @@
 
 # cert_manager_crds and trust_manager_crds are generated at build time by cdk8s_import
 # below, not pip packages -- gazelle can't resolve them from the requirements manifest.
-# gazelle:resolve py cert_manager_crds //third_party/cert_manager:certificate
-# gazelle:resolve py trust_manager_crds //third_party/cert_manager:bundle
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:certificate
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:bundle
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

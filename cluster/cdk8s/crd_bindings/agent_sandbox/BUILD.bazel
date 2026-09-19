@@ -4,7 +4,7 @@
 
 # agent_sandbox_sandboxtemplate_crds is generated at build time by cdk8s_import below,
 # not a pip package -- gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py agent_sandbox_sandboxtemplate_crds //third_party/agent_sandbox:sandboxtemplate
+# gazelle:resolve py agent_sandbox_sandboxtemplate_crds //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

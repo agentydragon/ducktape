@@ -4,7 +4,7 @@
 
 # tofu_controller is generated at build time by cdk8s_import below, not a pip package --
 # gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py tofu_controller //third_party/tofu_controller:terraform
+# gazelle:resolve py tofu_controller //cluster/cdk8s/crd_bindings/tofu_controller:terraform
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -24,7 +24,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//:conftest",
-        "//third_party/tofu_controller:terraform",
+        "//cluster/cdk8s/crd_bindings/tofu_controller:terraform",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

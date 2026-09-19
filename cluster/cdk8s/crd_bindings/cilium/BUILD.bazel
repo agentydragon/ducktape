@@ -4,13 +4,13 @@
 
 # cilium_crds is generated at build time by cdk8s_import below, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py cilium_crds //third_party/cilium:ciliumnetworkpolicy
+# gazelle:resolve py cilium_crds //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
 # No smoke test here -- cdk8s_import's "generated bindings load and synthesize under
 # Bazel" property is a mechanism-level guarantee, already covered once by
-# //third_party/flux:test_kustomization_import. A per-CRD import doesn't need its own.
+# //cluster/cdk8s/crd_bindings/flux:test_kustomization_import. A per-CRD import doesn't need its own.
 cdk8s_import(
     name = "ciliumnetworkpolicy",
     crd = "@cilium_networkpolicy_crd//file",

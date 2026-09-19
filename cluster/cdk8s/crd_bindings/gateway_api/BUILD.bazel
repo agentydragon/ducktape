@@ -4,7 +4,7 @@
 
 # gateway_api_crds is generated at build time by cdk8s_import below, not a pip package --
 # gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py gateway_api_crds //third_party/gateway_api:httproute
+# gazelle:resolve py gateway_api_crds //cluster/cdk8s/crd_bindings/gateway_api:httproute
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

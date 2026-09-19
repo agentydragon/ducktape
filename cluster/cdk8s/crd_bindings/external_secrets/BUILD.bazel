@@ -5,9 +5,9 @@
 # external_secrets_crds and eso_password_generator_crds are generated at build time by
 # cdk8s_import below, not pip packages -- gazelle can't resolve them from the
 # requirements manifest.
-# gazelle:resolve py external_secrets_crds //third_party/external_secrets:externalsecret
-# gazelle:resolve py external_secret_store_crds //third_party/external_secrets:clustersecretstore
-# gazelle:resolve py eso_password_generator_crds //third_party/external_secrets:passwordgenerator
+# gazelle:resolve py external_secrets_crds //cluster/cdk8s/crd_bindings/external_secrets:externalsecret
+# gazelle:resolve py external_secret_store_crds //cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore
+# gazelle:resolve py eso_password_generator_crds //cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
