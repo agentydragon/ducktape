@@ -4,23 +4,22 @@ metadata:
   name: flux-grafana-secrets
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/flux-grafana-secrets
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: flux-grafana-secrets
-
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: grafana.integreatly.org/v1beta1
-      kind: GrafanaServiceAccount
-      name: flux-notifications
-      namespace: flux-system
-  timeout: 5m
   dependsOn:
     - name: grafana-instance
       namespace: ducktape-flux
     - name: grafana-operator
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: grafana.integreatly.org/v1beta1
+      kind: GrafanaServiceAccount
+      name: flux-notifications
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/flux-grafana-secrets
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: flux-grafana-secrets
+    namespace: ducktape-flux
+  timeout: 5m
