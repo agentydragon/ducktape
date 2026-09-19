@@ -4,27 +4,10 @@ metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
-  # Revived 2026-08-26: the central aw-server is fed by the repo-owned
-  # instance-to-instance importer (@ducktape_activitywatch//importer) over a
-  # bearer-gated write route, replacing aw-sync. The cluster Syncthing receiver,
-  # importer cronjob, and desktop Syncthing transport are gone.
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: activitywatch
-    namespace: ducktape-flux
-  path: ./cluster/k8s/activitywatch
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  # Only local-path-proxmox (activitywatch-data) is used now that Syncthing and its
-  # seaweedfs sync-inbox are gone -- so no seaweedfs-csi dependency, which otherwise
-  # blocks the revive whenever seaweedfs-csi is degraded.
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -32,3 +15,13 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/activitywatch
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: activitywatch
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
