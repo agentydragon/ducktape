@@ -64,14 +64,22 @@ class SshMcpConfig:
 def _targets(devbox_host: str) -> tuple[Target, ...]:
     """A missing identity file leaves a target listed as unavailable, never silently omitted."""
     return (
-        Target(_WYRM2, "agentydragon", f"{CONFIG_DIR}/keys/wyrm2-agentydragon"),
-        Target(_WYRM2, "root", f"{CONFIG_DIR}/keys/wyrm2-root"),
-        Target(_RUGGED, "agentydragon", f"{CONFIG_DIR}/keys/rugged-agentydragon"),
-        Target(_RUGGED, "root", f"{CONFIG_DIR}/keys/rugged-root"),
-        Target(devbox_host, "root", f"{CONFIG_DIR}/keys-public-coder-devbox/public-coder-devbox-root"),
-        Target(devbox_host, "coder", f"{CONFIG_DIR}/keys-public-coder-devbox/public-coder-devbox-coder"),
-        Target(_ATLAS, "root", f"{CONFIG_DIR}/keys-atlas/atlas-root"),
-        Target(_ATLAS, "agentydragon", f"{CONFIG_DIR}/keys-atlas/atlas-agentydragon"),
+        *_targets_for(_WYRM2, ("agentydragon", "root"), "keys", "wyrm2"),
+        *_targets_for(_RUGGED, ("agentydragon", "root"), "keys", "rugged"),
+        *_targets_for(devbox_host, ("root", "coder"), "keys-public-coder-devbox", "public-coder-devbox"),
+        *_targets_for(_ATLAS, ("root", "agentydragon"), "keys-atlas", "atlas"),
+    )
+
+
+def _targets_for(
+    host: str,
+    users: tuple[str, ...],
+    identity_directory: str,
+    identity_prefix: str,
+) -> tuple[Target, ...]:
+    """Build targets whose identity paths share a directory and filename prefix."""
+    return tuple(
+        Target(host, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users
     )
 
 
