@@ -228,7 +228,6 @@ py_library(
     testonly = True,
     srcs = ["agentplane_fixtures.py"],
     deps = [
-        "//cluster/cdk8s:directory",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
@@ -242,7 +241,6 @@ py_library(
     testonly = True,
     srcs = ["haku_console_fixtures.py"],
     deps = [
-        "//cluster/cdk8s:directory",
         "//cluster/cdk8s/haku:charts",
         "@pypi//cdk8s",
         "@pypi//pytest",

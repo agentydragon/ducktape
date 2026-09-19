@@ -8,7 +8,6 @@ from the mesh roster instead.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
@@ -24,8 +23,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
-NAME = "etcd-monitoring"  # the Kustomization/chart name
-_NAME = "talos-etcd-metrics"  # the Service/EndpointSlice/ServiceMonitor name
+_NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
 _PORT_NAME = "metrics"
 _PORT = 2381
@@ -88,9 +86,3 @@ class TalosEtcdMetrics(Construct):
                 ],
             ),
         )
-
-
-def chart(app: App, mesh: Mesh) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    TalosEtcdMetrics(chart, "etcd", mesh)
-    return chart

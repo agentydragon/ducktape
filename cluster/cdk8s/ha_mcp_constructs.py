@@ -18,7 +18,7 @@ cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Cron, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Cron, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     Capability,
@@ -65,8 +65,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import CRON_JOB_POD_SPEC_PATH, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
-NAME = "ha-mcp"  # the Kustomization/chart name; also the app's own namespace
-_NAMESPACE = NAME
+_NAMESPACE = "ha-mcp"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
 _PLACEHOLDER_TAG = "unset"
@@ -414,9 +413,3 @@ class HaMcp(Construct):
         )
         HaMcpCredentialsProvisioner(self, "provisioner")
         HaMcpApp(self, "app")
-
-
-def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    HaMcp(chart, NAME)
-    return chart

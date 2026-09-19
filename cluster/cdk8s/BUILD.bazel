@@ -82,21 +82,6 @@ py_test(
 )
 
 py_library(
-    name = "directory",
-    srcs = ["directory.py"],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
-    deps = [
-        ":fleet_rules",
-        ":flux_constructs",
-        "//third_party/flux:kustomization",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -328,7 +313,6 @@ py_library(
         ":metadata",
         "//cluster/scripts:nebula_mesh",
         "//third_party/prometheus_operator:servicemonitor",
-        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -360,9 +344,9 @@ py_library(
         ":clickhouse_schema_constructs",
         ":config_format",
         ":descheduler_constructs",
-        ":directory",
         ":egress_fences",
         ":etcd_constructs",
+        ":fleet_rules",
         ":flux_constructs",
         ":ha_mcp_constructs",
         ":haku_openclaw_spike_config",
@@ -373,6 +357,7 @@ py_library(
         ":stateful_infra",
         ":terraform_constructs",
         "//cluster/cdk8s/agentplane:chart",
+        "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/haku:charts",

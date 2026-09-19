@@ -26,6 +26,8 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
   `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
   into a `settings.py` the constructs import returns them to `small`.
+- **Fleet rules on the litellm and ha-mcp charts.** `fleet_rules.add_fleet_rules`
+  runs on the agentplane chart only; the other two need `provided_secrets` rosters.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
