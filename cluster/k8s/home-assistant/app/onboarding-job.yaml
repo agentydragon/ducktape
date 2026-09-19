@@ -15,15 +15,15 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       restartPolicy: OnFailure
       nodeSelector:
         kubernetes.io/hostname: optiplex
       containers:
         - name: onboarding
-          image: ghcr.io/home-assistant/home-assistant:2026.9.2
-          command:
-            - python
-            - /bootstrap/provision.py
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919010000-6eca0e6 # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
+          imagePullPolicy: Always
           env:
             - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
               valueFrom:
@@ -36,11 +36,3 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
-          volumeMounts:
-            - name: bootstrap
-              mountPath: /bootstrap
-              readOnly: true
-      volumes:
-        - name: bootstrap
-          configMap:
-            name: home-assistant-bootstrap

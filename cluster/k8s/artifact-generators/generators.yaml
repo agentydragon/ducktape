@@ -605,8 +605,6 @@ spec:
           to: "@artifact/cluster/k8s/home-assistant/"
           exclude:
             - flux-kustomization.yaml
-        - from: "@repo/homeassistant/provision.py"
-          to: "@artifact/cluster/k8s/home-assistant/app/provision.py"
 
     - name: litellm
       originRevision: "@repo"

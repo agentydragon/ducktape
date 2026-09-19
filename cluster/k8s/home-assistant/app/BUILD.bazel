@@ -1,9 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_test")
 
-# The deployable mirror is owned by //homeassistant:provision; the artifact
-# generator copies that canonical source over this Kustomize-root file.
-# gazelle:exclude provision.py
 # gazelle:resolve py install_dreo //cluster/k8s/home-assistant/app:install_dreo
 # gazelle:resolve py install_oidc //cluster/k8s/home-assistant/app:install_oidc
 
@@ -53,6 +50,6 @@ filegroup(
             "BUILD.bazel",
             "test_*.py",
         ],
-    ) + ["//homeassistant:provision.py"],
+    ),
     visibility = ["//cluster/validation:__pkg__"],
 )

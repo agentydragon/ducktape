@@ -34,6 +34,7 @@ resources:
   - forgejo-token-rotation-image.yaml
   - matrix-user-provisioner-image.yaml
   - ha-mcp-token-provisioner-image.yaml
+  - homeassistant-provisioner-image.yaml
   - attic-jwt-rotation-image.yaml
   - authentik-jwt-rotation-image.yaml
   - props-backend-image.yaml

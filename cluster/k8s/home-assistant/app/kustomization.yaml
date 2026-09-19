@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - storage.yaml
+  - forgejo-images-credentials.yaml
   - metrics-secret.yaml
   - break-glass-credentials.sops.yaml
   - home-assistant.yaml
@@ -24,10 +25,6 @@ configMapGenerator:
   - name: home-assistant-bootstrap
     namespace: home-assistant
     files:
-      # Kustomize requires generator inputs to stay under this directory. The
-      # home-assistant artifact generator replaces this mirror with the
-      # canonical homeassistant/provision.py source before deployment.
-      - provision.py
       - install_dreo.py
       - install_oidc.py
   - name: home-assistant-caddy
