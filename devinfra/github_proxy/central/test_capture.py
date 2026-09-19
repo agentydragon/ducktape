@@ -40,7 +40,7 @@ def test_append_and_all_raw_write_paths_redact(tmp_path: Path, terminal: str) ->
         assert "proxyauth" not in saved.metadata
 
 
-def test_raw_write_failure_is_sanitized_and_fails_readiness(
+def test_raw_write_failure_is_sanitized_without_failing_readiness(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     metrics = Metrics()
@@ -59,29 +59,31 @@ def test_raw_write_failure_is_sanitized_and_fails_readiness(
     monkeypatch.setattr(io.FilteredFlowWriter, "add", fail_write)
     save.request(item)
     save.save_flow(item)
-    assert not metrics.healthy
+    assert metrics.healthy
     assert metrics.failed_captures == {CaptureChannel.RAW}
     assert metrics.registry.get_sample_value("github_api_proxy_capture_write_failures_total", {"channel": "raw"}) == 1
     assert save.active_flows == set()
     assert "test-private" not in caplog.text
-    assert "readiness disabled" in caplog.text
+    assert "capture is degraded" in caplog.text
     save.done()
 
 
-def test_session_write_failure_is_visible_and_fails_readiness(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_session_write_failure_is_visible_without_failing_readiness(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     metrics = Metrics()
     metrics.running()
     recorder = SessionMetadata(metrics)
     # Writing a JSONL record to a directory fails without touching real capture data.
     recorder.output = tmp_path
     recorder.record("heartbeat")
-    assert not metrics.healthy
+    assert metrics.healthy
     assert metrics.failed_captures == {CaptureChannel.SESSION_WS}
     assert (
         metrics.registry.get_sample_value("github_api_proxy_capture_write_failures_total", {"channel": "session_ws"})
         == 1
     )
-    assert "readiness disabled" in caplog.text
+    assert "capture is degraded" in caplog.text
 
 
 if __name__ == "__main__":

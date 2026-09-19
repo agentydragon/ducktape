@@ -20,18 +20,18 @@ Model with constructs, deploy with one props object per environment.
 - **References, not names.** `Service(selector=deployment)`,
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
-  (`cilium_helpers.endpoint_labels(namespace, egress_constructs.NAME)`), never the
+  (`cilium.endpoint_labels(namespace, egress_constructs.NAME)`), never the
   string spelled again.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
-  (`x/agentplane/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
+  (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
   `checked_value`), so a renamed field fails at synth. The code package owns `Settings`
   and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `agentplane/cilium_helpers.py` (`ingress_from_gateway`,
-  `egress_to`, `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`,
+  twice, name the shape once: `cilium.py` (`ingress_from_gateway`, `egress_to`,
+  `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`, `fqdn_fence`,
   `deny_all_egress`, ...), `gateway.https_route`, `probes.http_probe`,
   `agentplane/migrate_container.py`, `agentplane/node_scheduling.py`,
   `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
@@ -98,9 +98,12 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened
   (`agentplane/container_security.py` opts out where unaudited);
   `allowPrivilegeEscalation: false` and `privileged: false` always emitted; the
-  Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`;
-  `scheduling.attract(Node.labeled(...))` renders as required node affinity, not
-  `nodeSelector`.
+  Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
+  (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a
+  hand-written selector, which is immutable on the live Deployment;
+  `Service(selector=deployment)` still selects the address label, which the pods
+  carry either way); `scheduling.attract(Node.labeled(...))` renders as required node
+  affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
 - `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every
@@ -109,6 +112,10 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists
   (`TODO.md`).
+- `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
+  suffixes the others, regardless of which is the storage version: tofu-controller's
+  `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
+  (`//third_party/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 

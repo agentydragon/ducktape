@@ -16,12 +16,11 @@
 # SERVER MAP
 
 locals {
-  kimsufi_servers = {
+  # Per-server provisioning facts, keyed by host name. The host name, Nebula IP and
+  # Kubernetes role are the mesh roster's (local.nebula_hosts, nebula.tf), merged in below.
+  kimsufi_server_provisioning = {
     "ovh-ns103656" = {
       service_name    = var.kimsufi_service_name
-      hostname        = "ovh-ns103656"
-      nebula_ip       = "10.42.0.13"
-      role            = "controlplane"
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/sda"
       data_disk_match = "disk.dev_path == '/dev/sdb'"
@@ -32,13 +31,7 @@ locals {
       storage_tier = "hdd"
     }
     "ovh-ns103711" = {
-      service_name = var.kimsufi_service_name_1
-      hostname     = "ovh-ns103711"
-      nebula_ip    = "10.42.0.14"
-      # Stage 2 (OVH storage tiering): demoted control-plane -> worker (etcd moves onto
-      # NVMe). Data disk (/dev/sdb, seaweedfs-data) is preserved by the config-only
-      # demotion; the mount rename to local-path-ovh-hdd is a separate partition pass.
-      role            = "worker"
+      service_name    = var.kimsufi_service_name_1
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/sda"
       data_disk_match = "disk.dev_path == '/dev/sdb'"
@@ -46,12 +39,7 @@ locals {
       storage_tier    = "hdd"
     }
     "ovh-ns104952" = {
-      service_name = var.kimsufi_service_name_ks_game_0
-      hostname     = "ovh-ns104952"
-      nebula_ip    = "10.42.0.16"
-      # Stage 2 (OVH storage tiering): promoted worker -> control-plane to move etcd
-      # onto NVMe. storage_tier stays "ssd" (keyed to hardware, not role).
-      role            = "controlplane"
+      service_name    = var.kimsufi_service_name_ks_game_0
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
       data_disk_match = "disk.serial == 'BTPF8304019P450RGN'"
@@ -59,27 +47,26 @@ locals {
       storage_tier    = "ssd"
     }
     "ovh-ns104963" = {
-      service_name = var.kimsufi_service_name_ks_game_1
-      hostname     = "ovh-ns104963"
-      nebula_ip    = "10.42.0.17"
-      # Stage 2 (OVH storage tiering): promoted worker -> control-plane (etcd onto NVMe),
-      # data-preserving. storage_tier stays "ssd".
-      role            = "controlplane"
+      service_name    = var.kimsufi_service_name_ks_game_1
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
       data_disk_match = "disk.serial == 'BTPF8256009U450RGN'"
       zone            = "hil-ovh"
       storage_tier    = "ssd"
     }
+    "ovh-ns1001419" = {
+      service_name = var.kimsufi_service_name_sys1
+      apply_mode   = "staged_if_needing_reboot"
+      # The new SYS-1 has two identical NVMe devices. The machine is blank,
+      # so the first device is the Talos install disk and the second becomes
+      # the SSD UserVolume for local-path/SeaweedFS.
+      install_disk    = "/dev/nvme0n1"
+      data_disk_match = "disk.dev_path == '/dev/nvme1n1'"
+      zone            = "hil-ovh"
+      storage_tier    = "ssd"
+    }
     "ovh-ns102453" = {
-      service_name = var.kimsufi_service_name_cp0
-      hostname     = "ovh-ns102453"
-      nebula_ip    = "10.42.0.15"
-      # Stage 2 (OVH storage tiering): demoted control-plane -> worker (etcd onto NVMe).
-      # Moved from the former kimsufi_cp_servers (bootstrap-CP) map into kimsufi_servers so
-      # the role-aware config path applies a worker machine config. This node's data disk
-      # (/dev/sdb) is the biggest KS-5 disk — it becomes the primary HDD-bulk worker.
-      role            = "worker"
+      service_name    = var.kimsufi_service_name_cp0
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/sda"
       data_disk_match = "disk.dev_path == '/dev/sdb'"
@@ -87,13 +74,28 @@ locals {
       storage_tier    = "hdd"
     }
   }
+
+  # Talos machine type for each Kubernetes role the roster can give a Talos node.
+  talos_machine_type = {
+    "control-plane" = "controlplane"
+    "worker"        = "worker"
+  }
+
+  kimsufi_servers = {
+    for name, server in local.kimsufi_server_provisioning :
+    name => merge(server, {
+      hostname  = name
+      nebula_ip = local.nebula_hosts[name].nebula_ip
+      role      = local.talos_machine_type[local.nebula_hosts[name].role]
+    })
+  }
   # Filter out unpurchased servers (empty service name)
   active_kimsufi_servers = {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
-  # Stage 2: emptied — the bootstrap CP (102453) was demoted into kimsufi_servers as a
-  # worker, and primary_controlplane_ip was repointed to 103656. Kept as an empty map so
+  # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
+  # workers in kimsufi_servers, and primary_controlplane_ip points to SYS-1. Kept as an empty map so
   # the kimsufi_cp_* resource shells (which for_each over active_kimsufi_cp_servers) reduce
   # to zero instances rather than being deleted from the config.
   kimsufi_cp_servers = {}
@@ -304,7 +306,7 @@ locals {
   data_disk_mount_renamed_nodes = toset([
     "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
     "ovh-ns102453", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
-    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (CP anchor; etcd on /dev/sda untouched)
+    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (etcd on /dev/sda untouched)
   ])
 
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
@@ -463,6 +465,7 @@ locals {
   # ExternalIP and removes the taint, and the node is in steady state.
   # Fresh-bootstrapped nodes (post-flag install) get this for free.
   kimsufi_cloud_provider_external_enabled_nodes = toset([
+    "ovh-ns1001419",
     "ovh-ns102453",
     "ovh-ns103656",
     "ovh-ns103711",

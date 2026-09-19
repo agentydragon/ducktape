@@ -40,9 +40,33 @@ exports_files(
         "agentplane-testing/agentplane.k8s.yaml",
         "agentplane-testing/flux-kustomization.yaml",
         "agentplane-testing/kustomization.yaml",
+        "agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
+        "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
+        "agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "aiquota/aiquota.k8s.yaml",
+        "aiquota/flux-kustomization.yaml",
+        "aiquota/kustomization.yaml",
+        "clickhouse/schema/clickhouse-schema.k8s.yaml",
+        "clickhouse/schema/flux-kustomization.yaml",
+        "clickhouse/schema/kustomization.yaml",
         "descheduler/helmrelease.k8s.yaml",
+        "dns-automation/dns-records.k8s.yaml",
+        "haku/console/db/flux-kustomization.yaml",
+        "haku/console/db/haku-console-db.k8s.yaml",
+        "haku/console/db/kustomization.yaml",
+        "haku/console/flux-kustomization.yaml",
+        "haku/console/haku-console.k8s.yaml",
+        "haku/console/kustomization.yaml",
+        "haku/console/migration/flux-kustomization.yaml",
+        "haku/console/migration/haku-console-migration.k8s.yaml",
+        "haku/console/migration/kustomization.yaml",
+        "litellm/keys-tf/litellm-keys.k8s.yaml",
+        "monitoring/etcd/etcd-monitoring.k8s.yaml",
+        "monitoring/etcd/flux-kustomization.yaml",
+        "monitoring/etcd/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
@@ -75,14 +99,9 @@ exports_files(
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "agents/public-coder-agent/proxy/deployment.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
-        "aiquota/deployment.yaml",
-        "aiquota/kustomization.yaml",
         "clickhouse/cluster/clickhouse.yaml",
         "clickhouse/cluster/networkpolicy.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
-        "clickhouse/schema/flux-kustomization.yaml",
-        "clickhouse/schema/kustomization.yaml",
-        "clickhouse/schema/schema-job.yaml",
         "github-api-proxy/app/prometheus-rule.yaml",
         "kustomization.yaml",
         "monitoring/rules/github-quota-prometheus-rule.yaml",
@@ -129,25 +148,10 @@ filegroup(
         "agents/public-coder-agent/proxy/deployment.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
         "agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml",
-        "aiquota/public-coder-bearer-eso.yaml",
         "clickhouse/cluster/agent-diagnostics-rbac.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
         "haku-ci/scaledjob.yaml",
-        "haku/console/agent-diagnostics-rbac.yaml",
-        "haku/console/config.yaml",
-        "haku/console/db/flux-kustomization.yaml",
-        "haku/console/deployment.yaml",
-        "haku/console/flux-kustomization.yaml",
-        "haku/console/httproute.yaml",
-        "haku/console/kube-api-proxy.yaml",
-        "haku/console/kubernetes-authorization-rbac.yaml",
-        "haku/console/migration/flux-kustomization.yaml",
-        "haku/console/migration/job.yaml",
-        "haku/console/migration/serviceaccount.yaml",
-        "haku/console/service.yaml",
-        "haku/console/static-deployment.yaml",
-        "haku/console/static-metadata.yaml",
-        "haku/console/static-service.yaml",
+        "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
@@ -167,18 +171,12 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
-# Every egress allowlist in the cluster, pinned by
-# //cluster/validation:test_egress_allowlists.
+# The hand-written egress allowlists //cluster/validation:test_egress_allowlists checks
+# alongside the generated fences (cluster/cdk8s/egress_fences.py).
 filegroup(
     name = "egress_allowlist_files",
     srcs = [
-        "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml",
-        "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
-        # The spike's two layers live in two files: the iron allowlist and the
-        # Cilium DNS rule pinned against it.
-        "agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
         "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        "agents/mitmproxy/cnp-cloud-api-egress.yaml",
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "kustomization.yaml",
     ],
@@ -222,23 +220,6 @@ filegroup(
     name = "market_roster_yaml",
     srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
-)
-
-# The deployed console config, so contract tests exercise the file the console actually
-# mounts rather than a fixture that can drift from it.
-filegroup(
-    name = "haku_console_config",
-    srcs = ["haku/console/config.yaml"],
-    visibility = [
-        "//cluster/k8s/litellm/app:__pkg__",
-        "//haku/console:__pkg__",
-    ],
-)
-
-filegroup(
-    name = "haku_console_deployment",
-    srcs = ["haku/console/deployment.yaml"],
-    visibility = ["//haku/console:__pkg__"],
 )
 
 # //cluster/ssh_targets derives the last three from the devbox Service (and ssh_keys/).

@@ -1,10 +1,10 @@
 {
-  "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/nebula.tf, cluster/terraform/main/persistent-auth.tf, ansible/roles/nebula, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
+  "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/{nebula,persistent-auth,ovh-nodes,home-nodes}.tf, cluster/cdk8s/generate_manifests.py (etcd scrape endpoints, the dns-records Terraform CR's public_nodes var), ansible/roles/nebula, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
   "hosts": {
     "ovh-ns103656": {
       "nebula_ip": "10.42.0.13",
       "endpoint": "147.135.39.162:4242",
-      "role": "control-plane",
+      "role": "worker",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
@@ -31,6 +31,15 @@
     "ovh-ns104963": {
       "nebula_ip": "10.42.0.17",
       "endpoint": "147.135.104.16:4242",
+      "role": "control-plane",
+      "lighthouse": true,
+      "relay": true,
+      "managed_by": "tofu-ovh",
+      "cert_groups": ["lighthouse"]
+    },
+    "ovh-ns1001419": {
+      "nebula_ip": "10.42.0.19",
+      "endpoint": "51.81.245.180:4242",
       "role": "control-plane",
       "lighthouse": true,
       "relay": true,

@@ -1,0 +1,97 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloud-api-egress
+  namespace: agents-mitmproxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchName: api.anthropic.com
+              - matchName: api.openai.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: generativelanguage.googleapis.com
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: index.crates.io
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
+    - toFQDNs:
+        - matchName: bcr.bazel.build
+        - matchName: cache.nixos.org
+        - matchName: channels.nixos.org
+        - matchName: code.forgejo.org
+        - matchName: codeload.github.com
+        - matchName: data.forgejo.org
+        - matchName: files.pythonhosted.org
+        - matchName: ftp.gnu.org
+        - matchName: ghcr.io
+        - matchName: github.com
+        - matchName: index.crates.io
+        - matchName: nixos.org
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: pypi.org
+        - matchName: raw.githubusercontent.com
+        - matchName: registry.npmjs.org
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
+        - matchName: static.crates.io
+        - matchName: static.rust-lang.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: generativelanguage.googleapis.com
+        - matchName: api.openai.com
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "11434"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mitmproxy

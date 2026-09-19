@@ -187,7 +187,10 @@ function Meter({
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <div className="aiquota-meter-fill" style={{ width: `${fill}%` }} />
+      <div
+        className={`aiquota-meter-fill${fill >= 100 ? " aiquota-meter-fill-end" : ""}`}
+        style={{ width: `${fill}%` }}
+      />
       <div
         className={`aiquota-meter-deviation ${fill >= tick ? "aiquota-ahead" : "aiquota-behind"}`}
         style={{ left: `${Math.min(fill, tick)}%`, width: `${Math.abs(fill - tick)}%` }}

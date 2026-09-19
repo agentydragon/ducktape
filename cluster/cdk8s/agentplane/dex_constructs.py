@@ -47,7 +47,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.agentplane import cilium_helpers
+from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
@@ -331,20 +331,18 @@ def _add_http_route(scope: Construct) -> None:
 
 
 def _add_network_policy(scope: Construct) -> None:
-    cilium_helpers.network_policy(
+    cilium.network_policy(
         scope,
         "networkpolicy",
         metadata=metadata(_NAME, _NAMESPACE),
         selector=_LABELS,
         ingress=[
-            cilium_helpers.ingress_from_gateway(_PORT),
-            cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
-            cilium_helpers.ingress_from(
-                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]
-            ),
+            cilium.ingress_from_gateway(_PORT),
+            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
+            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
         ],
-        egress=[cilium_helpers.dns_egress()],
-        egress_deny=cilium_helpers.deny_all_egress(),
+        egress=[cilium.dns_egress()],
+        egress_deny=cilium.deny_all_egress(),
     )
 
 

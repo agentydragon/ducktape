@@ -68,13 +68,14 @@ incremental SSE recorder, and interrupted streams may lack captured body data.
 Raw capture remains sensitive application data despite proxy-password
 redaction. The `session_ws_metadata.py` addon follows the limited schema in
 `devinfra/github_api_capture/README.md`. A write failure increments
-`github_api_proxy_capture_write_failures_total{channel}`, emits a fixed error message,
-and makes `/healthz` and the authenticated readiness probe fail until restart;
-failed raw flows are not queued indefinitely in memory. Inspect incomplete capture
-data before restarting after a storage failure. This is an observation-loss alarm,
-not forced session termination: readiness failure prevents new Service routing,
-but existing CONNECT streams can continue with capture gaps. Metrics remain
-available and the exact cloud endpoint block remains active.
+`github_api_proxy_capture_write_failures_total{channel}` and emits a fixed error
+message, but it does not make the proxy fail readiness: forwarding is the
+service's primary function, while capture is an important observation side
+effect. Failed raw flows are not queued indefinitely in memory. The
+capture-failure metric and alert report observation loss, and metrics remain
+available while the exact cloud endpoint block remains active. Inspect
+incomplete capture data and the storage path before any controlled restart; a
+restart is a recovery/inspection action, not a prerequisite for serving traffic.
 
 `/metrics` exposes bounded configured-client/route/status request counters,
 authentication outcomes, explicit observed GraphQL cost sums, and cost-observation

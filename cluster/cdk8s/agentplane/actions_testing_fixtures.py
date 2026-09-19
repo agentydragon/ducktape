@@ -32,7 +32,8 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import cilium_helpers, container_security
+from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -101,23 +102,23 @@ def _add_mcp_everything(scope: Construct) -> None:
     # Only the testing control-plane callers may reach this no-auth upstream reference
     # server. Runner isolation stays unchanged; there is no public route or fixture egress.
 
-    cilium_helpers.network_policy(
+    cilium.network_policy(
         scope,
         "mcp-everything-networkpolicy",
         metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
         selector=_MCP_EVERYTHING_LABELS,
         ingress=[
-            cilium_helpers.ingress_from(
-                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app"),
-                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-actions"),
+            cilium.ingress_from(
+                cilium.endpoint_labels(_NAMESPACE, "agentplane-app"),
+                cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"),
                 ports=[MCP_EVERYTHING_PORT],
             )
         ],
-        egress_deny=cilium_helpers.deny_all_egress(),
+        egress_deny=cilium.deny_all_egress(),
     )
     # Add only this destination to the callers' existing egress fences.
 
-    cilium_helpers.network_policy(
+    cilium.network_policy(
         scope,
         "mcp-everything-callers-networkpolicy",
         metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", _NAMESPACE),
@@ -130,11 +131,7 @@ def _add_mcp_everything(scope: Construct) -> None:
                 )
             ]
         ),
-        egress=[
-            cilium_helpers.egress_to(
-                cilium_helpers.endpoint_labels(_NAMESPACE, MCP_EVERYTHING_NAME), MCP_EVERYTHING_PORT
-            )
-        ],
+        egress=[cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, MCP_EVERYTHING_NAME), MCP_EVERYTHING_PORT)],
     )
 
 
@@ -204,21 +201,19 @@ def _add_oauth_fixture(scope: Construct) -> None:
     # protected-resource discovery and tool calls. The fixture fetches Dex's signing
     # keys through the internal Service; its public Dex issuer is metadata only.
 
-    cilium_helpers.network_policy(
+    cilium.network_policy(
         scope,
         "oauth-fixture-networkpolicy",
         metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
         selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
-            cilium_helpers.ingress_from(
-                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]
-            )
+            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT])
         ],
         egress=[
-            cilium_helpers.dns_egress(l7=True),
-            cilium_helpers.egress_to(cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-testing-dex"), 5556),
+            cilium.dns_egress(resolves=["*"]),
+            cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, "agentplane-testing-dex"), 5556),
         ],
-        egress_deny=cilium_helpers.deny_all_egress(),
+        egress_deny=cilium.deny_all_egress(),
     )
 
 

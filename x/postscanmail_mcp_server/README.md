@@ -69,7 +69,7 @@ advisory; haku-console enforces its own approval policy server-side regardless.
 ## Wired behind haku-console
 
 The server is wired into haku-console as `postscanmail-mcp`
-(<../../cluster/k8s/haku/console/config.yaml>): reads (`list_items`, `list_automation_rules`)
+(<../../cluster/cdk8s/haku/console_config.py>): reads (`list_items`, `list_automation_rules`)
 auto-approve for the agent; every mutating/paid/destructive action queues for operator
 approval (<../../haku/console/auto_approval.py>). haku-console reflects and propagates these
 annotations to its clients unchanged.

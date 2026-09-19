@@ -21,22 +21,14 @@ py_library(
 py_library(
     name = "container_security",
     srcs = ["container_security.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = ["@pypi//cdk8s_plus_34"],
-)
-
-py_library(
-    name = "cilium_helpers",
-    srcs = ["cilium_helpers.py"],
-    deps = [
-        "//third_party/cilium:ciliumnetworkpolicy",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
 )
 
 py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = ["@pypi//cdk8s_plus_34"],
 )
 
@@ -56,6 +48,7 @@ py_library(
     deps = [
         ":environment",
         ":node_scheduling",
+        "//cluster/cdk8s:cnpg",
         "//third_party/cnpg:cluster",
         "//third_party/cnpg:database",
         "//third_party/external_secrets:externalsecret",
@@ -69,7 +62,7 @@ py_library(
     name = "dex_constructs",
     srcs = ["dex_constructs.py"],
     deps = [
-        ":cilium_helpers",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:metadata",
@@ -89,7 +82,6 @@ py_library(
     deps = [
         ":actions_constructs",
         ":app_settings",
-        ":cilium_helpers",
         ":container_security",
         ":db_constructs",
         ":environment",
@@ -97,6 +89,7 @@ py_library(
         ":migrate_container",
         ":node_scheduling",
         "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
@@ -105,7 +98,7 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//third_party/cert_manager:bundle",
         "//third_party/cert_manager:certificate",
-        "//x/agentplane:settings_contract",
+        "//util:settings_contract",
         "//x/agentplane/crds:egresscredential",
         "//x/agentplane/crds:egresspolicy",
         "//x/agentplane/egress:database_migrate",
@@ -120,17 +113,17 @@ py_library(
     name = "llm_ingress_constructs",
     srcs = ["llm_ingress_constructs.py"],
     deps = [
-        ":cilium_helpers",
         ":container_security",
         ":environment",
         ":node_scheduling",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
-        "//x/agentplane:settings_contract",
+        "//util:settings_contract",
         "//x/agentplane/llm_ingress:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -143,7 +136,6 @@ py_library(
     srcs = ["app_constructs.py"],
     deps = [
         ":actions_constructs",
-        ":cilium_helpers",
         ":container_security",
         ":db_constructs",
         ":egress_constructs",
@@ -152,6 +144,7 @@ py_library(
         ":migrate_container",
         ":node_scheduling",
         "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:metadata",
@@ -160,7 +153,7 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//third_party/agent_sandbox:sandboxtemplate",
         "//third_party/cilium:ciliumnetworkpolicy",
-        "//x/agentplane:settings_contract",
+        "//util:settings_contract",
         "//x/agentplane/app:main",
         "//x/agentplane/app:oidc",
         "//x/agentplane/egress:sidecar",
@@ -174,7 +167,6 @@ py_library(
     name = "actions_constructs",
     srcs = ["actions_constructs.py"],
     deps = [
-        ":cilium_helpers",
         ":container_security",
         ":db_constructs",
         ":environment",
@@ -182,6 +174,7 @@ py_library(
         ":migrate_container",
         ":node_scheduling",
         "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
@@ -189,7 +182,7 @@ py_library(
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
-        "//x/agentplane:settings_contract",
+        "//util:settings_contract",
         "//x/agentplane/action_service:main",
         "//x/agentplane/app:main",
         "@pypi//cdk8s",
@@ -219,8 +212,8 @@ py_library(
     name = "actions_testing_fixtures",
     srcs = ["actions_testing_fixtures.py"],
     deps = [
-        ":cilium_helpers",
         ":container_security",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
@@ -241,7 +234,7 @@ py_library(
     srcs = ["testing_config.py"],
     deps = [
         ":app_settings",
-        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:litellm_keys",
     ],
 )
 
@@ -250,11 +243,11 @@ py_library(
     srcs = ["staging_config.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
-        "//cluster/k8s/litellm/app:__pkg__",
         "//cluster/validation:__pkg__",
     ],
     deps = [
         ":app_settings",
+        "//cluster/cdk8s:litellm_keys",
         "//cluster/cdk8s:model_rosters",
     ],
 )
@@ -287,7 +280,7 @@ py_library(
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:metadata",
-        "//x/agentplane:settings_contract",
+        "//util:settings_contract",
         "//x/agentplane/app:main",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -304,9 +297,9 @@ py_library(
     deps = [
         ":actions_constructs",
         ":actions_staging_policies",
-        ":cilium_helpers",
         ":environment",
         ":staging_config",
+        "//cluster/cdk8s:cilium",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -322,10 +315,10 @@ py_library(
     deps = [
         ":actions_constructs",
         ":actions_testing_fixtures",
-        ":cilium_helpers",
         ":dex_constructs",
         ":environment",
         ":testing_config",
+        "//cluster/cdk8s:cilium",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

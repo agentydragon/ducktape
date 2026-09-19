@@ -1,0 +1,28 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary")
+load("//skills:defs.bzl", "skill_package")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "verify_dashboard",
+    srcs = ["verify_dashboard.py"],
+    data = ["@playwright_browsers//:chromium-headless-shell"],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    main = "verify_dashboard.py",
+    deps = [
+        "@pypi//httpx",
+        "@pypi//playwright",
+    ],
+)
+
+skill_package(
+    name = "grafana",
+    srcs = [
+        "SKILL.md",
+        "verify_dashboard.py",
+    ],
+)

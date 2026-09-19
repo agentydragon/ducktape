@@ -16,7 +16,7 @@ spec:
               # the control-plane toleration existed, where replica 0 already
               # satisfies the required hostname anti-affinity. Give only this
               # replica a fresh claim so WaitForFirstConsumer can place it on
-              # the third HDD node, ovh-ns103656.
+              # the third HDD-tier node, ovh-ns103656.
               templates:
                 dataVolumeClaimTemplate: keeper-data-control-plane
     settings:
@@ -39,9 +39,7 @@ spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
             storage.allegedly.works/tier: hdd
-          # hil-ovh has two HDD workers plus one HDD control-plane node. The
-          # three-member Keeper quorum requires distinct hosts, so permit only
-          # this lightweight infrastructure workload onto the third node.
+          # Three-member Keeper quorum needs distinct HDD-tier hosts; use all workers.
           tolerations:
             - key: node-role.kubernetes.io/control-plane
               operator: Exists

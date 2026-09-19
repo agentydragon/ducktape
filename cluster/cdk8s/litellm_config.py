@@ -7,19 +7,19 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
-    ASTRA_CONTEXT_WINDOW,
-    ASTRA_MAX_TOKENS,
     CLIPROXY_MODELS,
-    CODEX_CONTEXT_WINDOW,
-    CODEX_MAX_TOKENS,
-    CODEX_MEASURED_MODELS,
+    GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
     MISTRAL_MODELS,
+    OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
+    OPENCLAW_CODEX_MODELS,
     TANA_MODELS,
     Provider,
+    codex_responses_name,
     exposed_name,
+    ollama_chat_variant,
     shape_for,
     shape_mode,
 )
@@ -131,7 +131,7 @@ def _context_extra_body(context: int) -> dict | None:
 def _ollama_variant_entries(
     model: str,
     ollama_model: str,
-    suffixes: list[tuple[str, int]],
+    contexts: tuple[int, ...],
     *,
     upstream_prefix: str,
     protocol: str,
@@ -141,7 +141,7 @@ def _ollama_variant_entries(
     shape = shape_for(upstream_prefix, protocol)
     return [
         _model_entry(
-            exposed_name(Provider.OLLAMA, shape, f"{model}-{suffix}"),
+            exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context)),
             f"{upstream_prefix}/{ollama_model}",
             shape_mode(shape),
             api_base=api_base,
@@ -149,23 +149,18 @@ def _ollama_variant_entries(
             supports_function_calling=True,
             extra_body=_context_extra_body(context),
         )
-        for suffix, context in suffixes
+        for context in contexts
     ]
 
 
 def _ollama_entries() -> list[dict]:
     entries: list[dict] = []
-    for model, ollama_model, contexts in (
-        ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
-        ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
-        ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
-    ):
-        suffixes = [(f"{context // 1024}k" if context < 1024 * 1024 else "1m", context) for context in contexts]
+    for model, ollama_model, contexts in OLLAMA_CHAT_MODELS:
         entries.extend(
             _ollama_variant_entries(
                 model,
                 ollama_model,
-                suffixes,
+                contexts,
                 upstream_prefix="openai",
                 protocol="chat",
                 api_base=f"{_OLLAMA_BASE}/v1",
@@ -176,7 +171,7 @@ def _ollama_entries() -> list[dict]:
             _ollama_variant_entries(
                 model,
                 ollama_model,
-                suffixes,
+                contexts,
                 upstream_prefix="ollama",
                 protocol="chat",
                 api_base=_OLLAMA_BASE,
@@ -196,24 +191,22 @@ def _ollama_entries() -> list[dict]:
     return entries
 
 
+_CODEX_LIMITS = {model.id: model for model in OPENCLAW_CODEX_MODELS}
+
+
 def _codex_model_info(model: str) -> dict[str, int]:
-    if model == "gpt-6-astra":
-        return {
-            "max_input_tokens": ASTRA_CONTEXT_WINDOW,
-            "max_output_tokens": ASTRA_MAX_TOKENS,
-            "max_tokens": ASTRA_MAX_TOKENS,
-        }
-    if model in CODEX_MEASURED_MODELS:
-        # litellm's own model_cost DB is wrong for these slugs: no entry at all for the
-        # anthropic/-prefixed one (advertises null), and the openai/-prefixed twin matches
-        # litellm's raw-API entry for gpt-5.6-sol (922k) -- far larger than this
-        # subscription path actually serves. Pin the measured CLIProxyAPI window instead.
-        return {
-            "max_input_tokens": CODEX_CONTEXT_WINDOW,
-            "max_output_tokens": CODEX_MAX_TOKENS,
-            "max_tokens": CODEX_MAX_TOKENS,
-        }
-    return {}
+    # litellm's own model_cost DB is wrong for these slugs: no entry at all for the
+    # anthropic/-prefixed one (advertises null), and the openai/-prefixed twin matches
+    # litellm's raw-API entry for gpt-5.6-sol (922k) -- far larger than this
+    # subscription path actually serves. Pin the known serving-path limits instead.
+    if model not in _CODEX_LIMITS:
+        return {}
+    limits = _CODEX_LIMITS[model]
+    return {
+        "max_input_tokens": limits.context_window,
+        "max_output_tokens": limits.max_tokens,
+        "max_tokens": limits.max_tokens,
+    }
 
 
 def _cliproxy_entries() -> list[dict]:
@@ -293,7 +286,7 @@ def _simple_provider_entries() -> list[dict]:
     )
     entries.extend(
         _provider_entries(
-            GEMINI_MODELS,
+            [model.id for model in GEMINI_MODELS],
             provider=Provider.GOOGLE,
             upstream_prefix="gemini",
             protocol="generate",
@@ -310,11 +303,12 @@ def _simple_provider_entries() -> list[dict]:
             api_key="os.environ/GEMINI_API_KEY",
         )
     )
-    # Compatibility alias for public-coder-agent's durable OpenClaw index. Keep until
-    # that index is deliberately rebuilt under the prefixed name.
     entries.append(
         _model_entry(
-            "gemini-embedding-2", "gemini/gemini-embedding-2", "embedding", api_key="os.environ/GEMINI_API_KEY"
+            GEMINI_EMBEDDING_COMPAT_ALIAS,
+            f"gemini/{GEMINI_EMBEDDING_MODELS[0]}",
+            "embedding",
+            api_key="os.environ/GEMINI_API_KEY",
         )
     )
     entries.extend(
@@ -348,11 +342,9 @@ def main_proxy_config() -> dict:
         *_anthropic_entries(),
         *_simple_provider_entries(),
     ]
-    # Reuses the exact name _cliproxy_entries() gives this model (same provider, same
-    # shape_for(upstream_prefix, protocol) derivation), so the alias can't drift from
-    # what's actually served by construction; the one thing that can't be derived this
-    # way is whether "gpt-6-astra" still exists in CLIPROXY_MODELS at all.
-    astra_alias_target = exposed_name(Provider.CHATGPT, shape_for("openai", "responses"), "gpt-6-astra")
+    # The name every consumer uses for this route; the assert catches both a divergence
+    # from the shape _cliproxy_entries() derives and "gpt-6-astra" leaving CLIPROXY_MODELS.
+    astra_alias_target = codex_responses_name("gpt-6-astra")
     assert astra_alias_target in {entry["model_name"] for entry in model_list}, astra_alias_target
     return {
         "model_list": model_list,

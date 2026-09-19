@@ -236,6 +236,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "haku_console_fixtures",
+    testonly = True,
+    srcs = ["haku_console_fixtures.py"],
+    deps = [
+        "//cluster/cdk8s/haku:charts",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_github_proxy_rules",
     srcs = ["test_github_proxy_rules.py"],
@@ -404,18 +415,12 @@ py_library(
 py_test(
     name = "test_nebula_mesh",
     srcs = ["test_nebula_mesh.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/terraform/main:ovh-nodes.tf",
-    ],
+    data = ["//:nebula-mesh.json"],
     deps = [
-        ":terraform_hcl",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -436,15 +441,10 @@ py_test(
 )
 
 py_test(
-    name = "test_dns_records",
-    srcs = ["test_dns_records.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "//cluster/k8s:cluster_all_files",
-        "//tf/gitops/dns-records:main.tf",
-    ],
+    name = "test_mailbox_smtp_ingress",
+    srcs = ["test_mailbox_smtp_ingress.py"],
+    data = ["//cluster/k8s:cluster_all_files"],
     deps = [
-        ":terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
@@ -486,19 +486,21 @@ py_test(
 py_test(
     name = "test_clickhouse_distributed_ddl_contract",
     srcs = ["test_clickhouse_distributed_ddl_contract.py"],
+    # Synthesizes the clickhouse-schema and aiquota charts in memory, which needs jsii's
+    # Node runtime.
     data = [
-        "//cluster/k8s:aiquota/deployment.yaml",
-        "//cluster/k8s:aiquota/kustomization.yaml",
         "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
-        "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
-        "//cluster/k8s:clickhouse/schema/kustomization.yaml",
-        "//cluster/k8s:clickhouse/schema/schema-job.yaml",
         "//cluster/k8s:kustomization.yaml",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         "//:conftest",
+        "//cluster/cdk8s:aiquota_constructs",
+        "//cluster/cdk8s:clickhouse_schema_constructs",
         "//util/bazel:runfiles",
+        "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -547,48 +549,35 @@ py_test(
 
 py_test(
     name = "test_haku_public_coder_contract",
+    # Synth imports the console's Settings, and with it the console runtime.
+    size = "medium",
     srcs = ["test_haku_public_coder_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_deployment_contract",
-    srcs = ["test_haku_deployment_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_deployment_config_contract",
-    srcs = ["test_haku_deployment_config_contract.py"],
+    # Synthesizes the aiquota chart and the console chart (haku_console_fixtures.py, loaded
+    # via pytest_plugins) in memory, which needs jsii's Node runtime.
     data = [
-        "//cluster/k8s:agentplane_actions_remote_mcp",
         "//cluster/k8s:haku_manifest_contract_files",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":haku_console_fixtures",
+        "//:conftest",
+        "//cluster/cdk8s:aiquota_constructs",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_ci_keda_contract",
+    srcs = ["test_haku_ci_keda_contract.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
     deps = [
         ":conftest",
         "//:conftest",
-        "//haku/console:config",
-        "//haku/console:mcp_config",
-        "//haku/console:settings",
-        "//haku/console:tool_call_actor",
-        "//haku/console/auto_approval:registry",
-        "//util/bazel:runfiles",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -636,9 +625,18 @@ py_test(
 py_test(
     name = "test_egress_allowlists",
     srcs = ["test_egress_allowlists.py"],
-    data = ["//cluster/k8s:egress_allowlist_files"],
+    # The generated fences are synthesized in memory, which needs jsii's Node runtime.
+    data = [
+        "//cluster/k8s:egress_allowlist_files",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//util/bazel:runfiles",
+        ":conftest",
+        "//:conftest",
+        "//cluster/cdk8s:egress_fences",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

@@ -27,26 +27,14 @@ editing a route.
 
 ## Next Actions
 
-- [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
-      rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
-      KS-GAME workers). **Recurred 2026-06-28 as a full outage** (two CPs NotReady,
-      Forgejo 500s); a `vm-images-publisher` build wrote ~15 GB to a CP disk and
-      starved etcd. Applied so far: defrag + flux-controller pins (2026-06-19); soft
-      anti-affinity on all ~22 hil-ovh stateful workloads + hard anti-affinity on the
-      `vm-images-publisher` CronJob (2026-06-28, PR #2614). Remaining: **actively
-      migrate the running stateful pods off the CP nodes** (anti-affinity is
-      forward-only — node-by-node, health-gated; CNPG/Loki/Mimir use node-pinned
-      `local-path-ovh`, so moving an instance is a re-clone; the single `seaweedfs-filer`
-      is the one workload that can't roll without a brief SeaweedFS-wide blip); pin the
-      tofu-controller runners (blocked on centralizing the ~22 copy-pasted
-      `runnerPodTemplate`s) and the cross-repo augur ingest job; then the structural
-      etcd-on-NVMe move — Stage 2 of <plans/ovh_storage_tiering.md>, whose SeaweedFS
-      volume-tiering foundation landed 2026-07. Full RCA + remediation tracking:
-      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. The immediate
-      `ovh-ns103656` control-plane `NoSchedule` taint is intentionally narrower.
-      Tracking issue #5361 covers the remaining rollout: enumerate workloads that
-      cannot move, add explicit tolerations and owners for those residents, then
-      restore `allowSchedulingOnControlPlanes = false` on all control planes.
+- [x] **etcd lease-PUT latency / historical control-plane HDD I/O contention.** The
+      structural fix landed on 2026-09-18: etcd now runs on the three NVMe-backed
+      control planes (`ovh-ns104952`, `ovh-ns104963`, `ovh-ns1001419`), and the former
+      KS-5 HDD control plane (`ovh-ns103656`) is a worker. The 2026-06-28 outage and
+      its mitigations remain documented in
+      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. Worker-first workload
+      placement, control-plane I/O alerting, and the remaining tofu-runner/augur pins
+      are defense in depth; they are no longer blockers for the etcd-on-NVMe move.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in

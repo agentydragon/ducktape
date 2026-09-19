@@ -239,11 +239,15 @@
 
 .aiquota-meter-fill {
   background: var(--aiquota-tint);
-  border-radius: 999px;
+  border-radius: 999px 0 0 999px;
   bottom: 0;
   left: 0;
   position: absolute;
   top: 0;
+}
+
+.aiquota-meter-fill-end {
+  border-radius: 999px;
 }
 
 .aiquota-meter-deviation {

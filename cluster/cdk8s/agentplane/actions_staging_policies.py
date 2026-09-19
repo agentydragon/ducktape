@@ -54,7 +54,7 @@ def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: Ac
     BindingSpec.model_validate(ActionPolicyBinding(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
 
 
-# The console's `github_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action
+# The console's `github_reads` policy (cluster/cdk8s/haku/console_config.py) as an Action
 # policy set. GitHub MCP's normal endpoint exposes its default catalog, including writes.
 # This is the explicit 2026-08-14 upstream read-only subset: new upstream tools
 # intentionally stay manual until reviewed here. `ui_get` reads an MCP App UI resource,

@@ -51,16 +51,6 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
@@ -69,6 +59,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.probes import http_probe
@@ -368,26 +359,8 @@ class HaMcpApp(Construct):
             ],
         )
 
-    def _ingress_rule(self, source_namespace: str, port: int) -> CiliumNetworkPolicySpecIngress:
-        return CiliumNetworkPolicySpecIngress(
-            from_endpoints=[
-                CiliumNetworkPolicySpecIngressFromEndpoints(
-                    match_labels={"k8s:io.kubernetes.pod.namespace": source_namespace}
-                )
-            ],
-            to_ports=[
-                CiliumNetworkPolicySpecIngressToPorts(
-                    ports=[
-                        CiliumNetworkPolicySpecIngressToPortsPorts(
-                            port=str(port), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                        )
-                    ]
-                )
-            ],
-        )
-
     def _add_network_policy(self) -> None:
-        CiliumNetworkPolicy(
+        cilium.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(
@@ -401,13 +374,11 @@ class HaMcpApp(Construct):
                     )
                 },
             ),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_APP_LABELS),
-                ingress=[
-                    self._ingress_rule("haku-console", _APP_FACADE_PORT),
-                    self._ingress_rule("monitoring", _APP_METRICS_PORT),
-                ],
-            ),
+            selector=_APP_LABELS,
+            ingress=[
+                cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "haku-console"}, ports=[_APP_FACADE_PORT]),
+                cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
+            ],
         )
 
     def _add_service_monitor(self) -> None:

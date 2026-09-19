@@ -1,0 +1,1437 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: haku-console
+  namespace: haku-console
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    description: Allows Haku Console to evaluate configured Kubernetes SAR subjects.
+  name: haku-console-subject-access-reviewer
+rules:
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    description: Binds only the Haku Console ServiceAccount to SubjectAccessReview creation.
+  name: haku-console-subject-access-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: haku-console-subject-access-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: haku-console
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Read-only Console workload, event, and public ConfigMap metadata.
+  name: agent-haku-console-metadata-reader
+  namespace: haku-console
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    description: Binds Haku and public-coder to narrow Console metadata diagnostics.
+  name: agent-haku-console-metadata-reader
+  namespace: haku-console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-haku-console-metadata-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: haku-console
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-console-config
+  namespace: haku-console
+data:
+  config.yaml: |
+    auto_approval_policies:
+      - id: gmail_reads
+        type: exact_tools
+        tools:
+          gmail:
+            - threads_list
+            - threads_get
+            - messages_get
+            - labels_list
+            - labels_get
+            - filters_list
+            - filters_get
+            - drafts_list
+            - drafts_get
+      - id: google_calendar_reads
+        type: exact_tools
+        tools:
+          google_calendar:
+            - get_event
+            - list_events
+            - list_event_instances
+      - id: grocy_reads
+        type: exact_tools
+        tools:
+          grocy-sf:
+            - entities_get
+            - entities_list
+            - file_get
+            - get_below_minimum_stock
+            - get_current_user
+            - get_db_changed_time
+            - get_expired_stock
+            - get_expiring_stock
+            - get_product_stock
+            - get_system_info
+            - list_volatile_stock
+            - locations_list
+            - product_groups_list
+            - products_list
+            - quantity_units_list
+            - shopping_list_get
+            - shopping_lists_list
+            - stock_entries_list
+            - stock_get
+      - id: github_reads
+        type: exact_tools
+        tools:
+          github:
+            - get_me
+            - get_team_members
+            - get_teams
+            - ui_get
+            - find_duplicate
+            - get_label
+            - issue_dependency_read
+            - issue_read
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - search_issues
+            - list_pull_requests
+            - pull_request_read
+            - search_pull_requests
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - list_branches
+            - list_commits
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - search_code
+            - search_commits
+            - search_repositories
+            - search_users
+      - id: github_identity_reads
+        type: exact_tools
+        tools:
+          github:
+            - get_me
+      - id: public_ducktape_reads
+        type: github_repository
+        server: github
+        owner: agentydragon
+        repository: ducktape
+        tools:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_issues
+          - search_pull_requests
+          - search_code
+      - id: public_ducktape_fork_reads
+        type: github_repository
+        server: github
+        owner: agentydragon-agent
+        repository: ducktape
+        tools:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_issues
+          - search_pull_requests
+          - search_code
+      - id: public_gaffer_private_reads
+        type: github_repository
+        server: github
+        owner: agentydragon
+        repository: gaffer-private
+        tools:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_issues
+          - search_pull_requests
+          - search_code
+      - id: public_github_reads
+        type: github_public_repository
+        server: github
+        tools:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_issues
+          - search_pull_requests
+          - search_code
+      - id: public_coder_github_reads
+        type: any_of
+        policies:
+          - public_ducktape_reads
+          - public_ducktape_fork_reads
+          - public_gaffer_private_reads
+          - public_github_reads
+      - id: kubernetes_reads
+        type: exact_tools
+        tools:
+          grants:
+            - kubernetes_can_i
+            - get_grant
+      - id: grants_own_list
+        type: grant_self_list
+        server: grants
+      - id: grants_whoami
+        type: exact_tools
+        tools:
+          grants:
+            - whoami
+      - id: grants_self_introspection
+        type: any_of
+        policies:
+          - grants_whoami
+          - grants_own_list
+      - id: grants_own_revoke
+        type: exact_tools
+        tools:
+          grants:
+            - revoke_grants
+      - id: public_coder_v1
+        type: any_of
+        policies:
+          - public_coder_github_reads
+          - github_identity_reads
+          - kubernetes_reads
+          - grants_self_introspection
+          - grants_own_revoke
+      - id: tana_safe_tools
+        type: exact_tools
+        tools:
+          tana-rw:
+            - get_or_create_calendar_node
+            - search_nodes
+            - read_node
+            - get_children
+            - open_node
+            - list_tags
+            - list_workspaces
+            - get_tag_schema
+      - id: postscanmail_reads
+        type: exact_tools
+        tools:
+          postscanmail-mcp:
+            - list_items
+            - list_automation_rules
+      - id: home_assistant_reads
+        type: exact_tools
+        tools:
+          home-assistant:
+            - ha_config_get_automation
+            - ha_config_get_calendar_events
+            - ha_config_get_category
+            - ha_config_get_label
+            - ha_config_get_scene
+            - ha_config_get_script
+            - ha_config_list_dashboard_resources
+            - ha_config_list_groups
+            - ha_config_list_helpers
+            - ha_get_addon
+            - ha_get_automation_traces
+            - ha_get_blueprint
+            - ha_get_camera_image
+            - ha_get_device
+            - ha_get_entity
+            - ha_get_entity_exposure
+            - ha_get_hacs_info
+            - ha_get_history
+            - ha_get_integration
+            - ha_get_logs
+            - ha_get_operation_status
+            - ha_get_overview
+            - ha_get_skill_guide
+            - ha_get_state
+            - ha_get_system_health
+            - ha_get_todo
+            - ha_get_zone
+            - ha_list_floors_areas
+            - ha_list_services
+            - ha_search
+      - id: home_assistant_desk_light_control
+        type: home_assistant_entity_control
+        server: home-assistant
+        entities:
+          light.h6006_pegboard:
+            - turn_on
+            - turn_off
+            - toggle
+      - id: haku_sandbox_control
+        type: exact_tools
+        tools:
+          sandbox:
+            - provision_sandbox
+            - exec_sandbox
+            - get_sandbox_info
+            - list_sandboxes
+            - dispose_sandbox
+      - id: managed_gmail_labels
+        type: gmail_label_namespace
+        server: gmail
+        label_prefix: haku/
+      - id: haku_v1
+        type: any_of
+        policies:
+          - gmail_reads
+          - google_calendar_reads
+          - grocy_reads
+          - github_reads
+          - github_identity_reads
+          - tana_safe_tools
+          - postscanmail_reads
+          - home_assistant_reads
+          - home_assistant_desk_light_control
+          - haku_sandbox_control
+          - managed_gmail_labels
+          - kubernetes_reads
+          - grants_self_introspection
+          - grants_own_revoke
+      - id: manual_review
+        type: never
+    access_profiles:
+      - id: haku
+        auto_approval_policy: haku_v1
+        in_process_server_ids:
+          - grants
+          - sandbox
+      - id: public-coder
+        auto_approval_policy: public_coder_v1
+        in_process_server_ids:
+          - grants
+      - id: manual-review
+        auto_approval_policy: manual_review
+        in_process_server_ids:
+          - grants
+    default_access_profile_id: manual-review
+    kubernetes_authorization:
+      subjects_by_access_profile:
+        haku:
+          username: haku:access-profile:haku
+          groups:
+            - haku:access-profile:haku
+            - system:authenticated
+        public-coder:
+          username: haku:access-profile:public-coder
+          groups:
+            - haku:access-profile:public-coder
+            - system:authenticated
+    kubernetes_grant_max_lifetime_seconds: 3600
+    agent_sandbox:
+      sandbox:
+        namespace: haku-sandbox
+        warm_pool: haku
+        container: workspace
+        default_cwd: /workspace/haku-state
+        initial_ttl_seconds: 28800
+        exec_ttl_extension_seconds: 7200
+        provisioning_timeout_seconds: 600
+        max_exec_timeout_seconds: 300
+        max_output_bytes: 100000
+      bootstrap:
+        cwd: /workspace
+        timeout_seconds: 300
+        script: |
+          set -euo pipefail
+          /usr/local/bin/haku-sandbox-setup.sh
+    static_agents:
+      haku:
+        agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+        display_name: Haku
+        access_profile_id: haku
+      public_coder:
+        agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+        display_name: public-coder-agent
+        access_profile_id: public-coder
+    operator_connection_providers:
+      google_mail:
+        kind: google
+      google_calendar:
+        kind: google
+    operator_connections:
+      google_mail:
+        display_name: Google Mail
+        provider: google_mail
+        scopes:
+          - https://www.googleapis.com/auth/gmail.modify
+          - https://www.googleapis.com/auth/gmail.compose
+          - https://www.googleapis.com/auth/gmail.settings.basic
+      google_calendar:
+        display_name: Google Calendar
+        provider: google_calendar
+        scopes:
+          - https://www.googleapis.com/auth/calendar.events
+    mcp:
+      servers:
+        github:
+          id: github
+          catalog_refresh_interval_seconds: 900
+          agent_tool_denylist:
+            - assign_copilot_to_issue
+            - create_pull_request_with_copilot
+            - get_copilot_job_status
+            - request_copilot_review
+          backend:
+            kind: remote_mcp
+            url: https://api.githubcopilot.com/mcp/
+            headers:
+              X-MCP-Toolsets: default,actions
+            auth:
+              kind: remote_server_oauth
+              client_registration:
+                kind: preregistered
+                token_endpoint_auth_method: client_secret_post
+        grocy_sf:
+          id: grocy-sf
+          backend:
+            kind: remote_mcp
+            url: https://grocy-mcp-sf.allegedly.works/mcp
+            auth:
+              kind: remote_server_oauth
+              client_registration:
+                kind: dynamic
+                client_name: Haku Console
+        tana_rw:
+          id: tana-rw
+          backend:
+            kind: remote_mcp
+            url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+            auth:
+              kind: static_bearer
+        sandbox:
+          id: sandbox
+          backend:
+            kind: in_process
+            credential:
+              kind: none
+        grants:
+          id: grants
+          backend:
+            kind: in_process
+            credential:
+              kind: none
+        postscanmail_mcp:
+          id: postscanmail-mcp
+          backend:
+            kind: remote_mcp
+            url: https://postscanmail-mcp.allegedly.works/mcp
+            auth:
+              kind: remote_server_oauth
+              client_registration:
+                kind: dynamic
+                client_name: Haku Console
+        ssh:
+          id: ssh
+          backend:
+            kind: remote_mcp
+            url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
+            auth:
+              kind: static_bearer
+        home_assistant:
+          id: home-assistant
+          backend:
+            kind: remote_mcp
+            url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
+            auth:
+              kind: static_bearer
+        kubectl_passthrough_mcp:
+          id: kubectl-passthrough-mcp
+          backend:
+            kind: remote_mcp
+            url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+            auth:
+              kind: remote_server_oauth
+              client_registration:
+                kind: preregistered
+                client_id: kubectl-passthrough-mcp
+        gmail:
+          id: gmail
+          backend:
+            kind: in_process
+            credential:
+              kind: operator_connection
+              connection: google_mail
+        google_calendar:
+          id: google_calendar
+          backend:
+            kind: in_process
+            credential:
+              kind: operator_connection
+              connection: google_calendar
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: haku-console-config
+    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,ha-mcp-bearer,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-google-calendar-client-credentials,haku-console-google-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token,ssh-mcp-bearer,tana-agentydragon-gmail-com-account-pat
+  labels:
+    app.kubernetes.io/name: haku-console
+  name: haku-console
+  namespace: haku-console
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-console
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-console
+        cdk8s.io/metadata.addr: haku-console-console-deployment-c8971d9a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: HAKU_CONSOLE__IMAGE_TAG
+              valueFrom:
+                configMapKeyRef:
+                  key: image-tag
+                  name: haku-console-image-metadata
+            - name: HAKU_CONSOLE__AIQUOTA_URL
+              value: http://aiquota-api.cli-proxy-api.svc.cluster.local:8080
+            - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: aiquota-api-bearer-haku-console
+                  optional: false
+            - name: HAKU_CONSOLE__LAUNCH_ROUTINE__ROUTINE_ID
+              value: trig_0158pCMU1XBhoALBWikwSyK4
+            - name: HAKU_CONSOLE__LAUNCH_ROUTINE__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-routine-launch-token
+                  optional: false
+            - name: HAKU_CONSOLE__WEB_PUSH__PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  key: private-key-pem
+                  name: haku-console-web-push-vapid
+                  optional: false
+            - name: HAKU_CONSOLE__WEB_PUSH__SUBJECT
+              value: mailto:agentydragon@gmail.com
+            - name: HAKU_CONSOLE__HAKU_UI_URL
+              value: https://haku-ui.allegedly.works
+            - name: HAKU_CONSOLE__AUTH_ORIGIN
+              value: https://auth.allegedly.works
+            - name: HAKU_CONSOLE__PUBLIC_BASE_URL
+              value: https://haku.allegedly.works
+            - name: HAKU_CONSOLE_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
+            - name: HAKU_CONSOLE__STATIC_IMAGE_TAG_FILE
+              value: /etc/haku-console/static-metadata/image-tag
+            - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
+              value: "60000"
+            - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
+              value: "30"
+            - name: HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: tana-agentydragon-gmail-com-account-pat
+                  optional: false
+            - name: HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: ha-mcp-bearer
+                  optional: false
+            - name: HAKU_CONSOLE__MCP__SERVERS__SSH__BACKEND__AUTH__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: ssh-mcp-bearer
+                  optional: false
+            - name: HAKU_CONSOLE_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: haku-console-db-app
+            - name: HAKU_CONSOLE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-console-db-app
+            - name: HAKU_CONSOLE_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: haku-console-db-app
+            - name: HAKU_CONSOLE_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: haku-console-db-app
+            - name: HAKU_CONSOLE_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: haku-console-db-app
+            - name: HAKU_CONSOLE__DATABASE_URL
+              value: postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)
+            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-console-agent-api
+                  optional: false
+            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-console-public-coder-agent
+                  optional: false
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: haku-console-google-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: haku-console-google-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: haku-console-google-calendar-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: haku-console-google-calendar-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: haku-console-github-mcp-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: haku-console-github-mcp-client-credentials
+                  optional: true
+            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  key: operator_subject
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__OPERATOR_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  key: operator_subject
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/haku-console-mcp/
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: mcp_client_id
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: mcp_client_secret
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND
+              value: postgres
+            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__URL
+              value: postgresql://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__ISSUER
+              value: https://auth.allegedly.works/application/o/haku-console/
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: operator_client_id
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: operator_client_secret
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: operator_session_secret
+                  name: haku-console-oidc
+                  optional: false
+            - name: HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN
+              value: auth.allegedly.works/authentik-user-id/v1
+          image: git.allegedly.works/ducktape-ci/haku-console:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: server
+          ports:
+            - containerPort: 8080
+              name: api
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 3072Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            periodSeconds: 5
+            tcpSocket:
+              port: 8080
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /etc/haku-console/config
+              name: configmap-haku-console-config
+              readOnly: true
+            - mountPath: /etc/haku-console/static-metadata
+              name: configmap-haku-console-static-metadata
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: haku-console
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 25
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - configMap:
+            name: haku-console-config
+          name: configmap-haku-console-config
+        - configMap:
+            name: haku-console-static-metadata
+          name: configmap-haku-console-static-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-console
+  name: haku-console
+  namespace: haku-console
+spec:
+  externalIPs: []
+  ports:
+    - name: api
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: haku-console
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: haku-console
+  namespace: haku-console
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-console
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-console-static
+  name: haku-console-static
+  namespace: haku-console
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-console-static
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-console-static
+        cdk8s.io/metadata.addr: haku-console-console-static-deployment-c8b45346
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: HAKU_CONSOLE_HAKU_UI_URL
+              value: https://haku-ui.allegedly.works
+            - name: HAKU_CONSOLE_AUTH_ORIGIN
+              value: https://auth.allegedly.works
+            - name: HAKU_CONSOLE_API_UPSTREAM
+              value: haku-console.haku-console.svc.cluster.local:8080
+          image: git.allegedly.works/ducktape-ci/haku-console-static:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: static
+          ports:
+            - containerPort: 8081
+              name: http
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/nginx/conf.d
+              name: nginx-conf
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - emptyDir: {}
+          name: nginx-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-console-static
+  name: haku-console-static
+  namespace: haku-console
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8081
+  selector:
+    app.kubernetes.io/name: haku-console-static
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-console
+  namespace: haku-console
+spec:
+  hostnames:
+    - haku.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: haku-console-static
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      timeouts:
+        backendRequest: 360s
+        request: 360s
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is managed declaratively by CNPG (haku-console-db managed.roles); this runs in the app layer because the recall_index schema exists only after the migration Job.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: haku-console-db-indexer-provisioner
+  namespace: haku-console
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-console-db-indexer-provisioner
+        cdk8s.io/metadata.addr: haku-console-console-indexer-provisioner-c807e4ac
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --set=ON_ERROR_STOP=1
+            - -f
+            - /sql/indexer-role.sql
+          command:
+            - psql
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: haku-console-db-app
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-console-db-app
+            - name: PGHOST
+              value: haku-console-db-rw.haku-console.svc
+            - name: PGDATABASE
+              value: approval_store
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+          imagePullPolicy: IfNotPresent
+          name: psql
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /sql
+              name: configmap-haku-console-db-indexer-sql
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: Never
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: haku-console-db-indexer-sql
+          name: configmap-haku-console-db-indexer-sql
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: haku-kube-api-proxy-tls
+  namespace: haku-console
+spec:
+  commonName: haku-kube-api-proxy.haku-console.svc.cluster.local
+  dnsNames:
+    - haku-kube-api-proxy.haku-console.svc.cluster.local
+    - haku-kube-api-proxy.haku-console.svc
+  duration: 2160h
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 720h
+  secretName: haku-kube-api-proxy-tls
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Executes only Kubernetes requests authorized synchronously by Haku Console.
+  name: haku-kube-api-proxy
+  namespace: haku-console
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Fail-closed Haku Agent Kubernetes authorization boundary.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: haku-kube-api-proxy
+  name: haku-kube-api-proxy
+  namespace: haku-console
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-kube-api-proxy
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-kube-api-proxy
+        cdk8s.io/metadata.addr: haku-console-kube-api-proxy-deployment-c88884fb
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: HAKU_KUBE_AUTHORIZATION_URL
+              value: https://haku.allegedly.works/api/internal/kubernetes/authorize
+            - name: HAKU_KUBE_AUTHORIZATION_TIMEOUT
+              value: 3s
+            - name: HAKU_KUBE_REQUEST_TIMEOUT
+              value: 30s
+            - name: HAKU_KUBE_STREAM_REVALIDATION_INTERVAL
+              value: 5s
+            - name: HAKU_KUBE_MAX_REQUEST_BYTES
+              value: "10485760"
+            - name: HAKU_KUBE_TLS_CERT_FILE
+              value: /etc/haku-kube-api-proxy-tls/tls.crt
+            - name: HAKU_KUBE_TLS_KEY_FILE
+              value: /etc/haku-kube-api-proxy-tls/tls.key
+          image: git.allegedly.works/ducktape-ci/haku-kube-api-proxy:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 2
+          name: proxy
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+            - containerPort: 8443
+              name: https
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 25m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/haku-kube-api-proxy-tls
+              name: secret-haku-kube-api-proxy-tls
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: true
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: haku-kube-api-proxy
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 20
+      volumes:
+        - name: secret-haku-kube-api-proxy-tls
+          secret:
+            secretName: haku-kube-api-proxy-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-kube-api-proxy
+  name: haku-kube-api-proxy
+  namespace: haku-console
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    - name: https
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
+  selector:
+    app.kubernetes.io/name: haku-kube-api-proxy
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic.
+  name: haku-kubeapi-allegedly-works
+  namespace: haku-console
+spec:
+  hostnames:
+    - haku-kubeapi.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: haku-kube-api-proxy
+          port: 8080
+      timeouts:
+        backendRequest: 3600s
+        request: 3600s
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-kube-api-proxy
+  namespace: haku-console
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchName: haku.allegedly.works
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - haku.allegedly.works
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-kube-api-proxy
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: haku-sandbox
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8443"
+              protocol: TCP

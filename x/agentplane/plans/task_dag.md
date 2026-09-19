@@ -381,7 +381,7 @@ ownership: an account's bindings must not fight a reconciler for the same object
 ### `CONSOLE_POLICIES` — console auto-approval policies without a set
 
 **Deferred migration:** the Haku console's `auto_approval_policies`
-(`cluster/k8s/haku/console/config.yaml`) is the reviewed authority the Action policy model
+(`cluster/cdk8s/haku/console_config.py`) is the reviewed authority the Action policy model
 replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
 remains, each with what it needs; an entry leaves when its set can be written.
 
@@ -824,7 +824,7 @@ _Retire, once the production path is proven and rollback is available:_
   because only the sibling proxy performs the swap. Whatever replaces the proxy inherits that
   contract or the agent's configuration changes with it.
 - The Haku Console side of the credential: `HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN` in
-  `cluster/k8s/haku/console/deployment.yaml` and `Secret/haku-console-public-coder-agent`. This is
+  `cluster/cdk8s/haku/console_constructs.py` and `Secret/haku-console-public-coder-agent`. This is
   the whole "`haku-console`" half of the name — Console is the bearer's authority, not a proxy.
 
 _Shared, so not this milestone's to delete:_

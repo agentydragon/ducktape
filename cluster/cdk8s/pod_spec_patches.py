@@ -1,4 +1,4 @@
-"""Pod-level `Deployment` fields cdk8s_plus_34 has no typed builder for -- applied via
+"""Pod-level workload fields cdk8s_plus_34 has no typed builder for -- applied via
 the `JsonPatch` escape hatch, identically across every Agentplane Deployment:
 
 - `securityContext.seccompProfile`: `PodSecurityContextProps` has no `seccompProfile`

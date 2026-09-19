@@ -3,7 +3,7 @@
 Handoff notes. **Status as of 2026-07-05: downprioritized.** The original goal was
 to drop `ghcr.io` + `pkg-containers.githubusercontent.com` from the
 `haku-egress-proxy` allowlist
-(`cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml`) by making
+(`cluster/cdk8s/egress_fences.py`) by making
 haku-ci's dind pull ghcr (and ideally quay) through the in-cluster `oci-cache` Zot
 mirror — the same way Docker Hub already does (Tier 1).
 

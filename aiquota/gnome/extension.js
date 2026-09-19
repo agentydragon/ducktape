@@ -542,34 +542,87 @@ const QuotaIndicator = GObject.registerClass(
         x_expand: true,
       });
       item._bars = new St.BoxLayout({
-        style_class: "quota-bars",
+        style_class: "quota-bar-container",
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
       });
 
-      const timeBar = this._makeQuotaBar("quota-bar-time");
-      const usageBar = this._makeQuotaBar("quota-unknown");
-      item._timeFill = timeBar.fill;
-      item._usageFill = usageBar.fill;
+      item._quotaBar = this._makeQuotaBar();
 
-      item._bars.add_child(timeBar.track);
-      item._bars.add_child(usageBar.track);
+      item._bars.add_child(item._quotaBar.track);
       content.add_child(item._summaryLabel);
       content.add_child(item._bars);
       item.add_child(content);
       return item;
     }
 
-    _makeQuotaBar(fillClass) {
-      const track = new St.BoxLayout({ style_class: "quota-bar-track", x_expand: true });
+    // Match the web board's two-marker meter: the colored fill is quota used,
+    // the tick is time elapsed, and the shaded gap makes the pace deviation
+    // visible without needing a second bar.
+    _makeQuotaBar() {
+      const track = new St.Widget({ style_class: "quota-bar-track", x_expand: true });
+      const fill = new St.Widget({ style_class: "quota-bar-fill" });
+      const deviation = new St.Widget({ style_class: "quota-bar-deviation" });
+      const tick = new St.Widget({ style_class: "quota-bar-tick" });
+      const bar = { track, fill, deviation, tick, usageFraction: null, elapsedFraction: null };
 
-      const fill = new St.Widget({ style_class: `quota-bar-fill ${fillClass}` });
-      fill._quotaFraction = null;
-      fill._quotaTrack = track;
-      fill.set_width(0);
-      track.connect("notify::allocation", () => this._applyBarFill(fill));
       track.add_child(fill);
-      return { track, fill };
+      track.add_child(deviation);
+      track.add_child(tick);
+      track.connect("notify::allocation", () => this._applyQuotaBar(bar));
+      this._applyQuotaBar(bar);
+      return bar;
+    }
+
+    _applyQuotaBar(bar) {
+      const box = bar.track.get_allocation_box();
+      const trackWidth = box.x2 - box.x1;
+      const trackHeight = box.y2 - box.y1;
+      if (!(trackWidth > 0) || !(trackHeight > 0)) return;
+
+      const usage = bar.usageFraction;
+      const elapsed = bar.elapsedFraction;
+      const usageWidth = usage == null ? 0 : Math.round(trackWidth * usage);
+      const elapsedPosition = elapsed == null ? null : Math.round(trackWidth * elapsed);
+
+      bar.fill.visible = usage != null;
+      bar.fill.remove_style_class_name("quota-bar-fill-end");
+      if (usage != null && usage >= 1) bar.fill.add_style_class_name("quota-bar-fill-end");
+      bar.fill.set_position(0, 0);
+      bar.fill.set_size(usageWidth, trackHeight);
+
+      const hasDeviation = elapsedPosition != null && usage != null && usageWidth !== elapsedPosition;
+      bar.deviation.visible = hasDeviation;
+      if (hasDeviation) {
+        const deviationStart = Math.min(usageWidth, elapsedPosition);
+        bar.deviation.set_position(deviationStart, 0);
+        bar.deviation.set_size(Math.abs(usageWidth - elapsedPosition), trackHeight);
+        bar.deviation.remove_style_class_name("quota-bar-ahead");
+        bar.deviation.remove_style_class_name("quota-bar-behind");
+        bar.deviation.add_style_class_name(usageWidth > elapsedPosition ? "quota-bar-ahead" : "quota-bar-behind");
+      }
+
+      bar.tick.visible = elapsedPosition != null;
+      if (elapsedPosition != null) {
+        bar.tick.set_position(Math.max(0, Math.min(trackWidth - 2, elapsedPosition - 1)), 0);
+        bar.tick.set_size(2, trackHeight);
+      }
+    }
+
+    _setQuotaBar(bar, usageFraction, elapsedFractionValue, tint) {
+      bar.usageFraction = clamp01(usageFraction);
+      bar.elapsedFraction = clamp01(elapsedFractionValue);
+      this._setBarTint(bar, tint);
+      this._applyQuotaBar(bar);
+    }
+
+    _setBarTint(bar, tint) {
+      for (const cls of TINT_CLASSES) bar.fill.remove_style_class_name(cls);
+      bar.fill.add_style_class_name(`quota-${tint}`);
+    }
+
+    _clearQuotaBar(bar) {
+      this._setQuotaBar(bar, null, null, "unknown");
     }
 
     _mapWindow(w) {
@@ -785,9 +838,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderExtraActiveRow(item, windows) {
       item._bars.visible = false;
-      this._setBarFill(item._timeFill, null);
-      this._setBarFill(item._usageFill, null);
-      this._setBarTint(item._usageFill, "unknown");
+      this._clearQuotaBar(item._quotaBar);
       const parts = windows.map((window) => this._formatExtraActiveWindow(window));
       item._summaryLabel.set_text(parts.join("  "));
     }
@@ -803,9 +854,7 @@ const QuotaIndicator = GObject.registerClass(
       if (state == null) {
         item._bars.visible = false;
         item._summaryLabel.set_text("no data");
-        this._setBarFill(item._timeFill, null);
-        this._setBarFill(item._usageFill, null);
-        this._setBarTint(item._usageFill, "unknown");
+        this._clearQuotaBar(item._quotaBar);
         return;
       }
       item._bars.visible = true;
@@ -826,33 +875,14 @@ const QuotaIndicator = GObject.registerClass(
       }
       item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
 
-      this._setBarFill(item._timeFill, elapsedFraction(liveState));
-      this._setBarFill(item._usageFill, liveState.usedPercent == null ? null : liveState.usedPercent / 100);
       const usageTint =
         staleAgeSeconds != null ? "stale" : tintFor({ pace, usedPercent: liveState.usedPercent, isShort });
-      this._setBarTint(item._usageFill, usageTint);
-    }
-
-    _setBarFill(fill, fraction) {
-      fill._quotaFraction = clamp01(fraction);
-      this._applyBarFill(fill);
-    }
-
-    _applyBarFill(fill) {
-      const fraction = fill._quotaFraction;
-      if (fraction == null) {
-        fill.set_width(0);
-        return;
-      }
-      const box = fill._quotaTrack.get_allocation_box();
-      const trackWidth = box.x2 - box.x1;
-      if (!(trackWidth > 0)) return;
-      fill.set_width(Math.round(trackWidth * fraction));
-    }
-
-    _setBarTint(fill, tint) {
-      for (const cls of TINT_CLASSES) fill.remove_style_class_name(cls);
-      fill.add_style_class_name(`quota-${tint}`);
+      this._setQuotaBar(
+        item._quotaBar,
+        liveState.usedPercent == null ? null : liveState.usedPercent / 100,
+        elapsedFraction(liveState),
+        usageTint
+      );
     }
 
     _startPopupTick() {

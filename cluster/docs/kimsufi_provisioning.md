@@ -48,11 +48,12 @@ this naming pattern, or free up one of these slots via §5 (replacing an existin
 | `kimsufi_service_name_ks_game_1` | `ovh-ns104963`   | KS-GAME  |
 
 Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`,
-`local.kimsufi_servers`):
+`local.kimsufi_server_provisioning`, keyed by the `nebula-mesh.json` entry that
+holds the hostname, Nebula IP and role):
 
 | Variable                         | Hostname       | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
 | -------------------------------- | -------------- | --------------- | ------------- | -------------------------------- | -------------------------------- |
-| `kimsufi_service_name`           | `ovh-ns103656` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name`           | `ovh-ns103656` | `10.42.0.13/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
 | `kimsufi_service_name_1`         | `ovh-ns103711` | `10.42.0.14/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
 | `kimsufi_service_name_cp0`       | `ovh-ns102453` | `10.42.0.15/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
 | `kimsufi_service_name_ks_game_0` | `ovh-ns104952` | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
@@ -123,7 +124,7 @@ while public peer traffic still fails.
 
 ```bash
 # Direct API readiness for each Kimsufi control-plane public IP
-# (ovh-ns103656, ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
+# (ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
 kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 kubectl --server=https://147.135.104.5:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 kubectl --server=https://147.135.104.16:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'

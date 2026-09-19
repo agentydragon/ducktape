@@ -61,6 +61,11 @@ spec:
     # Global settings
     defaultRules:
       create: true
+      # This is a wyrm2-only volume for host-local Colibri/model data, not
+      # storage used by Kubernetes workloads. Kubernetes filesystem alerts
+      # should not care about it; node-exporter still exposes its raw metrics.
+      node:
+        fsSelector: 'fstype!="",mountpoint!="/var/lib/colibri"'
       # Forked into ../rules/roaming-node-prometheus-rule.yaml so roaming
       # laptops (iguana/rugged) can be excluded by taint. Denying these two by
       # alertname in the route below would also have silenced them for the
@@ -68,6 +73,8 @@ spec:
       disabled:
         KubeNodeNotReady: true
         KubeNodeUnreachable: true
+        KubePodNotReady: true
+        KubeletInstanceUnreachable: true
         TargetDown: true
       rules:
         alertmanager: true
@@ -372,6 +379,13 @@ spec:
     # Kube-state-metrics configuration
     kube-state-metrics:
       fullnameOverride: kube-state-metrics
+      # Export the node media tier used by the local-path storage classes. The
+      # default kube-state-metrics configuration intentionally omits arbitrary
+      # Kubernetes labels; this narrow allowlist lets dashboards join node
+      # device/cAdvisor metrics to the authoritative hdd/ssd classification
+      # without maintaining a node-name regex.
+      metricLabelsAllowlist:
+        - nodes=[storage.allegedly.works/tier]
       rbac:
         extraRules:
           - apiGroups: ["apiextensions.k8s.io"]

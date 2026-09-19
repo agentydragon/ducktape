@@ -6,14 +6,18 @@
 # operator step documented in cluster/docs/optiplex_provisioning.md.
 
 locals {
-  home_nodes = {
+  # Keyed by host name; the Nebula IP is the mesh roster's (local.nebula_hosts, nebula.tf).
+  home_node_provisioning = {
     optiplex = {
-      hostname     = "optiplex"
-      nebula_ip    = "10.42.0.18"
       install_disk = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
       region       = "home"
       zone         = "home-lan"
     }
+  }
+
+  home_nodes = {
+    for name, node in local.home_node_provisioning :
+    name => merge(node, { hostname = name, nebula_ip = local.nebula_hosts[name].nebula_ip })
   }
 
   home_worker_machine_config_patches = {

@@ -36,15 +36,15 @@ See <docs/bootstrap.md> for full setup.
 
 ### Node Types
 
-| Node                           | Type             | Region    | Availability     | Hardware            |
-| ------------------------------ | ---------------- | --------- | ---------------- | ------------------- |
-| `ovh-ns103656`                 | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `ovh-ns104952`, `ovh-ns104963` | Talos CP         | `hil`     | Always on        | OVH KS-GAME         |
-| `ovh-ns103711`, `ovh-ns102453` | Talos worker     | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `optiplex`                     | Talos worker     | `home`    | Always on (home) | Dell OptiPlex 7060  |
-| `wyrm2`                        | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
-| `iguana`                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
-| `rugged`                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+| Node                                           | Type             | Region    | Availability     | Hardware                         |
+| ---------------------------------------------- | ---------------- | --------- | ---------------- | -------------------------------- |
+| `ovh-ns104952`, `ovh-ns104963`                 | Talos CP         | `hil`     | Always on        | OVH KS-GAME                      |
+| `ovh-ns1001419`                                | Talos CP         | `hil`     | Always on        | OVH SYS-1, 64 GiB, 2x512 GB NVMe |
+| `ovh-ns103656`, `ovh-ns103711`, `ovh-ns102453` | Talos worker     | `hil`     | Always on        | OVH Kimsufi KS-5                 |
+| `optiplex`                                     | Talos worker     | `home`    | Always on (home) | Dell OptiPlex 7060               |
+| `wyrm2`                                        | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090                      |
+| `iguana`                                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme              |
+| `rugged`                                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12                   |
 
 Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
 join/leave the cluster frequently. `rugged` has taint
@@ -88,7 +88,7 @@ e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 | --------------------- | ---------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
 | `local-path-proxmox`  | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                                                        |
 | `local-path-ovh-hdd`  | local-path-provisioner | `hil-ovh` | OVH KS-5 HDD tier: SeaweedFS bulk (`hdd`) volume servers, OVH-HA CNPG DBs, node-pinned bulk app data                  |
-| `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                                           |
+| `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | OVH NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                                                   |
 | `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: hardware/LAN-pinned home state (Home Assistant, openclaw spike); VolSync copies it to SeaweedFS for DR |
 | `local-path-ovh`      | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                                   |
 | `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)                     |

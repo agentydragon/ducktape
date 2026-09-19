@@ -10,23 +10,37 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 ## Three shapes of a directory
 
 1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
-   `agents/ha-mcp/app`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
+   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
    (`flux_constructs.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest) and one `<name>.k8s.yaml` per chart. Hand-written beside
    them: `image-pins/` (below) and any `.sops.yaml`.
-2. **One generated file** in an otherwise hand-written directory: a `<name>.k8s.yaml`
-   the hand-written `kustomization.yaml` lists as a resource. A ConfigMap replacing a
-   `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
-   `agents/public-coder-agent/app`), or the objects that carry a value another
-   directory shares (`descheduler`'s HelmRepository + HelmRelease and
-   `seaweedfs/cluster`'s PriorityClass, both rendered from `stateful_infra.PRIORITY`).
+2. **One or a few generated files** in an otherwise hand-written directory, each a
+   `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A
+   ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
+   `agents/public-coder-agent/app`); the objects that carry a value another directory
+   shares (`descheduler`'s HelmRepository + HelmRelease and `seaweedfs/cluster`'s
+   PriorityClass, both rendered from `stateful_infra.PRIORITY`); the
+   CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
+   (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
+   name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
+   `terraform_constructs.gitops_terraform` and `//third_party/tofu_controller`'s bindings).
 3. **Hand-written.**
 
 Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-only;
 `.gitattributes` marks every generated file `linguist-generated=true` (path-scoped
 lines for the shared filenames `flux-kustomization.yaml`/`kustomization.yaml`).
+
+A value a `tf/gitops` module takes from the generators reaches it as an inline
+`spec.vars` entry on its generated CR (`litellm/keys-tf`'s `model_allowlists`, the
+per-key lanes `cluster/cdk8s/litellm_keys.py` derives from the roster; `dns-automation`'s
+`public_nodes`, the mesh roster's projection), never as a generated file beside the
+module: the tofu-controller's `ducktape` GitRepository is a sparse checkout of deployment
+directories, so a module cannot `file()` a repo-root input, and `vars[].value` is written
+structurally into the runner's tfvars, so a map arrives typed, and a CR spec change
+reconciles immediately, whereas `varsFrom` ConfigMap values are stringified and picked
+up only on the interval (tofu-controller v0.16.5).
 
 ### SOPS secrets in a converted directory
 
@@ -35,6 +49,12 @@ directory: the generated `kustomization.yaml` lists it as a sibling resource
 (`Environment.extra_resources`), and the generated `flux-kustomization.yaml` carries the
 `decryption:` block when any such file is listed. `ExternalSecret` objects are
 generated outright; they carry only a pointer at a store key.
+
+A `configMapGenerator` input (`clickhouse/schema/schema.sql`, `aiquota/config.toml`)
+stays hand-written the same way: the generated `kustomization.yaml` carries the
+generator entry (`flux_constructs.ConfigMapArgs`), keeping kustomize's content-hash
+name suffix and reference rewriting, and the construct mounting it references the
+entry's `name`.
 
 ### `dependsOn` rationale
 
@@ -67,7 +87,10 @@ Deployment carries the placeholder tag `unset`, and a hand-written
 `kustomization.yaml`'s `components:`) carries the marker and overrides the tag at
 `kustomize build` time. The marker form and its incident: <../cdk8s/AGENTS.md>
 § `image-pins/kustomization.yaml`. A test asserts no generated file contains
-`$imagepolicy`.
+`$imagepolicy`. Where a tag is also data a Pod reads (the console reports its own and its
+static shell's image tags), it lives in a hand-written sibling ConfigMap carrying the
+marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource and named in the
+chart's `provided_config_maps`.
 
 Argo CD Image Updater would need the identical carve-out: its `git` write-back mode
 writes a separate file, and its default `argocd` mode stores the override on the live

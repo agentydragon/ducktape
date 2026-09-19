@@ -1,7 +1,7 @@
 # SeaweedFS cluster — trial deployment on OVH Kimsufi nodes.
 #
 # Replication "001" (1 copy on different node, same rack) — survives a single
-# node loss across our 2-node, single-rack topology.
+# node loss across each 3-node, single-rack topology group.
 #
 # Volume server PVCs use local-path-ovh (zone=hil-ovh allowedTopologies),
 # bound to /var/mnt/seaweedfs-data on /dev/sdb via Talos UserVolumeConfig.
@@ -163,14 +163,14 @@ spec:
                   seaweedfs/topology: hdd
               topologyKey: kubernetes.io/hostname
     ssd:
-      # 2 servers on the KS-GAME NVMe nodes; serves Forgejo git via the
+      # 3 servers on the OVH NVMe nodes; serves Forgejo git via the
       # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
-      replicas: 2
+      replicas: 3
       dataCenter: "hil"
       # Real OVH rack — both KS-GAME nodes (104952, 104963) are physically in
-      # H108B01 (verified via the ovh_dedicated_server data source). This is the
-      # one group whose rack label matches physical topology; repl 001 places the
-      # 2 git copies across the 2 nodes in this rack.
+      # H108B01 (verified via the ovh_dedicated_server data source for the
+      # existing nodes). The logical rack label keeps repl 001's two git copies
+      # in this group while the SYS-1 provides a third evacuation target.
       rack: "hil-ovh-h108b01"
       priorityClassName: stateful-infra
       # Soft heap ceiling at ~90% of the memory limit below, same pattern as the
@@ -231,7 +231,7 @@ spec:
     # postgres2 store (seaweedfs-filer-db-ssd), so both replicas serve identical
     # data and concurrent writes are handled by enableUpsert. HA lets the filer
     # roll / drain without a SeaweedFS-wide metadata stall, and (with the
-    # affinity below) keeps it off the control-plane HDD nodes.
+    # affinity below) keeps it off control-plane system disks.
     # NOTE: the metadata DB still has no off-cluster WAL/PITR backup — only the
     # 2-instance CNPG streaming replication. That gap is independent of the
     # filer replica count but worth closing (it is the SSOT for all SeaweedFS
@@ -301,9 +301,7 @@ spec:
                 app.kubernetes.io/component: filer
                 app.kubernetes.io/name: seaweedfs
             topologyKey: kubernetes.io/hostname
-      # Soft off the control-plane HDD nodes: in normal operation both filers
-      # land on the NVMe workers; CP stays a fallback if both workers are down.
-      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      # Prefer ordinary workers; this soft rule only affects filer CP fallback.
       nodeAffinity:
         preferredDuringSchedulingIgnoredDuringExecution:
           - weight: 100

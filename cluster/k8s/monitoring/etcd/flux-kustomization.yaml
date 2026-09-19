@@ -4,24 +4,20 @@ metadata:
   name: etcd-monitoring
   namespace: ducktape-flux
 spec:
-  suspend: false
-  interval: 10m
-  retryInterval: 1m
-  timeout: 2m
-  path: ./cluster/k8s/monitoring/etcd
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-etcd
-
-    namespace: ducktape-flux
   dependsOn:
-    # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack.
-    - name: monitoring-crds # ServiceMonitor
-      namespace: ducktape-flux
-  wait: true
+    - name: monitoring-crds
   healthChecks:
     - apiVersion: monitoring.coreos.com/v1
       kind: ServiceMonitor
       name: talos-etcd
       namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/etcd
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-etcd
+    namespace: ducktape-flux
+  timeout: 2m
+  wait: true

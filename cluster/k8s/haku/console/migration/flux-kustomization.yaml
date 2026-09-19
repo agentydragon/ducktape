@@ -4,25 +4,22 @@ metadata:
   name: haku-console-migration
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/haku/console/migration
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-console-migration
-    namespace: ducktape-flux
   dependsOn:
-    # Forgejo registry credential must be reflected into haku-console before the
-    # migration Job can pull its image.
+    - name: haku-console-namespace
     - name: forgejo-images
-      namespace: ducktape-flux
     - name: haku-console-db
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
       name: haku-console-migration
       namespace: haku-console
+  interval: 10m
+  path: ./cluster/k8s/haku/console/migration
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-console-migration
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

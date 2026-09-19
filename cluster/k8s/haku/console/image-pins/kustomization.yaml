@@ -1,0 +1,11 @@
+# Hand-written: carries the Flux image-automation markers the generated manifests cannot
+# (cluster/cdk8s/AGENTS.md § image-pins/kustomization.yaml).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/haku-console
+    newTag: devel-20260918234951-bb737ca # {"$imagepolicy": "flux-system:haku-console:tag"}
+  - name: git.allegedly.works/ducktape-ci/haku-console-static
+    newTag: devel-20260919002757-1d52fbc # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+  - name: git.allegedly.works/ducktape-ci/haku-kube-api-proxy
+    newTag: devel-20260913232156-d3b62d6 # {"$imagepolicy": "flux-system:haku-kube-api-proxy:tag"}

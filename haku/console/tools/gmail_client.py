@@ -21,7 +21,7 @@ from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelType, PatchLabelRequest
 from gmail_api.messages import Draft
 
-# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
 GMAIL_SERVER_ID = "gmail"
 # Gmail's batch-request guide recommends capping requests-per-batch at 100. Used for

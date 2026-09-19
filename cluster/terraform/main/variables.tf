@@ -93,3 +93,9 @@ variable "kimsufi_service_name_ks_game_1" {
   type        = string
   default     = "ns104963.ip-147-135-104.us"
 }
+
+variable "kimsufi_service_name_sys1" {
+  description = "OVH service name of the SYS-1 control-plane server"
+  type        = string
+  default     = "ns1001419.ip-51-81-245.us"
+}

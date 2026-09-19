@@ -2,10 +2,7 @@ load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 exports_files(
     ["main.tf"],
-    visibility = [
-        "//cluster/k8s/litellm/app:__pkg__",
-        "//haku/x/dispatch/deploy/litellm:__pkg__",
-    ],
+    visibility = ["//haku/x/dispatch/deploy/litellm:__pkg__"],
 )
 
 tf_providers_versions(

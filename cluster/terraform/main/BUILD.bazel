@@ -1,10 +1,7 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 exports_files(
-    [
-        "cilium-values.yaml",
-        "ovh-nodes.tf",
-    ],
+    ["cilium-values.yaml"],
     visibility = ["//cluster:__subpackages__"],
 )
 

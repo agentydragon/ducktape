@@ -117,7 +117,7 @@ class Metrics:
     def capture_write_failed(self, channel: CaptureChannel, count: int = 1) -> None:
         self.capture_failures.labels(channel).inc(count)
         if channel not in self.failed_captures:
-            logger.error("Private capture write failed; readiness disabled (channel=%s)", channel)
+            logger.error("Private capture write failed; capture is degraded (channel=%s)", channel)
         self.failed_captures.add(channel)
 
     def done(self) -> None:
@@ -125,7 +125,10 @@ class Metrics:
 
     @property
     def healthy(self) -> bool:
-        return self.ready and not self.failed_captures
+        # Capture is an important observation path, but it is not the proxy's
+        # forwarding path. Keep serving traffic and expose capture loss via
+        # the counter and alert instead of making the whole service unroutable.
+        return self.ready
 
     def response(self, flow: http.HTTPFlow) -> None:
         client = flow.metadata.get(CLIENT_METADATA_KEY, UNAUTHENTICATED)

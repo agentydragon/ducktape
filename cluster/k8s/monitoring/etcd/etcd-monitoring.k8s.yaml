@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: talos-etcd-metrics
+    app.kubernetes.io/part-of: monitoring
+  name: talos-etcd-metrics
+  namespace: monitoring
+spec:
+  clusterIP: None
+  externalIPs: []
+  ports:
+    - name: metrics
+      port: 2381
+      protocol: TCP
+      targetPort: 2381
+  selector: {}
+  type: ClusterIP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  labels:
+    endpointslice.kubernetes.io/managed-by: ducktape-static
+    kubernetes.io/service-name: talos-etcd-metrics
+  name: talos-etcd-metrics
+  namespace: monitoring
+addressType: IPv4
+endpoints:
+  - addresses:
+      - 10.42.0.16
+    conditions:
+      ready: true
+    hostname: ovh-ns104952
+    nodeName: ovh-ns104952
+  - addresses:
+      - 10.42.0.17
+    conditions:
+      ready: true
+    hostname: ovh-ns104963
+    nodeName: ovh-ns104963
+  - addresses:
+      - 10.42.0.19
+    conditions:
+      ready: true
+    hostname: ovh-ns1001419
+    nodeName: ovh-ns1001419
+ports:
+  - name: metrics
+    port: 2381
+    protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/name: talos-etcd-metrics
+    app.kubernetes.io/part-of: monitoring
+  name: talos-etcd
+  namespace: monitoring
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: metrics
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_endpointslice_endpoint_hostname
+          targetLabel: node
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-etcd-metrics

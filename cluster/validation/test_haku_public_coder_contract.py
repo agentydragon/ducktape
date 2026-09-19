@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import pytest_bazel
 import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
+
+from cluster.cdk8s import aiquota_constructs
+
+# pytest_plugins loads cluster.validation.haku_console_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:haku_console_fixtures
+pytest_plugins = ("cluster.validation.haku_console_fixtures",)
 
 _PUBLIC_CODER_SUBJECT = {
     "kind": "Group",
@@ -30,7 +38,9 @@ def _resources(role: dict[str, Any]) -> set[str]:
     return set().union(*(set(rule["resources"]) for rule in role["rules"]))
 
 
-def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: Path) -> None:
+def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
+    k8s_dir: Path, haku_console_objects: list[dict[str, Any]]
+) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
     metadata_role = yaml.safe_load(
         (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml").read_text()
@@ -54,12 +64,17 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
     )
     assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
 
-    for relative_path in (
-        "clickhouse/cluster/agent-diagnostics-rbac.yaml",
-        "haku/console/agent-diagnostics-rbac.yaml",
-        "agents/public-coder-agent/app/extended-diagnostics-reader.yaml",
-    ):
-        objects = list(yaml.safe_load_all((k8s_dir / relative_path).read_text()))
+    sources: dict[str, list[dict[str, Any]] | None] = {
+        "clickhouse/cluster/agent-diagnostics-rbac.yaml": None,
+        "haku-console chart": haku_console_objects,
+        "agents/public-coder-agent/app/extended-diagnostics-reader.yaml": None,
+    }
+    for relative_path, chart_objects in sources.items():
+        objects = (
+            chart_objects
+            if chart_objects is not None
+            else list(yaml.safe_load_all((k8s_dir / relative_path).read_text()))
+        )
         role = one(obj for obj in objects if obj["kind"] == "Role")
         binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
         assert binding["roleRef"]["name"] == role["metadata"]["name"], relative_path
@@ -104,10 +119,9 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
                 assert source.get("secret", {}).get("name") not in secret_names
 
 
-def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
+def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_objects: list[dict[str, Any]]) -> None:
     """Agent traffic, configured SAR authorization, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
-    console_dir = k8s_dir / "haku" / "console"
 
     iron = yaml.safe_load((agent_dir / "proxy" / "iron.yaml").read_text())
     secrets_transform = one(transform for transform in iron["transforms"] if transform["name"] == "secrets")
@@ -120,8 +134,17 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     haku_secret = secrets_by_env["HAKU_CONSOLE_TOKEN"]
     assert one(kubeconfig["users"])["user"]["token"] == haku_secret["replace"]["proxy_value"]
     assert server_host in {rule["host"] for rule in haku_secret["rules"]}
-    proxy_objects = list(yaml.safe_load_all((console_dir / "kube-api-proxy.yaml").read_text()))
-    route = one(obj for obj in proxy_objects if obj["kind"] == "HTTPRoute")
+    haku_proxy = one(
+        obj
+        for obj in haku_console_objects
+        if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "haku-kube-api-proxy"
+    )
+    route = one(
+        obj
+        for obj in haku_console_objects
+        if obj["kind"] == "HTTPRoute"
+        and one(one(obj["spec"]["rules"])["backendRefs"])["name"] == haku_proxy["metadata"]["name"]
+    )
     assert server_host in route["spec"]["hostnames"]
 
     # Every actual proxy client's pod must carry labels the CNP admits, derived from the
@@ -171,7 +194,12 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
     aiquota_ref = proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"]
-    aiquota_mirror = yaml.safe_load((k8s_dir / "aiquota" / "public-coder-bearer-eso.yaml").read_text())
+    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota_constructs.chart(Cdk8sTesting.app())))
+    aiquota_mirror = one(
+        obj
+        for obj in aiquota_objects
+        if obj["kind"] == "ExternalSecret" and obj["metadata"]["name"] == aiquota_ref["name"]
+    )
     assert aiquota_mirror["spec"]["target"]["name"] == aiquota_ref["name"]
     assert aiquota_ref["key"] in {entry["secretKey"] for entry in aiquota_mirror["spec"]["data"]}
     annotations = aiquota_mirror["spec"]["target"]["template"]["metadata"]["annotations"]
@@ -181,16 +209,21 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
 
     # Console SARs the group the RBAC binds; the proxy executes as its own ServiceAccount, which
     # is the only subject of the cluster-admin ceiling.
-    console_config = yaml.safe_load((console_dir / "config.yaml").read_text())
+    console_config = yaml.safe_load(
+        one(
+            obj
+            for obj in haku_console_objects
+            if obj["kind"] == "ConfigMap" and obj["metadata"]["name"] == "haku-console-config"
+        )["data"]["config.yaml"]
+    )
     profile = console_config["kubernetes_authorization"]["subjects_by_access_profile"]["public-coder"]
     assert _PUBLIC_CODER_SUBJECT["name"] in profile["groups"]
-    authorization_objects = list(yaml.safe_load_all((console_dir / "kubernetes-authorization-rbac.yaml").read_text()))
-    execution_service_account = one(obj for obj in authorization_objects if obj["kind"] == "ServiceAccount")
-    haku_proxy = one(
-        obj for obj in proxy_objects if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "haku-kube-api-proxy"
+    execution_name = haku_proxy["spec"]["template"]["spec"]["serviceAccountName"]
+    execution_service_account = one(
+        obj
+        for obj in haku_console_objects
+        if obj["kind"] == "ServiceAccount" and obj["metadata"]["name"] == execution_name
     )
-    execution_name = execution_service_account["metadata"]["name"]
-    assert haku_proxy["spec"]["template"]["spec"]["serviceAccountName"] == execution_name
     ceiling = yaml.safe_load((agent_dir / "app" / "cluster-admin-ceiling.yaml").read_text())
     assert ceiling["subjects"] == [
         {
@@ -203,16 +236,22 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     # Every role public-coder is bound to, Haku is bound to as well: the profile never exceeds
     # the orchestrator that dispatches to it.
     subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
-    for path in (
-        agent_dir / "app" / "role.yaml",
-        agent_dir / "app" / "node-reader.yaml",
-        agent_dir / "app" / "cluster-metadata-reader.yaml",
-        agent_dir / "app" / "extended-diagnostics-reader.yaml",
-        k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
-        k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
-        console_dir / "agent-diagnostics-rbac.yaml",
-    ):
-        for binding in yaml.safe_load_all(path.read_text()):
+    binding_sources = (
+        *(
+            yaml.safe_load_all(path.read_text())
+            for path in (
+                agent_dir / "app" / "role.yaml",
+                agent_dir / "app" / "node-reader.yaml",
+                agent_dir / "app" / "cluster-metadata-reader.yaml",
+                agent_dir / "app" / "extended-diagnostics-reader.yaml",
+                k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
+                k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
+            )
+        ),
+        haku_console_objects,
+    )
+    for objects in binding_sources:
+        for binding in objects:
             if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
                 continue
             role_ref = (binding["metadata"].get("namespace"), binding["roleRef"]["kind"], binding["roleRef"]["name"])

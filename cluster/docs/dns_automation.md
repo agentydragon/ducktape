@@ -22,17 +22,18 @@ cert-manager Route 53 solver manages ACME challenge TXT records.
 | wildcard | `*.allegedly.works.` | OVH gateway node IPs | 300 |
 | apex     | `allegedly.works.`   | OVH gateway node IPs | 300 |
 
-OVH gateway node IPs are hardcoded in the Terraform module. Update when adding
-or removing gateway nodes.
+The gateway and API node IPs are the `public_nodes` var on the generated Terraform CR
+(`k8s/dns-automation/dns-records.k8s.yaml`), rendered from `nebula-mesh.json`
+(<mesh_membership.md>).
 
 ## Key Files
 
-| File                                                     | Purpose                              |
-| -------------------------------------------------------- | ------------------------------------ |
-| `tf/gitops/dns-records/main.tf`                          | Route 53 records + domain delegation |
-| `k8s/dns-automation/dns-records-tf.yaml`                 | tofu-controller Terraform resource   |
-| `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)           |
-| `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)    |
+| File                                                     | Purpose                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `tf/gitops/dns-records/main.tf`                          | Route 53 records + domain delegation                                          |
+| `k8s/dns-automation/dns-records.k8s.yaml`                | tofu-controller Terraform resource (generated, `cdk8s/generate_manifests.py`) |
+| `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)                                                    |
+| `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)                                             |
 
 ### IAM User: `cluster-dns-manager`
 
@@ -55,6 +56,6 @@ kubectl get certificate -A
 
 ## Updating Gateway Node IPs
 
-When adding or removing gateway nodes, update the IP locals in
-`tf/gitops/dns-records/main.tf`. Commit and push; tofu-controller applies
-automatically.
+Edit the node's `nebula-mesh.json` entry and
+`bb run //cluster/cdk8s:generate_manifests`, which rewrites the Terraform CR's
+`public_nodes` var. Commit and push; tofu-controller applies automatically.
