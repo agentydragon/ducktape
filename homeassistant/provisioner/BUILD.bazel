@@ -1,8 +1,6 @@
 # gazelle:ignore
 """Home Assistant onboarding provisioner OCI image."""
 
-# Home Assistant deps use the separate @pypi_homeassistant hub.
-
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -14,9 +12,9 @@ py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi_homeassistant//pydantic",
-        "@pypi_homeassistant//pydantic_settings",
-        "@pypi_homeassistant//pyyaml",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -35,16 +33,8 @@ py_library(
     deps = [
         ":component_installer",
         ":settings",
-        "@pypi_homeassistant//aiohttp",
+        "@pypi//aiohttp",
     ],
-)
-
-py_library(
-    name = "test_support",
-    testonly = True,
-    srcs = ["test_support.py"],
-    imports = ["."],
-    deps = [":settings"],
 )
 
 py_test(
@@ -53,8 +43,9 @@ py_test(
     imports = ["."],
     deps = [
         ":provision",
-        ":test_support",
+        ":settings",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -65,20 +56,6 @@ py_test(
     imports = ["."],
     deps = [
         ":component_installer",
-        ":test_support",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_settings",
-    srcs = ["test_settings.py"],
-    imports = ["."],
-    deps = [
-        ":settings",
-        ":test_support",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

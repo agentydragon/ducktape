@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; Gazelle
 # cannot see the dependency.
-# gazelle:include_dep @pypi_homeassistant//pyyaml
+# gazelle:include_dep @pypi//pyyaml
 
 
 class HttpConfig(BaseModel):

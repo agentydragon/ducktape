@@ -3,8 +3,52 @@ from http import HTTPStatus
 from urllib import error
 
 import provision
+import pytest
 import pytest_bazel
-from test_support import TEST_SETTINGS
+from settings import ComponentConfig, HttpConfig, ProvisionerSettings
+
+
+@pytest.fixture
+def provisioner_settings() -> ProvisionerSettings:
+    return ProvisionerSettings(
+        home_assistant_url="http://home-assistant.test:8123",
+        client_id="https://home.test/",
+        redirect_uri="https://home.test/",
+        username="test-admin",
+        display_name="Test Administrator",
+        required_onboarding_steps=frozenset({"user", "core_config", "integration", "analytics"}),
+        http_config=HttpConfig(
+            server_host=["127.0.0.1"],
+            server_port=8124,
+            cors_allowed_origins=["https://cast.test"],
+            use_x_forwarded_for=True,
+            trusted_proxies=["127.0.0.1/32"],
+            login_attempts_threshold=-1,
+            ip_ban_enabled=True,
+            ssl_profile="modern",
+            use_x_frame_options=True,
+        ),
+        components=(
+            ComponentConfig(
+                version="2.2.1",
+                url="https://example.test/component.zip",
+                sha256="0" * 64,
+                archive_path="*/custom_components/example",
+                install_dir="example",
+                manifest_domain="example",
+            ),
+            ComponentConfig(
+                version="1.1.1",
+                url="https://example.test/root-component.zip",
+                sha256="0" * 64,
+                archive_path=".",
+                install_dir="root_component",
+                manifest_domain=None,
+                config_files=("automations.yaml", "scripts.yaml", "scenes.yaml"),
+            ),
+        ),
+        onboarding_enabled=True,
+    )
 
 
 def http_error(path: str, code: HTTPStatus) -> error.HTTPError:
@@ -18,7 +62,7 @@ def disable_http_configuration(monkeypatch):
     monkeypatch.setattr(provision, "configure_http", fake_configure_http)
 
 
-async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
+async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[tuple[str, dict[str, object] | None, str | None, bool]] = []
 
@@ -37,7 +81,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch)
         return {}
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(TEST_SETTINGS, "secret-password")
+    await provision.provision(provisioner_settings, "secret-password")
 
     assert calls == [
         ("/api/", None, None, False),
@@ -45,10 +89,10 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch)
         (
             "/api/onboarding/users",
             {
-                "name": TEST_SETTINGS.display_name,
-                "username": TEST_SETTINGS.username,
+                "name": provisioner_settings.display_name,
+                "username": provisioner_settings.username,
                 "password": "secret-password",
-                "client_id": TEST_SETTINGS.client_id,
+                "client_id": provisioner_settings.client_id,
                 "language": "en",
             },
             None,
@@ -56,14 +100,14 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch)
         ),
         (
             "/auth/token",
-            {"grant_type": "authorization_code", "code": "owner-code", "client_id": TEST_SETTINGS.client_id},
+            {"grant_type": "authorization_code", "code": "owner-code", "client_id": provisioner_settings.client_id},
             None,
             True,
         ),
         ("/api/onboarding/core_config", {}, "bootstrap-token", False),
         (
             "/api/onboarding/integration",
-            {"client_id": TEST_SETTINGS.client_id, "redirect_uri": TEST_SETTINGS.redirect_uri},
+            {"client_id": provisioner_settings.client_id, "redirect_uri": provisioner_settings.redirect_uri},
             "bootstrap-token",
             False,
         ),
@@ -71,7 +115,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch)
     ]
 
 
-async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
+async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
@@ -97,7 +141,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
         return {}
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(TEST_SETTINGS, "secret-password")
+    await provision.provision(provisioner_settings, "secret-password")
 
     assert calls == [
         "/api/",
@@ -110,7 +154,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
     ]
 
 
-async def test_completed_onboarding_converges_http_configuration(monkeypatch):
+async def test_completed_onboarding_converges_http_configuration(monkeypatch, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
@@ -131,12 +175,12 @@ async def test_completed_onboarding_converges_http_configuration(monkeypatch):
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(TEST_SETTINGS, "secret-password")
+    await provision.provision(provisioner_settings, "secret-password")
 
     assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
 
 
-async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch):
+async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
@@ -160,7 +204,7 @@ async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatc
 
     monkeypatch.setattr(provision, "request_json", fake_request)
     monkeypatch.setattr(provision.time, "sleep", lambda _: None)
-    await provision.provision(TEST_SETTINGS, "secret-password")
+    await provision.provision(provisioner_settings, "secret-password")
 
     assert calls == [
         "/api/",
@@ -172,7 +216,7 @@ async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatc
     ]
 
 
-async def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
+async def test_completed_onboarding_steps_allow_future_additions(monkeypatch, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
@@ -183,7 +227,10 @@ async def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
         if path == "/api/":
             raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
-            return [{"step": step, "done": True} for step in [*TEST_SETTINGS.required_onboarding_steps, "future_step"]]
+            return [
+                {"step": step, "done": True}
+                for step in [*provisioner_settings.required_onboarding_steps, "future_step"]
+            ]
         if path == "/auth/login_flow":
             return {"flow_id": "login-flow"}
         if path == "/auth/login_flow/login-flow":
@@ -193,19 +240,19 @@ async def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(TEST_SETTINGS, "secret-password")
+    await provision.provision(provisioner_settings, "secret-password")
 
     assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
 
 
-async def test_configure_http_is_idempotent(monkeypatch):
+async def test_configure_http_is_idempotent(monkeypatch, provisioner_settings):
     calls: list[dict[str, object]] = []
 
     async def fake_websocket_command(settings, token: str, message: dict[str, object]) -> object:
         calls.append(message)
         return {
             "stable": {
-                **TEST_SETTINGS.http_config.model_dump(),
+                **provisioner_settings.http_config.model_dump(),
                 "created_at": "now",
                 "error": None,
                 "error_message": None,
@@ -216,12 +263,12 @@ async def test_configure_http_is_idempotent(monkeypatch):
 
     monkeypatch.setattr(provision, "websocket_command", fake_websocket_command)
 
-    await provision.configure_http(TEST_SETTINGS, "secret-password", "bootstrap-token")
+    await provision.configure_http(provisioner_settings, "secret-password", "bootstrap-token")
 
     assert calls == [{"id": 1, "type": "http/config"}]
 
 
-async def test_configure_http_restarts_and_promotes(monkeypatch):
+async def test_configure_http_restarts_and_promotes(monkeypatch, provisioner_settings):
     calls: list[tuple[str, dict[str, object]]] = []
 
     async def fake_websocket_command(settings, token: str, message: dict[str, object]) -> object:
@@ -239,13 +286,13 @@ async def test_configure_http_restarts_and_promotes(monkeypatch):
     monkeypatch.setattr(provision, "login", lambda settings, password: "refreshed-login-code")
     monkeypatch.setattr(provision, "exchange_token", lambda settings, auth_code: "refreshed-token")
 
-    await provision.configure_http(TEST_SETTINGS, "secret-password", "bootstrap-token")
+    await provision.configure_http(provisioner_settings, "secret-password", "bootstrap-token")
 
     assert calls == [
         ("bootstrap-token", {"id": 1, "type": "http/config"}),
         (
             "bootstrap-token",
-            {"id": 1, "type": "http/config/configure", "config": TEST_SETTINGS.http_config.model_dump()},
+            {"id": 1, "type": "http/config/configure", "config": provisioner_settings.http_config.model_dump()},
         ),
         ("refreshed-token", {"id": 1, "type": "http/config/promote"}),
     ]
