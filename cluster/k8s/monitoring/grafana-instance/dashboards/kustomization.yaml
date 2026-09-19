@@ -8,6 +8,7 @@ resources:
   - cilium-agent.yaml
   - etcd.yaml
   - gpu.yaml
+  - interface-flap-frequency.yaml
   - node-exporter-full.yaml
   - rugged-power.yaml
   - cluster-storage-io.yaml
@@ -25,6 +26,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-storage-io.json
+  - name: interface-flap-frequency-dashboard
+    namespace: monitoring
+    files:
+      - interface-flap-frequency.json
 
 configurations:
   - kustomizeconfig

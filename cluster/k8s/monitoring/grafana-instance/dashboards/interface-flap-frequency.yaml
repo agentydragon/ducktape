@@ -1,0 +1,17 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: interface-flap-frequency
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  datasources:
+    - inputName: DS_LOKI
+      datasourceName: Loki
+    - inputName: DS_PROMETHEUS
+      datasourceName: Mimir
+  configMapRef:
+    name: interface-flap-frequency-dashboard
+    key: interface-flap-frequency.json
