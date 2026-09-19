@@ -12,8 +12,10 @@ Ownership follows the authorization boundary:
 
 - The supplier owns the canonical Secret, an exact-name `get`-only Role, and a
   RoleBinding for each approved consumer ServiceAccount. These resources live
-  together in `external-creds`; per-credential grant manifests use a
-  `*-grants.yaml` suffix.
+  together in `external-creds`; all generated grants are collected in
+  `external-creds.k8s.yaml`. Their explicit authorization roster is
+  `cluster/cdk8s/external_creds_constructs.py`; regenerate with
+  `bb run //cluster/cdk8s:generate_manifests`.
 - `external-secrets-config` owns the shared `ClusterSecretStore`. Referent
   authentication resolves its `external-creds-reader` ServiceAccount in the
   consuming ExternalSecret's namespace; the store omits the ServiceAccount
@@ -33,12 +35,11 @@ the approved namespaces as defense in depth. The approved namespace remains the
 trust boundary: workloads or operators able to use its approved identity can
 receive the credential.
 
-Add a credential by creating one encrypted source Secret and its exact-name
-Role. Add a consumer in two coordinated changes: add its supplier-owned
-RoleBinding to the credential's grants manifest, then add the ServiceAccount,
-ExternalSecret, and namespace to the shared store's conditions. A namespace
-needs only one `external-creds-reader` ServiceAccount even when it receives
-multiple approved credentials.
+Add a credential by creating one encrypted source Secret and adding it to the
+authorization roster. Add a consumer by adding its explicit RoleBinding there,
+then add the ServiceAccount, ExternalSecret, and namespace to the shared store's
+conditions. A namespace needs only one `external-creds-reader` ServiceAccount
+even when it receives multiple approved credentials.
 
 When moving existing live resources between Flux Kustomizations, follow Flux's
 staged ownership-transfer procedure: disable pruning on the old owner, reconcile

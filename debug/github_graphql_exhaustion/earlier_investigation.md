@@ -1072,8 +1072,9 @@ destinations as raw IPs — not the host namespace leaking into view.
 
 ## Rotating the personal PAT: the measured blast radius
 
-`cluster/k8s/external-creds/github-agentydragon-grants.yaml` binds one consumer
-ServiceAccount per namespace, so the in-cluster consumers of the personal PAT are exactly:
+The personal PAT grant is now in
+`cluster/k8s/external-creds/external-creds.k8s.yaml`; it binds one consumer ServiceAccount
+per namespace, so the in-cluster consumers of the personal PAT are exactly:
 
 | Namespace      | Workloads                                                                          |
 | -------------- | ---------------------------------------------------------------------------------- |

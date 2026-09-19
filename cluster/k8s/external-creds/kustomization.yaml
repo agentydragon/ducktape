@@ -1,18 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - external-creds.k8s.yaml
   - analysis-ai.sops.yaml
   - anthropic-haku.sops.yaml
-  - anthropic-haku-grants.yaml
   - gemini.sops.yaml
-  - gemini-grants.yaml
   - github-agentydragon-agent.sops.yaml
-  - github-agentydragon-agent-grants.yaml
   - github-agentydragon-2.sops.yaml
-  - github-agentydragon-2-grants.yaml
   - github-agentydragon.sops.yaml
-  - github-agentydragon-grants.yaml
   - groq.sops.yaml
-  - groq-grants.yaml
   - mistral.sops.yaml
-  - mistral-grants.yaml

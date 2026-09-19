@@ -1,0 +1,374 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-anthropic-haku-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - llm-anthropic-haku
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-flux-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-gemini-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - llm-gemini
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-gemini-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-gemini-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - github-agentydragon-agent
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-egress-proxy-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: haku-egress-proxy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-console-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-monitoring-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-agentplane-egress-credentials-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-egress-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-2-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - github-agentydragon-2
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-2-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-2-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-2-agents-infra-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-2-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agents-infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-2-nix-cache-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-2-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: nix-cache
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-2-monitoring-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-2-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - github-agentydragon
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agents-infra-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agents-infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-nix-cache-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: nix-cache
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-monitoring-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-groq-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - llm-groq
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-groq-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-groq-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-mistral-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - llm-mistral
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-mistral-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-mistral-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
