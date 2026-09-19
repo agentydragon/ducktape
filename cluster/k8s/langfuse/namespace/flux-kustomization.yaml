@@ -4,12 +4,11 @@ metadata:
   name: langfuse-namespace
   namespace: ducktape-flux
 spec:
-  suspend: false
   interval: 10m
   path: ./cluster/k8s/langfuse/namespace
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: langfuse-namespace
-
     namespace: ducktape-flux
+  suspend: false

@@ -4,24 +4,21 @@ metadata:
   name: seaweedfs-langfuse-bucket
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/seaweedfs/langfuse-bucket
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-langfuse-bucket
-    namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-  # The Bucket and S3Credentials moved to the Langfuse Kustomization and were
-  # live-verified there. Keep this small Kustomization for the cluster-global
-  # S3Identity that the namespaced S3Credentials references.
-  wait: true
-  timeout: 5m
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: S3Identity
       name: langfuse
       namespace: seaweedfs
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/langfuse-bucket
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-langfuse-bucket
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

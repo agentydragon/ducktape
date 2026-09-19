@@ -6,13 +6,13 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
   interval: 10m
-  retryInterval: 1m
-  timeout: 5m
   path: ./cluster/k8s/parked/browsertrix/retained
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: browsertrix-retained
     namespace: ducktape-flux
+  suspend: true
+  timeout: 5m

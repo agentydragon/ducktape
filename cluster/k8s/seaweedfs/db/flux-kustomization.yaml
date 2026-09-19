@@ -4,18 +4,6 @@ metadata:
   name: seaweedfs-filer-db
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-filer-db
-    namespace: ducktape-flux
-  path: ./cluster/k8s/seaweedfs/db
-  prune: true
-  wait: true
-  # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
-  # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
   decryption:
     provider: sops
     secretRef:
@@ -25,3 +13,13 @@ spec:
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/db
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-filer-db
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

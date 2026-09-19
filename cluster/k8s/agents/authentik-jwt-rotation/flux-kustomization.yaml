@@ -4,15 +4,6 @@ metadata:
   name: authentik-jwt-rotation
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/agents/authentik-jwt-rotation
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: authentik-jwt-rotation
-
-    namespace: ducktape-flux
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
@@ -27,4 +18,12 @@ spec:
       kind: ExternalSecret
       name: github-secrets-sync-pat
       namespace: agents-infra
+  interval: 10m
+  path: ./cluster/k8s/agents/authentik-jwt-rotation
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: authentik-jwt-rotation
+    namespace: ducktape-flux
   timeout: 2m

@@ -4,21 +4,6 @@ metadata:
   name: langfuse
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/langfuse/app
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-app
-    namespace: ducktape-flux
-  timeout: 20m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: langfuse
-      namespace: langfuse
   dependsOn:
     - name: langfuse-namespace
       namespace: ducktape-flux
@@ -36,3 +21,18 @@ spec:
       namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: langfuse
+      namespace: langfuse
+  interval: 10m
+  path: ./cluster/k8s/langfuse/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: langfuse-app
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 20m

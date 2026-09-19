@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 1h
   path: ./cluster/k8s/authentik/namespace
-  prune: false # Don't delete namespace on kustomization removal
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: authentik-namespace

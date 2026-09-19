@@ -4,34 +4,34 @@ metadata:
   name: snapshot-controller
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: external-snapshotter-source
-    namespace: ducktape-flux
-  path: ./deploy/kubernetes/snapshot-controller
-  prune: true
-  wait: true
-  timeout: 5m
   dependsOn:
     - name: snapshot-controller-crds
       namespace: ducktape-flux
-  images:
-    - name: registry.k8s.io/sig-storage/snapshot-controller
-      newTag: v8.6.0
-  patches:
-    - target:
-        kind: Deployment
-        name: snapshot-controller
-        namespace: kube-system
-      patch: |-
-        - op: add
-          path: /spec/template/spec/nodeSelector
-          value:
-            topology.kubernetes.io/zone: hil-ovh
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: snapshot-controller
       namespace: kube-system
+  images:
+    - name: registry.k8s.io/sig-storage/snapshot-controller
+      newTag: v8.6.0
+  interval: 10m
+  patches:
+    - patch: |-
+        - op: add
+          path: /spec/template/spec/nodeSelector
+          value:
+            topology.kubernetes.io/zone: hil-ovh
+      target:
+        kind: Deployment
+        name: snapshot-controller
+        namespace: kube-system
+  path: ./deploy/kubernetes/snapshot-controller
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: external-snapshotter-source
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

@@ -4,24 +4,23 @@ metadata:
   name: nvidia-device-plugin
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: nvidia-device-plugin
-
-    namespace: ducktape-flux
-  path: "./cluster/k8s/nvidia-device-plugin"
-  prune: true
-  wait: true
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: nvidia
-      namespace: nvidia-device-plugin
   dependsOn:
     - name: nvidia-runtimeclass
       namespace: ducktape-flux
     - name: node-feature-discovery
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: nvidia
+      namespace: nvidia-device-plugin
+  interval: 10m
+  path: ./cluster/k8s/nvidia-device-plugin
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: nvidia-device-plugin
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

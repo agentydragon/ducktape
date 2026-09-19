@@ -4,20 +4,6 @@ metadata:
   name: agent-machine-access-tf
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/agents/machine-access-tf
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: agent-machine-access-tf
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: agent-machine-access
-      namespace: flux-system
-  timeout: 10m
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -25,3 +11,17 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: agent-machine-access
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/agents/machine-access-tf
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agent-machine-access-tf
+    namespace: ducktape-flux
+  timeout: 10m

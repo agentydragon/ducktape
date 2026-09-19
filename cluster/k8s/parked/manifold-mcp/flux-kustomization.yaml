@@ -6,26 +6,10 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: manifold-mcp
-    namespace: ducktape-flux
-  path: ./cluster/k8s/parked/manifold-mcp
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: manifold-mcp
-      namespace: manifold-mcp
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -39,5 +23,21 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: monitoring-crds # the ServiceMonitor CRD
+    - name: monitoring-crds
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: manifold-mcp
+      namespace: manifold-mcp
+  interval: 10m
+  path: ./cluster/k8s/parked/manifold-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: manifold-mcp
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

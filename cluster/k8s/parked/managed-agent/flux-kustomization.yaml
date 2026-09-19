@@ -6,38 +6,38 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  path: ./cluster/k8s/parked/managed-agent
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-managed-agent
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: haku-managed-agent
-      namespace: haku-sandbox
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: agent-shared-secrets # provides ankiweb-credentials in claude-sandbox
+    - name: agent-shared-secrets
       namespace: ducktape-flux
-    - name: external-secrets-config # provides the claude-sandbox SecretStore
+    - name: external-secrets-config
       namespace: ducktape-flux
     - name: haku-namespace
       namespace: ducktape-flux
     - name: haku-rbac
       namespace: ducktape-flux
-    - name: haku-state # provides the haku-forgejo-git secret in haku-sandbox
+    - name: haku-state
       namespace: ducktape-flux
-    - name: haku-egress-proxy # injects the egress proxy + CA the worker imports
+    - name: haku-egress-proxy
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: haku-managed-agent
+      namespace: haku-sandbox
+  interval: 10m
+  path: ./cluster/k8s/parked/managed-agent
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-managed-agent
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

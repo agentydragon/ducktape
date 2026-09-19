@@ -4,18 +4,10 @@ metadata:
   name: forgejo-token-rotation
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/agents/forgejo-token-rotation
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-token-rotation
-
-    namespace: ducktape-flux
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: authentik-jwt-rotation # owns the agents-infra namespace
+    - name: authentik-jwt-rotation
       namespace: ducktape-flux
     - name: forgejo-claude
       namespace: ducktape-flux
@@ -23,4 +15,11 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-agentydragon-repos
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agents/forgejo-token-rotation
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-token-rotation
+    namespace: ducktape-flux
   timeout: 2m

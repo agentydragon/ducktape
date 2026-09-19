@@ -4,18 +4,17 @@ metadata:
   name: proxmox-proxy
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: proxmox-proxy
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/proxmox-proxy
-  prune: true
-  wait: true
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/proxmox-proxy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: proxmox-proxy
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 5m
+  wait: true
