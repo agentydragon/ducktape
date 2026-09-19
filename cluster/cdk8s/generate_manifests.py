@@ -22,6 +22,7 @@ from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
+from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -52,6 +53,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    local_path_provisioner_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 
