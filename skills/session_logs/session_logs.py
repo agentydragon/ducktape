@@ -16,11 +16,7 @@ from typing import Any
 HARNESS_NAMES = ("claude", "codex")
 MAX_REPORTED_PARSE_ISSUES = 20
 CODEX_HARNESS_INSERTION_KINDS = frozenset(
-    {
-        "agents_md.instructions",
-        "environments.environment_context",
-        "skills.selected_skill_instructions",
-    }
+    {"agents_md.instructions", "environments.environment_context", "skills.selected_skill_instructions"}
 )
 
 
@@ -208,11 +204,7 @@ def _codex_content(entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [part for part in content if isinstance(part, dict)] if isinstance(content, list) else []
 
 
-def _codex_user_text(
-    entry: Mapping[str, Any],
-    *,
-    strip_kinds: frozenset[str] = CODEX_HARNESS_INSERTION_KINDS,
-) -> str:
+def _codex_user_text(entry: Mapping[str, Any], *, strip_kinds: frozenset[str] = CODEX_HARNESS_INSERTION_KINDS) -> str:
     payload = entry.get("payload")
     metadata = payload.get("internal_chat_message_metadata_passthrough") if isinstance(payload, dict) else None
     kinds = metadata.get("content_item_kinds") if isinstance(metadata, dict) else None
@@ -500,11 +492,7 @@ def main_conversation() -> int:
             recent.append((_timestamp(entry), assistant_text(entry, harness)))
             del recent[:-2]
         elif is_user(entry, harness):
-            text = (
-                _codex_user_text(entry, strip_kinds=strip_kinds)
-                if harness == "codex"
-                else user_text(entry, harness)
-            )
+            text = _codex_user_text(entry, strip_kinds=strip_kinds) if harness == "codex" else user_text(entry, harness)
             if not text.strip():
                 continue
             user_count += 1
