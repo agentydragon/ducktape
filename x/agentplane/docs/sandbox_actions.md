@@ -25,8 +25,9 @@ authenticated admission path sets. It is never a tool argument. A surface accept
 
 The Action Service's own ServiceAccount holds Sandbox CRUD and `pods/exec` in the sandbox
 namespace, and exec runs in the Action Service process. `timeout_seconds` and `max_output_bytes`
-ceilings keep a long build from streaming unbounded output into that Pod; the execution lease
-renews across a long call.
+ceilings keep a long build from streaming unbounded output into that Pod, and the command's own
+ceiling is the only bound on how long it runs: the executor renews the execution lease underneath
+it, so a call lasting minutes is ordinary rather than an attempt the sweep reclaims.
 
 ## One ServiceAccount per caller, not per sandbox
 
@@ -111,9 +112,9 @@ than it did: `ReconcilerError` with an exceeded-quota message, `DependenciesNotR
 `Pod exists with phase: Pending`, and `Suspended` are three different answers to "why is this box
 not ready", and only the controller's own `reason` distinguishes them.
 
-**`create` does not wait for readiness.** The Action Service's execution lease is shorter than a
-cold start, so an Action that waited reported an unknown outcome for boxes that were merely queued
-behind a quota.
+**`create` does not wait for readiness.** A box can stay unready indefinitely -- queued behind a
+quota, or stopped on a `ReconcilerError` -- so a waiting `create` would spend its whole timeout to
+report a deadline, where `info` reports the controller's own reason for it.
 
 Shapes follow <../../../haku/console/tools/sandbox.py>, the surface already in daily use: one
 bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into

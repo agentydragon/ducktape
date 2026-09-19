@@ -1064,6 +1064,7 @@ py_library(
     deps = [
         ":catalog",
         ":models",
+        ":service",
         "//mcp_infra/exec:kubernetes",
         "//x/agentplane:subjects",
         "//x/agentplane/sandbox_actions:binding",
@@ -1081,6 +1082,7 @@ py_test(
         ":conftest",
         ":models",
         ":sandbox_executor",
+        ":service",
         "//:conftest",
         "//mcp_infra/exec:kubernetes",
         "//mcp_infra/exec:models",

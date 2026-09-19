@@ -7,6 +7,7 @@ its to answer -- and the Kubernetes wire is the inventory's own.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
@@ -20,6 +21,7 @@ from mcp_infra.exec.models import Exited
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
 from x.agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
+from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
 from x.agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
@@ -46,12 +48,21 @@ def _ready() -> SandboxCondition:
     return SandboxCondition(type=READY_CONDITION, status="True", reason="DependenciesReady", message="Pod is Ready")
 
 
+def _released() -> asyncio.Event:
+    """Commands return immediately unless a test holds one open to watch the lease under it."""
+    event = asyncio.Event()
+    event.set()
+    return event
+
+
 @dataclass
 class FakeInventory:
     """Records who asked for what; every call carries the caller the executor resolved."""
 
     callers: list[ServiceAccountRef] = field(default_factory=list)
     raises: Exception | None = None
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    release: asyncio.Event = field(default_factory=_released)
 
     def environment(self, name: str | None) -> tuple[str, SandboxEnvironment]:
         key = name or BINDING.default_environment
@@ -83,6 +94,8 @@ class FakeInventory:
 
     async def execute(self, caller: ServiceAccountRef, name: str, **kwargs: object) -> CommandResult:
         self._record(caller)
+        self.started.set()
+        await self.release.wait()
         return CommandResult(exit=Exited(exit_code=3), stdout="out", stderr="err", duration_seconds=0.5)
 
 
@@ -98,16 +111,32 @@ def _request(action: str, arguments: dict[str, JsonValue], caller: ServiceAccoun
 
 
 class _Lease:
-    """The executor never renews -- nothing it does outlives one call -- so this only satisfies the
-    protocol. A lease that refused would prove nothing here."""
+    """A renewal window far shorter than the command, so an attempt that stopped renewing would
+    lapse here exactly as it lapses in Postgres."""
 
-    renewal_interval = timedelta(seconds=1)
+    renewal_interval = timedelta(milliseconds=1)
+
+    def __init__(self) -> None:
+        self.owned = True
+        self.renewals = 0
+        self.renewed_past_window = asyncio.Event()
 
     async def heartbeat(self) -> bool:
-        return True
+        self.renewals += 1
+        # Past the first window, which is the point a non-renewing executor is swept at.
+        if self.renewals >= 3:
+            self.renewed_past_window.set()
+        return self.owned
 
 
 LEASE: ExecutionLease = _Lease()
+
+EXEC_ARGS: dict[str, JsonValue] = {
+    "name": "box",
+    "script": "git clone http://git.test.invalid/deep-history",
+    "timeout_seconds": 600,
+    "max_output_bytes": 1000,
+}
 
 
 @pytest.fixture
@@ -156,12 +185,7 @@ async def test_a_caller_from_another_namespace_is_refused(executor: SandboxExecu
 async def test_a_nonzero_exit_is_a_result(executor: SandboxExecutor) -> None:
     """A command that ran and failed is an answer, not a failed Execution: the Action did what it
     was asked. Only the Action being unable to run at all is a failure."""
-    result = await executor.execute(
-        _request(
-            SandboxAction.EXEC, {"name": "box", "script": "false", "timeout_seconds": 5, "max_output_bytes": 1000}
-        ),
-        LEASE,
-    )
+    result = await executor.execute(_request(SandboxAction.EXEC, {**EXEC_ARGS, "script": "false"}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.result == {
         "exit": {"kind": "exited", "exit_code": 3},
@@ -169,6 +193,36 @@ async def test_a_nonzero_exit_is_a_result(executor: SandboxExecutor) -> None:
         "stderr": "err",
         "duration_seconds": 0.5,
     }
+
+
+async def test_a_command_outliving_one_lease_window_keeps_it_renewed(
+    executor: SandboxExecutor, inventory: FakeInventory
+) -> None:
+    """A clone deep enough to take minutes is an ordinary command here. Without renewal the sweep
+    marks the attempt `execution_unknown` while the script is still running, so the caller is told
+    the outcome is unknowable for a command that went on to succeed."""
+    inventory.release.clear()
+    lease = _Lease()
+    running = asyncio.create_task(executor.execute(_request(SandboxAction.EXEC, EXEC_ARGS), lease))
+    async with asyncio.timeout(5):
+        await lease.renewed_past_window.wait()
+        inventory.release.set()
+        result = await running
+    assert result.state is ExecutionState.SUCCEEDED
+
+
+async def test_a_lease_lost_mid_command_stops_the_wait(executor: SandboxExecutor, inventory: FakeInventory) -> None:
+    """The script keeps running in the Pod, so its outcome is no longer this executor's to report:
+    an unknown outcome the service records as such, never a result and never a replay."""
+    inventory.release.clear()
+    lease = _Lease()
+    running = asyncio.create_task(executor.execute(_request(SandboxAction.EXEC, EXEC_ARGS), lease))
+    async with asyncio.timeout(5):
+        await inventory.started.wait()
+        lease.owned = False
+        with pytest.raises(ExecutionOutcomeUnknownError, match="lease"):
+            await running
+    assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
 
 
 @pytest.mark.parametrize(

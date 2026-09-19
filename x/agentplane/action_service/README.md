@@ -488,6 +488,8 @@ SSE); this time counts against the 20-second execution drain. Forced cancellatio
 5 seconds to record unknown outcomes. Both deployed environments allow 60 seconds for termination,
 leaving a margin for transport/database cleanup. No preStop delay consumes that budget.
 
-MCP renewals run every third of the granted lease duration, with each renewal RPC bounded by the
-same interval. The entire execution exchange has a 10-minute deadline. Cancellation joins the
-local exchange and renewal tasks; it cannot establish that a remote effect was cancelled.
+Execution renewals run every third of the granted lease duration, with each renewal RPC bounded by
+the same interval, so a call outlasts its lease window rather than being swept from under it. The
+entire MCP execution exchange has a 10-minute deadline; a sandbox command is bounded by the
+`timeout_seconds` it was submitted with. Cancellation joins the local exchange and renewal tasks;
+it cannot establish that a remote effect was cancelled.

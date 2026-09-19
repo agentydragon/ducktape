@@ -28,6 +28,7 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Executor,
 )
+from x.agentplane.action_service.service import hold_lease
 from x.agentplane.sandbox_actions.binding import SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from x.agentplane.sandbox_actions.models import (
@@ -129,7 +130,12 @@ class SandboxExecutor(Executor):
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         """One dispatch. A refusal the caller can act on is a failed Execution with a reason; only
-        an outcome this cannot characterise is allowed to propagate."""
+        an outcome this cannot characterise is allowed to propagate.
+
+        The bound `hold_lease` requires is the one the command already carries: `timeout_seconds`
+        stops the script in the Pod and the exec itself a little after that, so renewing here can
+        outlast a lease window -- a clone of a large repository does -- but never run unbounded.
+        """
         caller = request.caller
         if caller.namespace != self._binding.namespace:
             # A Pod can only run as a ServiceAccount in its own namespace, so a caller from anywhere
@@ -141,7 +147,7 @@ class SandboxExecutor(Executor):
                 f"{self._binding.namespace!r}; {caller.namespace!r} cannot be given one",
             )
         try:
-            return await self._dispatch(request.action.name, caller, request.arguments)
+            return await hold_lease(lease, self._dispatch(request.action.name, caller, request.arguments))
         except ForeignSandboxError as error:
             return _failed("sandbox_not_yours", str(error))
         except SandboxActionError as error:
