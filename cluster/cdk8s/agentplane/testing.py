@@ -4,7 +4,7 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
-from cdk8s import Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 
 from cluster.cdk8s import cilium
@@ -16,6 +16,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     OAUTH_FIXTURE_PORT,
     add_testing_fixtures,
 )
+from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
     ActionsProps,
@@ -94,11 +95,6 @@ _ACTIONS_SETTINGS = {
 }
 
 
-def _extra(chart: Chart) -> None:
-    add_testing_fixtures(chart)
-    dex_constructs.Dex(chart, "dex")
-
-
 ENV = Environment(
     namespace=_NAMESPACE,
     description=(
@@ -132,5 +128,11 @@ ENV = Environment(
             cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
-    extra=_extra,
 )
+
+
+def chart(app: App) -> Chart:
+    chart = environment_chart(app, ENV)
+    add_testing_fixtures(chart)
+    dex_constructs.Dex(chart, "dex")
+    return chart

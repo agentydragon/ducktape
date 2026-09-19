@@ -356,7 +356,6 @@ py_library(
         ":public_coder_agent_config",
         ":stateful_infra",
         ":terraform_constructs",
-        "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",

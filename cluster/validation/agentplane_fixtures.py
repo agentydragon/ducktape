@@ -18,7 +18,6 @@ import pytest
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.agentplane import staging, testing
-from cluster.cdk8s.agentplane.chart import environment_chart
 
 
 @pytest.fixture(scope="session")
@@ -29,6 +28,6 @@ def agentplane_manifests() -> dict[str, list[dict[str, Any]]]:
     through git.
     """
     return {
-        env.namespace: cast(list[dict[str, Any]], Cdk8sTesting.synth(environment_chart(Cdk8sTesting.app(), env)))
-        for env in (staging.ENV, testing.ENV)
+        staging.ENV.namespace: cast(list[dict[str, Any]], Cdk8sTesting.synth(staging.chart(Cdk8sTesting.app()))),
+        testing.ENV.namespace: cast(list[dict[str, Any]], Cdk8sTesting.synth(testing.chart(Cdk8sTesting.app()))),
     }

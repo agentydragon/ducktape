@@ -11,12 +11,17 @@ Model with constructs, deploy with one props object per environment.
   `agentplane/staging.py` and `agentplane/testing.py` each hold one frozen instance).
   Every construct takes the whole environment and reads what it needs
   (`env.namespace`, `env.replicas.count`, `env.egress.ca_secret_name`), so a value two
-  constructs share is written once. Environment-only objects are a callable on the
-  props (`extra`), never `if env.namespace == ...` inside a construct.
-- **One chart function composes the environment** (`agentplane/chart.py`'s
-  `environment_chart(app, env)`), shared by `generate_manifests.py` (synth and write)
-  and the test fixtures (`Testing.synth` in memory). The entry point holds no
-  environment data.
+  constructs share is written once. The props object holds data only — never a callable
+  field for "and also build this".
+- **One chart function per environment** (`agentplane/staging.py`'s and `testing.py`'s
+  `chart(app)`), shared by `generate_manifests.py` (synth and write) and the test
+  fixtures (`Testing.synth` in memory). It calls the shared `agentplane/chart.py`'s
+  `environment_chart(app, env)` and adds its environment-only objects to the chart that
+  returns — never `if env.namespace == ...` inside a construct, and never a hook the
+  shared function calls back into. Objects added after it returns are still checked:
+  `add_fleet_rules` registers a synth-time validation rather than reading the chart when
+  called. `haku/charts.py`'s per-directory `*_chart(app)` is the same shape. The entry
+  point holds no environment data.
 - **References, not names.** `Service(selector=deployment)`,
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports

@@ -6,10 +6,10 @@ written once.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from cdk8s import Chart, Duration
+from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
@@ -118,5 +118,3 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
-    # Environment-only objects added to the chart after the shared ones.
-    extra: Callable[[Chart], None]

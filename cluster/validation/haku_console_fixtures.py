@@ -10,7 +10,7 @@ from typing import Any, cast
 import pytest
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s.haku.charts import CONSOLE, chart
+from cluster.cdk8s.haku.charts import console_chart
 
 
 @pytest.fixture(scope="session")
@@ -18,4 +18,4 @@ def haku_console_objects() -> list[dict[str, Any]]:
     """The `haku-console` Kustomization's chart (the console, its static shell and the
     Kubernetes API proxy), synthesized in memory -- the same objects `generate_manifests()`
     writes to `haku-console.k8s.yaml`."""
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart(Cdk8sTesting.app(), CONSOLE)))
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(console_chart(Cdk8sTesting.app())))
