@@ -205,8 +205,8 @@ class SandboxInventory:
     async def _await_ready(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         """Poll until the box is usable or the budget runs out; a timeout is reported, not raised.
 
-        `provisioning` is a truthful answer an agent can poll on, where an exception would lose the
-        sandbox it just created.
+        Not-ready with the controller's reason is a truthful answer an agent can poll on, where an
+        exception would lose the sandbox it just created.
         """
         deadline = datetime.now(UTC).timestamp() + self._binding.provisioning_timeout_seconds
         while True:

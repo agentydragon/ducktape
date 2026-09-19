@@ -31,6 +31,7 @@ from x.agentplane.sandbox_actions.models import (
     NoArgs,
     ProvisionArgs,
     SandboxList,
+    SandboxState,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -72,8 +73,9 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
             description=(
                 "Create or reach a sandbox that runs as your own ServiceAccount, and wait for it to "
                 f"come up. Idempotent on the name. Environments — {offered}. Defaults to "
-                f"{binding.default_environment!r}. May return state=provisioning if the box is slow; "
-                f"poll {SandboxAction.INFO} rather than provisioning again."
+                f"{binding.default_environment!r}. May return state={SandboxState.NOT_READY} with the "
+                f"controller's reason if the box is slow; poll {SandboxAction.INFO} rather than "
+                "provisioning again."
             ),
             input_schema=_schema(ProvisionArgs),
         ),
@@ -90,7 +92,7 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
             input_schema=_schema(NoArgs),
         ),
         SandboxAction.INFO: ActionDefinition(
-            description="Inspect one sandbox of yours without changing it; use it to poll provisioning.",
+            description="Inspect one sandbox of yours without changing it; use it to poll a box that is not ready yet.",
             input_schema=_schema(NameArgs),
         ),
         SandboxAction.DISPOSE: ActionDefinition(
