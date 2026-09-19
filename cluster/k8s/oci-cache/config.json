@@ -25,6 +25,21 @@
       "delay": "24h",
       "policies": [
         {
+          "repositories": ["talos-factory/**"],
+          "deleteUntagged": true,
+          "keepTags": [
+            {
+              "patterns": [".*"],
+              "pushedWithin": "720h",
+              "mostRecentlyPushedCount": 20
+            }
+          ],
+          "keepUntagged": {
+            "pushedWithin": "720h",
+            "mostRecentlyPushedCount": 100
+          }
+        },
+        {
           "repositories": ["**"],
           "deleteUntagged": true,
           "keepTags": [

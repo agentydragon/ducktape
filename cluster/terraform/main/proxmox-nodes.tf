@@ -6,6 +6,10 @@
 
 # Shared schematic with just extensions (network config via cloud-init snippets)
 resource "talos_image_factory_schematic" "proxmox" {
+  lifecycle {
+    replace_triggered_by = [terraform_data.talos_image_factory_endpoint]
+  }
+
   schematic = yamlencode({
     customization = {
       extraKernelArgs = ["net.ifnames=0", "console=ttyS0,115200"]
@@ -36,7 +40,7 @@ resource "proxmox_virtual_environment_download_file" "talos_disk" {
   datastore_id = "local" # dir storage, configured via ansible for images content
   node_name    = var.proxmox_node_name
   # Replace any .raw.xz or .raw.zst extension with .qcow2 for Proxmox import
-  url       = replace(replace(data.talos_image_factory_urls.proxmox.urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
+  url       = replace(replace(replace(data.talos_image_factory_urls.proxmox.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url), ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
   file_name = "talos-${talos_image_factory_schematic.proxmox.id}-amd64.qcow2"
   overwrite = true
 }

@@ -54,7 +54,21 @@ provider "helm" {
   }
 }
 
-provider "talos" {}
+locals {
+  talos_image_factory_public_url = "https://talos-image-factory.allegedly.works"
+  talos_image_factory_registry   = "talos-image-factory.allegedly.works"
+}
+
+# The schematic provider resource has no-op Read/Delete methods. Replacing it
+# when the endpoint changes registers the existing deterministic schematic IDs
+# with the new Factory without changing their content.
+resource "terraform_data" "talos_image_factory_endpoint" {
+  input = local.talos_image_factory_public_url
+}
+
+provider "talos" {
+  image_factory_url = var.talos_image_factory_api_url
+}
 
 data "sops_file" "ovh_credentials" {
   source_file = "${path.module}/../../../secrets/ovh-credentials.sops.yaml"

@@ -78,6 +78,62 @@ even when all pods are Ready.
 
 ## 2. Prepare only the target's Terraform machine configuration
 
+### One-time self-hosted Image Factory cutover
+
+Before the first node roll using the self-hosted Factory, wait for the
+`oci-cache` Flux Kustomization and `talos-image-factory` Deployment to be Ready.
+Verify the public read endpoint and that public writes are denied:
+
+```bash
+kubectl -n ducktape-flux get kustomization oci-cache
+kubectl -n oci-cache get deployment talos-image-factory
+curl -fsS https://talos-image-factory.allegedly.works/versions
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -X POST -H 'Content-Type: application/yaml' --data '{}' \
+  https://talos-image-factory.allegedly.works/schematics
+```
+
+The public POST must be denied. The first Terraform plan against the new Factory
+must re-register the existing deterministic schematic IDs; the Talos provider's
+schematic resource has a no-op `Read`, so it cannot discover missing server-side
+schematics. Use the private write path for this one-time migration, keeping the
+port-forward running in one terminal through both plan and apply:
+
+```bash
+kubectl -n oci-cache port-forward svc/talos-image-factory 8080:8080
+```
+
+In another terminal, create and review the saved plan:
+
+```bash
+TF_VAR_talos_image_factory_api_url=http://127.0.0.1:8080 \
+  bb run @multitool//tools/tofu:tofu -- \
+  -chdir=cluster/terraform/main plan \
+  -target=terraform_data.talos_image_factory_endpoint \
+  -target=talos_image_factory_schematic.kimsufi \
+  -target=talos_image_factory_schematic.proxmox \
+  -out=/tmp/talos-factory-migration.tfplan
+bb run @multitool//tools/tofu:tofu -- \
+  -chdir=cluster/terraform/main show -no-color /tmp/talos-factory-migration.tfplan
+```
+
+Review that this plan only creates the endpoint marker and replaces the two
+schematic registrations, with each schematic ID unchanged. It must not include
+machine-configuration changes, node/server actions, or unrelated drift. Apply
+only the exact saved plan:
+
+```bash
+TF_VAR_talos_image_factory_api_url=http://127.0.0.1:8080 \
+  bb run @multitool//tools/tofu:tofu -- \
+  -chdir=cluster/terraform/main apply /tmp/talos-factory-migration.tfplan
+```
+
+Then verify both existing schematic IDs are readable from the Factory and that
+the current installer manifest resolves. Future node-specific plans use the
+public read endpoint by default and must still pass the image-only plan gate
+below. If a schematic is changed later, repeat this private port-forward
+procedure for the affected schematic resource.
+
 Set `talos_version` to the intended release and use the same version for every
 active machine role. Remove any temporary per-node version override once the
 fleet-wide version is being adopted. Keep unrelated pins (including
@@ -134,7 +190,7 @@ is resolvable:
 
 ```bash
 docker manifest inspect \
-  factory.talos.dev/installer/<fleet-schematic-id>:<talos-version>
+  talos-image-factory.allegedly.works/metal-installer/<fleet-schematic-id>:<talos-version>
 ```
 
 Do not infer registry availability from Terraform state alone: the
@@ -211,7 +267,7 @@ talosctl \
   --endpoints <node-nebula-ip> \
   --nodes <node-nebula-ip> \
   upgrade \
-  --image factory.talos.dev/installer/<fleet-schematic-id>:<talos-version> \
+  --image talos-image-factory.allegedly.works/metal-installer/<fleet-schematic-id>:<talos-version> \
   --drain=false \
   --wait
 ```

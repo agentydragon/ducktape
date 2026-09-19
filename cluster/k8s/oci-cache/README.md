@@ -7,17 +7,18 @@ allowlisting every registry CDN.
 
 ## Architecture
 
-| Concern           | Choice                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Registry          | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
-| Durable content   | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                                                                                                                                                                                                                                                                                               |
-| Dedupe index      | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                                                                                                                                                                                                                             |
-| Local state       | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                                                                                                                                                   |
-| Placement         | Zot is unpinned; Valkey is operator-managed on OVH HDD node-local storage (`local-path-ovh-hdd`). Valkey holds rebuildable cache metadata/dedupe state; losing it is acceptable, but expect brief cache misses and possible Zot restart/Valkey flush for stale metadb entries.                                                                                                                                              |
-| S3 credentials    | `registry-cache` Bucket and S3Credentials live in `oci-cache`; the operator generates `registry-cache-s3-credentials` there and Zot reads it as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                                                                                                 |
-| Metrics           | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
-| Internal exposure | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
-| Public exposure   | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
+| Concern             | Choice                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registry            | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
+| Durable content     | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                                                                                                                                                                                                                                                                                               |
+| Dedupe index        | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                                                                                                                                                                                                                             |
+| Local state         | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                                                                                                                                                   |
+| Placement           | Zot is unpinned; Valkey is operator-managed on OVH HDD node-local storage (`local-path-ovh-hdd`). Valkey holds rebuildable cache metadata/dedupe state; losing it is acceptable, but expect brief cache misses and possible Zot restart/Valkey flush for stale metadb entries.                                                                                                                                              |
+| S3 credentials      | `registry-cache` Bucket and S3Credentials live in `oci-cache`; the operator generates `registry-cache-s3-credentials` there and Zot reads it as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                                                                                                 |
+| Metrics             | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
+| Internal exposure   | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
+| Public exposure     | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
+| Talos Image Factory | Self-hosted at `https://talos-image-factory.allegedly.works`; core GHCR images use Zot's `/ghcr/` pull-through route, and Factory artifacts are stored in the same SeaweedFS-backed registry.                                                                                                                                                                                                                               |
 
 Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`); the endpoint
 is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-registry config:
@@ -61,6 +62,60 @@ everything else ages out and `gc` reclaims its blobs from S3. Tune `pulledWithin
 `mostRecentlyPulledCount` in `config.json` to your storage budget. Never add a
 SeaweedFS bucket-lifecycle rule under Zot — deleting blobs out from under the registry
 corrupts manifests.
+
+## Self-hosted Talos Image Factory
+
+Image Factory serves the Talos assets used by the cluster's Terraform configuration and
+node upgrades. Its core component/extension pulls use `oci-cache.oci-cache.svc/ghcr/`;
+schematics, installer images, and generated build-cache objects use dedicated Zot
+repositories under `talos-factory/`. These repositories have their own retention rule
+(30 days or the 20 most recently pushed tags, with a separate untagged-object allowance),
+not the pull-through cache's pull-recency rule. Older artifacts can be rebuilt; the node
+upgrade runbook still requires checking the exact installer manifest before draining.
+
+The Gateway exposes the Factory hostname publicly for artifact reads. Image Factory's
+[authentication configuration is Enterprise-only](https://github.com/siderolabs/image-factory/blob/main/docs/configuration.md#authentication),
+so Cilium's HTTP policy allows only `GET` and
+`HEAD` through the public Gateway. Writes, including schematic registration, are allowed
+only from the node-host path used by `kubectl port-forward`. Keep that boundary: public
+schematic writes or arbitrary installer builds could consume the shared SeaweedFS bucket.
+Public GETs can build assets only for schematics already registered by Terraform. The
+Factory limits concurrent builds to one and has bounded pod resources.
+
+When changing a Terraform schematic, start this port-forward in one terminal and leave it
+running for both plan and apply:
+
+```bash
+kubectl -n oci-cache port-forward svc/talos-image-factory 8080:8080
+```
+
+In another terminal, point the Talos provider at it with an environment override:
+
+```bash
+TF_VAR_talos_image_factory_api_url=http://127.0.0.1:8080 \
+  bb run @multitool//tools/tofu:tofu -- \
+  -chdir=cluster/terraform/main plan -out=/tmp/image-factory.tfplan
+```
+
+The provider re-registers existing schematic resources when the Factory endpoint changes
+(the provider's resource `Read` is a no-op). Terraform normalizes generated download URLs
+back to the public hostname, so machine configs and OVH/Proxmox downloads never point at
+the temporary localhost port-forward. For ordinary plans, the public endpoint is the
+provider default; GET/HEAD work publicly, while a schematic change requires the override.
+
+After the Factory Flux Kustomization is Ready, check its public read path and the write
+boundary before using it for a node roll:
+
+```bash
+curl -fsS https://talos-image-factory.allegedly.works/versions
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -X POST -H 'Content-Type: application/yaml' --data '{}' \
+  https://talos-image-factory.allegedly.works/schematics
+```
+
+The first request should return the supported Talos version list; the second should be
+denied by Cilium. Test schematic registration only through the port-forward and use the
+runbook's manifest check to prove that the actual installer is available.
 
 ## Node-level pull-through (not yet wired)
 

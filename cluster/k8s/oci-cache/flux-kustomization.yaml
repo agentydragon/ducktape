@@ -27,12 +27,19 @@ spec:
       kind: Deployment
       name: zot
       namespace: oci-cache
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: talos-image-factory
+      namespace: oci-cache
   dependsOn:
     # Namespace, app, and ServiceMonitor are managed together here.
     - name: valkey
       namespace: ducktape-flux
     # S3 backend: tenant-local Bucket and operator-generated credentials.
     - name: seaweedfs-registry-cache-bucket
+      namespace: ducktape-flux
+    # Public Factory endpoint is served by the shared Cilium Gateway.
+    - name: gateway
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux

@@ -5,6 +5,11 @@ resources:
   - namespace.yaml
   - valkey-instance.yaml
   - deployment.yaml
+  - image-factory-deployment.yaml
+  - image-factory-service.yaml
+  - image-factory-httproute.yaml
+  - image-factory-networkpolicy.yaml
+  - image-factory-servicemonitor.yaml
   - service.yaml
   - httproute.yaml
   - puller-credential.sops.yaml
@@ -16,6 +21,9 @@ configMapGenerator:
   - name: oci-cache-public-auth-proxy
     files:
       - public-auth-proxy.conf
+  - name: talos-image-factory-config
+    files:
+      - config.json=image-factory-config.json
 generatorOptions:
-  # Stable names; the Deployment's reloader annotation restarts Zot on config change.
+  # Stable names; workload reloader annotations restart Zot/Factory on config changes.
   disableNameSuffixHash: true

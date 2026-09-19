@@ -29,7 +29,7 @@ output "talos_config" {
 
 output "home_bare_metal_iso_url" {
   description = "Talos metal ISO shared by home bare-metal workers and OVH nodes"
-  value       = data.talos_image_factory_urls.kimsufi.urls.iso
+  value       = replace(data.talos_image_factory_urls.kimsufi.urls.iso, var.talos_image_factory_api_url, local.talos_image_factory_public_url)
 }
 
 output "optiplex_worker_machine_configuration" {

@@ -1,0 +1,64 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: talos-image-factory
+  namespace: oci-cache
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: talos-image-factory
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: "/.*"
+              - method: HEAD
+                path: "/.*"
+    # kubectl port-forward reaches the Pod from the node host identity. Keep the
+    # write-capable API available there, but not through the public Gateway.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "2122"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: oci-cache
+            app.kubernetes.io/name: zot
+      toPorts:
+        - ports:
+            # Cilium enforces on Zot's targetPort, not the Service port 80.
+            - port: "5000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

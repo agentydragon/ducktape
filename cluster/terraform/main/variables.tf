@@ -99,3 +99,14 @@ variable "kimsufi_service_name_sys1" {
   type        = string
   default     = "ns1001419.ip-51-81-245.us"
 }
+
+variable "talos_image_factory_api_url" {
+  description = "Talos Image Factory API URL; override with the local port-forward for schematic writes."
+  type        = string
+  default     = "https://talos-image-factory.allegedly.works"
+
+  validation {
+    condition     = can(regex("^https?://", var.talos_image_factory_api_url))
+    error_message = "talos_image_factory_api_url must be an HTTP(S) URL."
+  }
+}

@@ -1,0 +1,12 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: talos-image-factory
+  namespace: oci-cache
+spec:
+  endpoints:
+    - port: metrics
+      path: /metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-image-factory

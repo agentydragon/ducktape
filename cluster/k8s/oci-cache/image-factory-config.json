@@ -1,0 +1,41 @@
+{
+  "http": {
+    "externalURL": "https://talos-image-factory.allegedly.works",
+    "httpListenAddr": ":8080"
+  },
+  "build": {
+    "maxConcurrency": 1
+  },
+  "artifacts": {
+    "core": {
+      "registry": "oci-cache.oci-cache.svc",
+      "namespace": "ghcr",
+      "insecure": true
+    },
+    "schematic": {
+      "registry": "oci-cache.oci-cache.svc",
+      "namespace": "talos-factory",
+      "repository": "schematics",
+      "insecure": true
+    },
+    "installer": {
+      "internal": {
+        "registry": "oci-cache.oci-cache.svc",
+        "namespace": "talos-factory",
+        "repository": "installers",
+        "insecure": true
+      }
+    }
+  },
+  "cache": {
+    "oci": {
+      "registry": "oci-cache.oci-cache.svc",
+      "namespace": "talos-factory",
+      "repository": "cache",
+      "insecure": true
+    }
+  },
+  "metrics": {
+    "addr": ":2122"
+  }
+}

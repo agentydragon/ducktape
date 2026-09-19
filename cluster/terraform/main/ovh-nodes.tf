@@ -120,6 +120,10 @@ locals {
 # TALOS IMAGE FACTORY - Metal platform with Nebula extension
 
 resource "talos_image_factory_schematic" "kimsufi" {
+  lifecycle {
+    replace_triggered_by = [terraform_data.talos_image_factory_endpoint]
+  }
+
   schematic = yamlencode({
     customization = {
       # KS-5 has no physical display; we only see boot output via OVH IPMI SOL.
@@ -253,7 +257,7 @@ resource "null_resource" "install_talos_kimsufi" {
     # Workers and control planes share the installer; only the target disk
     # differs. Image URLs still come directly from the public Image Factory.
     inline = [
-      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${replace(data.talos_image_factory_urls.kimsufi.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url)}' '${each.value.install_disk}'",
     ]
   }
 
@@ -342,7 +346,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "${local.talos_image_factory_registry}/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -367,7 +371,7 @@ locals {
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "${local.talos_image_factory_registry}/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
@@ -498,7 +502,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "${local.talos_image_factory_registry}/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -611,7 +615,7 @@ resource "null_resource" "install_talos_kimsufi_cp" {
 
   provisioner "remote-exec" {
     inline = [
-      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${replace(data.talos_image_factory_urls.kimsufi.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url)}' '${each.value.install_disk}'",
     ]
   }
 
