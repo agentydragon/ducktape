@@ -1181,6 +1181,36 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: packages
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - pypi.org
+        - files.pythonhosted.org
+        - registry.npmjs.org
+        - nodejs.org
+        - index.crates.io
+        - static.crates.io
+        - static.rust-lang.org
+        - releases.bazel.build
+        - bcr.bazel.build
+        - cache.nixos.org
+        - nixos.org
+        - channels.nixos.org
+        - ftp.gnu.org
+        - snapshot.debian.org
+        - code.forgejo.org
+        - data.forgejo.org
+        - ghcr.io
+        - pkg-containers.githubusercontent.com
+      methods:
+        - GET
+        - HEAD
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: github-public
   namespace: agentplane-staging
 spec:
@@ -2856,6 +2886,7 @@ spec:
     - basic
     - kubernetes
     - forgejo-haku
+    - packages
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

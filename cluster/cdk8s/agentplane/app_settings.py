@@ -11,6 +11,7 @@ _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 BASIC_POLICY = "basic"
 GITHUB_PUBLIC_POLICY = "github-public"
 FORGEJO_HAKU_POLICY = "forgejo-haku"
+PACKAGES_POLICY = "packages"
 KUBERNETES_POLICY = "kubernetes"
 
 

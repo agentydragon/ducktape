@@ -350,8 +350,8 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
 ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic,
-Kubernetes and `forgejo-haku` policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub
-reads plus the whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox
+Kubernetes, `forgejo-haku` and `packages` policies, and an `ActionPolicyBinding` auto-approving
+reviewed GitHub reads plus the whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox
 authenticating to the API server arrives as an account with nothing beyond `system:authenticated`
 — reach without authorization, which is why the verified Kubernetes evidence is a
 `SelfSubjectReview` and not a read of any object.
@@ -363,11 +363,22 @@ carries every repository haku owns and the web UI besides, and it is a second ag
 rather than this one's. That grant is decided; what it sharpens is the question below, because the
 account now holds authority whose blast radius is another agent's.
 
-Still to decide, then write down: which Kubernetes roles this account should hold and at what
-scope; whether the Kubernetes egress rule should stay an all-verbs, all-paths admission once RBAC
-is what bounds it; and whether the GitHub reads a Connection may auto-approve should also be what a
-sandbox of this account reaches, since the `EgressBinding` and the `ActionPolicyBinding` are
-separate grants that nothing keeps consistent.
+**Kubernetes authority is RoleBindings on this ServiceAccount.** Decided; which roles, at what
+scope, is the open part and needs a conversation before anything is written. The two alternatives
+are rejected: binding haku's `haku-k8s` Authentik JWT on `kubeapi.allegedly.works` would make a
+sandbox `oidc-ksbx-groups:haku`, and the `claude-web-k8s` one `kubectl-sandbox-users`, but both
+hairpin out through the Gateway for an apiserver one hop away and, worse, layer a second identity
+on a box that already authenticates as itself. The projected token is Pod-bound to the box that
+sent the request -- `SelfSubjectReview` from inside one names its own Pod and UID -- and that
+binding is the property the whole substitution design rests on. Roles on the account keep it; a
+bearer for a group does not.
+
+Still to decide: the roles themselves; whether the Kubernetes egress rule should stay an
+all-verbs, all-paths admission once RBAC is what bounds it; and whether the GitHub reads a
+Connection may auto-approve should also be what a sandbox of this account reaches, since the
+`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent
+(there is a `TODO(github-egress)` at the binding site, with the two things that question has to
+settle).
 
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is

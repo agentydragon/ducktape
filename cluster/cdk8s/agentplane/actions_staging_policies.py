@@ -27,7 +27,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -264,7 +264,16 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `forgejo-haku` is the widest of these by some distance: it substitutes the `haku` account's
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
-    # should inherit.
+    # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
+    #
+    # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
+    # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
+    # a sandbox of the same caller cannot reach github.com at all -- so `git clone` fails in a box
+    # whose caller can read the same repository through an Action. Two things to settle first: the
+    # policy substitutes the `agentydragon-agent` PAT, which is write-capable, on GET and POST with
+    # no path limit, so binding it lets a sandbox push as that bot; and the policy omits
+    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so Bazel and
+    # tarball downloads would still fail until that host joins it.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -275,7 +284,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY],
+            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY],
         ),
     )
 
