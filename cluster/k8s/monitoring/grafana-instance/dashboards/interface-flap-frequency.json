@@ -1,0 +1,298 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
+    },
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Mimir",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": { "list": [] },
+  "description": "Host-journal interface lifecycle activity from Loki, with node-exporter carrier state as a secondary signal. A veth bring-up/teardown is usually container or pod lifecycle churn, not a physical NIC fault.",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "${DS_LOKI}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "spanNulls": true
+          },
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"systemd-journal\",node=~\"$node\"} |= \"entered forwarding state\" [5m]))",
+          "legendFormat": "veth bring-up events",
+          "refId": "A"
+        }
+      ],
+      "title": "Veth bring-up events per 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_LOKI}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "spanNulls": true
+          },
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"systemd-journal\",node=~\"$node\"} |= \"unregistering\" [5m]))",
+          "legendFormat": "veth teardown events",
+          "refId": "A"
+        }
+      ],
+      "title": "Veth teardown events per 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_LOKI}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "spanNulls": true
+          },
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"systemd-journal\",node=~\"$node\"} |= \"eth0: renamed from tmp\" [5m]))",
+          "legendFormat": "CNI interface recreations",
+          "refId": "A"
+        }
+      ],
+      "title": "CNI interface recreations per 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_LOKI}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "spanNulls": true
+          },
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"systemd-journal\",node=~\"$node\"} |= \"tap0\" [5m]))",
+          "legendFormat": "tap0 events",
+          "refId": "A"
+        }
+      ],
+      "title": "KubeVirt tap0 events per 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "decimals": 2,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(node_network_carrier_changes_total{instance=~\"$instance\",device=~\"$device\"}[$__rate_interval])) * 3600",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Observed carrier changes per hour",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 30,
+            "lineWidth": 1,
+            "spanNulls": false
+          },
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "No carrier" } }, "type": "value" },
+            { "options": { "1": { "color": "green", "text": "Carrier" } }, "type": "value" }
+          ],
+          "max": 1,
+          "min": 0,
+          "unit": "bool"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "alignValue": "center",
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "expr": "node_network_carrier{instance=~\"$instance\",device=~\"$device\"}",
+          "legendFormat": "{{instance}} / {{device}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Current carrier state for scraped interfaces",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": "${DS_LOKI}",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 26 },
+      "id": 7,
+      "options": {
+        "deduplication": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "sortOrder": "Descending",
+        "wrapLines": false
+      },
+      "targets": [
+        {
+          "expr": "{job=\"systemd-journal\",node=~\"$node\"} |~ \"veth|tap[0-9]+|eth0: renamed from tmp\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent interface lifecycle journal",
+      "type": "logs"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["network", "interfaces", "flaps", "journal", "loki"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": "wyrm2", "value": "wyrm2" },
+        "datasource": "${DS_LOKI}",
+        "definition": "label_values({job=\"systemd-journal\"}, node)",
+        "includeAll": true,
+        "label": "Node",
+        "name": "node",
+        "options": [],
+        "query": "label_values({job=\"systemd-journal\"}, node)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": "${DS_PROMETHEUS}",
+        "definition": "label_values(node_uname_info{nodename=~\"$node\"}, instance)",
+        "hide": 2,
+        "includeAll": true,
+        "label": "Instance",
+        "name": "instance",
+        "options": [],
+        "query": "label_values(node_uname_info{nodename=~\"$node\"}, instance)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": "${DS_PROMETHEUS}",
+        "definition": "label_values(node_network_carrier{instance=~\"$instance\"}, device)",
+        "includeAll": true,
+        "label": "Interface",
+        "multi": true,
+        "name": "device",
+        "options": [],
+        "query": "label_values(node_network_carrier{instance=~\"$instance\"}, device)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["30s", "1m", "5m", "15m", "1h"] },
+  "timezone": "browser",
+  "title": "Interface Flap Frequency",
+  "uid": "interface-flap-frequency",
+  "version": 1
+}
