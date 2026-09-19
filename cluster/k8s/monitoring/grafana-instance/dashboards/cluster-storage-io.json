@@ -555,8 +555,8 @@
     },
     {
       "id": 16,
-      "title": "Metric scrape samples by target",
-      "description": "Samples retained after metric relabeling, grouped by scrape target. This identifies high-volume metric producers before remote-write ingestion.",
+      "title": "Scraped samples/s by target",
+      "description": "Estimated samples/s per scrape target, derived from the per-scrape sample count over five minutes. Shows only the selected top rows; this pre-ingestion estimate does not include direct OTLP or Tempo metrics-generator writes counted by Mimir.",
       "type": "table",
       "gridPos": {
         "h": 10,
@@ -580,7 +580,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (job, namespace, service, instance) (rate(scrape_samples_post_metric_relabeling{job!=\"\"}[5m])))",
+          "expr": "topk(${topk}, sum by (job, namespace, service, instance) (sum_over_time(scrape_samples_post_metric_relabeling{job!=\"\"}[5m]) / 300))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{job}} {{namespace}}/{{service}} {{instance}}",
@@ -590,12 +590,12 @@
     },
     {
       "id": 17,
-      "title": "Mimir samples received",
-      "description": "Total logical samples received by Mimir's distributor for the anonymous tenant. Compare this with the target breakdown, not with physical disk bytes.",
+      "title": "Mimir samples/s",
+      "description": "Samples accepted by Mimir's distributor for the anonymous tenant, including scrape and direct-write sources. Rejected and deduplicated samples are excluded, so this is not expected to equal the scrape-target estimate.",
       "type": "stat",
       "gridPos": {
         "h": 10,
-        "w": 12,
+        "w": 6,
         "x": 12,
         "y": 69
       },
@@ -622,6 +622,45 @@
       "targets": [
         {
           "expr": "sum(rate(cortex_distributor_received_samples_total{user=\"anonymous\"}[5m]))",
+          "legendFormat": "samples/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Scraped samples/s",
+      "description": "Estimated average rate from per-scrape sample counts over five minutes, across all scrape targets. Excludes direct OTLP and Tempo metrics-generator writes sent to Mimir.",
+      "type": "stat",
+      "gridPos": {
+        "h": 10,
+        "w": 6,
+        "x": 18,
+        "y": 69
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(scrape_samples_post_metric_relabeling{job!=\"\"}[5m])) / 300",
           "legendFormat": "samples/s",
           "refId": "A"
         }
