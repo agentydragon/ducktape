@@ -41,6 +41,7 @@ from cluster.cdk8s import (
 )
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cheap_experiments_credentials import CheapExperimentsCredentials
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -63,6 +64,7 @@ _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
 _FORGEJO_IMAGE_AUTOMATION_DIR = "cluster/k8s/flux-image-automation-forgejo"
 _NTFY_DIR = "cluster/k8s/ntfy"
+_AGENTPLANE_TESTING_CREDENTIALS_DIR = "cluster/k8s/agentplane-testing/litellm-credentials"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -702,6 +704,17 @@ def _generate_ntfy(root: Path) -> None:
     _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
 
 
+def _generate_agentplane_testing_credentials(root: Path) -> None:
+    name = "litellm-credentials"
+    credentials_dir = root / _AGENTPLANE_TESTING_CREDENTIALS_DIR
+    credentials_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(credentials_dir))
+    chart = Chart(app, name, disable_resource_name_hashes=True)
+    CheapExperimentsCredentials(chart, "cheap-experiments")
+    app.synth()
+    _write_yaml(credentials_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{name}.k8s.yaml"]))
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
@@ -729,6 +742,7 @@ def generate_manifests(root: Path) -> None:
     _generate_etcd_monitoring(root, mesh)
     _generate_forgejo_image_automation(root)
     _generate_ntfy(root)
+    _generate_agentplane_testing_credentials(root)
 
 
 def main() -> None:

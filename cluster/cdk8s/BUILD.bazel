@@ -175,6 +175,19 @@ py_library(
 )
 
 py_library(
+    name = "cheap_experiments_credentials",
+    srcs = ["cheap_experiments_credentials.py"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//third_party/external_secrets:clustersecretstore",
+        "//third_party/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "pod_spec_patches",
     srcs = ["pod_spec_patches.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -385,6 +398,7 @@ py_library(
     ],
     deps = [
         ":aiquota_constructs",
+        ":cheap_experiments_credentials",
         ":clickhouse_schema_constructs",
         ":config_format",
         ":descheduler_constructs",
@@ -436,6 +450,8 @@ py_test(
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/flux-kustomization.yaml",
         "//cluster/k8s:agentplane-testing/kustomization.yaml",
+        "//cluster/k8s:agentplane-testing/litellm-credentials/kustomization.yaml",
+        "//cluster/k8s:agentplane-testing/litellm-credentials/litellm-credentials.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",

@@ -56,9 +56,8 @@ provider "litellm" {
 # cheap-experiments — shared low-cost key for temporary agent experiments
 # ============================================================================
 # Agents receive this Secret only through an expiring Haku Console Kubernetes grant.
-# There is deliberately no reflector copy or standing RoleBinding: the grant names
-# both the namespace and Secret, and LiteLLM enforces the model allowlist below.
-# A standing copy below serves the Agentplane testing LLM ingress.
+# The canonical Secret lives beside LiteLLM; the Agentplane testing copy is owned by
+# the cdk8s-generated ESO distribution, and LiteLLM enforces the model allowlist below.
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
@@ -73,7 +72,7 @@ resource "litellm_key" "cheap_experiments" {
 resource "kubernetes_secret" "cheap_experiments" {
   metadata {
     name      = "litellm-key-cheap-experiments"
-    namespace = "litellm-cheap-experiments"
+    namespace = "litellm"
     annotations = {
       description = "LiteLLM virtual key for temporary agent experiments; Mistral, Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
     }
@@ -111,20 +110,6 @@ resource "kubernetes_secret" "agentplane_staging" {
 
   data = {
     api-key = litellm_key.agentplane_staging.key
-  }
-}
-
-resource "kubernetes_secret" "cheap_experiments_agentplane_testing" {
-  metadata {
-    name      = "litellm-key-cheap-experiments"
-    namespace = "agentplane-testing"
-    annotations = {
-      description = "Server-held cheap-experiments LiteLLM virtual key for the Agentplane workload-authenticated LLM ingress; never mounted into runner Pods"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.cheap_experiments.key
   }
 }
 

@@ -33,6 +33,9 @@ _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
+# The ESO ExternalSecret replicating the Terraform-owned key into this namespace,
+# a sibling resource in the same Kustomization -- see cheap_experiments_credentials.py.
+_LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = {
@@ -105,8 +108,8 @@ ENV = Environment(
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
     depends_on=DEPENDS_ON,
-    extra_resources=(),
-    provided_secrets={_LITELLM_KEY_SECRET: "litellm-keys-tf"},
+    extra_resources=(_LITELLM_CREDENTIALS_DIR,),
+    provided_secrets={_LITELLM_KEY_SECRET: _LITELLM_CREDENTIALS_DIR},
     include_action_policy_rule=True,
     replicas=ReplicaProfile(
         count=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None, pdb_min_available=None

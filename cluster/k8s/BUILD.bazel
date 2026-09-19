@@ -110,10 +110,13 @@ exports_files(
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "github-api-proxy/app/prometheus-rule.yaml",
         "kustomization.yaml",
+        "agentplane-testing/litellm-credentials/litellm-credentials.k8s.yaml",
+        "agentplane-testing/litellm-credentials/kustomization.yaml",
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
     visibility = [
+        "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
         "//x/agentplane/crds:__pkg__",
     ],

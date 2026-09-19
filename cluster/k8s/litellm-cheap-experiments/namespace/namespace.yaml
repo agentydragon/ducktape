@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: litellm-cheap-experiments
-  annotations:
-    description: Dedicated namespace for the LiteLLM key released through temporary Haku grants.
