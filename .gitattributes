@@ -68,6 +68,8 @@ cluster/k8s/ntfy/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-egress-credentials/namespace/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-egress-credentials/secrets/flux-kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true

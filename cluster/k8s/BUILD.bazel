@@ -94,6 +94,8 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "agentplane-egress-credentials/namespace/flux-kustomization.yaml",
+        "agentplane-egress-credentials/secrets/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
