@@ -129,6 +129,55 @@ environment; no runner, no state volume, no model wiring. Stamping the app's run
 for a first smoke test and is the wrong destination: its workload container is the runner image, so
 a command runs inside a harness process's container.
 
+## Kubernetes from inside the box
+
+The box reaches the API server the way it reaches everything else: a placeholder in its kubeconfig,
+an `EgressCredential` the central proxy substitutes, and a rule admitting `kubernetes.default.svc`.
+The workload holds no Kubernetes credential, exactly as it holds no Forgejo one.
+
+The gap is the audience. The only token in play is projected with the proxy's own
+(`agentplane-egress`, <../../../cluster/cdk8s/agentplane/llm_ingress_constructs.py>), which is what
+`authenticatedWorkloadToken` retains and substitutes, and the API server validates against its own
+`--api-audiences`, so that bearer is refused there.
+[Workload authentication](../docs/workload_authentication.md) already defers exactly this as
+"Kubernetes API access under a distinct projected audience".
+
+**The sidecar projects a second token.** A `serviceAccountToken` source carrying the API server's
+audience, mounted by the sidecar alone and rotated by kubelet, presented for the proxy to substitute
+into `Authorization` on the rules that name it. The proxy gains no Kubernetes rights, the workload
+sees neither token, and the container boundary holding it is the one the design already rests on
+([identity evidence](../docs/sandbox_egress_identity_evidence.md)). Before substituting, the proxy
+reviews that token against the API server audience and requires its subject to equal the subject it
+authenticated, so a substituted credential provably belongs to the caller being decided.
+
+RBAC is then standing on the calling account, beside its `EgressBinding`s, and every sandbox of that
+account has it. Under the contract above that is the intent rather than a leak, and it is much less
+machinery than `SANDBOX_RBAC` assumes: no per-sandbox grant, no reconciler, no orphan cleanup.
+
+### Rejected: the proxy mints one per request
+
+`TokenRequest` for the account that just authenticated, bound to the Pod its review named. It needs
+`create` on `serviceaccounts/token` in every namespace the proxy accepts bearers from, on the one
+component already holding every substituted credential — the grant shape `EGRESS_SOURCE_ADDRESS`
+removed the proxy's `pods` read to avoid.
+
+### Rejected: mounting the token in the workload container
+
+The simplest source, and it gives up what the placeholder design exists for: a credential inside the
+box can be copied out and used elsewhere until it expires, where substitution confines the identity
+to requests the proxy admitted. "A shell as yourself" bounds authority inside the box; it does not
+extend to a portable credential for that account. It also breaks the sidecar-only projection above.
+
+### What to verify rather than assume
+
+- `kubernetes.default.svc` resolves to a private address, so its rule declares `clusterInternal` or
+  the proxy refuses it whole.
+- The proxy bumps TLS, so `kubectl` must trust the egress CA. The Haku box already writes a
+  kubeconfig whose `certificate-authority` names that bundle.
+- Ordinary requests should pass, but `exec`, `attach` and `port-forward` upgrade to SPDY or
+  WebSocket through a bumping proxy and a watch streams chunked. Haku's own API proxy answers `501`
+  to the upgrade verbs, so this is where to expect trouble.
+
 ## Tool surface
 
 `provision`, `exec` and `list`, with `info` and `dispose`. Shapes follow
@@ -157,10 +206,10 @@ otherwise misreads every call:
    `EgressBinding`s.** Provable end to end from a claude.ai session against an existing template.
 4. **A dedicated exec-target template**, and the Forgejo `EgressCredential` a box needs to check out
    `haku-state`.
+5. **Kubernetes from the box.** The second projected audience in sidecar and template, the
+   subject-matched substitution in the proxy, the credential and rule, and the calling account's
+   RoleBindings. Its own clock: nothing above waits on it.
 
 ## Not here
 
-- **Kubernetes access inside the box.** Today's Haku sandbox reaches the API through Console's
-  proxy; an Agentplane box would reach it as its own account, which is `SANDBOX_RBAC` and
-  `MANAGED_SA_RBAC` in the [task DAG](task_dag.md).
 - **A production tier.** Staging only.
