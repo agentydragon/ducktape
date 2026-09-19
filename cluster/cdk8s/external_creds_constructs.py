@@ -1,4 +1,4 @@
-"""Build the source-side RBAC grants for externally distributed credentials."""
+"""Build source-side grants; see external_creds.md for the ownership contract."""
 
 from __future__ import annotations
 
