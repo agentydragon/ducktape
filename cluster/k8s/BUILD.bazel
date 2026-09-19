@@ -94,6 +94,12 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "authentik/app/flux-kustomization.yaml",
+        "authentik/db-backups/flux-kustomization.yaml",
+        "authentik/db/flux-kustomization.yaml",
+        "authentik/namespace/flux-kustomization.yaml",
+        "authentik/proxy-routes/flux-kustomization.yaml",
+        "authentik/sso-providers-tf/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

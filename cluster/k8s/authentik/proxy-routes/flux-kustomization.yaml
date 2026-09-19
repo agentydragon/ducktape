@@ -4,16 +4,15 @@ metadata:
   name: authentik-proxy-routes
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  sourceRef:
-    kind: ExternalArtifact
-    name: authentik-proxy-routes
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/authentik/proxy-routes
-  prune: true
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/authentik/proxy-routes
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: authentik-proxy-routes
+    namespace: ducktape-flux
