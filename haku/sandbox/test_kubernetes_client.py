@@ -14,24 +14,19 @@ from kubernetes_asyncio.client import ApiException
 
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.kubernetes_client import (
-    API_VERSION,
     BOOTSTRAP_HASH_ANNOTATION,
     BOOTSTRAP_STARTED_AT_ANNOTATION,
     BOOTSTRAP_STATE_ANNOTATION,
-    CLAIM_GROUP,
-    CLAIMS_PLURAL,
     CONTAINER_ANNOTATION,
     DEFAULT_CWD_ANNOTATION,
     MANAGED_BY_LABEL,
     MANAGED_BY_VALUE,
-    POD_NAME_ANNOTATION,
-    SANDBOX_GROUP,
-    SANDBOXES_PLURAL,
     WARM_POOL_ANNOTATION,
     CommandResult,
     KubernetesSandboxClient,
 )
 from mcp_infra.exec.models import Exited
+from util.agent_sandbox import CLAIMS_PLURAL, EXTENSIONS_API, POD_NAME_ANNOTATION, SANDBOX_API, SANDBOXES_PLURAL
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
 SANDBOX: dict[str, Any] = {
@@ -111,13 +106,14 @@ def _client(environment: SandboxEnvironmentConfig, custom: Mock, core: Mock, run
 
 def _route_get(claim: dict):
     async def get(group: str, version: str, namespace: str, plural: str, name: str):
-        assert version == API_VERSION
         assert namespace == "agent-workspaces"
-        if (group, plural, name) == (CLAIM_GROUP, CLAIMS_PLURAL, "task-one"):
+        # Group and version together: the claim and the Sandbox are different groups, and a call
+        # that reached the right plural under the wrong one would otherwise pass.
+        if (group, version, plural, name) == (*EXTENSIONS_API, CLAIMS_PLURAL, "task-one"):
             return claim
-        if (group, plural, name) == (SANDBOX_GROUP, SANDBOXES_PLURAL, "test-sandbox-abcde"):
+        if (group, version, plural, name) == (*SANDBOX_API, SANDBOXES_PLURAL, "test-sandbox-abcde"):
             return SANDBOX
-        raise AssertionError((group, plural, name))
+        raise AssertionError((group, version, plural, name))
 
     return get
 

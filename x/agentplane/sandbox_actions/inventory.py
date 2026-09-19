@@ -19,20 +19,13 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
+from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, condition, pod_name
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from x.agentplane.sandbox_actions.models import SandboxInfo, SandboxState
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
-
-SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
-SANDBOXES_PLURAL = "sandboxes"
-# Where the Agent Sandbox controller publishes the name of the Pod backing a Sandbox. The Pod
-# carries no label tying it back, so this annotation is the only link; <../../../haku/sandbox/
-# kubernetes_client.py> reads the same one. It is absent until the controller has made the Pod,
-# and the controller names the Pod after the Sandbox when it does not set it.
-POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
 
 _PREFIX = "sandbox-actions.agentplane.allegedly.works"
 # What this surface will touch. The Action Service's `pods/exec` grant is namespace-wide and cannot
@@ -79,8 +72,7 @@ def _state(sandbox: dict[str, Any]) -> tuple[SandboxState, str | None]:
     reason is passed through verbatim rather than re-worded: `WarmPoolNotFound` tells its reader
     what to do, where "pod phase Pending" does not.
     """
-    conditions = cast(list[dict[str, Any]], sandbox.get("status", {}).get("conditions", []))
-    ready = next((condition for condition in conditions if condition.get("type") == "Ready"), None)
+    ready = condition(sandbox, "Ready")
     if ready is None:
         return SandboxState.NOT_READY, None
     if ready.get("status") == "True":
@@ -142,15 +134,14 @@ class SandboxInventory:
         still names a Pod that a node drain or an eviction has since taken away, and `exec` needs
         the one that is there now.
         """
-        metadata = sandbox["metadata"]
-        name = (metadata.get("annotations") or {}).get(POD_NAME_ANNOTATION) or metadata["name"]
+        name = pod_name(sandbox)
         try:
             await self._core_v1.read_namespaced_pod(name, self._binding.namespace)
         except ApiException as error:
             if error.status == 404:
                 return None
             raise
-        return str(name)
+        return name
 
     async def _info(self, caller: ServiceAccountRef, sandbox: dict[str, Any]) -> SandboxInfo:
         metadata = sandbox["metadata"]
@@ -183,17 +174,13 @@ class SandboxInventory:
         template = cast(
             dict[str, Any],
             await self._custom_objects.get_namespaced_custom_object(
-                "extensions.agents.x-k8s.io",
-                "v1beta1",
-                self._binding.namespace,
-                "sandboxtemplates",
-                environment.template,
+                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, environment.template
             ),
         )
         pod_template = cast(dict[str, Any], template["spec"]["podTemplate"])
         spec = {**cast(dict[str, Any], pod_template.get("spec", {})), "serviceAccountName": caller.name}
         body = {
-            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
+            "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
             "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, key)},
             # Retain: this surface owns deletion, and a box whose caller is still working in it must

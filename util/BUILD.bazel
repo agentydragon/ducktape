@@ -269,3 +269,9 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "agent_sandbox",
+    srcs = ["agent_sandbox.py"],
+    visibility = ["//visibility:public"],
+)

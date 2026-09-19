@@ -21,16 +21,9 @@ from typing import Any
 from aiohttp import web
 from more_itertools import one
 
+from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 from x.agentplane.crd_group import GROUP, VERSION
-from x.agentplane.egress.resources import (
-    BINDINGS_PLURAL,
-    CREDENTIALS_PLURAL,
-    POLICIES_PLURAL,
-    SANDBOX_GROUP,
-    SANDBOX_KIND,
-    SANDBOX_VERSION,
-    SANDBOXES_PLURAL,
-)
+from x.agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
 from x.agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 
 NAMESPACE = "agentplane-egress-test"
@@ -241,12 +234,7 @@ class FakeApiServer:
 
 
 def sandbox(name: str) -> dict[str, Any]:
-    return {
-        "apiVersion": f"{SANDBOX_GROUP}/{SANDBOX_VERSION}",
-        "kind": SANDBOX_KIND,
-        "metadata": {"name": name},
-        "spec": {},
-    }
+    return {"apiVersion": SANDBOX_API.api_version, "kind": SANDBOX_KIND, "metadata": {"name": name}, "spec": {}}
 
 
 def sandbox_uid(name: str) -> str:
@@ -266,7 +254,7 @@ def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) ->
             "uid": pod_uid,
             "ownerReferences": [
                 {
-                    "apiVersion": f"{SANDBOX_GROUP}/{SANDBOX_VERSION}",
+                    "apiVersion": SANDBOX_API.api_version,
                     "kind": SANDBOX_KIND,
                     "name": sandbox_name,
                     "uid": owner["uid"],

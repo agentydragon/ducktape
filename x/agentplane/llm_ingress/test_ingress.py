@@ -17,7 +17,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from more_itertools import one
 
-from x.agentplane.egress.resources import SANDBOXES_PLURAL
+from util.agent_sandbox import SANDBOXES_PLURAL
 from x.agentplane.llm_ingress.app import IngressResources, create_app
 from x.agentplane.testing.fake_apiserver import (
     SANDBOX_NAMESPACE,

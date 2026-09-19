@@ -18,8 +18,9 @@ from kubernetes_asyncio.client import ApiException
 
 from mcp_infra.exec.kubernetes import CommandResult
 from mcp_infra.exec.models import Exited
+from util.agent_sandbox import POD_NAME_ANNOTATION
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
-from x.agentplane.sandbox_actions.inventory import POD_NAME_ANNOTATION, SandboxActionError, SandboxInventory
+from x.agentplane.sandbox_actions.inventory import SandboxActionError, SandboxInventory
 from x.agentplane.sandbox_actions.models import SandboxState
 from x.agentplane.subjects import ServiceAccountRef
 

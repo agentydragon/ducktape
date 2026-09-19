@@ -22,6 +22,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
@@ -30,10 +31,6 @@ from x.agentplane.subjects import ServiceAccountRef
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
 
-_TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
-_TEMPLATES_PLURAL = "sandboxtemplates"
-SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
-SANDBOXES_PLURAL = "sandboxes"
 _MERGE_PATCH = "application/merge-patch+json"
 
 # Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
@@ -245,7 +242,7 @@ class SandboxInventory:
     async def list_templates(self) -> list[str]:
         """The concrete templates an operator may choose for one Sandbox."""
         page = await self._custom_objects.list_namespaced_custom_object(
-            *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL
+            *EXTENSIONS_API, self._namespace, TEMPLATES_PLURAL
         )
         return sorted(
             _NamedResource.model_validate(item).metadata.name for item in _ResourceList.model_validate(page).items
@@ -267,7 +264,7 @@ class SandboxInventory:
     async def create(self, spec: NewSandbox, *, annotations: dict[str, str] | None = None) -> SandboxView:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
-                *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL, spec.template
+                *EXTENSIONS_API, self._namespace, TEMPLATES_PLURAL, spec.template
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
@@ -289,7 +286,7 @@ class SandboxInventory:
             ),
         )
         body = {
-            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
+            "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
             "metadata": {
                 "name": name,
@@ -318,7 +315,7 @@ class SandboxInventory:
                 "metadata": {
                     "ownerReferences": [
                         {
-                            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
+                            "apiVersion": SANDBOX_API.api_version,
                             "kind": "Sandbox",
                             "name": name,
                             "uid": str(sandbox.metadata.uid),
