@@ -6,7 +6,7 @@ generate_manifests (writes them to disk) and the tests (synthesize them in memor
 
 from __future__ import annotations
 
-from cdk8s import Chart
+from cdk8s import App, Chart
 
 from cluster.cdk8s.directory import Directory
 from cluster.cdk8s.flux_constructs import ConfigMapArgs
@@ -18,16 +18,34 @@ from cluster.cdk8s.haku.migration_constructs import Migration
 
 _NAMESPACE_KUSTOMIZATION = "haku-console-namespace"
 
+_DB_NAME = "haku-console-db"
+_MIGRATION_NAME = "haku-console-migration"
+_CONSOLE_NAME = "haku-console"
 
-def _console(chart: Chart) -> None:
+
+def _db_chart(app: App) -> Chart:
+    chart = Chart(app, _DB_NAME, disable_resource_name_hashes=True)
+    Db(chart, "db")
+    return chart
+
+
+def _migration_chart(app: App) -> Chart:
+    chart = Chart(app, _MIGRATION_NAME, disable_resource_name_hashes=True)
+    Migration(chart, "migration")
+    return chart
+
+
+def _console_chart(app: App) -> Chart:
+    chart = Chart(app, _CONSOLE_NAME, disable_resource_name_hashes=True)
     Console(chart, "console")
     KubeApiProxy(chart, "kube-api-proxy")
+    return chart
 
 
 DB = Directory(
-    name="haku-console-db",
+    name=_DB_NAME,
     path="cluster/k8s/haku/console/db",
-    populate=lambda chart: Db(chart, "db"),
+    build=_db_chart,
     depends_on=(
         _NAMESPACE_KUSTOMIZATION,
         "cnpg",
@@ -40,9 +58,9 @@ DB = Directory(
 )
 
 MIGRATION = Directory(
-    name="haku-console-migration",
+    name=_MIGRATION_NAME,
     path="cluster/k8s/haku/console/migration",
-    populate=lambda chart: Migration(chart, "migration"),
+    build=_migration_chart,
     depends_on=(
         # The namespace layer ships the forgejo-images-creds ExternalSecret the Job pulls its
         # private image with, from the ClusterSecretStore forgejo-images provides.
@@ -58,9 +76,9 @@ MIGRATION = Directory(
 )
 
 CONSOLE = Directory(
-    name="haku-console",
+    name=_CONSOLE_NAME,
     path="cluster/k8s/haku/console",
-    populate=_console,
+    build=_console_chart,
     depends_on=(
         # Runtime namespace/template changes must become Ready before the console starts
         # creating claims against their new namespace: a namespace migration fails closed

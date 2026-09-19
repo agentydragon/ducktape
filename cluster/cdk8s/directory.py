@@ -27,18 +27,15 @@ from cluster.cdk8s.flux_constructs import ConfigMapArgs, health_checks
 class Directory:
     """One Flux Kustomization directory: what it renders and what it waits on.
 
-    Builds its chart one of two ways: `populate` adds constructs to a chart this module
-    creates and names `name` (the common case); `build` creates and names the chart
-    itself, for the few directories whose chart id isn't the Kustomization name
-    (`agentplane`'s environments) or that generate more than one chart file into a
-    hand-written directory (`generate_flux=False`).
+    `build` creates and returns the chart -- its id is usually `name` (the Kustomization
+    this directory becomes), but doesn't have to be: `agentplane`'s environments name
+    their chart "agentplane" regardless of which namespace/Kustomization it is.
     """
 
     # The Flux Kustomization name and the directory it renders into.
     name: str
     path: str
-    populate: Callable[[Chart], object] | None = None
-    build: Callable[[App], Chart] | None = None
+    build: Callable[[App], Chart]
     depends_on: tuple[str, ...] = ()
     # Secrets and ConfigMaps Pods read that the chart does not create, each with the
     # dependency or sibling file that does; fleet_rules checks both ends.
@@ -75,18 +72,6 @@ class Directory:
     # The `ExternalArtifact` source ref name, when it differs from `name`.
     source_ref_name: str | None = None
 
-    def __post_init__(self) -> None:
-        if (self.populate is None) == (self.build is None):
-            raise ValueError(f"Directory {self.name!r} needs exactly one of populate= or build=")
-
-    def make_chart(self, app: App) -> Chart:
-        if self.build is not None:
-            return self.build(app)
-        assert self.populate is not None
-        chart = Chart(app, self.name, disable_resource_name_hashes=True)
-        self.populate(chart)
-        return chart
-
     def health_checks(self, chart: Chart) -> list[KustomizationSpecHealthChecks]:
         checks = health_checks(chart, self.health_check_kinds)
         if self.extra_health_checks is not None:
@@ -97,7 +82,7 @@ class Directory:
 def chart(app: App, directory: Directory) -> Chart:
     """Build `directory`'s chart with fleet rules attached -- shared by the generator
     (writes it to disk) and tests that synthesize a directory's chart in memory."""
-    built = directory.make_chart(app)
+    built = directory.build(app)
     add_fleet_rules(
         built,
         provided_secrets=directory.provided_secrets,
