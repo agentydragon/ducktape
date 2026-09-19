@@ -30,6 +30,7 @@ py_test(
     srcs = ["test_extract_crd.py"],
     deps = [
         ":extract_crd",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
