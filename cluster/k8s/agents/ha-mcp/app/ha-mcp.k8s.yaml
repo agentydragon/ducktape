@@ -428,8 +428,7 @@ metadata:
   namespace: ha-mcp
 spec:
   endpoints:
-    - interval: 30s
-      port: metrics
+    - port: metrics
   selector:
     matchLabels:
       app.kubernetes.io/name: ha-mcp

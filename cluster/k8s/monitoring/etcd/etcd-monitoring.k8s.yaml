@@ -60,8 +60,7 @@ metadata:
   namespace: monitoring
 spec:
   endpoints:
-    - interval: 30s
-      path: /metrics
+    - path: /metrics
       port: metrics
       relabelings:
         - sourceLabels:

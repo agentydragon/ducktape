@@ -364,8 +364,7 @@ metadata:
   namespace: cli-proxy-api
 spec:
   endpoints:
-    - interval: 60s
-      path: /metrics
+    - path: /metrics
       port: http
       scrapeTimeout: 15s
   selector:

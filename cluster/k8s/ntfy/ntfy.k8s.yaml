@@ -305,8 +305,7 @@ metadata:
   namespace: ntfy
 spec:
   endpoints:
-    - interval: 30s
-      path: /metrics
+    - path: /metrics
       port: http
   selector:
     matchLabels:

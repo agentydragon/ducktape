@@ -11,5 +11,4 @@ spec:
   podMetricsEndpoints:
     - port: metrics
       path: /metrics
-      interval: 30s
       # TODO: Consider adding bearer token auth if Authentik metrics require authentication.

@@ -11,7 +11,6 @@ spec:
   endpoints:
     - port: http
       path: /metrics
-      interval: 30s
       bearerTokenSecret:
         name: forgejo-metrics-token
         key: token
