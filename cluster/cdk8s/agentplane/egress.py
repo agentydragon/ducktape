@@ -67,7 +67,12 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    FORGEJO_HAKU_POLICY,
+    GITHUB_PUBLIC_POLICY,
+    KUBERNETES_POLICY,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -101,6 +106,12 @@ _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
+# The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
+# the Gateway and back for a Service one hop away, which is why haku's own agent has no public
+# route either (cluster/k8s/agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml). Plain HTTP on
+# 3000, so the proxy reads the request without bumping TLS.
+FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
+FORGEJO_PORT = 3000
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
@@ -150,6 +161,33 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
                 EgressCredentialSpecTargets(
                     header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
                 ),
+            ],
+        ),
+    )
+
+    EgressCredential(
+        scope,
+        "egresscredential-forgejo-haku",
+        metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The password of the `haku` account on the internal Forgejo, the service user that "
+                "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
+                "its full authority -- it is the account's own password, not a scoped token, so it "
+                "reaches every repository haku can reach and the web UI besides. The proxy narrows "
+                "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
+                "account."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="haku-forgejo-git", key="password")
+            ),
+            # Git over HTTP and Forgejo's REST API both authenticate with `Basic
+            # base64(haku:<password>)`, so the placeholder travels as the password half. A client
+            # sends the username itself; only the secret half is substituted here.
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+                )
             ],
         ),
     )
@@ -230,6 +268,25 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     hosts=[KUBERNETES_HOST],
                     cluster_internal=True,
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="kubernetes-workload"),
+                )
+            ]
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-forgejo-haku",
+        metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # No method or path list. The credential is haku's whole account, so a verb or path
+                # list here would narrow the request without narrowing the authority behind it --
+                # the same reason the Kubernetes rule carries none. What it does admit is the whole
+                # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
+                # web UI.
+                EgressPolicySpecRules(
+                    hosts=[FORGEJO_HOST],
+                    cluster_internal=True,
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
                 )
             ]
         ),
@@ -575,6 +632,10 @@ class Egress(Construct):
                     cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress.CONTAINER_PORT
                 ),
                 cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
+                cilium.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
+                    FORGEJO_PORT,
+                ),
                 cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )

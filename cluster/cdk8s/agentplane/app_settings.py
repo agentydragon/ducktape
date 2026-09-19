@@ -10,6 +10,7 @@ _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 # because the presets bind them.
 BASIC_POLICY = "basic"
 GITHUB_PUBLIC_POLICY = "github-public"
+FORGEJO_HAKU_POLICY = "forgejo-haku"
 KUBERNETES_POLICY = "kubernetes"
 
 

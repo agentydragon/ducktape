@@ -27,7 +27,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, KUBERNETES_POLICY
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -260,6 +260,11 @@ def add_staging_action_policies(scope: Construct) -> None:
     # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
     # runs as it -- claude-ai has no Pod of its own -- so this grants reach to its sandboxes and to
     # nothing else.
+    #
+    # `forgejo-haku` is the widest of these by some distance: it substitutes the `haku` account's
+    # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
+    # account owns. It is here because the operator asked for it; it is not a default any caller
+    # should inherit.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -270,7 +275,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY],
+            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY],
         ),
     )
 

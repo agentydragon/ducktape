@@ -111,6 +111,11 @@ resource "forgejo_collaborator" "claude" {
 #     repo's history by which harness happened to be running.
 #   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
 #     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
+#   - agentplane-egress-credentials: the Agentplane egress proxy substitutes `password` into the
+#     Basic auth of requests its sandboxes send to the in-cluster Forgejo, so a sandbox bound to
+#     the `forgejo-haku` policy acts as haku while holding only a placeholder
+#     (cluster/cdk8s/agentplane/egress.py). The proxy alone reads it; unlike every consumer above
+#     it is not haku's own workload, so this is the account reaching a second agent's hands.
 # The canonical copy serves in-cluster scan runs / the self-hosted worker + the
 # haku-ui backend (operator clicks/feedback → Forgejo writes).
 resource "kubernetes_secret" "haku_forgejo_git" {
@@ -119,9 +124,9 @@ resource "kubernetes_secret" "haku_forgejo_git" {
     namespace = "haku-sandbox"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index,agentplane-egress-credentials"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index,agentplane-egress-credentials"
     }
   }
 
