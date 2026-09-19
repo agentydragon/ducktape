@@ -89,6 +89,7 @@ resources:
   - agents/machine-access-tf/flux-kustomization.yaml
 
   # --- sshpiper (CRD, then the one deployment using it above) ---
+  - sshpiper-crds/gitrepository.yaml
   - sshpiper-crds/flux-kustomization.yaml
 
   # --- agentplane (CRDs, then one Kustomization per environment) ---

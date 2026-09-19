@@ -4,17 +4,17 @@ metadata:
   name: sshpiper-crds
   namespace: ducktape-flux
   annotations:
-    description: The sshpiper Pipe CRD, cluster-scoped so any namespace running an sshpiperd can declare routes. Vendored verbatim from tg123/sshpiper at the tag the deployed image is pinned to.
+    description: The sshpiper Pipe CRD, sourced from the tag used by the deployed image.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 2m
-  path: ./cluster/k8s/sshpiper-crds
+  path: ./plugin/kubernetes
   # Pruning a CRD deletes every instance with it; removing one is a deliberate manual step, as
   # for the other CRD Kustomizations (agentplane-crds, external-secrets-crds).
   prune: false
   wait: true
   sourceRef:
-    kind: ExternalArtifact
-    name: sshpiper-crds
+    kind: GitRepository
+    name: sshpiper-source
     namespace: ducktape-flux

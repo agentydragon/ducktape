@@ -1,6 +1,6 @@
-"""In-memory haku console cdk8s fixtures, loaded via `pytest_plugins` for the same reason as
-`agentplane_fixtures.py`: importing cdk8s spawns jsii's Node subprocess at import time, and
-this package's `conftest.py` is auto-loaded for every test in it.
+"""In-memory haku console cdk8s fixtures, loaded via `pytest_plugins` because importing cdk8s
+spawns jsii's Node subprocess at import time, and this package's `conftest.py` is auto-loaded
+for every test in it.
 """
 
 from __future__ import annotations

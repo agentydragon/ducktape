@@ -1,0 +1,113 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    data = [
+        "//cluster/k8s:ssh_mcp_known_hosts",
+        "//ssh_keys:public-coder-agent-devbox.pub",
+        "//ssh_keys:public-coder-devbox-host.pub",
+    ],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/ssh_mcp_server:server",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
+        "//cluster/scripts:nebula_mesh",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "sshpiper",
+    srcs = ["sshpiper.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:metadata",
+        "//third_party/sshpiper:pipe",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "generation",
+    srcs = ["generation.py"],
+    deps = [
+        ":backend",
+        ":config",
+        ":sshpiper",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_consumers",
+    # Syntheses import the agentplane Services' Settings and need jsii's Node runtime.
+    size = "medium",
+    srcs = ["test_consumers.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":backend",
+        ":config",
+        ":sshpiper",
+        "//:conftest",
+        "//cluster/cdk8s:public_coder_devbox",
+        "//cluster/cdk8s/agentplane:conftest",
+        "//cluster/cdk8s/haku:console_config",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

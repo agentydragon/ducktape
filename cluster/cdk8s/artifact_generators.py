@@ -242,7 +242,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("seaweedfs-public-coder-agent-backups-bucket", ("cluster/k8s/seaweedfs/public-coder-agent-backups-bucket",)),
     ("seaweedfs-registry-cache-bucket", ("cluster/k8s/seaweedfs/registry-cache-bucket",)),
     ("ssh-mcp", ("cluster/k8s/ssh-mcp",)),
-    ("sshpiper-crds", ("cluster/k8s/sshpiper-crds",)),
     ("study-casino-app", ("cluster/k8s/study-casino/app",)),
     ("study-casino-db", ("cluster/k8s/study-casino/db",)),
     ("talos-cloud-controller-manager", ("cluster/k8s/talos-cloud-controller-manager",)),

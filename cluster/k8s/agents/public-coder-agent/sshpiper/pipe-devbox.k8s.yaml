@@ -1,0 +1,15 @@
+apiVersion: sshpiper.com/v1beta1
+kind: Pipe
+metadata:
+  name: devbox
+  namespace: public-coder-agent
+spec:
+  from:
+    - authorized_keys_data: c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUxka2JOcmZYUkhQNUJ0L0V6amQyc2I0YmNaYjNpeEUrNExoTWVWSmk5anggcHVibGljLWNvZGVyLWFnZW50IC0+IHNzaHBpcGVyIChkb3duc3RyZWFtKQo=
+      username: devbox
+  to:
+    host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local:22
+    known_hosts_data: cHVibGljLWNvZGVyLWRldmJveC1zc2gucHVibGljLWNvZGVyLWFnZW50LnN2Yy5jbHVzdGVyLmxvY2FsIHNzaC1lZDI1NTE5IEFBQUFDM056YUMxbFpESTFOVEU1QUFBQUlBUmd2bDB6d3BsdmV3U3BRTFg2djhheWZyd280YnN1TEJJT3dOc3RCelFCCltwdWJsaWMtY29kZXItZGV2Ym94LXNzaC5wdWJsaWMtY29kZXItYWdlbnQuc3ZjLmNsdXN0ZXIubG9jYWxdOjIyIHNzaC1lZDI1NTE5IEFBQUFDM056YUMxbFpESTFOVEU1QUFBQUlBUmd2bDB6d3BsdmV3U3BRTFg2djhheWZyd280YnN1TEJJT3dOc3RCelFCCg==
+    private_key_secret:
+      name: public-coder-agent-sshpiper-devbox-key
+    username: coder

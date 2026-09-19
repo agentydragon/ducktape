@@ -224,18 +224,6 @@ py_library(
 )
 
 py_library(
-    name = "agentplane_fixtures",
-    testonly = True,
-    srcs = ["agentplane_fixtures.py"],
-    deps = [
-        "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/agentplane:testing",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "haku_console_fixtures",
     testonly = True,
     srcs = ["haku_console_fixtures.py"],
@@ -595,29 +583,6 @@ py_test(
         "//haku/x/dispatch:config",
         "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_ssh_mcp_consumers",
-    # Synth imports the agentplane services' Settings, and with them their runtime modules.
-    size = "medium",
-    srcs = ["test_ssh_mcp_consumers.py"],
-    # agentplane_manifests (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes
-    # a cdk8s chart in memory, which needs jsii's Node runtime.
-    data = [
-        "//cluster/k8s:agentplane_actions_remote_mcp",
-        "@multitool//tools/kustomize",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":agentplane_fixtures",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

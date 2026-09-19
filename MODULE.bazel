@@ -977,6 +977,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
+# Match the sshpiper image tag in cluster/k8s/agents/public-coder-agent/sshpiper/.
+http_file(
+    name = "sshpiper_pipe_crd",
+    downloaded_file_path = "crd-pipes.yaml",
+    sha256 = "140d4d2a102a431dd11fb125954387c3ad93b414d754480f9a3197c3ed77f802",
+    urls = ["https://raw.githubusercontent.com/tg123/sshpiper/v1.6.1/plugin/kubernetes/crd.yaml"],
+)
+
 # Match cluster/terraform/main/cilium.tf's local.cilium_version.
 http_file(
     name = "cilium_networkpolicy_crd",

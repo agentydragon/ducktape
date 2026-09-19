@@ -1,0 +1,15 @@
+# Typed cdk8s Python constructs generated from the hash-pinned sshpiper Pipe CRD.
+#
+# gazelle:resolve py sshpiper_pipe_crds //third_party/sshpiper:pipe
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "pipe",
+    crd = "@sshpiper_pipe_crd//file",
+    crd_name = "pipes.sshpiper.com",
+    crd_version = "v1beta1",
+    module_name = "sshpiper_pipe_crds",
+    module_path = "com/sshpiper",
+    visibility = ["//visibility:public"],
+)

@@ -10,4 +10,4 @@ resources:
   - service.yaml
   - cnp-ingress.yaml
   - cnp-egress.yaml
-  - pipe-devbox.yaml
+  - pipe-devbox.k8s.yaml

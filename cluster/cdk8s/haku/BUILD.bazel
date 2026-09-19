@@ -7,6 +7,13 @@ package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 py_library(
     name = "console_config",
     srcs = ["console_config.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = ["//cluster/cdk8s/ssh_mcp:config"],
 )
 
 py_library(
@@ -40,6 +47,7 @@ py_library(
         "//cluster/cdk8s/agentplane:container_security",
         "//cluster/cdk8s/agentplane:node_scheduling",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/ssh_mcp:config",
         "//haku/console:config",
         "//haku/console:mcp_config",
         "//haku/console:settings",
@@ -100,6 +108,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
     ],
 )

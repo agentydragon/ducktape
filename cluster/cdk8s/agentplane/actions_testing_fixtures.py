@@ -183,7 +183,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         ),
         # No readOnlyRootFilesystem: the aspect_rules_py launcher materialises its venv
         # at startup inside the image's own runfiles directory, so the root filesystem
-        # must stay writable (see cluster/k8s/ssh-mcp/deployment.yaml for the same
+        # must stay writable (see cluster/cdk8s/ssh_mcp/backend.py for the same
         # constraint).
         security_context=container_security.WRITABLE_ROOT,
     )

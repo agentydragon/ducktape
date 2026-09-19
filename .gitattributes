@@ -71,10 +71,9 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
-# `bb run //cluster/ssh_targets:generate_bin` output (cluster/ssh_targets/generate.py).
-cluster/k8s/ssh-mcp/known_hosts linguist-generated=true
-cluster/k8s/ssh-mcp/settings.yaml linguist-generated=true
-cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.yaml linguist-generated=true
+# cdk8s-generated ssh-mcp directory wiring.
+cluster/k8s/ssh-mcp/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
@@ -124,8 +123,6 @@ cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignore
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
-# SSH MCP settings, mounted via configMapGenerator — not a Kubernetes manifest.
-cluster/k8s/ssh-mcp/settings.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 haku/x/dispatch/deploy/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

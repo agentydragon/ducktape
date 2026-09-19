@@ -21,6 +21,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
@@ -140,7 +141,7 @@ _ACTIONS_SETTINGS = {
                 "description": "Standalone SSH MCP backend; Agentplane retains approval and execution authority.",
                 "config": {
                     "transport": "streamable-http",
-                    "url": "http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp",
+                    "url": MCP_URL,
                     "auth": "static_bearer",
                     "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
                 },
@@ -164,7 +165,7 @@ ENV = Environment(
         "agentplane-oidc": "sso-providers-tf",
         "agentplane-mcp-oauth": "sso-providers-tf",
         _LITELLM_KEY_SECRET: "litellm-keys-tf",
-        "ssh-mcp-bearer": "ssh-mcp",
+        BEARER_SECRET_NAME: "ssh-mcp",
         # Reflected from the haku namespace by reflector.
         _GITHUB_MCP_CLIENT_SECRET: "haku-console",
         _WEB_PUSH_SECRET: _WEB_PUSH_SECRET_FILE,
@@ -191,7 +192,7 @@ ENV = Environment(
     actions=ActionsProps(
         hostname="agentplane-actions-staging.allegedly.works",
         settings=_ACTIONS_SETTINGS,
-        extra_reload_secrets=(_GITHUB_MCP_CLIENT_SECRET, _WEB_PUSH_SECRET, "ssh-mcp-bearer"),
+        extra_reload_secrets=(_GITHUB_MCP_CLIENT_SECRET, _WEB_PUSH_SECRET, BEARER_SECRET_NAME),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
         web_push_secret_name=_WEB_PUSH_SECRET,

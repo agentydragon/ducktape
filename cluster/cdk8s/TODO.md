@@ -43,16 +43,6 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   it mirrors is still a hand-written `configMapGenerator` input. Render the iron
   ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
   `agents/public-coder-agent/app` uses) and the pin collapses.
-- **`ssh-mcp` known_hosts / sshpiper pinning** (`test_ssh_mcp_known_hosts.py`,
-  and `cluster/validation/test_ssh_mcp_consumers.py`).
-  `cluster/k8s/ssh-mcp/known_hosts`, `ssh_keys/public-coder-devbox-host.pub`,
-  `cluster/k8s/ssh-mcp/settings.yaml`, and
-  `cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.yaml` all hand-copy
-  the same host key/hostname. `ssh_keys/public-coder-devbox-host.pub` is the natural
-  canonical source; a small generator reading it and writing both `known_hosts` and
-  sshpiper's base64 blob is the same "mostly hand-written directory, one generated
-  file" shape `ha_mcp.py` already uses for `bearer.sops.yaml`'s sibling
-  files — doesn't need the whole `ssh-mcp/` directory converted.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet
 
