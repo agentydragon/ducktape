@@ -4,16 +4,16 @@ metadata:
   name: user-agentydragon
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   interval: 10m
   path: ./cluster/k8s/user-agentydragon
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: user-agentydragon
     namespace: ducktape-flux
   timeout: 10m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
