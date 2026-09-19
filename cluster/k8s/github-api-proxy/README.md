@@ -98,12 +98,13 @@ and arrange explicit retention before unattended long-term operation.
 
 Only the TLS proxy port is routed publicly. A PodMonitor targets the separate
 metrics port directly so readiness failure does not remove it from observation.
-The runtime disables readiness after a capture write failure; do not configure
-a liveness probe that restarts and clears this evidence-loss signal. Investigate
-storage and incomplete captures before a controlled restart. Established
-connections are not terminated by a readiness change; the exact-route mitigation
-and metrics remain active. The rule set separately detects capture-write errors,
-failed scrapes, missing targets, a high collection physical storage budget and
+The runtime keeps readiness tied to proxy process health after a capture write
+failure; capture loss is reported through metrics and alerts instead of removing
+the Service endpoint. Do not configure a liveness probe merely to clear a capture
+failure latch. Investigate storage and incomplete captures before any controlled
+restart. Established connections are not terminated by a readiness change; the
+exact-route mitigation and metrics remain active. The rule set separately detects
+capture-write errors, failed scrapes, missing targets, a high collection physical storage budget and
 missing budget inputs. The budget compares deduplicated SeaweedFS normal-volume
 bytes (including replicas) with the PVC storage request; it does not measure free
 space or guarantee writes. Partial volume-server telemetry loss can undercount
