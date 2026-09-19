@@ -54,6 +54,17 @@ locals {
       zone            = "hil-ovh"
       storage_tier    = "ssd"
     }
+    "ovh-ns1001419" = {
+      service_name = var.kimsufi_service_name_sys1
+      apply_mode   = "staged_if_needing_reboot"
+      # The new SYS-1 has two identical NVMe devices. The machine is blank,
+      # so the first device is the Talos install disk and the second becomes
+      # the SSD UserVolume for local-path/SeaweedFS.
+      install_disk    = "/dev/nvme0n1"
+      data_disk_match = "disk.dev_path == '/dev/nvme1n1'"
+      zone            = "hil-ovh"
+      storage_tier    = "ssd"
+    }
     "ovh-ns102453" = {
       service_name    = var.kimsufi_service_name_cp0
       apply_mode      = "staged_if_needing_reboot"
@@ -454,6 +465,7 @@ locals {
   # ExternalIP and removes the taint, and the node is in steady state.
   # Fresh-bootstrapped nodes (post-flag install) get this for free.
   kimsufi_cloud_provider_external_enabled_nodes = toset([
+    "ovh-ns1001419",
     "ovh-ns102453",
     "ovh-ns103656",
     "ovh-ns103711",
