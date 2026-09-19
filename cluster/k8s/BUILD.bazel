@@ -94,6 +94,12 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "grocy/sf/app/flux-kustomization.yaml",
+        "grocy/sf/mcp/flux-kustomization.yaml",
+        "grocy/sf/user-perms/flux-kustomization.yaml",
+        "grocy/vallejo/app/flux-kustomization.yaml",
+        "grocy/vallejo/mcp/flux-kustomization.yaml",
+        "grocy/vallejo/user-perms/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
