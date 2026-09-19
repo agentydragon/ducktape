@@ -415,6 +415,7 @@ py_library(
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/clickhouse:schema",
+        "//cluster/cdk8s/flux_image_automation_forgejo:flux_kustomizations",
         "//cluster/cdk8s/haku:charts",
         "//cluster/cdk8s/litellm:credentials",
         "//cluster/cdk8s/litellm:keys",
