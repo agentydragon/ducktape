@@ -9,7 +9,7 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 
 ## Three shapes of a directory
 
-1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
+1. **Fully generated** (`agentplane-{staging,testing}`, `artifact-generators`, `litellm/app`,
    `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `external-creds`,
    `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//cluster/cdk8s/crd_bindings/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
@@ -17,6 +17,9 @@ for writing a generator: <../cdk8s/AGENTS.md>.
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest) and one `<name>.k8s.yaml` per chart. Hand-written beside
    them: `image-pins/` (below) and any `.sops.yaml`.
+   `artifact-generators` imports the deployed source-watcher CRD and keeps its artifact
+   inventory explicit in `cdk8s/artifact_generators.py`; `test_actions_artifact` checks
+   that inventory against the active Flux consumers and their rendered Kustomize output.
 2. **One or a few generated files** in an otherwise hand-written directory, each a
    `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A
    ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
@@ -101,14 +104,18 @@ Flux-vs-Argo question in neither direction.
 
 ## CRD bindings
 
-`devinfra/js/cdk8s_import.bzl` wraps `cdk8s import`: the CRD YAML is an `http_file` in
-`MODULE.bazel` pinned by sha256 to the version the cluster deploys (the same tag as the
-operator's `GitRepository` or Terraform install), and the jsii-backed Python bindings
-are build-time output, never committed. Put each import declaration and its optional
-smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep the pinned CRD
-source in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller}`.
+`devinfra/js/cdk8s_import.bzl` wraps `cdk8s import`: for most providers, the CRD YAML is
+an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster deploys
+(the same tag as the operator's `GitRepository` or Terraform install). The jsii-backed
+Python bindings are build-time output, never committed. Put each import declaration and
+its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
+upstream CRD source pins in `MODULE.bazel`. Current providers are
+`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher}`.
 `//x/agentplane/crds` owns its CRD constructs directly and is a separate case.
+
+The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
+`cluster/k8s/flux-system/gotk-components.yaml`, keeping the binding aligned with the
+Flux version deployed by the repository.
 
 - `cdk8s import` takes one CRD per invocation; a bundled multi-document file
   (external-secrets) goes through the `devinfra/k8s/extract_crd.py` genrule first.

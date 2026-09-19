@@ -20,7 +20,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
 
     generators = [
         document
-        for document in yaml.safe_load_all((root / "artifact-generators/generators.yaml").read_text())
+        for document in yaml.safe_load_all((root / "artifact-generators/artifact-generators.k8s.yaml").read_text())
         if document and document.get("kind") == "ArtifactGenerator"
     ]
     artifact_names = [artifact["name"] for generator in generators for artifact in generator["spec"]["artifacts"]]

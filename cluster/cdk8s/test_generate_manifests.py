@@ -15,6 +15,9 @@ from cluster.cdk8s.generate_manifests import generate_manifests
 from util.bazel.runfiles import get_required_path
 
 _GENERATED_FILES = (
+    "cluster/k8s/artifact-generators/artifact-generators.k8s.yaml",
+    "cluster/k8s/artifact-generators/flux-kustomization.yaml",
+    "cluster/k8s/artifact-generators/kustomization.yaml",
     "cluster/k8s/litellm/app/litellm.k8s.yaml",
     "cluster/k8s/litellm/app/flux-kustomization.yaml",
     "cluster/k8s/litellm/app/kustomization.yaml",
