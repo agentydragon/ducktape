@@ -4,16 +4,6 @@ metadata:
   name: haku-mailbox
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  path: ./cluster/k8s/haku/mailbox/app
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-mailbox-app
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -25,17 +15,27 @@ spec:
       namespace: ducktape-flux
     - name: haku-mailbox-db
       namespace: ducktape-flux
-    - name: cert-manager # Certificate CRD + controller
+    - name: cert-manager
       namespace: ducktape-flux
-    - name: agent-machine-access-tf # Authentik provider + Haku mailbox identity
+    - name: agent-machine-access-tf
       namespace: ducktape-flux
-    - name: gateway # HTTPRoute parent for the JMAP/management API
+    - name: gateway
       namespace: ducktape-flux
-    - name: external-secrets-config # ClusterSecretStore + CRDs (token mirror)
+    - name: external-secrets-config
       namespace: ducktape-flux
-    - name: cert-manager-issuer-config # ${LETSENCRYPT_ISSUER}
+    - name: cert-manager-issuer-config
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/haku/mailbox/app
   postBuild:
     substituteFrom:
       - kind: ConfigMap
-        name: cert-manager-issuer-config # ${LETSENCRYPT_ISSUER}
+        name: cert-manager-issuer-config
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-mailbox-app
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
