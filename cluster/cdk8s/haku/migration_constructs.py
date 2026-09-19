@@ -1,7 +1,13 @@
-"""The change-driven release gate: this exact console image migrates the schema before Flux
-rolls the API/static workloads that depend on it. A migration failure is a release failure,
-not a transient workload retry: one attempt, its pod and logs preserved until an operator
-has diagnosed or deliberately retried it (cluster/docs/troubleshooting.md).
+"""The change-driven schema migration: this exact console image migrates before the API
+serves the new schema.
+
+It shares one Flux Kustomization with the database and the console, which gives it no
+ordering guarantee against either -- so it retries instead, until CNPG has bootstrapped
+and the Cluster accepts connections. Every attempt leaves its own Pod behind (a Job with
+`restartPolicy: Never` creates one per try and does not delete failures), so a genuine
+migration bug is still diagnosable from the logs; what it no longer gets is a single
+attempt. The Kustomization's `wait` plus this Job's health check keep dependent
+Kustomizations from reconciling until it succeeds.
 
 The Job stays image-coupled with the API Deployment through the same image-pins/ entry. A
 versioned Job name would instead bind rollout state to repository HEAD and duplicate
@@ -50,8 +56,12 @@ class Migration(Construct):
             metadata=metadata(NAME, namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}),
             pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": NAME}),
             select=False,
-            backoff_limit=0,
-            active_deadline=Duration.seconds(300),
+            # Retries are how this waits for the database, since nothing sequences the two
+            # inside one Kustomization. Kubernetes backs off exponentially to a 6m ceiling,
+            # so ~10 attempts spans well over the deadline; the deadline is the real bound
+            # and covers every attempt, not each one.
+            backoff_limit=10,
+            active_deadline=Duration.minutes(20),
             restart_policy=RestartPolicy.NEVER,
             service_account=service_account,
             automount_service_account_token=False,

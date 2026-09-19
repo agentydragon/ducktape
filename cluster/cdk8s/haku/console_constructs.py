@@ -561,10 +561,11 @@ class Console(Construct):
 
     def _add_indexer_provisioner(self) -> None:
         """Applies indexer-role.sql's object GRANTs for `haku_indexer`. The role itself is
-        CNPG-managed (db_constructs.py); the grants run here because the recall_index schema
-        exists only after the migration Job. Change-driven and single-attempt: no TTL (the TTL
-        controller deleting a finished Job would make Flux recreate and re-run it on schedule)
-        and no retry (a failed pod is preserved for its logs)."""
+        CNPG-managed (db_constructs.py); the grants need the recall_index schema, which the
+        migration Job creates in this same Kustomization with nothing sequencing the two --
+        so this retries until that schema exists. Each attempt keeps its own Pod, so a real
+        SQL error is still readable. No TTL: the TTL controller deleting a finished Job would
+        make Flux recreate and re-run it on schedule."""
         job = Job(
             self,
             "indexer-provisioner",
@@ -582,7 +583,8 @@ class Console(Construct):
             ),
             pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_NAME}),
             select=False,
-            backoff_limit=0,
+            backoff_limit=10,
+            active_deadline=Duration.minutes(20),
             restart_policy=RestartPolicy.NEVER,
             automount_service_account_token=False,
         )

@@ -8,11 +8,13 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: haku-workspaces
-    - name: haku-console-migration
     - name: haku-console-namespace
-    - name: haku-console-db
+    - name: cnpg
+    - name: local-path-provisioner
+    - name: forgejo-images
     - name: haku-state
     - name: gateway
     - name: agent-machine-access-tf
@@ -21,6 +23,23 @@ spec:
     - name: external-secrets-config
     - name: ssh-mcp
     - name: monitoring-crds
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: haku-console-db
+      namespace: haku-console
+    - apiVersion: batch/v1
+      kind: Job
+      name: haku-console-migration
+      namespace: haku-console
+    - apiVersion: batch/v1
+      kind: Job
+      name: haku-console-db-indexer-provisioner
+      namespace: haku-console
   interval: 10m
   path: ./cluster/k8s/haku/console
   prune: true
@@ -29,5 +48,5 @@ spec:
     kind: ExternalArtifact
     name: haku-console
     namespace: ducktape-flux
-  timeout: 5m
+  timeout: 20m
   wait: true

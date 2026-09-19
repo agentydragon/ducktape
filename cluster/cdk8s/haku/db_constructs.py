@@ -2,8 +2,9 @@
 `vector` extension the semantic index needs, and the ESO-generated credential of the
 narrow `haku_indexer` role.
 
-The `haku-console-db` Kustomization is the boundary: the migration Job and the console
-workloads depend on it and read the `<cluster>-app` Secret CNPG mints.
+This shares the `haku-console` Kustomization with the migration Job and the console
+workloads that read the `<cluster>-app` Secret CNPG mints, so nothing orders them behind
+it; they retry until the Cluster accepts connections.
 """
 
 from __future__ import annotations

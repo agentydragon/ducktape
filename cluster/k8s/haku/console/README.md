@@ -3,11 +3,11 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
-The `haku-console.k8s.yaml`, `flux-kustomization.yaml` and `kustomization.yaml` here and
-in `db/` and `migration/` are generated from `cluster/cdk8s/haku/` (`charts.py` lists the
-three Kustomizations; `console_config.py` is the non-secret config the
-`haku-console-config` ConfigMap carries, rendered and checked through the console's own
-`Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
+The `haku-console.k8s.yaml`, `flux-kustomization.yaml` and `kustomization.yaml` here are
+generated from `cluster/cdk8s/haku/` (`charts.py` composes the one Kustomization —
+database, migration, console and API proxy; `console_config.py` is the non-secret config
+the `haku-console-config` ConfigMap carries, rendered and checked through the console's
+own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
 Secrets, `indexer-role.sql` (a `configMapGenerator` input, so a changed script re-hashes
 the ConfigMap and recreates the provisioner Job), `image-pins/`, and the two ConfigMaps
 carrying Flux image markers (`static-metadata.yaml`, `image-metadata.yaml`).
@@ -46,20 +46,27 @@ no Console secrets, ServiceAccount token, or database access.
 
 ## Schema migrations are release work
 
-`haku-console-migration` is a fixed-name Job run by its own Flux Kustomization before the
-Console workloads reconcile. It uses the same Flux-selected `haku-console` image as the API and
-runs `server_bin migrate`; the command consumes only the database URL. The API performs a
-zero-row ORM compatibility check at startup but never applies DDL. This keeps a migration failure
-from replacing serving API replicas.
+`haku-console-migration` is a fixed-name Job using the same Flux-selected `haku-console` image
+as the API, running `server_bin migrate`; the command consumes only the database URL. The API
+performs a zero-row ORM compatibility check at startup but never applies DDL.
+
+**Nothing sequences the migration ahead of the API.** The database, the migration and the
+console share one Flux Kustomization, and a Kustomization applies its objects without ordering
+— so the API Deployment can be rolling while the migration Job is still running. Schema changes
+must therefore be compatible with both the outgoing and incoming code (see _Rolling release
+compatibility_ below, which the previous ordered-Kustomization layout already required). What
+the ordering does still hold for is _dependent Kustomizations_: `wait` plus the Job health
+checks keep anything with `dependsOn: haku-console` from reconciling until both Jobs succeed.
 
 The Job has no Kubernetes API authority and is recreated only when its desired image or manifest
-changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It intentionally has neither a TTL nor an
-automatic retry loop: a failed release remains inspectable and blocks its dependent workload until
-an operator deletes `haku-console-migration` and reconciles `haku-console-migration` in
-`ducktape-flux`. See `cluster/docs/troubleshooting.md` → “A Failed Job Wedges Its Flux
-Kustomization”. It temporarily uses the existing CNPG application-owner credential; splitting
-DDL ownership from runtime DML must first migrate the externally managed `mcp_oauth_kv` table and
-make a deliberate ownership/grant handoff for the live database.
+changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It has no TTL, and it retries
+(`backoffLimit: 10`, 20m deadline) because it has to wait out CNPG bootstrapping the Cluster
+beside it. Each attempt leaves its own Pod, so a genuine migration failure is still readable
+from the logs; it no longer fails after exactly one try. See `cluster/docs/troubleshooting.md` →
+“A Failed Job Wedges Its Flux Kustomization”. It temporarily uses the existing CNPG
+application-owner credential; splitting DDL ownership from runtime DML must first migrate the
+externally managed `mcp_oauth_kv` table and make a deliberate ownership/grant handoff for the
+live database.
 
 ## Rolling release compatibility
 
@@ -74,8 +81,9 @@ close the gap, but Service `sessionAffinity` is not known to survive the Cilium 
 path; verify that path before configuring it. Until then, API/static compatibility must remain
 additive across their independent rolls.
 
-The migration Job runs before the new API workload, while previous API replicas may still be
-serving. Database changes therefore use expand/contract. Dropping or renaming an ORM-mapped column
+The migration Job runs alongside the new API workload, while previous API replicas may still be
+serving, so a release's schema has to satisfy the old code, the new code, and the window where
+the migration has not finished. Database changes therefore use expand/contract. Dropping or renaming an ORM-mapped column
 requires three releases: add the replacement, stop mapping the old column, then drop it only after
 the unmapping release has converged. SQLAlchemy names every mapped column in ordinary model
 `SELECT`s even when application code does not read the attribute. `database_schema.py` records

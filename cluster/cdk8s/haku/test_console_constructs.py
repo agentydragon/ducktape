@@ -15,8 +15,8 @@ from haku.console.settings import Settings
 from util.settings_contract import env_name
 
 
-def test_recall_stays_unwired(haku_console_manifests: dict[str, list[dict[str, Any]]]) -> None:
-    objects = haku_console_manifests["haku-console"]
+def test_recall_stays_unwired(haku_console_manifests: list[dict[str, Any]]) -> None:
+    objects = haku_console_manifests
     config = yaml.safe_load(
         one(o for o in objects if o["kind"] == "ConfigMap" and o["metadata"]["name"] == "haku-console-config")["data"][
             "config.yaml"

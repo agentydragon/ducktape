@@ -4,9 +4,9 @@
 -- grants object permissions (CNPG does not manage these) and runs as the
 -- `approval_store` owner, which has all privileges on its own database and tables.
 --
--- The Job lives in this app-layer Kustomization, not db/, because the recall_index
--- schema is created by the migration Job (this Kustomization's dependency) — the
--- grants would fail on a fresh bootstrap if applied before it.
+-- The recall_index schema is created by the migration Job, which shares this
+-- Kustomization with no ordering between them, so the provisioner Job running this
+-- script retries until the schema exists rather than failing a fresh bootstrap.
 --
 -- The grants are deliberately the worker's whole authority: recall-index read/write.
 -- No approval-ledger, identity, credential, or OAuth table is readable.
