@@ -19,6 +19,7 @@ on:
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
   # Also on PRs, which the other image workflows deliberately don't do. The cutover
@@ -32,6 +33,7 @@ on:
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
   workflow_dispatch:

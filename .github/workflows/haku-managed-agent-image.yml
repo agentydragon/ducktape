@@ -15,6 +15,7 @@ on:
     paths:
       - "haku/runtime/managed_agent/self_hosted/**"
       - "flake.nix"
+      - "nix/flake/packages.nix"
       - "nix/packages/anthropic-cli.nix"
       - "nix/packages/fastmcp.nix"
       - ".github/actions/setup-nix-attic/action.yml"

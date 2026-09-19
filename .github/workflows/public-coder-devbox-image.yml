@@ -9,6 +9,7 @@ on:
     paths:
       - "flake.nix"
       - "flake.lock"
+      - "nix/flake/packages.nix"
       - "nix/nixos/hosts/public-coder-devbox/**"
       - "nix/nixos/modules/vm-hardware.nix"
       - "nix/nixos/modules/bazel/**"

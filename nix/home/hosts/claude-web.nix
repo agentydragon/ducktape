@@ -56,8 +56,8 @@ in
   };
 
   # Same toolset the .#devtools profile install ships (claude-hook, statusline,
-  # bbr, bbapi, gh, sops, kubectl, …). Reuses the flake's devToolPackages list
-  # so the two install paths can never drift.
+  # bbr, bbapi, gh, sops, kubectl, …). Reuses devToolPackages from
+  # nix/flake/devtools.nix so the two install paths can never drift.
   home.packages = webDevTools;
 
   home.file = mkSkills { prefix = ".claude"; };

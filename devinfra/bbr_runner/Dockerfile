@@ -27,8 +27,9 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 # bazelisk, ruff, buildifier, bb, bbapi, gh, kubectl, etc.) without
 # maintaining a separate apt/pip install list.
 #
-# The devtools closure is fetched from cache.nixos.org (and attic when
-# available). Only the symlinkJoin derivation itself needs a local build.
+# The devtools closure is fetched from the anonymous Attic public cache, with
+# cache.nixos.org as a fallback. Only the symlinkJoin derivation itself needs
+# a local build.
 
 # Copy only the repo files needed to evaluate and build `.#rbetools`. Keep
 # this list in sync with the bbr-runner path filters in
@@ -36,6 +37,8 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 # without publishing it, so missing evaluation inputs fail before merge.
 COPY flake.nix flake.lock /tmp/flake/
 COPY nix/artifact-pins.json /tmp/flake/nix/artifact-pins.json
+COPY nix/attic-pubkeys.json /tmp/flake/nix/attic-pubkeys.json
+COPY nix/flake /tmp/flake/nix/flake
 COPY nix/packages /tmp/flake/nix/packages
 # nix/packages/gaffer.nix reads ../gaffer-pins.json during package-set
 # evaluation, even though rbetools does not include the private artifacts.
@@ -43,13 +46,16 @@ COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
 COPY skills/skills_registry.json /tmp/flake/skills/skills_registry.json
 SHELL ["/bin/bash", "-c"]
 RUN mkdir -p ~/.config/nix \
+    && ATTIC_PUBLIC_KEY="$(python3 -c 'import json; print(next(key for key in json.load(open("/tmp/flake/nix/attic-pubkeys.json")) if key.startswith("public:")))')" \
     # nix.conf MUST be written BEFORE the installer runs — the installer
     # internally runs nix-env which reads this config. Without build-users-group=,
     # it defaults to 'nixbld' which doesn't exist in the container.
     && printf '%s\n' \
          'build-users-group =' \
          'experimental-features = nix-command flakes' \
-         'sandbox = false' \
+         "extra-trusted-public-keys = $ATTIC_PUBLIC_KEY" \
+         'extra-substituters = https://cache.allegedly.works/public' \
+         'sandbox = true' \
          'max-jobs = auto' \
        > ~/.config/nix/nix.conf \
     && curl -fsSL https://nixos.org/nix/install -o /tmp/nix-install.sh \
@@ -60,13 +66,11 @@ RUN mkdir -p ~/.config/nix \
     # Use nix build (not nix profile install) to avoid the profile manifest
     # keeping a reference to the nixpkgs source tree (~457MB).
     #
-    # --max-jobs 2: nix/packages' packageOverrides fixpoint (see its own
-    # top-of-file comment) can pull a large slice of nixpkgs' Python set into
-    # a from-source rebuild. With sandbox = false and no Nix daemon to throttle
-    # it, the default auto (= nproc, 4 on ubuntu-latest) parallel derivations
-    # of native-code packages can exceed this runner's memory, killing one
-    # build uncleanly and leaving Nix's unsandboxed-root HOME marker
-    # (/homeless-shelter) behind for the next derivation to trip over.
+    # With the public Attic cache current, only rbetools' symlinkJoin needs a
+    # local build. Without those substitutes, Nix's sandbox fallback in this
+    # nested BuildKit environment lets Python wheel builds create
+    # /homeless-shelter, which makes later derivations fail. Cap parallelism
+    # too in case the closure is temporarily cold.
     && RBETOOLS=$(nix build .#rbetools \
          --max-jobs 2 --no-link --print-out-paths) \
     # Register as GC root so nix-collect-garbage keeps the closure.

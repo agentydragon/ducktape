@@ -19,9 +19,10 @@ name: Container Images
 on:
   push:
     branches: [main, devel]
-    # bbr-runner's Dockerfile COPYs flake.nix + nix/packages/** + the two
-    # pins JSONs and runs `nix build .#rbetools`, so the image's content
-    # depends on those trees. Missing them here means a nix/packages change
+    # bbr-runner's Dockerfile COPYs flake.nix + nix/flake/** + nix/packages/**
+    # + artifact/gaffer pins and Attic's public key, then runs
+    # `nix build .#rbetools`, so the image depends on those inputs. Missing
+    # them here means a Nix tooling change
     # (e.g. #2706 adding bazel-diff) doesn't rebuild the image and
     # image_pins.json falls out of date; the next `bazel-ci` run silently uses
     # the old runner.
@@ -36,7 +37,9 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "nix/packages/**"
+      - "nix/flake/**"
       - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
       - "nix/gaffer-pins.json"
       - "skills/skills_registry.json"
       - "skills/freecad/Dockerfile.test"
@@ -52,7 +55,9 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "nix/packages/**"
+      - "nix/flake/**"
       - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
       - "nix/gaffer-pins.json"
       - "skills/skills_registry.json"
       - ".github/workflows/container-images.yml"
