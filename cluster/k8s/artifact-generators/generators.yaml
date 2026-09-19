@@ -1121,25 +1121,11 @@ spec:
             - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
           to: "@artifact/cluster/k8s/grocy/user-perms-base/"
-    - name: haku-console-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/console/db/**"
-          to: "@artifact/cluster/k8s/haku/console/db/"
-          exclude:
-            - flux-kustomization.yaml
     - name: haku-console
       originRevision: "@repo"
       copy:
         - from: "@repo/cluster/k8s/haku/console/**"
           to: "@artifact/cluster/k8s/haku/console/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: haku-console-migration
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/console/migration/**"
-          to: "@artifact/cluster/k8s/haku/console/migration/"
           exclude:
             - flux-kustomization.yaml
     - name: haku-mailbox-app

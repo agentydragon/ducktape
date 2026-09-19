@@ -386,45 +386,53 @@ def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | 
     )
 
 
-def _generate_haku_console_directory(
-    root: Path, directory: haku_charts.Directory, build: Callable[[App], Chart]
-) -> None:
-    """One of the console's Kustomization directories: its chart, the Flux Kustomization
-    (health checks from the chart's own objects), and the root Kustomization listing the
-    generated file beside the hand-written siblings."""
-    out_dir = root / directory.path
+def _generate_haku_console(root: Path) -> None:
+    """The console's one Kustomization directory: database, migration, console and API
+    proxy in a single chart, its Flux Kustomization (health checks from the chart's own
+    objects), and the root Kustomization listing the generated file beside the
+    hand-written siblings."""
+    out_dir = root / haku_charts.PATH
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart = build(app)
+    chart = haku_charts.console_chart(app)
     app.synth()
     _write_yaml(
         out_dir / "flux-kustomization.yaml",
         flux_kustomization(
-            directory.name,
+            haku_charts.NAME,
             spec=KustomizationSpec(
                 interval="10m",
                 retry_interval="1m",
-                timeout=directory.timeout,
-                path=f"./{directory.path}",
-                prune=not directory.retain_objects,
-                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN if directory.retain_objects else None,
+                timeout=haku_charts.TIMEOUT,
+                path=f"./{haku_charts.PATH}",
+                prune=True,
+                # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
+                # would take the console's approval ledger with them.
+                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
                 wait=True,
                 source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=haku_charts.NAME, namespace=NAMESPACE
                 ),
-                decryption=_sops_decryption(directory.extra_resources),
-                health_checks=health_checks(chart, directory.health_check_kinds) or None,
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on],
+                decryption=_sops_decryption(haku_charts.EXTRA_RESOURCES),
+                # The two Jobs gate every dependent Kustomization: nothing downstream
+                # reconciles until the schema is migrated and the indexer GRANTs applied.
+                health_checks=health_checks(chart, ("Cluster", "Job")),
+                health_check_exprs=[
+                    KustomizationSpecHealthCheckExprs(
+                        api_version="postgresql.cnpg.io/v1", kind="Database", current=_CNPG_DATABASE_READY
+                    )
+                ],
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in haku_charts.DEPENDS_ON],
             ),
         ),
     )
     _write_yaml(
         out_dir / "kustomization.yaml",
         kustomize_kustomization(
-            namespace=directory.namespace,
-            resources=[f"{directory.name}.k8s.yaml", *directory.extra_resources],
-            components=["./image-pins"] if directory.image_pins else (),
-            config_map_generator=directory.config_map_generator,
+            namespace=haku_charts.NAMESPACE,
+            resources=[f"{haku_charts.NAME}.k8s.yaml", *haku_charts.EXTRA_RESOURCES],
+            components=["./image-pins"],
+            config_map_generator=haku_charts.CONFIG_MAP_GENERATOR,
         ),
     )
 
@@ -658,9 +666,7 @@ def generate_manifests(root: Path) -> None:
     _generate_aiquota(root)
     _generate_agentplane(root, staging.ENV, staging.chart)
     _generate_agentplane(root, testing.ENV, testing.chart)
-    _generate_haku_console_directory(root, haku_charts.DB, haku_charts.db_chart)
-    _generate_haku_console_directory(root, haku_charts.MIGRATION, haku_charts.migration_chart)
-    _generate_haku_console_directory(root, haku_charts.CONSOLE, haku_charts.console_chart)
+    _generate_haku_console(root)
     _write_charts(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
     _write_charts(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
     _write_charts(root, _DESCHEDULER_DIR, _descheduler_chart)
