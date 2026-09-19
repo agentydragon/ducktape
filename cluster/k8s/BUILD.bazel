@@ -94,6 +94,10 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "atuin/app/flux-kustomization.yaml",
+        "atuin/db/flux-kustomization.yaml",
+        "atuin/namespace/flux-kustomization.yaml",
+        "atuin/user-provisioner/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
