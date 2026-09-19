@@ -274,7 +274,8 @@ env var (or a `--mode=<...>` arg):
 
 The `home-manager` mode activates `homeConfigurations.claude-web` (defined in `flake.nix`,
 config at <../../nix/home/hosts/claude-web.nix>) — a standalone, minimal profile that
-reuses the flake's `devToolPackages` list (so the two modes can't drift) and adds
+reuses the shared `devToolPackages` list from
+[`nix/flake/devtools.nix`](../../nix/flake/devtools.nix) (so the two modes can't drift) and adds
 direnv + nix-direnv plus the shared skills module. It deliberately does **not** import the
 full home-manager host config, so — unlike the NixOS hosts — it deploys no Claude Code
 settings, plugins, or MCP servers.

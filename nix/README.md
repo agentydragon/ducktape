@@ -16,6 +16,9 @@ nix/
 │   ├── programs/  # Reusable Home Manager program modules
 │   └── skills.nix # Shared AI-tool skill deployment helper
 ├── droid/         # Android (phone) configurations — see droid/README.md
+├── flake/         # Flake output composition
+│   ├── devtools.nix
+│   └── packages.nix
 ├── packages/      # Custom Nix packages
 ├── lib/           # Shared Nix helpers
 └── TODO.md        # Future improvements

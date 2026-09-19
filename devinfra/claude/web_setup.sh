@@ -225,7 +225,7 @@ ls -la
 log "Install mode: $MODE"
 if [ "$MODE" = "home-manager" ]; then
   # Home Manager installs the same devtools (homeConfigurations.claude-web reuses
-  # the flake's devToolPackages list) and deploys skills itself, so the
+  # devToolPackages list in nix/flake/devtools.nix) and deploys skills itself, so the
   # standalone skill symlink in step 4 is skipped below. claude-web is
   # standalone/minimal — it deploys no Claude Code settings, plugins, or MCP
   # servers.

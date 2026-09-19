@@ -20,8 +20,9 @@ survived the deleted plan:
 
 ## Dev environment consolidation leftovers
 
-The repo dev tools are already shared through `flake.nix`/`packages.devtools`,
-and Prettier now runs as a Nix-provided `language: system` pre-commit hook with
+The repo dev tools are already shared through `nix/flake/devtools.nix` and the
+`.#devtools` output in `nix/flake/packages.nix`. Prettier now runs as a
+Nix-provided `language: system` pre-commit hook with
 the Svelte plugin on `NODE_PATH`. Remaining low-priority work:
 
 - Consider defining overlapping secret mappings once in Nix and generating a

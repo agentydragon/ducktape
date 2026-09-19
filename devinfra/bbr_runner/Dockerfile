@@ -36,6 +36,7 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 # without publishing it, so missing evaluation inputs fail before merge.
 COPY flake.nix flake.lock /tmp/flake/
 COPY nix/artifact-pins.json /tmp/flake/nix/artifact-pins.json
+COPY nix/flake /tmp/flake/nix/flake
 COPY nix/packages /tmp/flake/nix/packages
 # nix/packages/gaffer.nix reads ../gaffer-pins.json during package-set
 # evaluation, even though rbetools does not include the private artifacts.

@@ -16,6 +16,7 @@ on:
     paths:
       - "x/codex_pod_image/**"
       - "flake.lock"
+      - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/codex-pod-image.yml"
   workflow_dispatch:

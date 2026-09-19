@@ -10,7 +10,7 @@ Nix's cold-start is slow (~120s) because:
 2. **First run fetches nixpkgs metadata** (~50MB, takes 60-120s)
 3. **Binary cache only helps after evaluation** - You need the store path first
 
-Current workaround: `binary_tools.py` downloads binaries directly (~2s), but this duplicates version definitions with `.envrc`/flake.nix.
+Current workaround: `binary_tools.py` downloads binaries directly (~2s), but this duplicates version definitions with `.envrc`/the Nix flake.
 
 ## Options Considered
 
@@ -38,14 +38,14 @@ Current workaround: `binary_tools.py` downloads binaries directly (~2s), but thi
 
 **How it works:**
 
-- flake.nix defines tools (single source of truth)
+- the flake defines tools (single source of truth)
 - CI builds, garbage-collects, and exports minimal store closure
 - Publish tarball to GitHub releases
 - Session hook downloads and unpacks to /nix/store
 
 **Pros:**
 
-- Single source of truth (flake.nix)
+- Single source of truth (the flake)
 - No nix installation needed at runtime (just unpack + symlink)
 - Hermetic - identical versions across local dev and Claude Code web
 - Small tarball for standalone tools (~30-50MB)
@@ -77,7 +77,7 @@ symlink("/nix/store/abc123-opentofu-1.9.0/bin/tofu", "~/.local/bin/tofu")
 
 **How it works:**
 
-- flake.nix is source of truth
+- the flake is source of truth
 - Script extracts version/URL info from flake and generates binary_tools.py
 - Keep current binary download approach, just automate the version sync
 
