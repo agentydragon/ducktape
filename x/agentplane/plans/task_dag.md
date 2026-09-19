@@ -89,7 +89,7 @@ flowchart TB
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
-    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>holds no RoleBinding; egress accreted from smoke tests"]:::future
+    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>holds no RoleBinding; reaches Forgejo as haku"]:::future
     SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
@@ -349,19 +349,25 @@ changed what that authority reaches: the account is no longer only an Action cal
 identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
-ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic and
-Kubernetes policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub reads plus the
-whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox authenticating to the
-API server arrives as an account with nothing beyond `system:authenticated` — reach without
-authorization, which is why the verified evidence is a `SelfSubjectReview` and not a read of any
-object.
+ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic,
+Kubernetes and `forgejo-haku` policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub
+reads plus the whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox
+authenticating to the API server arrives as an account with nothing beyond `system:authenticated`
+— reach without authorization, which is why the verified Kubernetes evidence is a
+`SelfSubjectReview` and not a read of any object.
 
-Decide, then write down: which Kubernetes roles this account should hold and at what scope; whether
-the Kubernetes egress rule should stay an all-verbs, all-paths admission once RBAC is what bounds
-it; and whether the GitHub reads a Connection may auto-approve should also be what a sandbox of
-this account reaches, since the `EgressBinding` and the `ActionPolicyBinding` are separate grants
-that nothing keeps consistent. The same questions exist outside Kubernetes — the credentials the
-basic policy substitutes are reached by any box this account creates.
+`forgejo-haku` is the deliberate part and the widest: at the operator's request, a sandbox of this
+caller's reaches the in-cluster Forgejo as the `haku` service account, by the proxy substituting
+that account's own password into Basic auth. It is the account rather than a scoped token, so it
+carries every repository haku owns and the web UI besides, and it is a second agent's identity
+rather than this one's. That grant is decided; what it sharpens is the question below, because the
+account now holds authority whose blast radius is another agent's.
+
+Still to decide, then write down: which Kubernetes roles this account should hold and at what
+scope; whether the Kubernetes egress rule should stay an all-verbs, all-paths admission once RBAC
+is what bounds it; and whether the GitHub reads a Connection may auto-approve should also be what a
+sandbox of this account reaches, since the `EgressBinding` and the `ActionPolicyBinding` are
+separate grants that nothing keeps consistent.
 
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is

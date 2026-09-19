@@ -990,6 +990,14 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: forgejo
+            k8s:io.kubernetes.pod.namespace: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
     - toEntities:
         - world
         - remote-node
@@ -1075,6 +1083,21 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
+  source:
+    secretRef:
+      name: haku-forgejo-git
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
@@ -1141,6 +1164,19 @@ spec:
       clusterInternal: true
       credentialRef:
         name: kubernetes-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - forgejo-http.forgejo.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -2819,6 +2855,7 @@ spec:
   policies:
     - basic
     - kubernetes
+    - forgejo-haku
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
