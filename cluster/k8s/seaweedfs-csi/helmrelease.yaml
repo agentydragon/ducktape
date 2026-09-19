@@ -156,12 +156,12 @@ spec:
                   - key: topology.kubernetes.io/zone
                     operator: In
                     values: ["hil-ovh"]
-      # ovh-ns103656 is a control plane carrying the control-plane NoSchedule
-      # taint, and the nodeAffinity above already admits it (it is hil-ovh).
-      # Without a matching toleration that node serves SeaweedFS but cannot
-      # mount it: seaweedfs-volume-hdd-2 runs there and already tolerates this
-      # taint, yet the node's CSINode advertises no seaweedfs-csi-driver, so a
-      # CP-tolerating pod with a SeaweedFS PVC hangs in ContainerCreating.
+      # OVH control-plane nodes carry the control-plane NoSchedule taint, and the
+      # nodeAffinity above admits them (they are hil-ovh). Without a matching
+      # toleration, a control-plane node that serves SeaweedFS cannot mount its
+      # PVCs: the volume server tolerates the taint, yet the node's CSINode may
+      # not advertise the seaweedfs-csi-driver, so a tolerating pod can hang in
+      # ContainerCreating.
       # Not an etcd-contention risk -- etcd rides the install disk and SeaweedFS
       # the separate data disk, which is why
       # <cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md> kept

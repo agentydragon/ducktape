@@ -28,12 +28,6 @@ metadata:
 addressType: IPv4
 endpoints:
   - addresses:
-      - 10.42.0.13
-    conditions:
-      ready: true
-    hostname: ovh-ns103656
-    nodeName: ovh-ns103656
-  - addresses:
       - 10.42.0.16
     conditions:
       ready: true

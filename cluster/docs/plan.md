@@ -27,9 +27,9 @@ editing a route.
 
 ## Next Actions
 
-- [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
-      rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
-      KS-GAME workers). **Recurred 2026-06-28 as a full outage** (two CPs NotReady,
+- [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd now runs on
+      the three NVMe-backed control planes; the former KS-5 control-plane HDD is a
+      worker. **Recurred 2026-06-28 as a full outage** (two CPs NotReady,
       Forgejo 500s); a `vm-images-publisher` build wrote ~15 GB to a CP disk and
       starved etcd. Applied so far: defrag + flux-controller pins (2026-06-19); soft
       anti-affinity on all ~22 hil-ovh stateful workloads + hard anti-affinity on the
@@ -42,8 +42,8 @@ editing a route.
       `runnerPodTemplate`s) and the cross-repo augur ingest job; then the structural
       etcd-on-NVMe move — Stage 2 of <plans/ovh_storage_tiering.md>, whose SeaweedFS
       volume-tiering foundation landed 2026-07. Full RCA + remediation tracking:
-      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. The immediate
-      `ovh-ns103656` control-plane `NoSchedule` taint is intentionally narrower.
+      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. The former
+      `ovh-ns103656` control-plane taint is no longer part of the active topology.
       Tracking issue #5361 covers the remaining rollout: enumerate workloads that
       cannot move, add explicit tolerations and owners for those residents, then
       restore `allowSchedulingOnControlPlanes = false` on all control planes.

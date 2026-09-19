@@ -1,9 +1,9 @@
 # Plan: OVH data-disk mount rename (storage tiering — Stage 2 remainder)
 
-**Status: active — the third NVMe control-plane is live; old-node retirement remains.** The etcd-onto-NVMe
+**Status: active — the third NVMe control-plane is live; the former HDD control-plane is now a worker.** The etcd-onto-NVMe
 control-plane reshuffle and all three KS-5 HDD-node data-disk renames are done (2026-07-05):
-control plane `{103656, 104952, 104963, 1001419}`, etcd on 3× NVMe + the KS-5 anchor `103656`;
-`102453`/`103711` are workers. The foundation is live — media-scoped StorageClasses
+control plane `{104952, 104963, 1001419}`, etcd on 3× NVMe; `103656`/`102453`/`103711`
+are workers. The foundation is live — media-scoped StorageClasses
 (`local-path-ovh-{hdd,ssd}`), the SeaweedFS `volumeTopology` layer (`hdd` 3× KS-5, `ssd` 3×
 OVH NVMe; operator 1.0.30), Forgejo git + both SSD-destined DBs on SSD, and the per-node rename
 mechanism (`data_disk_mount_renamed_nodes` opt-in + `nodePathMap` flip).
@@ -176,10 +176,11 @@ it — `bb run //cluster/cdk8s:generate_manifests` after the edit. Any CP add/re
   `talos_machine_bootstrap`/`talos_cluster_kubeconfig` `ignore_changes` guards, if the anchor moves.
 - `cluster/README.md` — the "Node Types" table (human-facing CP/worker roster).
 
-## Stage 3 — third SSD node (live; old-node retirement pending)
+## Stage 3 — third SSD node and HDD control-plane demotion (live)
 
 The SYS-1 `ovh-ns1001419` is provisioned as a control-plane, joined etcd as a learner and
 auto-promoted to a healthy voter. Its second WDC SN720 NVMe is mounted as the SeaweedFS data
 UserVolume, and the declarative SSD group is being raised to `replicas: 3`. The old
-`ovh-ns103656` control-plane remains intentionally in service; its removal is the next gated
-step, not part of this change.
+`ovh-ns103656` was removed from etcd and converted to a worker in place after the SYS-1
+node joined as the third NVMe-backed control plane. Its HDD UserVolume and local-PV
+workloads remain on the node; no drain or disk reset is part of the transition.

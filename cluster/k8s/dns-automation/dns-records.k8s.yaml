@@ -43,7 +43,7 @@ spec:
           role: worker
         ovh-ns103656:
           public_ip: 147.135.39.162
-          role: control-plane
+          role: worker
         ovh-ns103711:
           public_ip: 147.135.39.176
           role: worker

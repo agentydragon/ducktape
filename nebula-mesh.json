@@ -4,7 +4,7 @@
     "ovh-ns103656": {
       "nebula_ip": "10.42.0.13",
       "endpoint": "147.135.39.162:4242",
-      "role": "control-plane",
+      "role": "worker",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",

@@ -44,7 +44,7 @@ An overflow exception must satisfy all of these rules:
   used only when ordinary worker placement cannot fit.
 - Do not use `local-path-*`, `hostPath`, or `emptyDir` volumes. Those write to the
   node-local disk and can contend with etcd, especially on the HDD-backed
-  `ovh-ns103656` control plane. Prefer stateless workloads or SeaweedFS-backed
+  `ovh-ns103656` HDD-backed node. Prefer stateless workloads or SeaweedFS-backed
   application PVCs instead.
 - Record the workload-specific rationale next to the manifest's toleration and
   review any generated child pod template as part of the same change.
