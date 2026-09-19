@@ -121,8 +121,8 @@ _ACTIONS_SETTINGS = {
                     # The integration app's runner template, for now: it already carries the egress
                     # sidecar, the interception CA and the proxy environment, so the path is real
                     # end to end. Its workload container is the runner image, which is the wrong
-                    # destination -- a dedicated exec target is the follow-up
-                    # (x/agentplane/plans/sandbox_actions.md).
+                    # destination -- a box to run commands in wants neither the harnesses nor the
+                    # state volume (x/agentplane/docs/sandbox_actions.md).
                     "runner": {
                         "template": "agentplane-runner",
                         "container": "runner",

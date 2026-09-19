@@ -89,6 +89,8 @@ flowchart TB
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
+    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>holds no RoleBinding; egress accreted from smoke tests"]:::future
+    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -167,6 +169,7 @@ flowchart TB
     ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
     SANDBOX_RBAC -. subject generalization .-> MANAGED_SA_RBAC
     MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
+    CLAUDE_AI_SA -. one account by hand, then the kind .-> MANAGED_SA_RBAC
 ```
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
@@ -187,6 +190,18 @@ and, left to bug reports, the Deny control, grant retention across refresh and r
 isolation and revocation for an external client, duplicate Decision or Execution under retries or
 reconnect, push subscription revocation, unavailable-push and SSE fallbacks, and Web Push
 reconciliation after reconnect.
+
+On 2026-09-19 the sandbox Actions ran from a claude.ai session against staging: `create` returned
+in ~150ms with the object stamped and no conditions yet, `info` showed the controller's own
+`ReconcilerError` (an exhausted namespace CPU quota), then `DependenciesNotReady`, then `Ready`,
+and `exec` ran a script in the box. From inside that box a `SelfSubjectReview` through the egress
+proxy returned `system:serviceaccount:agentplane-staging:claude-ai` with the calling Pod's name and
+UID in its `extra` claims, which is the first end-to-end proof of the whole Kubernetes-from-a-box
+path: the proxy verifying the API server against the cluster CA, `projectedWorkloadToken`
+substituting a credential the workload never holds, and `KUBERNETES_AUDIENCE` matching the
+cluster's `--api-audiences`. Not tested: `exec`, `attach`, `port-forward` and watches, which
+negotiate SPDY or WebSocket or stream chunked through a bumping proxy; and any authorized read,
+since the account holds no RoleBinding (`CLAUDE_AI_SA`).
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
@@ -323,6 +338,45 @@ Cover independent grants for two Sandboxes, inspection of effective access, revo
 and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-grant
 cleanup. Preset edits must not silently widen existing Sandboxes' grants. Verify the
 chosen credential boundary without exposing privileged credentials in evidence.
+
+### `CLAUDE_AI_SA` — the claude.ai account's deliberate permissions and egress
+
+**Planned identity:** `agentplane-staging/claude-ai` is the principal a Connection from the
+Claude.ai MCP connector acts as, and now also the account every sandbox this caller creates runs
+as ([sandbox Actions](../docs/sandbox_actions.md)). Its authority accreted from what each smoke
+test needed rather than from a decision about what this caller should hold, and the sandbox surface
+changed what that authority reaches: the account is no longer only an Action caller, it is the
+identity of a shell somebody can run arbitrary commands in.
+
+What exists today (<../../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
+ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic and
+Kubernetes policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub reads plus the
+whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox authenticating to the
+API server arrives as an account with nothing beyond `system:authenticated` — reach without
+authorization, which is why the verified evidence is a `SelfSubjectReview` and not a read of any
+object.
+
+Decide, then write down: which Kubernetes roles this account should hold and at what scope; whether
+the Kubernetes egress rule should stay an all-verbs, all-paths admission once RBAC is what bounds
+it; and whether the GitHub reads a Connection may auto-approve should also be what a sandbox of
+this account reaches, since the `EgressBinding` and the `ActionPolicyBinding` are separate grants
+that nothing keeps consistent. The same questions exist outside Kubernetes — the credentials the
+basic policy substitutes are reached by any box this account creates.
+
+**Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
+accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
+refused outside them; and removing the account or its label still disables the whole path.
+
+### `SANDBOX_EXEC_IMAGE` — a dedicated exec-target image
+
+**Planned image:** the configured `runner` environment stamps the integration app's runner
+template, which carries the egress sidecar, the interception CA and the proxy environment, so the
+path is real end to end. Its workload container is the runner image, and a box to run commands in
+wants neither the harnesses nor the state volume. Build the exec target as its own image and
+`SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
+([sandbox Actions](../docs/sandbox_actions.md)).
+
+Its own clock: nothing waits on it, and the current environment is correct but oversized.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
@@ -668,9 +722,9 @@ names one `subject`. Everything inside them is now the same `ServiceAccountRef`,
 only difference left, and `x/agentplane/crds/generate.py` has to special-case array-versus-object
 to splice it in.
 
-Nothing writes the plural side. No `EgressBinding` manifest is checked in anywhere under
-`cluster/`, and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is an
-untested degree of freedom in the authorization path. Collapsing it to a singular `subject` makes
+Nothing writes the plural side. The one checked-in `EgressBinding` (staging's `claude-ai`) names a
+single subject and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is
+an untested degree of freedom in the authorization path. Collapsing it to a singular `subject` makes
 the two CRDs identical rather than merely compatible; the cost is that a seed granting several
 accounts one policy becomes several objects, which is already what per-binding `expiresAt` wants.
 
