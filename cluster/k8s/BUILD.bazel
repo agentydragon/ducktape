@@ -99,6 +99,7 @@ filegroup(
     srcs = ["ssh-mcp/known_hosts"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
     ],
 )
@@ -266,6 +267,7 @@ exports_files(
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
     ],
 )

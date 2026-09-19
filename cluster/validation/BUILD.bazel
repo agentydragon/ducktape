@@ -605,10 +605,6 @@ py_test(
     srcs = ["test_ssh_mcp_consumers.py"],
     data = [
         "//:nebula-mesh.json",
-        "//cluster/k8s:agents/public-coder-agent/devbox/service.yaml",
-        "//cluster/k8s:ssh_mcp_known_hosts",
-        "//ssh_keys:public-coder-agent-devbox.pub",
-        "//ssh_keys:public-coder-devbox-host.pub",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},

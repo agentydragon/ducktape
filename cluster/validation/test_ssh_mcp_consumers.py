@@ -34,7 +34,7 @@ def _locate(relative: str) -> Path:
 
 @pytest.fixture(scope="module")
 def ssh_config() -> ssh_mcp_config.SshMcpConfig:
-    return ssh_mcp_config.load(_locate)
+    return ssh_mcp_config.load()
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +50,7 @@ def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any
 def sshpiper_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
     chart = Cdk8sTesting.chart()
     sshpiper.construct(
-        chart, config=ssh_config, downstream_key=_locate(ssh_mcp_config.AGENT_DOWNSTREAM_KEY).read_text()
+        chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key
     )
     return Cdk8sTesting.synth(chart)
 
@@ -141,23 +141,18 @@ def test_backend_and_sshpiper_pin_the_canonical_devbox_key(
     ssh_resources: list[dict[str, Any]],
     sshpiper_resources: list[dict[str, Any]],
 ) -> None:
-    canonical_key = _locate(ssh_mcp_config.DEVBOX_HOST_KEY).read_text().split()
-    expected = f"{ssh_config.devbox_host} {canonical_key[0]} {canonical_key[1]}"
+    expected = f"{ssh_config.devbox_host} {ssh_config.devbox_key_type} {ssh_config.devbox_key}"
     config_map = one(r for r in ssh_resources if r["kind"] == "ConfigMap")
     known_hosts = config_map["data"]["known_hosts"].splitlines()
     assert expected in known_hosts
-    nebula_host_keys = {
-        line
-        for line in _locate(ssh_mcp_config.NEBULA_KNOWN_HOSTS).read_text().splitlines()
-        if line and not line.startswith("#")
-    }
-    assert nebula_host_keys <= set(known_hosts)
+    assert set(ssh_config.known_hosts.splitlines()) <= set(known_hosts)
 
     pipe = one(r for r in sshpiper_resources if r["kind"] == "Pipe")
     pipe_known_hosts = base64.b64decode(pipe["spec"]["to"]["known_hosts_data"]).decode().splitlines()
     assert expected in pipe_known_hosts
     assert (
-        f"[{ssh_config.devbox_host}]:{ssh_config.devbox_port} {canonical_key[0]} {canonical_key[1]}" in pipe_known_hosts
+        f"[{ssh_config.devbox_host}]:{ssh_config.devbox_port} {ssh_config.devbox_key_type} {ssh_config.devbox_key}"
+        in pipe_known_hosts
     )
     assert pipe["spec"]["to"]["host"] == f"{ssh_config.devbox_host}:{ssh_config.devbox_port}"
 

@@ -17,20 +17,15 @@ from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomiz
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.ssh_mcp import backend, config, sshpiper
 from cluster.scripts.nebula_mesh import Mesh
-from util.bazel.runfiles import get_required_path
 
 _OUTPUT_DIR = "cluster/k8s/ssh-mcp"
 _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
-def _locate(relative: str) -> Path:
-    return get_required_path(f"_main/{relative}")
-
-
 def write_manifests(root: Path, mesh: Mesh) -> None:
     """Write the generated backend and sshpiper manifests under ``root``."""
-    ssh_config = config.load(_locate)
+    ssh_config = config.load()
     out_dir = root / _OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -81,5 +76,5 @@ def write_manifests(root: Path, mesh: Mesh) -> None:
     sshpiper_dir.mkdir(parents=True, exist_ok=True)
     pipe_app = App(outdir=str(sshpiper_dir))
     pipe_chart = Chart(pipe_app, "pipe-devbox", disable_resource_name_hashes=True)
-    sshpiper.construct(pipe_chart, config=ssh_config, downstream_key=_locate(config.AGENT_DOWNSTREAM_KEY).read_text())
+    sshpiper.construct(pipe_chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key)
     pipe_app.synth()

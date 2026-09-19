@@ -7,12 +7,11 @@ here so the two generated outputs cannot disagree.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 import yaml
 
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
 
 NAME = "ssh-mcp"
@@ -51,6 +50,7 @@ class SshMcpConfig:
     targets: tuple[Target, ...]
     settings: dict[str, object]
     known_hosts: str
+    agent_downstream_key: str
 
     @property
     def nebula_hostnames(self) -> tuple[str, ...]:
@@ -75,12 +75,16 @@ def _targets(devbox_host: str) -> tuple[Target, ...]:
     )
 
 
-def load(locate: Callable[[str], Path]) -> SshMcpConfig:
+def _read_input(relative: str) -> str:
+    return get_required_path(own_repo_rlocation(relative)).read_text()
+
+
+def load() -> SshMcpConfig:
     """Read canonical host-key inputs and return validated server configuration."""
-    service = yaml.safe_load(locate(DEVBOX_SERVICE).read_text())
+    service = yaml.safe_load(_read_input(DEVBOX_SERVICE))
     devbox_host = f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"
     [ssh_port] = service["spec"]["ports"]
-    key_type, key, *_comment = locate(DEVBOX_HOST_KEY).read_text().split()
+    key_type, key, *_comment = _read_input(DEVBOX_HOST_KEY).split()
     targets = _targets(devbox_host)
     settings: dict[str, object] = {
         "known_hosts_file": f"{CONFIG_DIR}/known_hosts",
@@ -92,10 +96,11 @@ def load(locate: Callable[[str], Path]) -> SshMcpConfig:
     }
     SshSettings.model_validate(settings)
     host_key = f"{key_type} {key}"
-    known_hosts = locate(NEBULA_KNOWN_HOSTS).read_text().rstrip()
+    known_hosts = _read_input(NEBULA_KNOWN_HOSTS).rstrip()
     if known_hosts:
         known_hosts += "\n"
     known_hosts += f"{devbox_host} {host_key}\n"
+    agent_downstream_key = _read_input(AGENT_DOWNSTREAM_KEY)
     return SshMcpConfig(
         devbox_host=devbox_host,
         devbox_key_type=key_type,
@@ -104,4 +109,5 @@ def load(locate: Callable[[str], Path]) -> SshMcpConfig:
         targets=targets,
         settings=settings,
         known_hosts=known_hosts,
+        agent_downstream_key=agent_downstream_key,
     )
