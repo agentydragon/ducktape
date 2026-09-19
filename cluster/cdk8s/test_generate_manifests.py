@@ -71,6 +71,17 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/forgejo/agentydragon-repos/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/agentydragon/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/app/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/budget-ledger/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/budget-namespace/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/cache/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/claude/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/cpap-data/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/db/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/haku-state/flux-kustomization.yaml",
+    "cluster/k8s/forgejo/namespace/flux-kustomization.yaml",
 )
 
 
