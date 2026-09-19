@@ -4,6 +4,9 @@ metadata:
   name: haku-rbac
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: haku-namespace
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/rbac
   prune: true
@@ -12,6 +15,3 @@ spec:
     name: haku-rbac
     namespace: ducktape-flux
   timeout: 2m
-  dependsOn:
-    - name: haku-namespace
-      namespace: ducktape-flux

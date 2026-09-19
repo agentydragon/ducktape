@@ -68,6 +68,16 @@ cluster/k8s/ntfy/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
+cluster/k8s/haku/console-namespace/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/forgejo-tea/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/mailbox-namespace/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/mailbox/app/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/mailbox/db/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/namespace/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/rbac/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/ui-image-webhook/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/workloads/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/haku/workspaces/app/flux-kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true

@@ -71,6 +71,16 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/haku/console-namespace/flux-kustomization.yaml",
+    "cluster/k8s/haku/forgejo-tea/flux-kustomization.yaml",
+    "cluster/k8s/haku/mailbox-namespace/flux-kustomization.yaml",
+    "cluster/k8s/haku/mailbox/app/flux-kustomization.yaml",
+    "cluster/k8s/haku/mailbox/db/flux-kustomization.yaml",
+    "cluster/k8s/haku/namespace/flux-kustomization.yaml",
+    "cluster/k8s/haku/rbac/flux-kustomization.yaml",
+    "cluster/k8s/haku/ui-image-webhook/flux-kustomization.yaml",
+    "cluster/k8s/haku/workloads/flux-kustomization.yaml",
+    "cluster/k8s/haku/workspaces/app/flux-kustomization.yaml",
 )
 
 
