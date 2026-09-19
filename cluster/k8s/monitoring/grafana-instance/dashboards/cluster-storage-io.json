@@ -67,7 +67,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -105,7 +105,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -143,7 +143,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -181,7 +181,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -221,7 +221,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -261,7 +261,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) kube_pod_info{pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"}))",
+          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr).*\"}[$__rate_interval]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -294,7 +294,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"}))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -329,7 +329,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"}))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -364,7 +364,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"}))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -399,7 +399,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"}))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[$__rate_interval]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -684,7 +684,7 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
