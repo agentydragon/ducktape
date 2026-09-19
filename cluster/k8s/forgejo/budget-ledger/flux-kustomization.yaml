@@ -29,5 +29,5 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: budget # the git-creds Secret lands in the budget namespace
+    - name: budget-namespace # the git-creds Secret lands in the budget namespace
       namespace: ducktape-flux
