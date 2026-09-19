@@ -103,6 +103,11 @@ from x.agentplane.egress import sidecar
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
+# Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
+# to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
+# neither can name a file the other does not project. The hop token is deliberately absent: it
+# carries the proxy's own audience, so it is not substitutable anywhere.
+_SUBSTITUTABLE_AUDIENCE_FILES = {egress_constructs.KUBERNETES_AUDIENCE: "kubernetes-token"}
 _NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
@@ -518,7 +523,12 @@ class App(Construct):
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
                     name=env_name(sidecar.Settings, "audience_token_files"),
-                    value=json.dumps({egress_constructs.KUBERNETES_AUDIENCE: f"{_EGRESS_TOKEN_DIR}/kubernetes-token"}),
+                    value=json.dumps(
+                        {
+                            audience: f"{_EGRESS_TOKEN_DIR}/{file}"
+                            for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
+                        }
+                    ),
                 ),
             ],
             security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
@@ -580,12 +590,12 @@ class App(Construct):
                                     name=self.env.egress.ca_secret_name
                                 ),
                             ),
-                            # The Pod's identity, twice over and to nobody else: this volume is
-                            # mounted by the egress sidecar alone, so no token here is readable
-                            # from the container an agent runs commands in. `token` proves the Pod
-                            # to the central proxy; `kubernetes-token` is the same account minted
-                            # for the API server, which the proxy substitutes where a rule names
-                            # that audience and which is useless at the proxy itself. Both are
+                            # The Pod's identity, and to nobody else: this volume is mounted by
+                            # the egress sidecar alone, so no token here is readable from the
+                            # container an agent runs commands in. `token` proves the Pod to the
+                            # central proxy; each of the rest is the same account minted for a
+                            # destination's own audience, which the proxy substitutes where a rule
+                            # names that audience and which is useless at the proxy itself. All are
                             # bound to this Pod and rotated by kubelet.
                             SandboxTemplateSpecPodTemplateSpecVolumes(
                                 name="egress-token",
@@ -598,12 +608,13 @@ class App(Construct):
                                                 path="token",
                                             )
                                         ),
-                                        SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
-                                            service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                                                audience=egress_constructs.KUBERNETES_AUDIENCE,
-                                                expiration_seconds=600,
-                                                path="kubernetes-token",
+                                        *(
+                                            SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
+                                                service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
+                                                    audience=audience, expiration_seconds=600, path=file
+                                                )
                                             )
+                                            for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
                                         ),
                                     ]
                                 ),
