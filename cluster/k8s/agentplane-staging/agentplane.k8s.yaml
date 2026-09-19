@@ -503,13 +503,6 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
-      topologySpreadConstraints:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: agentplane-llm-ingress
-          maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
       volumes:
         - configMap:
             name: agentplane-llm-ingress-settings
@@ -867,13 +860,6 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
-      topologySpreadConstraints:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: agentplane-egress
-          maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
       volumes:
         - name: ca
           secret:
@@ -1540,13 +1526,6 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
-      topologySpreadConstraints:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: agentplane-app
-          maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
       volumes:
         - configMap:
             name: agentplane-app-config
@@ -2303,13 +2282,6 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
-      topologySpreadConstraints:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: agentplane-actions
-          maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
       volumes:
         - name: secret-agentplane-mcp-oauth
           secret:

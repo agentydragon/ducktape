@@ -150,7 +150,7 @@ class LlmIngress(Construct):
 
         node_scheduling.attract_to_zone(deployment)
         node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
+        apply_pod_spec_patches(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

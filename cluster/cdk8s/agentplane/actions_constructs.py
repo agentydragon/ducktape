@@ -28,7 +28,6 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
-    k8s,
 )
 from constructs import Construct
 
@@ -36,6 +35,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import container_security, db_constructs, llm_ingress_constructs, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -286,7 +286,7 @@ class Actions(Construct):
             deployment.containers[0].mount("/run/secrets/ssh-mcp", ssh_mcp_volume, read_only=True)
 
         node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
+        apply_pod_spec_patches(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -338,12 +338,6 @@ class Actions(Construct):
         )
 
     def _add_pdb(self, min_available: int) -> None:
-        k8s.KubePodDisruptionBudget(
-            self,
-            "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
-            spec=k8s.PodDisruptionBudgetSpec(
-                min_available=k8s.IntOrString.from_number(min_available),
-                selector=k8s.LabelSelector(match_labels=_LABELS),
-            ),
+        add_pod_disruption_budget(
+            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )

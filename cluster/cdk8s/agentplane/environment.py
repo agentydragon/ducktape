@@ -33,13 +33,11 @@ DEPENDS_ON = (
 
 @dataclass(frozen=True)
 class ReplicaProfile:
-    """The replicas/strategy/topology-spread/minReadySeconds/PDB shape shared by every
-    Deployment in an environment (llm-ingress, egress, app, actions)."""
+    """The replicas/strategy/minReadySeconds/PDB shape shared by every Deployment in an
+    environment (llm-ingress, egress, app, actions)."""
 
     count: int
     strategy: DeploymentStrategy
-    # Spread replicas across nodes; a single replica has nothing to spread.
-    topology_spread: bool
     min_ready: Duration | None
     # PodDisruptionBudget minAvailable, or None for no budget (one replica has nothing to
     # keep). Sized so a zero-maxUnavailable rollout never trips it.

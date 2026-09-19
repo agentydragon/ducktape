@@ -305,7 +305,7 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
-    apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=False)
+    apply_pod_spec_patches(deployment)
     return deployment
 
 

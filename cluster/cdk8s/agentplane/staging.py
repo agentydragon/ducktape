@@ -175,7 +175,6 @@ ENV = Environment(
         strategy=DeploymentStrategy.rolling_update(
             max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
         ),
-        topology_spread=True,
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),

@@ -33,6 +33,15 @@ py_library(
 )
 
 py_library(
+    name = "pod_disruption_budget",
+    srcs = ["pod_disruption_budget.py"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "migrate_container",
     srcs = ["migrate_container.py"],
     deps = [
@@ -88,6 +97,7 @@ py_library(
         ":llm_ingress_constructs",
         ":migrate_container",
         ":node_scheduling",
+        ":pod_disruption_budget",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -143,6 +153,7 @@ py_library(
         ":llm_ingress_constructs",
         ":migrate_container",
         ":node_scheduling",
+        ":pod_disruption_budget",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
@@ -173,6 +184,7 @@ py_library(
         ":llm_ingress_constructs",
         ":migrate_container",
         ":node_scheduling",
+        ":pod_disruption_budget",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
