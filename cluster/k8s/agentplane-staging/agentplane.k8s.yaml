@@ -373,7 +373,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-staging-llm-ingress-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-llm-ingress
     namespace: agentplane-staging
 ---
@@ -592,7 +593,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-staging-egress-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-staging
 ---
@@ -1188,7 +1190,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-staging-app-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-app
     namespace: agentplane-staging
 ---
@@ -1886,7 +1889,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-staging-actions-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-actions
     namespace: agentplane-staging
 ---

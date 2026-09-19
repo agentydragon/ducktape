@@ -122,6 +122,7 @@ py_library(
     srcs = ["token_reviewer_rbac.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],

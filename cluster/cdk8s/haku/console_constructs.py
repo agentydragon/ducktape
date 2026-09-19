@@ -22,6 +22,8 @@ from collections.abc import Sequence
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
+    ClusterRole,
+    ClusterRoleBinding,
     ConfigMap,
     ContainerPort,
     ContainerResources,
@@ -173,18 +175,17 @@ class Console(Construct):
                 )
             ],
         )
-        k8s.KubeClusterRoleBinding(
+        ClusterRoleBinding(
             self,
             "sar-reviewer-binding",
-            metadata=k8s.ObjectMeta(
+            metadata=ApiObjectMetadata(
                 name=sar_reviewer,
                 annotations={
                     "description": "Binds only the Haku Console ServiceAccount to SubjectAccessReview creation."
                 },
             ),
-            role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=sar_reviewer),
-            subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAMESPACE)],
-        )
+            role=ClusterRole.from_cluster_role_name(self, "sar-reviewer-role-ref", sar_reviewer),
+        ).add_subjects(service_account)
         # Narrow metadata/configuration diagnostics for the agents. Not
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.

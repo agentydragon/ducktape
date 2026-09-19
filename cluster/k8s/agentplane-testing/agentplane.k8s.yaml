@@ -375,7 +375,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-testing-llm-ingress-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-llm-ingress
     namespace: agentplane-testing
 ---
@@ -591,7 +592,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-testing-egress-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-testing
 ---
@@ -1173,7 +1175,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-testing-app-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-app
     namespace: agentplane-testing
 ---
@@ -1843,7 +1846,8 @@ roleRef:
   kind: ClusterRole
   name: agentplane-testing-actions-token-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: agentplane-actions
     namespace: agentplane-testing
 ---
