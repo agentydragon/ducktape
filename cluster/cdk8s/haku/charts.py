@@ -13,17 +13,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-
-from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
-    ConfigMapArgs,
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
+)
+
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import (
+    NAMESPACE as FLUX_NAMESPACE,
+    ConfigMapArgs,
     flux_kustomization,
     health_checks,
     kustomize_kustomization,

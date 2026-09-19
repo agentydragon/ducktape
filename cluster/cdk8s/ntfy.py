@@ -71,6 +71,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -81,16 +87,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-    flux_kustomization,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.metadata import metadata

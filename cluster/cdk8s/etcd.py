@@ -13,6 +13,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -23,16 +29,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-    flux_kustomization,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh

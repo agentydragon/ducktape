@@ -54,6 +54,16 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDependsOn,
+    KustomizationSpecHealthChecks,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -63,19 +73,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE,
-    KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-    flux_kustomization,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata

@@ -7,15 +7,14 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
-
-from cluster.cdk8s.flux import (
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
-    flux_kustomization,
-    kustomize_kustomization,
 )
+
+from cluster.cdk8s.flux import flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 

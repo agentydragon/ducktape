@@ -14,16 +14,18 @@ from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
     flux_kustomization,
     health_checks,
     kustomize_kustomization,

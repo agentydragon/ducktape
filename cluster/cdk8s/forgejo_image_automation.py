@@ -28,17 +28,15 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
-
-from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
-    flux_kustomization,
-    kustomize_kustomization,
 )
+
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 
