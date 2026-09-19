@@ -68,17 +68,20 @@ Run the paved helper for the applicable harness, then read its entire output:
 CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.py claude)
 ~/.claude/skills/session_logs/conversation.py claude "$CLAUDE_SESSION"
 
-# Codex CLI 0.153.4
+# Codex CLI 0.154.0
 CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
 ~/.codex/skills/session_logs/conversation.py codex "$CODEX_SESSION"
 ```
 
-The helper emits every user message together with the two preceding agent
-messages so the response context for each request is visible. It also emits
-each compaction boundary and continues through it. Read the first user message
-and everything after every boundary; never use only the current in-context
-summary, `head`, `tail`, or a post-compaction segment. If the output is large,
-read it in sequential chunks and verify the final user-message number.
+The helper emits every user-authored message together with the two preceding
+agent messages so the response context for each request is visible. For Codex,
+it omits harness-injected AGENTS.md, environment, and selected skill content by
+default; pass the matching `--no-strip-*` option when that context matters. It
+also emits each compaction boundary and continues through it. Read the first
+user-authored message and everything after every boundary; never use only the
+current in-context summary, `head`, `tail`, or a post-compaction segment. If
+the output is large, read it in sequential chunks and verify the final visible
+user-message number.
 
 Use this recovered transcript as an explicit input to loose-thread collection:
 reconstruct the original problem, all user pivots and requests, unanswered
