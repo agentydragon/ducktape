@@ -36,12 +36,6 @@ spec:
     # The app must serve (with its DB) before keys can mint.
     - name: litellm
       namespace: ducktape-flux
-    # Terraform writes the shared experiment key into these namespaces. The
-    # Agentplane environment Kustomizations depend on this Terraform resource,
-    # so do not depend back on their namespaces: the environments create those
-    # namespaces in the same reconcile and Terraform retries until they exist.
-    - name: litellm-cheap-experiments-namespace
-      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

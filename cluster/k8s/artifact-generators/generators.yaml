@@ -1275,13 +1275,6 @@ spec:
           to: "@artifact/cluster/k8s/litellm/db/"
           exclude:
             - flux-kustomization.yaml
-    - name: litellm-cheap-experiments-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm-cheap-experiments/namespace/**"
-          to: "@artifact/cluster/k8s/litellm-cheap-experiments/namespace/"
-          exclude:
-            - flux-kustomization.yaml
     - name: matrix-app
       originRevision: "@repo"
       copy:

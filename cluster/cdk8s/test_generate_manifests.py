@@ -30,6 +30,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agentplane-testing/agentplane.k8s.yaml",
     "cluster/k8s/agentplane-testing/flux-kustomization.yaml",
     "cluster/k8s/agentplane-testing/kustomization.yaml",
+    "cluster/k8s/agentplane-testing/litellm-credentials/litellm-credentials.k8s.yaml",
+    "cluster/k8s/agentplane-testing/litellm-credentials/kustomization.yaml",
     "cluster/k8s/agentplane-staging/agentplane.k8s.yaml",
     "cluster/k8s/agentplane-staging/flux-kustomization.yaml",
     "cluster/k8s/agentplane-staging/kustomization.yaml",
