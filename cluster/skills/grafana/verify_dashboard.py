@@ -31,6 +31,9 @@ DEFAULT_SECRET = "monitoring/grafana-admin-password"
 # TODO: Consider a standalone grafana-image-renderer service for verifier and scheduled
 # screenshots. First measure idle RSS and render-time CPU/RAM, then pin the image,
 # configure its token/callback, add a NetworkPolicy, and scrape renderer metrics.
+# TODO: Add verification modes that do not need full admin/writer auth: a Viewer token
+# for deployed-dashboard checks and query-only candidate checks without temporary writes;
+# require writer auth only for candidate browser rendering.
 # TODO: Replace admin-secret auth with narrower identities: Viewer for deployed-dashboard
 # checks and the minimum write-capable scope needed for temporary candidate dashboards.
 DATASOURCE_PLACEHOLDERS = {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}

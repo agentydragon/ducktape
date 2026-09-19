@@ -14,6 +14,21 @@ Use this skill for every new or changed dashboard under
 dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
+## Credential consent
+
+Before running the verifier or any live Grafana validation that reads the
+`monitoring/grafana-admin-password` Secret, tell the user that the check will
+read and use the Grafana admin credential, and ask for explicit permission.
+Creating or verifying a dashboard does not itself imply permission to retrieve
+or use that credential. Do not run `kubectl get secret`, log in to Grafana, or
+start the verifier until the user grants permission.
+
+If the user declines, do not substitute another privileged credential. Perform
+static checks and non-credential validation only, and report that live query and
+render verification remains outstanding. A future read-only verifier mode may
+use a Viewer service-account token, but it must not be assumed to exist until
+the verifier supports it and the user provides permission for that credential.
+
 ## Required verifier
 
 Run the packaged verifier from the repository root:
