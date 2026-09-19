@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - storage.yaml
+  - forgejo-images-credentials.yaml
   - metrics-secret.yaml
   - break-glass-credentials.sops.yaml
   - home-assistant.yaml
@@ -15,14 +16,16 @@ generatorOptions:
 configMapGenerator:
   - name: home-assistant-configuration
     namespace: home-assistant
+    options:
+      # The configuration is mounted with subPath; a content hash forces the
+      # Deployment to restart when this file changes.
+      disableNameSuffixHash: false
     files:
       - configuration.yaml=configuration.yaml.conf
-  - name: home-assistant-bootstrap
+  - name: home-assistant-provisioner-config
     namespace: home-assistant
     files:
-      - bootstrap_onboarding.py
-      - install_dreo.py
-      - install_oidc.py
+      - provisioner.yaml
   - name: home-assistant-caddy
     namespace: home-assistant
     files:

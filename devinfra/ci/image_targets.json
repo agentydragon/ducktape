@@ -181,6 +181,11 @@
       "test": "//cluster/provisioners/ha_mcp_token_provisioner/...",
       "registry": "forgejo"
     },
+    "homeassistant-provisioner": {
+      "target": "//homeassistant/provisioner:image",
+      "test": "//homeassistant/provisioner/...",
+      "registry": "forgejo"
+    },
     "grocy-user-perms-provisioner": {
       "target": "//cluster/provisioners/grocy_user_perms:image",
       "test": "//cluster/provisioners/grocy_user_perms/...",

@@ -11,21 +11,24 @@ spec:
     metadata:
       annotations:
         # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-        home-assistant.allegedly.works/bootstrap-revision: "2"
+        home-assistant.allegedly.works/bootstrap-revision: "3"
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       restartPolicy: OnFailure
       nodeSelector:
         kubernetes.io/hostname: optiplex
       containers:
         - name: onboarding
-          image: ghcr.io/home-assistant/home-assistant:2026.9.2
-          command:
-            - python
-            - /bootstrap/bootstrap_onboarding.py
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:devel-20260919010000-6eca0e6 # {"$imagepolicy": "flux-system:homeassistant-provisioner"}
+          imagePullPolicy: Always
+          command: ["/homeassistant/provisioner/provision_bin"]
           env:
-            - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
+            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+              value: /etc/homeassistant/provisioner.yaml
+            - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: home-assistant-break-glass
@@ -37,10 +40,16 @@ spec:
             limits:
               memory: 256Mi
           volumeMounts:
-            - name: bootstrap
-              mountPath: /bootstrap
+            - name: config
+              mountPath: /config
+            - name: provisioner-config
+              mountPath: /etc/homeassistant/provisioner.yaml
+              subPath: provisioner.yaml
               readOnly: true
       volumes:
-        - name: bootstrap
+        - name: config
+          persistentVolumeClaim:
+            claimName: home-assistant-config
+        - name: provisioner-config
           configMap:
-            name: home-assistant-bootstrap
+            name: home-assistant-provisioner-config

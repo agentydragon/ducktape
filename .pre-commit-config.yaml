@@ -272,6 +272,7 @@ repos:
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
             cluster/k8s/gatus/app/config\.yaml|
+            cluster/k8s/home-assistant/app/provisioner\.yaml|
             cluster/k8s/evidence/market-roster/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|

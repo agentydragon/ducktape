@@ -44,6 +44,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: monitoring-crds # ServiceMonitor + PrometheusRule
       namespace: ducktape-flux
     - name: gateway

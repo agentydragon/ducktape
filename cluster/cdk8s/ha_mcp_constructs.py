@@ -89,7 +89,6 @@ class HaMcpCredentialsProvisioner(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_HOME_ASSISTANT_NAMESPACE)
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE)
         )
