@@ -4,6 +4,7 @@ from pathlib import Path
 
 from cluster.cdk8s import (
     aiquota,
+    cnpg_flux_kustomizations,
     descheduler,
     dns_automation,
     egress_fences,
@@ -52,6 +53,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    cnpg_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 

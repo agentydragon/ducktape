@@ -4,16 +4,9 @@ metadata:
   name: cnpg
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 10m
-  sourceRef:
-    kind: ExternalArtifact
-    name: cnpg
-    namespace: ducktape-flux
-  path: "./cluster/k8s/cnpg"
-  prune: true
-  wait: true
+  dependsOn:
+    - name: cert-manager
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -27,6 +20,13 @@ spec:
       kind: Deployment
       name: plugin-barman-cloud
       namespace: cnpg-system
-  dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/cnpg
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cnpg
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
