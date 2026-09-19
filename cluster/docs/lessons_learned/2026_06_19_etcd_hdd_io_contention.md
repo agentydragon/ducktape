@@ -1,18 +1,39 @@
-# etcd lease-PUT latency: control-plane etcd on rotational HDDs + workload I/O contention
+# Historical etcd lease-PUT latency: control-plane etcd on rotational HDDs + workload I/O contention
 
 **Date:** 2026-06-19
-**Status:** Root cause confirmed. Immediate mitigations applied (etcd defrag; flux
-controllers pinned off the control-plane nodes). Structural fix (etcd on NVMe) and the
-remaining workload pins (tofu runners, augur) are tracked below.
+**Status:** Root cause confirmed; structural fix complete on 2026-09-18. The historical
+outage was caused by etcd fsync on rotational KS-5 disks, amplified by workload I/O.
+The etcd quorum now runs on three NVMe-backed control planes, and the former HDD
+control-plane node is a worker. The remaining workload pins below are defense in depth,
+not prerequisites for moving etcd off the HDD quorum.
 **Severity:** Intermittent — `ControlPlaneLeasePutLatencyCritical` fires under load
 bursts; etcd health checks occasionally fail `context deadline exceeded`. No data loss,
 no quorum loss observed. **Recurred 2026-06-28 as a full outage** (two control planes
 NotReady, Forgejo 500s) — see the dated section below.
 
-## 2026-08-17 follow-up — isolate `ovh-ns103656` while measuring the effect
+## Resolution — 2026-09-18
 
-`ovh-ns103656` again flapped `NotReady`; the two SSD-backed control planes preserved
-etcd quorum. Treat this as an active reliability incident, not a clean drain.
+The structural remediation is complete. `ovh-ns104952`, `ovh-ns104963`, and
+`ovh-ns1001419` are the three NVMe-backed control planes and etcd voters;
+`ovh-ns103656` was removed from etcd and converted to a worker. No rotational HDD is
+therefore part of the etcd quorum or a control-plane system disk.
+
+This removes the failure mode in which a workload write on the former KS-5 control
+planes could make an HDD the slowest etcd member and starve raft fsync. The former
+node's HDD UserVolume and local-PV workloads remain on that worker; no drain or disk
+reset was part of the role transition.
+
+Keep the worker-first placement rules and the control-plane I/O alert as defense in
+depth. If lease latency or apiserver instability recurs, investigate the current
+NVMe device, workload placement, and network/API health rather than assuming the
+historical HDD quorum mechanism.
+
+## 2026-08-17 follow-up — historical isolation of `ovh-ns103656`
+
+At the time, `ovh-ns103656` again flapped `NotReady`; the two SSD-backed control
+planes preserved etcd quorum. This was an active reliability incident, not a clean
+drain. The later three-NVMe topology above supersedes this intermediate containment
+step.
 
 - Replaced four _verified non-primary_ local-PV CNPG replicas pinned to this node:
   Haku Console (2 GiB), Haku Mailbox (10 GiB), LiteLLM (5 GiB), and Matrix (10 GiB).
@@ -28,11 +49,10 @@ etcd quorum. Treat this as an active reliability incident, not a clean drain.
   and Alertmanager remain temporary, explicit control-plane exceptions pending their own
   migration decisions.
 
-Compare subsequent `NotReady` frequency/duration, lease-PUT and apiserver latency, and
-`/dev/sda` utilization/queue/bytes against this baseline. Tracking issue #5361 covers
-the remaining rollout: enumerate workloads that cannot move, add explicit tolerations
-and owners for those residents, then restore the default control-plane taint on every
-CP.
+At the time, compare subsequent `NotReady` frequency/duration, lease-PUT and apiserver
+latency, and `/dev/sda` utilization/queue/bytes against this baseline. The taint and
+role-transition work is now reflected in the live three-NVMe control-plane topology;
+the remaining workload placement pins are tracked as defense-in-depth hygiene below.
 
 ## 2026-06-28 recurrence — escalated to a real outage
 
@@ -92,12 +112,13 @@ histogram_quantile(0.99, sum by (instance,le) (
 `Health check failed: context deadline exceeded` events, most frequent on
 `ovh-ns103656` (the raft leader).
 
-## Root cause: etcd fsync on spinning rust
+## Root cause: etcd fsync on spinning rust (historical topology)
 
 etcd's write path (raft) commits every write to a quorum of members, and each member
 must `fsync` its WAL before acking. Lease PUT latency is therefore gated by the
-**slowest disk in the quorum**. The OVH Kimsufi KS-5 control-plane nodes have **only
-rotational SATA HDDs** — both `sda` and `sdb` on all three are `ROTATIONAL true`:
+**slowest disk in the quorum**. At the time of the incident, the OVH Kimsufi KS-5
+control-plane nodes had **only rotational SATA HDDs** — both `sda` and `sdb` on all
+three were `ROTATIONAL true`:
 
 | Node                 | role           | etcd disk (`sda`)               | WAL fsync p99 | backend commit p99 |
 | -------------------- | -------------- | ------------------------------- | ------------- | ------------------ |
@@ -111,15 +132,15 @@ cluster-wide lease PUT p99 to ~0.95 s (spiking > 2 s under load = the critical a
 Raft itself is healthy (all members same index/term, no errors, no leader churn) — the
 problem is purely disk latency.
 
-**There is no SSD/NVMe on the control-plane nodes** to move etcd onto. The fast storage
-is on the wrong nodes: the KS-GAME **worker** nodes `ovh-ns104952` / `ovh-ns104963`
+There was no SSD/NVMe on the control-plane nodes to move etcd onto. The fast storage
+was on the wrong nodes: the KS-GAME **worker** nodes `ovh-ns104952` / `ovh-ns104963`
 (.16/.17) each have **two Intel NVMe SSDs** (used today for SeaweedFS volume data).
 
-## What competes with etcd on the control-plane disks
+## What competed with etcd on the control-plane disks
 
-The OVH control-plane nodes carry **no `NoSchedule` taint**, so the scheduler freely
-lands general workloads on them, and their write I/O shares the etcd spindle. Node-level
-ground truth (node-exporter, device `sda`):
+The OVH control-plane nodes then carried **no `NoSchedule` taint**, so the scheduler
+freely landed general workloads on them, and their write I/O shared the etcd spindle.
+Node-level ground truth (node-exporter, device `sda`):
 
 | Node | write KiB/s | disk busy | write IOPS | avg write latency |
 | ---- | ----------- | --------- | ---------- | ----------------- |
@@ -190,12 +211,11 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    during ingest; also the job that intermittently fails). Cross-repo — augur is
    reconciled from `gaffer-private`; the pin must be made there on the CronJob's pod
    template.
-5. **Structural fix: etcd belongs on NVMe.** The KS-5 control planes have only HDDs while
-   the KS-GAME workers (.16/.17) have NVMe. Either re-designate the NVMe nodes as
-   control-plane (quorum migration via Talos machine config), or obtain SSD-backed OVH CP
-   boxes. Large topology change — plan separately. Until then, defrag + keeping competing
-   I/O off the CP spindles is the best available mitigation. Staged plan (Stage 2 promotes
-   the NVMe KS-GAME nodes into the quorum): <../plans/ovh_storage_tiering.md>.
+5. **Structural fix: etcd belongs on NVMe — done 2026-09-18.** The NVMe KS-GAME nodes
+   were promoted into the quorum, and the SYS-1 NVMe node was added as the third voter;
+   the former HDD control-plane node was demoted to a worker. The staged topology work
+   is recorded in <../plans/ovh_storage_tiering.md>. Defrag and worker-first placement
+   remain useful operational safeguards, but the HDD quorum blocker is closed.
 
 ## Centralizing the Terraform CR runner template
 

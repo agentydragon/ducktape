@@ -126,7 +126,8 @@ Diagnosis (worth remembering, because the surface symptom looked like a Cilium b
   (`instance=tofu-controller`)** + its runners. A test connection from an unrelated pod
   (`litellm`) is _correctly_ dropped (`Policy denied`, `bpf_lxc.c` ingress) — that is **not**
   a bug and is easy to misread as a blackhole.
-- Underlying cause: **apiserver/etcd instability** (the recurring etcd-on-HDD contention).
+- Underlying cause: **apiserver/etcd instability** (at the time, the recurring
+  etcd-on-HDD contention).
   `source-controller` logged `Error retrieving lease lock ... context deadline exceeded` →
   lost leader election → restarted; and Cilium identity/policy realization lagged during the
   same window, transiently dropping `tofu-controller → source-controller` fetches (worsened
@@ -140,7 +141,9 @@ Diagnosis (worth remembering, because the surface symptom looked like a Cilium b
 Lesson: `ArtifactFailed` / ClusterIP `i/o timeout` on a Flux controller during control-plane
 instability is most likely **transient Cilium identity/policy lag**, not a standing network
 fault. Confirm the policy allow-list is correct and check for etcd timeouts before chasing
-the datapath. Ties back to the etcd-on-HDD contention issue.
+the datapath. Ties back to the historical etcd-on-HDD contention issue; the structural
+etcd-on-NVMe fix completed on 2026-09-18, so a recurrence now needs fresh disk,
+workload, and API health evidence rather than assuming the old HDD mechanism.
 
 ## Key Symptoms
 

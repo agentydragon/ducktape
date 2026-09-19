@@ -141,13 +141,14 @@ election.
   misread as a blackhole. Verify the source's Cilium identity is one the target's ingress
   policy _should_ allow before suspecting Cilium (`cilium-dbg endpoint get <id>`,
   `identity list`).
-- When the apiserver/etcd is unstable (the recurring etcd-on-HDD contention), Cilium
+- When the apiserver/etcd is unstable (historically, the etcd-on-HDD contention), Cilium
   identity/policy **realization lags**, transiently dropping traffic that is normally
-  allowed. This self-resolves once etcd settles — check `kubectl logs ... | grep
-"etcdserver: request timed out"` first.
+  allowed. This self-resolves once etcd settles — check current etcd disk/workload
+  pressure, then `kubectl logs ... | grep "etcdserver: request timed out"`.
 
-**Fix**: Address the control-plane instability (etcd contention); the drops clear on their
-own. See the "Compounding Factor" section of
+**Fix**: Address the control-plane instability (historically HDD contention; now inspect
+the current NVMe, workload, and network/API path); the drops clear on their own. See the
+"Compounding Factor" section of
 <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
 
 ## tofu-controller Issues

@@ -21,7 +21,7 @@ downtime use Proxmox storage.
 | -------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
 | OVH      | Authentik, Grafana, Gateway, DNS automation, cert-mgr                  | Always-on, critical path                          |
 | Home     | Ollama                                                                 | Storage-heavy, tolerates downtime                 |
-| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across the OVH nodes (HDD ×3, NVMe ×2) |
+| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across the OVH nodes (HDD ×3, NVMe ×3) |
 
 CNPG: individual clusters per app. Two sanctioned profiles: OVH-HA (2 instances
 pinned `zone: hil-ovh`, on `local-path-ovh` or `local-path-ovh-ssd`) and
@@ -36,6 +36,9 @@ that taint only as an explicit, owner-reviewed overflow exception in its GitOps
 manifest. The exception uses `operator: Exists` with `effect: NoSchedule`; it does
 not add a `NoExecute` toleration and does not remove the node taint.
 
+The taint is the primary guard; the soft affinity below matters only for workloads
+that explicitly tolerate control-plane scheduling.
+
 An overflow exception must satisfy all of these rules:
 
 - Keep the workload's OVH `region`/`zone` placement constraints explicit.
@@ -43,9 +46,9 @@ An overflow exception must satisfy all of these rules:
   `node-role.kubernetes.io/control-plane` / `DoesNotExist`, so control planes are
   used only when ordinary worker placement cannot fit.
 - Do not use `local-path-*`, `hostPath`, or `emptyDir` volumes. Those write to the
-  node-local disk and can contend with etcd, especially on the HDD-backed
-  `ovh-ns103656` HDD-backed node. Prefer stateless workloads or SeaweedFS-backed
-  application PVCs instead.
+  node-local system disk and can still add noisy-neighbor I/O to etcd, even though
+  all current OVH control-plane system disks are NVMe. Prefer stateless workloads or
+  SeaweedFS-backed application PVCs instead.
 - Record the workload-specific rationale next to the manifest's toleration and
   review any generated child pod template as part of the same change.
 
