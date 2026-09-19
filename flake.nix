@@ -396,6 +396,7 @@
         # Infrastructure tools
         pkgs.gh
         pkgs.kubectl
+        pkgsUnstable.kubectl-cnpg
         pkgs.fluxcd
         pkgs.kustomize
         pkgs.kubernetes-helm
