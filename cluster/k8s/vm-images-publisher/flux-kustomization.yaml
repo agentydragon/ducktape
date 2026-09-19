@@ -4,17 +4,6 @@ metadata:
   name: vm-images-publisher
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  path: ./cluster/k8s/vm-images-publisher
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: vm-images-publisher
-    # attic-reader-netrc.sops.yaml is SOPS-encrypted; without this, Flux applies
-    # the ciphertext literally and the publisher's attic auth (netrc) is garbage.
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -22,7 +11,6 @@ spec:
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -40,3 +28,13 @@ spec:
       kind: CronJob
       name: vm-images-publisher
       namespace: vm-images-publisher
+  interval: 10m
+  path: ./cluster/k8s/vm-images-publisher
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: vm-images-publisher
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
