@@ -88,24 +88,38 @@ placement.
 
 ## Procedure the SSD rename reuses (proven on the HDD roll)
 
-### SeaweedFS re-replication is manual
+### SeaweedFS re-replication is scheduled and copy-only
 
-SeaweedFS does **not** auto-re-replicate (no operator/master heal). Restore replica count with a
-`weed shell` command from a master pod; mutating commands need an admin **`lock`** first:
+The SeaweedFS master does not self-heal. The operator-managed `replication-repair` AdminScript
+runs `volume.fix.replication -apply -doDelete=false` hourly under an admin **`lock`**. This
+restores missing copies but deliberately does not delete excess or misplaced replicas. If a
+temporarily unavailable volume server returns after its data was copied elsewhere, expect an
+over-replication alert and review cleanup separately. The schedule is periodic, not gated on an
+alert duration, so even a brief mismatch present at the scheduled time can start a copy.
+
+For immediate/manual repair, use the same copy-only command from a master pod:
 
 ```bash
 # weed shell reads commands on stdin (no `-c` flag on this build)
 printf 'volume.fix.replication\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell   # dry-run
-printf 'lock\nvolume.fix.replication -apply\nunlock\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell
+printf 'lock\nvolume.fix.replication -apply -doDelete=false -maxParallelization=2 -maxParallelizationPerServer=1\nunlock\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell
 ```
 
-`-apply` fixes **one** missing replica per volume per run and needs a target server with a
-**free volume slot** — a server's capacity is a slot count (disk ÷ `volumeSizeLimitMB`, 16 GB
-here; the hdd group also carries `maxVolumeCounts: 300` + `minFreeSpacePercent: 10`
-overcommit), so a slot-full server can't receive replicas even with disk free. The
-**`SeaweedFSReplicaPlacementMismatch`** alert
-(<../../k8s/seaweedfs/monitoring/prometheusrule.yaml>) surfaces under-replication; keep it
-alert-only (never auto-heal during a rename — re-replication must stay deliberate and gated).
+`volume.fix.replication` defaults to also deleting surplus/misplaced replicas when applying;
+keep `-doDelete=false` unless a human has reviewed that cleanup (the boolean value must be
+attached to the flag). It fixes **one** missing replica per volume per run and needs a target
+server with a **free volume slot** — a server's
+capacity is a slot count (disk ÷ `volumeSizeLimitMB`, 16 GB here; the hdd group also carries
+`maxVolumeCounts: 300` + `minFreeSpacePercent: 10` overcommit), so a slot-full server can't
+receive replicas even with disk free.
+
+Before any planned volume-server outage, evacuation, or storage rename, set
+`spec.suspend: true` on `replication-repair` in Git and reconcile it. Suspending the CronJob
+prevents new runs but does not stop an active Job; wait for active Jobs to finish before
+starting the maintenance. Restore `suspend: false` after the server is healthy and placement is
+stable. The **`SeaweedFSReplicaPlacementMismatch`** alert
+(<../../k8s/seaweedfs/monitoring/prometheusrule.yaml>) remains enabled to catch stalled repairs
+and over-/misplaced replicas.
 
 ### Refresh FUSE clients before deleting a volume server (gotcha)
 

@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - seaweed.yaml
+  - replication-repair.yaml
   # cdk8s-generated (cluster/cdk8s/stateful_infra.py) -- see cluster/docs/cdk8s.md.
   - priorityclass.k8s.yaml
   - poddisruptionbudget.yaml
