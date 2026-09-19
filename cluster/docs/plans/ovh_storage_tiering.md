@@ -23,11 +23,11 @@ OVH inter-node moves are slow/flaky), <../runbooks/seaweedfs_pvc_storageclass_mi
 
 ## The 2 SSD nodes
 
-| Node           | Box     | Role          | etcd disk  | Data disk (rename target)              |
-| -------------- | ------- | ------------- | ---------- | -------------------------------------- |
-| `ovh-ns104952` | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd` |
-| `ovh-ns104963` | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd` |
-| `ovh-ns1001419` | SYS-1 | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/seaweedfs-data` (new) |
+| Node            | Box     | Role          | etcd disk  | Data disk (rename target)                |
+| --------------- | ------- | ------------- | ---------- | ---------------------------------------- |
+| `ovh-ns104952`  | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd`   |
+| `ovh-ns104963`  | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd`   |
+| `ovh-ns1001419` | SYS-1   | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/seaweedfs-data` (new) |
 
 - **etcd rides NVMe#1** (the install disk), not the data disk — the rename repartitions NVMe#2
   only, no reboot, etcd untouched (as proven on the `103656` anchor).
