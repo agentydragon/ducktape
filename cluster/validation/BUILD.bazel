@@ -224,18 +224,6 @@ py_library(
 )
 
 py_library(
-    name = "agentplane_fixtures",
-    testonly = True,
-    srcs = ["agentplane_fixtures.py"],
-    deps = [
-        "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/agentplane:testing",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "haku_console_fixtures",
     testonly = True,
     srcs = ["haku_console_fixtures.py"],
@@ -595,33 +583,6 @@ py_test(
         "//haku/x/dispatch:config",
         "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_ssh_mcp_consumers",
-    # Syntheses import the agentplane Services' Settings and need jsii's Node runtime.
-    size = "medium",
-    srcs = ["test_ssh_mcp_consumers.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":agentplane_fixtures",
-        "//cluster/cdk8s/haku:console_config",
-        "//cluster/cdk8s/ssh_mcp:backend",
-        "//cluster/cdk8s/ssh_mcp:config",
-        "//cluster/cdk8s/ssh_mcp:sshpiper",
-        "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

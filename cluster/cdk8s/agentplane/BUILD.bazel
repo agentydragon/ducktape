@@ -353,6 +353,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":staging",
         ":testing",

@@ -28,6 +28,7 @@ _GENERATED_FILES = (
     "cluster/k8s/ssh-mcp/flux-kustomization.yaml",
     "cluster/k8s/ssh-mcp/kustomization.yaml",
     "cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
+    "cluster/k8s/agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
     "cluster/k8s/clickhouse/schema/clickhouse-schema.k8s.yaml",
     "cluster/k8s/clickhouse/schema/flux-kustomization.yaml",
     "cluster/k8s/clickhouse/schema/kustomization.yaml",

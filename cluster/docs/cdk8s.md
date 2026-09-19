@@ -29,7 +29,9 @@ for writing a generator: <../cdk8s/AGENTS.md>.
    CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
    (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
    name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
-   `terraform.gitops_terraform` and `//cluster/cdk8s/crd_bindings/tofu_controller`'s bindings).
+   `terraform.gitops_terraform` and `//cluster/cdk8s/crd_bindings/tofu_controller`'s bindings);
+   `agents/public-coder-agent/devbox`'s SSH Service, whose cdk8s object also supplies the
+   endpoint consumed by the SSH MCP generator.
 3. **Hand-written.**
 
 Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-only and

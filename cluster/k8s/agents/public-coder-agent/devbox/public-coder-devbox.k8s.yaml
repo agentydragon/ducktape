@@ -1,18 +1,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: public-coder-devbox-ssh
-  namespace: public-coder-agent
   annotations:
     description: ClusterIP for operator port-forward access (e.g. nixos-rebuild switch per docs/kubevirt_nixos_vm.md) and for ssh-mcp's public-coder-devbox targets (cluster/k8s/ssh-mcp); not public.
   labels:
     app.kubernetes.io/name: public-coder-devbox
+  name: public-coder-devbox-ssh
+  namespace: public-coder-agent
 spec:
-  type: ClusterIP
-  selector:
-    kubevirt.io/domain: public-coder-devbox
+  externalIPs: []
   ports:
     - name: ssh
-      protocol: TCP
       port: 22
+      protocol: TCP
       targetPort: 22
+  selector:
+    kubevirt.io/domain: public-coder-devbox
+  type: ClusterIP

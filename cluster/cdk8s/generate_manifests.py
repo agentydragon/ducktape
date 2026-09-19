@@ -14,6 +14,7 @@ from cluster.cdk8s import (
     haku_openclaw_spike_config,
     ntfy,
     public_coder_agent_config,
+    public_coder_devbox,
     stateful_infra,
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
@@ -30,7 +31,8 @@ from util.bazel.workspace import get_build_workspace_directory
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
-    ssh_mcp_generation.write_manifests(root, mesh)
+    devbox_service = public_coder_devbox.write_manifests(root)
+    ssh_mcp_generation.write_manifests(root, mesh, devbox_service)
     litellm_proxy.write_app(root)
     ha_mcp.write_manifests(root)
     external_creds.write_manifests(root)

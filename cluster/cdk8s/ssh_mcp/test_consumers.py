@@ -17,15 +17,16 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
+from cluster.cdk8s import public_coder_devbox
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, sshpiper
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
-# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# pytest_plugins loads cluster.cdk8s.agentplane.conftest by name; gazelle cannot see
 # the dependency.
-# gazelle:include_dep //cluster/validation:agentplane_fixtures
-pytest_plugins = ("cluster.validation.agentplane_fixtures",)
+# gazelle:include_dep //cluster/cdk8s/agentplane:conftest
+pytest_plugins = ("cluster.cdk8s.agentplane.conftest",)
 
 
 def _locate(relative: str) -> Path:
@@ -34,7 +35,8 @@ def _locate(relative: str) -> Path:
 
 @pytest.fixture(scope="module")
 def ssh_config() -> ssh_mcp_config.SshMcpConfig:
-    return ssh_mcp_config.load()
+    chart = Cdk8sTesting.chart()
+    return ssh_mcp_config.load(public_coder_devbox.ssh_service(chart))
 
 
 @pytest.fixture(scope="module")
@@ -49,9 +51,7 @@ def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any
 @pytest.fixture(scope="module")
 def sshpiper_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
     chart = Cdk8sTesting.chart()
-    sshpiper.construct(
-        chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key
-    )
+    sshpiper.construct(chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key)
     return Cdk8sTesting.synth(chart)
 
 

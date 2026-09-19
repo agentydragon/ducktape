@@ -388,7 +388,6 @@ py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
-        "//cluster/k8s:agents/public-coder-agent/devbox/service.yaml",
         "//cluster/k8s:ssh_mcp_known_hosts",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
@@ -410,6 +409,7 @@ py_library(
         ":haku_openclaw_spike_config",
         ":ntfy",
         ":public_coder_agent_config",
+        ":public_coder_devbox",
         ":stateful_infra",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
@@ -423,6 +423,18 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
+    ],
+)
+
+py_library(
+    name = "public_coder_devbox",
+    srcs = ["public_coder_devbox.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":metadata",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 
@@ -467,6 +479,7 @@ py_test(
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "//cluster/k8s:agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
         "//cluster/k8s:aiquota/aiquota.k8s.yaml",
         "//cluster/k8s:aiquota/flux-kustomization.yaml",

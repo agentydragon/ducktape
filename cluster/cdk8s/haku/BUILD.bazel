@@ -10,6 +10,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
         "//cluster/validation:__pkg__",
     ],
     deps = ["//cluster/cdk8s/ssh_mcp:config"],

@@ -62,8 +62,7 @@ Model with constructs, deploy with one props object per environment.
   committed files; a change to generated output is a diff in the PR that makes it. No
   other test reads a committed `.k8s.yaml` or `flux-kustomization.yaml`.
 - **Invariants live beside the generator**: tests over the in-memory synth
-  (`agentplane/conftest.py`'s `agentplane_manifests`;
-  `cluster/validation/agentplane_fixtures.py` where a test needs that package), or
+  (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through
   `chart.node.add_validation`). A rule for every object of a kind is a fleet rule; a
   rule about one construct's shape is a test in its package; a relation that holds by

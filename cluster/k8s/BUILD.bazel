@@ -56,6 +56,7 @@ exports_files(
         "artifact-generators/flux-kustomization.yaml",
         "artifact-generators/kustomization.yaml",
         "agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
+        "agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
         "aiquota/aiquota.k8s.yaml",
         "aiquota/flux-kustomization.yaml",
         "aiquota/kustomization.yaml",
@@ -258,16 +259,4 @@ filegroup(
     name = "market_roster_yaml",
     srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
-)
-
-# Input consumed by the cdk8s SSH MCP generator and its consumer validation.
-exports_files(
-    [
-        "agents/public-coder-agent/devbox/service.yaml",
-    ],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
 )

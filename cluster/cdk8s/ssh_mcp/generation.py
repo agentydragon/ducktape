@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
+from cdk8s_plus_34 import Service
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDependsOn,
@@ -23,9 +24,9 @@ _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
-def write_manifests(root: Path, mesh: Mesh) -> None:
+def write_manifests(root: Path, mesh: Mesh, devbox_service: Service) -> None:
     """Write the generated backend and sshpiper manifests under ``root``."""
-    ssh_config = config.load()
+    ssh_config = config.load(devbox_service)
     out_dir = root / _OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 

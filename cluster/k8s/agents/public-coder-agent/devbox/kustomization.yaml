@@ -4,4 +4,4 @@ resources:
   - ssh-host-key.sops.yaml
   - bazel-cache-pvc.yaml
   - virtualmachine.yaml
-  - service.yaml
+  - public-coder-devbox.k8s.yaml

@@ -8,8 +8,10 @@ here so the two generated outputs cannot disagree.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from typing import Any, cast
 
-import yaml
+from cdk8s import ApiObject
+from cdk8s_plus_34 import Service
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
@@ -25,7 +27,6 @@ CONFIG_MAP_NAME = "ssh-mcp-config"
 CONFIG_DIR = "/etc/ssh-mcp"
 
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
-DEVBOX_SERVICE = "cluster/k8s/agents/public-coder-agent/devbox/service.yaml"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
 NEBULA_KNOWN_HOSTS = "cluster/k8s/ssh-mcp/known_hosts"
 
@@ -72,25 +73,21 @@ def _targets(devbox_host: str) -> tuple[Target, ...]:
 
 
 def _targets_for(
-    host: str,
-    users: tuple[str, ...],
-    identity_directory: str,
-    identity_prefix: str,
+    host: str, users: tuple[str, ...], identity_directory: str, identity_prefix: str
 ) -> tuple[Target, ...]:
     """Build targets whose identity paths share a directory and filename prefix."""
-    return tuple(
-        Target(host, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users
-    )
+    return tuple(Target(host, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users)
 
 
 def _read_input(relative: str) -> str:
     return get_required_path(own_repo_rlocation(relative)).read_text()
 
 
-def load() -> SshMcpConfig:
-    """Read canonical host-key inputs and return validated server configuration."""
-    service = yaml.safe_load(_read_input(DEVBOX_SERVICE))
-    devbox_host = f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"
+def load(devbox_service: Service) -> SshMcpConfig:
+    """Read canonical key inputs and derive the SSH endpoint from its cdk8s Service."""
+    service = cast(dict[str, Any], ApiObject.of(devbox_service).to_json())
+    service_metadata = service["metadata"]
+    devbox_host = f"{service_metadata['name']}.{service_metadata['namespace']}.svc.cluster.local"
     [ssh_port] = service["spec"]["ports"]
     key_type, key, *_comment = _read_input(DEVBOX_HOST_KEY).split()
     targets = _targets(devbox_host)
@@ -113,7 +110,7 @@ def load() -> SshMcpConfig:
         devbox_host=devbox_host,
         devbox_key_type=key_type,
         devbox_key=key,
-        devbox_port=ssh_port["port"],
+        devbox_port=int(ssh_port["port"]),
         targets=targets,
         settings=settings,
         known_hosts=known_hosts,

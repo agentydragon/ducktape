@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
@@ -8,7 +8,6 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     data = [
-        "//cluster/k8s:agents/public-coder-agent/devbox/service.yaml",
         "//cluster/k8s:ssh_mcp_known_hosts",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
@@ -18,9 +17,10 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
-        "//x/ssh_mcp_server:server",
         "//util/bazel:runfiles",
-        "@pypi//pyyaml",
+        "//x/ssh_mcp_server:server",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -79,5 +79,35 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_consumers",
+    # Syntheses import the agentplane Services' Settings and need jsii's Node runtime.
+    size = "medium",
+    srcs = ["test_consumers.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":backend",
+        ":config",
+        ":sshpiper",
+        "//:conftest",
+        "//cluster/cdk8s:public_coder_devbox",
+        "//cluster/cdk8s/agentplane:conftest",
+        "//cluster/cdk8s/haku:console_config",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
