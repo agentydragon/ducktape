@@ -23,5 +23,4 @@ spec:
     - port: hubble-metrics
       path: /metrics
       scheme: http
-      interval: 30s
       scrapeTimeout: 10s

@@ -1154,8 +1154,7 @@ metadata:
   namespace: haku-console
 spec:
   endpoints:
-    - interval: 30s
-      path: /metrics
+    - path: /metrics
       port: metrics
   selector:
     matchLabels:

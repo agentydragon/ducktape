@@ -22,4 +22,3 @@ spec:
   podMetricsEndpoints:
     - port: http-prom
       path: /metrics
-      interval: 30s

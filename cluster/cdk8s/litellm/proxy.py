@@ -402,7 +402,6 @@ class LiteLLMServiceMonitor(Construct):
                     ServiceMonitorSpecEndpoints(
                         port="http",
                         path="/metrics",
-                        interval="15s",
                         scrape_timeout="10s",
                         bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(
                             name="litellm-master-key", key="api-key"

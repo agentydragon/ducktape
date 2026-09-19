@@ -854,7 +854,6 @@ spec:
     - bearerTokenSecret:
         key: api-key
         name: litellm-master-key
-      interval: 15s
       path: /metrics
       port: http
       scrapeTimeout: 10s

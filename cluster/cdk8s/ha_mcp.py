@@ -407,7 +407,7 @@ class HaMcpApp(Construct):
             metadata=metadata(_APP_NAME, _NAMESPACE),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics", interval="30s")],
+                endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
             ),
         )
 

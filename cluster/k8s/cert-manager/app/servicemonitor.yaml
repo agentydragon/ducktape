@@ -12,7 +12,6 @@ spec:
     # ServiceMonitor.port matches the Service port name, not the targetPort.
     - port: tcp-prometheus-servicemonitor
       path: /metrics
-      interval: 30s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -28,4 +27,3 @@ spec:
     # ServiceMonitor.port matches the Service port name, not the targetPort.
     - port: metrics
       path: /metrics
-      interval: 30s

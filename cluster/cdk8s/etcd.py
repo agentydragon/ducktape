@@ -89,7 +89,6 @@ class TalosEtcdMetrics(Construct):
                     ServiceMonitorSpecEndpoints(
                         port=_PORT_NAME,
                         path="/metrics",
-                        interval="30s",
                         scrape_timeout="10s",
                         relabelings=[
                             ServiceMonitorSpecEndpointsRelabelings(

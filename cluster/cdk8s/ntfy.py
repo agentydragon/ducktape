@@ -366,7 +366,7 @@ class Ntfy(Construct):
             metadata=metadata(NAME, NAMESPACE, labels={"release": "kube-prometheus-stack", **_LABELS}),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics", interval="30s")],
+                endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics")],
             ),
         )
 

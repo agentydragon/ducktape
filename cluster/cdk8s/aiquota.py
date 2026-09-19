@@ -318,9 +318,7 @@ class Aiquota(Construct):
             metadata=metadata(NAME, NAMESPACE),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(port="http", path="/metrics", interval="60s", scrape_timeout="15s")
-                ],
+                endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics", scrape_timeout="15s")],
             ),
         )
 
