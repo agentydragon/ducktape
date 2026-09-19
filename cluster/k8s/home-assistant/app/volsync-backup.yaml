@@ -11,7 +11,7 @@ spec:
   trigger:
     schedule: "17 */6 * * *"
   restic:
-    repository: home-assistant-config-restic
+    repository: home-assistant-config-restic-tenant
     copyMethod: Direct
     pruneIntervalDays: 7
     retain:
