@@ -38,7 +38,6 @@ from cluster.cdk8s import (
     terraform_constructs,
 )
 from cluster.cdk8s.agentplane import staging, testing
-from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
@@ -385,48 +384,49 @@ def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | 
     )
 
 
-def _generate_haku_console(root: Path) -> None:
-    """Each of the console's Kustomization directories: its chart, the Flux Kustomization
+def _generate_haku_console_directory(
+    root: Path, directory: haku_charts.Directory, build: Callable[[App], Chart]
+) -> None:
+    """One of the console's Kustomization directories: its chart, the Flux Kustomization
     (health checks from the chart's own objects), and the root Kustomization listing the
     generated file beside the hand-written siblings."""
-    for directory in haku_charts.DIRECTORIES:
-        out_dir = root / directory.path
-        out_dir.mkdir(parents=True, exist_ok=True)
-        app = App(outdir=str(out_dir))
-        chart = haku_charts.chart(app, directory)
-        app.synth()
-        _write_yaml(
-            out_dir / "flux-kustomization.yaml",
-            flux_kustomization(
-                directory.name,
-                spec=KustomizationSpec(
-                    interval="10m",
-                    retry_interval="1m",
-                    timeout=directory.timeout,
-                    path=f"./{directory.path}",
-                    prune=True,
-                    wait=True,
-                    source_ref=KustomizationSpecSourceRef(
-                        kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE
-                    ),
-                    decryption=_sops_decryption(directory.extra_resources),
-                    health_checks=health_checks(chart, directory.health_check_kinds) or None,
-                    depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on],
+    out_dir = root / directory.path
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = build(app)
+    app.synth()
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            directory.name,
+            spec=KustomizationSpec(
+                interval="10m",
+                retry_interval="1m",
+                timeout=directory.timeout,
+                path=f"./{directory.path}",
+                prune=True,
+                wait=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=directory.name, namespace=NAMESPACE
                 ),
+                decryption=_sops_decryption(directory.extra_resources),
+                health_checks=health_checks(chart, directory.health_check_kinds) or None,
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in directory.depends_on],
             ),
-        )
-        _write_yaml(
-            out_dir / "kustomization.yaml",
-            kustomize_kustomization(
-                namespace=directory.namespace,
-                resources=[f"{directory.name}.k8s.yaml", *directory.extra_resources],
-                components=["./image-pins"] if directory.image_pins else (),
-                config_map_generator=directory.config_map_generator,
-            ),
-        )
+        ),
+    )
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            namespace=directory.namespace,
+            resources=[f"{directory.name}.k8s.yaml", *directory.extra_resources],
+            components=["./image-pins"] if directory.image_pins else (),
+            config_map_generator=directory.config_map_generator,
+        ),
+    )
 
 
-def _generate_agentplane(root: Path, env: Environment) -> None:
+def _generate_agentplane(root: Path, env: Environment, build: Callable[[App], Chart]) -> None:
     """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
     `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
     `Cluster` -- accepted for both non-production environments.
@@ -440,7 +440,7 @@ def _generate_agentplane(root: Path, env: Environment) -> None:
     out_dir = root / env_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart = environment_chart(app, env)
+    chart = build(app)
     app.synth()
 
     _write_yaml(
@@ -600,9 +600,11 @@ def generate_manifests(root: Path) -> None:
     _generate_ha_mcp(root)
     _generate_clickhouse_schema(root)
     _generate_aiquota(root)
-    for env in (staging.ENV, testing.ENV):
-        _generate_agentplane(root, env)
-    _generate_haku_console(root)
+    _generate_agentplane(root, staging.ENV, staging.chart)
+    _generate_agentplane(root, testing.ENV, testing.chart)
+    _generate_haku_console_directory(root, haku_charts.DB, haku_charts.db_chart)
+    _generate_haku_console_directory(root, haku_charts.MIGRATION, haku_charts.migration_chart)
+    _generate_haku_console_directory(root, haku_charts.CONSOLE, haku_charts.console_chart)
     _write_charts(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
     _write_charts(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
     _write_charts(root, _DESCHEDULER_DIR, _descheduler_chart)

@@ -4,12 +4,13 @@ shared Authentik, and the reviewed GitHub/Kubernetes/SSH MCP action groups.
 
 from __future__ import annotations
 
-from cdk8s import Duration
+from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions_constructs, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
+from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
     ActionsProps,
@@ -187,5 +188,10 @@ ENV = Environment(
             cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
-    extra=add_staging_action_policies,
 )
+
+
+def chart(app: App) -> Chart:
+    chart = environment_chart(app, ENV)
+    add_staging_action_policies(chart)
+    return chart

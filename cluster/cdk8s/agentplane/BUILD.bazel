@@ -262,10 +262,6 @@ py_library(
 py_library(
     name = "chart",
     srcs = ["chart.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
     deps = [
         ":actions_constructs",
         ":app_constructs",
@@ -294,6 +290,7 @@ py_library(
     deps = [
         ":actions_constructs",
         ":actions_staging_policies",
+        ":chart",
         ":environment",
         ":staging_config",
         "//cluster/cdk8s:cilium",
@@ -312,6 +309,7 @@ py_library(
     deps = [
         ":actions_constructs",
         ":actions_testing_fixtures",
+        ":chart",
         ":dex_constructs",
         ":environment",
         ":testing_config",
@@ -326,7 +324,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":chart",
         ":staging",
         ":testing",
         "@pypi//cdk8s",

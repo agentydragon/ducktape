@@ -5,7 +5,7 @@ itself with its Kubernetes API proxy -- each as one chart, shared by generate_ma
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from cdk8s import App, Chart
@@ -28,7 +28,6 @@ class Directory:
     # The Flux Kustomization, chart and `<name>.k8s.yaml`.
     name: str
     path: str
-    build: Callable[[Chart], object]
     depends_on: tuple[str, ...]
     # Secrets and ConfigMaps Pods read that the chart does not create, each with the
     # dependency or sibling file that does; fleet_rules checks both ends.
@@ -46,9 +45,10 @@ class Directory:
     health_check_kinds: tuple[str, ...] = ()
 
 
-def chart(app: App, directory: Directory) -> Chart:
+def _chart(app: App, directory: Directory) -> Chart:
+    """The directory's empty chart with its fleet rules attached. The rules are a
+    synth-time validation, so the caller fills the chart afterwards."""
     chart = Chart(app, directory.name, disable_resource_name_hashes=True)
-    directory.build(chart)
     add_fleet_rules(
         chart,
         provided_secrets=directory.provided_secrets,
@@ -64,15 +64,9 @@ def chart(app: App, directory: Directory) -> Chart:
     return chart
 
 
-def _console(chart: Chart) -> None:
-    Console(chart, "console")
-    KubeApiProxy(chart, "kube-api-proxy")
-
-
 DB = Directory(
     name="haku-console-db",
     path="cluster/k8s/haku/console/db",
-    build=lambda chart: Db(chart, "db"),
     depends_on=(
         _NAMESPACE_KUSTOMIZATION,
         "cnpg",
@@ -87,7 +81,6 @@ DB = Directory(
 MIGRATION = Directory(
     name="haku-console-migration",
     path="cluster/k8s/haku/console/migration",
-    build=lambda chart: Migration(chart, "migration"),
     depends_on=(
         # The namespace layer ships the forgejo-images-creds ExternalSecret the Job pulls its
         # private image with, from the ClusterSecretStore forgejo-images provides.
@@ -105,7 +98,6 @@ MIGRATION = Directory(
 CONSOLE = Directory(
     name="haku-console",
     path="cluster/k8s/haku/console",
-    build=_console,
     depends_on=(
         # Runtime namespace/template changes must become Ready before the console starts
         # creating claims against their new namespace: a namespace migration fails closed
@@ -178,4 +170,21 @@ CONSOLE = Directory(
     namespace=console_constructs.NAMESPACE,
 )
 
-DIRECTORIES = (DB, MIGRATION, CONSOLE)
+
+def db_chart(app: App) -> Chart:
+    chart = _chart(app, DB)
+    Db(chart, "db")
+    return chart
+
+
+def migration_chart(app: App) -> Chart:
+    chart = _chart(app, MIGRATION)
+    Migration(chart, "migration")
+    return chart
+
+
+def console_chart(app: App) -> Chart:
+    chart = _chart(app, CONSOLE)
+    Console(chart, "console")
+    KubeApiProxy(chart, "kube-api-proxy")
+    return chart
