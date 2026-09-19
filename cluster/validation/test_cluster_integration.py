@@ -215,7 +215,7 @@ def test_retry_policy(cluster: ParsedCluster) -> None:
 
 
 def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """All YAML files must be referenced by a kustomization.yaml."""
+    """All active YAML files must be referenced by a kustomization.yaml."""
     errors = find_orphaned_files(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 

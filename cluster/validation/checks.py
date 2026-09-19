@@ -27,10 +27,12 @@ from cluster.validation.kustomize import KustomizeBuildResult
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
+# Stored for future Home Assistant provisioning; see homeassistant/TODO.md.
+_INTENTIONALLY_STORED_ONLY_FILES = frozenset({Path("external-creds/dreo-account.sops.yaml")})
 
 
 def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
-    """Find YAML files not referenced by any kustomization."""
+    """Find YAML files not referenced by any kustomization, except stored-only inputs."""
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
         referenced.update(kust.all_referenced_files)
@@ -42,8 +44,10 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     for yaml_file in cluster.all_yaml_files:
         if yaml_file.name == "kustomization.yaml":
             continue
+        relative = yaml_file.relative_to(k8s_dir)
+        if relative in _INTENTIONALLY_STORED_ONLY_FILES:
+            continue
         if yaml_file not in referenced:
-            relative = yaml_file.relative_to(k8s_dir)
             errors.append(f"Orphaned file not referenced by any kustomization: {relative}")
     return errors
 
