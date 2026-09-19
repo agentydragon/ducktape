@@ -193,7 +193,7 @@ plan is resolvable with the Factory credential. The helper creates and removes
 a temporary mode-600 netrc file without placing the password in curl's arguments:
 
 ```bash
-cluster/scripts/talos-image-factory-curl \
+cluster/scripts/talos_image_factory_curl.sh \
   --fail --silent --show-error --head \
   https://talos-image-factory.allegedly.works/v2/metal-installer/<fleet-schematic-id>/manifests/<talos-version>
 ```

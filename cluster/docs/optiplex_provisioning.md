@@ -54,7 +54,7 @@ output has been written to state:
 cd cluster/terraform/main
 tofu init -upgrade
 iso_url=$(tofu console -json <<< 'data.talos_image_factory_urls.kimsufi.urls.iso' | jq -r .)
-../../scripts/talos-image-factory-curl \
+../../scripts/talos_image_factory_curl.sh \
   --fail --location --output /tmp/talos.iso "$iso_url"
 ```
 
