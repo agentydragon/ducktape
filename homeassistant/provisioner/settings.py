@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; Gazelle
@@ -53,6 +53,7 @@ class ProvisionerSettings(BaseSettings):
     redirect_uri: str
     username: str
     display_name: str
+    local_admin_password: SecretStr | None = None
     required_onboarding_steps: frozenset[str]
     http_config: HttpConfig
     components: tuple[ComponentConfig, ...]

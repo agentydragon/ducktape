@@ -16,6 +16,7 @@ def provisioner_settings() -> ProvisionerSettings:
         redirect_uri="https://home.test/",
         username="test-admin",
         display_name="Test Administrator",
+        local_admin_password="secret-password",
         required_onboarding_steps=frozenset({"user", "core_config", "integration", "analytics"}),
         http_config=HttpConfig(
             server_host=["127.0.0.1"],
@@ -51,23 +52,34 @@ def provisioner_settings() -> ProvisionerSettings:
     )
 
 
+@pytest.fixture
+def http_session():
+    return object()
+
+
 def http_error(path: str, code: HTTPStatus) -> error.HTTPError:
     return error.HTTPError(f"http://home-assistant{path}", code, code.phrase, Message(), None)
 
 
 def disable_http_configuration(monkeypatch):
-    async def fake_configure_http(settings, password: str, token: str) -> None:
+    async def fake_configure_http(session, settings, password: str, token: str) -> None:
         pass
 
     monkeypatch.setattr(provision, "configure_http", fake_configure_http)
 
 
-async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch, provisioner_settings):
+async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch, http_session, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[tuple[str, dict[str, object] | None, str | None, bool]] = []
 
-    def fake_request(
-        settings, path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    async def fake_request(
+        session,
+        settings,
+        path: str,
+        *,
+        data: dict[str, object] | None = None,
+        token: str | None = None,
+        form: bool = False,
     ) -> object:
         calls.append((path, data, token, form))
         if path == "/api/":
@@ -81,7 +93,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch,
         return {}
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(provisioner_settings, "secret-password")
+    await provision.provision(http_session, provisioner_settings, "secret-password")
 
     assert calls == [
         ("/api/", None, None, False),
@@ -115,12 +127,18 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch,
     ]
 
 
-async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch, provisioner_settings):
+async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch, http_session, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
-    def fake_request(
-        settings, path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    async def fake_request(
+        session,
+        settings,
+        path: str,
+        *,
+        data: dict[str, object] | None = None,
+        token: str | None = None,
+        form: bool = False,
     ) -> object:
         calls.append(path)
         if path == "/api/":
@@ -141,7 +159,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch, pro
         return {}
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(provisioner_settings, "secret-password")
+    await provision.provision(http_session, provisioner_settings, "secret-password")
 
     assert calls == [
         "/api/",
@@ -154,12 +172,18 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch, pro
     ]
 
 
-async def test_completed_onboarding_converges_http_configuration(monkeypatch, provisioner_settings):
+async def test_completed_onboarding_converges_http_configuration(monkeypatch, http_session, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
-    def fake_request(
-        settings, path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    async def fake_request(
+        session,
+        settings,
+        path: str,
+        *,
+        data: dict[str, object] | None = None,
+        token: str | None = None,
+        form: bool = False,
     ) -> object:
         calls.append(path)
         if path == "/api/":
@@ -175,17 +199,23 @@ async def test_completed_onboarding_converges_http_configuration(monkeypatch, pr
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(provisioner_settings, "secret-password")
+    await provision.provision(http_session, provisioner_settings, "secret-password")
 
     assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
 
 
-async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch, provisioner_settings):
+async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch, http_session, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
-    def fake_request(
-        settings, path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    async def fake_request(
+        session,
+        settings,
+        path: str,
+        *,
+        data: dict[str, object] | None = None,
+        token: str | None = None,
+        form: bool = False,
     ) -> object:
         calls.append(path)
         if calls == ["/api/"]:
@@ -203,8 +233,12 @@ async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatc
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    monkeypatch.setattr(provision.time, "sleep", lambda _: None)
-    await provision.provision(provisioner_settings, "secret-password")
+
+    async def no_sleep(delay: float) -> None:
+        pass
+
+    monkeypatch.setattr(provision.asyncio, "sleep", no_sleep)
+    await provision.provision(http_session, provisioner_settings, "secret-password")
 
     assert calls == [
         "/api/",
@@ -216,12 +250,18 @@ async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatc
     ]
 
 
-async def test_completed_onboarding_steps_allow_future_additions(monkeypatch, provisioner_settings):
+async def test_completed_onboarding_steps_allow_future_additions(monkeypatch, http_session, provisioner_settings):
     disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
-    def fake_request(
-        settings, path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    async def fake_request(
+        session,
+        settings,
+        path: str,
+        *,
+        data: dict[str, object] | None = None,
+        token: str | None = None,
+        form: bool = False,
     ) -> object:
         calls.append(path)
         if path == "/api/":
@@ -240,15 +280,15 @@ async def test_completed_onboarding_steps_allow_future_additions(monkeypatch, pr
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(provision, "request_json", fake_request)
-    await provision.provision(provisioner_settings, "secret-password")
+    await provision.provision(http_session, provisioner_settings, "secret-password")
 
     assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
 
 
-async def test_configure_http_is_idempotent(monkeypatch, provisioner_settings):
+async def test_configure_http_is_idempotent(monkeypatch, http_session, provisioner_settings):
     calls: list[dict[str, object]] = []
 
-    async def fake_websocket_command(settings, token: str, message: dict[str, object]) -> object:
+    async def fake_websocket_command(session, settings, token: str, message: dict[str, object]) -> object:
         calls.append(message)
         return {
             "stable": {
@@ -263,15 +303,15 @@ async def test_configure_http_is_idempotent(monkeypatch, provisioner_settings):
 
     monkeypatch.setattr(provision, "websocket_command", fake_websocket_command)
 
-    await provision.configure_http(provisioner_settings, "secret-password", "bootstrap-token")
+    await provision.configure_http(http_session, provisioner_settings, "secret-password", "bootstrap-token")
 
     assert calls == [{"id": 1, "type": "http/config"}]
 
 
-async def test_configure_http_restarts_and_promotes(monkeypatch, provisioner_settings):
+async def test_configure_http_restarts_and_promotes(monkeypatch, http_session, provisioner_settings):
     calls: list[tuple[str, dict[str, object]]] = []
 
-    async def fake_websocket_command(settings, token: str, message: dict[str, object]) -> object:
+    async def fake_websocket_command(session, settings, token: str, message: dict[str, object]) -> object:
         calls.append((token, message))
         if message["type"] == "http/config":
             return {"stable": {"server_port": 8124}, "pending": None, "active_config_type": "stable"}
@@ -282,11 +322,21 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, provisioner_set
         raise AssertionError(f"unexpected message: {message}")
 
     monkeypatch.setattr(provision, "websocket_command", fake_websocket_command)
-    monkeypatch.setattr(provision, "wait_for_home_assistant", lambda settings: None)
-    monkeypatch.setattr(provision, "login", lambda settings, password: "refreshed-login-code")
-    monkeypatch.setattr(provision, "exchange_token", lambda settings, auth_code: "refreshed-token")
 
-    await provision.configure_http(provisioner_settings, "secret-password", "bootstrap-token")
+    async def wait_for_home_assistant(session, settings):
+        return None
+
+    async def login(session, settings, password):
+        return "refreshed-login-code"
+
+    async def exchange_token(session, settings, auth_code):
+        return "refreshed-token"
+
+    monkeypatch.setattr(provision, "wait_for_home_assistant", wait_for_home_assistant)
+    monkeypatch.setattr(provision, "login", login)
+    monkeypatch.setattr(provision, "exchange_token", exchange_token)
+
+    await provision.configure_http(http_session, provisioner_settings, "secret-password", "bootstrap-token")
 
     assert calls == [
         ("bootstrap-token", {"id": 1, "type": "http/config"}),

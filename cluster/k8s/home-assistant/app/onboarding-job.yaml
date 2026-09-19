@@ -28,7 +28,7 @@ spec:
           env:
             - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
               value: /etc/homeassistant/provisioner.yaml
-            - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
+            - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: home-assistant-break-glass

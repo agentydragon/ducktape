@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import time
+from email.message import Message
 from http import HTTPStatus
 from pathlib import Path
-from urllib import error, parse, request
+from urllib import error, parse
 
 import aiohttp
 from component_installer import install_components
 from settings import ProvisionerSettings, load_settings
 
 
-def request_json(
+async def request_json(
+    session: aiohttp.ClientSession,
     settings: ProvisionerSettings,
     path: str,
     *,
@@ -25,37 +24,42 @@ def request_json(
 ) -> object:
     """Send a request to Home Assistant and decode its JSON response."""
     headers = {"Accept": "application/json"}
-    body = None
-    if data is not None:
-        if form:
-            body = parse.urlencode(data).encode()
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-        else:
-            body = json.dumps(data).encode()
-            headers["Content-Type"] = "application/json"
+    method = "GET" if data is None else "POST"
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
-    with request.urlopen(
-        request.Request(f"{settings.home_assistant_url}{path}", data=body, headers=headers), timeout=30
-    ) as response:
-        return json.load(response)
+    url = f"{settings.home_assistant_url}{path}"
+    timeout = aiohttp.ClientTimeout(total=30)
+    if data is None:
+        request_context = session.request(method, url, headers=headers, timeout=timeout)
+    elif form:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        request_context = session.request(
+            method, url, headers=headers, timeout=timeout, data=parse.urlencode(data).encode()
+        )
+    else:
+        request_context = session.request(method, url, headers=headers, timeout=timeout, json=data)
+    async with request_context as response:
+        if response.status >= 400:
+            raise error.HTTPError(str(response.url), response.status, response.reason or "", Message(), None)
+        return await response.json()
 
 
-def wait_for_home_assistant(settings: ProvisionerSettings) -> set[str] | None:
+async def wait_for_home_assistant(session: aiohttp.ClientSession, settings: ProvisionerSettings) -> set[str] | None:
     """Wait for the API and return onboarding state, or None when complete."""
-    for _ in range(60):
+    for attempt in range(60):
         try:
-            verify_api_ready(settings)
-            return onboarding_status(settings)
-        except error.URLError, TimeoutError:
-            time.sleep(5)
+            await verify_api_ready(session, settings)
+            return await onboarding_status(session, settings)
+        except aiohttp.ClientError, error.URLError, TimeoutError:
+            if attempt < 59:
+                await asyncio.sleep(5)
     raise TimeoutError("Home Assistant did not become available within 5 minutes")
 
 
-def verify_api_ready(settings: ProvisionerSettings) -> None:
+async def verify_api_ready(session: aiohttp.ClientSession, settings: ProvisionerSettings) -> None:
     """Require Home Assistant's unauthenticated API response."""
     try:
-        request_json(settings, "/api/")
+        await request_json(session, settings, "/api/")
     except error.HTTPError as exc:
         if exc.code == HTTPStatus.UNAUTHORIZED:
             return
@@ -63,10 +67,10 @@ def verify_api_ready(settings: ProvisionerSettings) -> None:
     raise RuntimeError("Home Assistant API unexpectedly allowed an unauthenticated request")
 
 
-def onboarding_status(settings: ProvisionerSettings) -> set[str] | None:
+async def onboarding_status(session: aiohttp.ClientSession, settings: ProvisionerSettings) -> set[str] | None:
     """Return completed steps, or None when onboarding views are absent."""
     try:
-        response = request_json(settings, "/api/onboarding")
+        response = await request_json(session, settings, "/api/onboarding")
     except error.HTTPError as exc:
         if exc.code == HTTPStatus.NOT_FOUND:
             return None
@@ -92,10 +96,11 @@ def required_string(response: object, *path: str) -> str:
     return value
 
 
-def create_owner(settings: ProvisionerSettings, password: str) -> str:
+async def create_owner(session: aiohttp.ClientSession, settings: ProvisionerSettings, password: str) -> str:
     """Create the local owner and return an authorization code."""
     return required_string(
-        request_json(
+        await request_json(
+            session,
             settings,
             "/api/onboarding/users",
             data={
@@ -110,10 +115,11 @@ def create_owner(settings: ProvisionerSettings, password: str) -> str:
     )
 
 
-def login(settings: ProvisionerSettings, password: str) -> str:
+async def login(session: aiohttp.ClientSession, settings: ProvisionerSettings, password: str) -> str:
     """Authenticate the local owner after a partially completed run."""
     flow_id = required_string(
-        request_json(
+        await request_json(
+            session,
             settings,
             "/auth/login_flow",
             data={
@@ -125,7 +131,8 @@ def login(settings: ProvisionerSettings, password: str) -> str:
         "flow_id",
     )
     return required_string(
-        request_json(
+        await request_json(
+            session,
             settings,
             f"/auth/login_flow/{flow_id}",
             data={"client_id": settings.client_id, "username": settings.username, "password": password},
@@ -134,10 +141,11 @@ def login(settings: ProvisionerSettings, password: str) -> str:
     )
 
 
-def exchange_token(settings: ProvisionerSettings, auth_code: str) -> str:
+async def exchange_token(session: aiohttp.ClientSession, settings: ProvisionerSettings, auth_code: str) -> str:
     """Exchange a Home Assistant authorization code for an access token."""
     return required_string(
-        request_json(
+        await request_json(
+            session,
             settings,
             "/auth/token",
             data={"grant_type": "authorization_code", "code": auth_code, "client_id": settings.client_id},
@@ -156,12 +164,11 @@ def websocket_url(settings: ProvisionerSettings) -> str:
     return parse.urlunsplit((websocket_scheme, parsed.netloc, "/api/websocket", "", ""))
 
 
-async def websocket_command(settings: ProvisionerSettings, token: str, message: dict[str, object]) -> object:
+async def websocket_command(
+    session: aiohttp.ClientSession, settings: ProvisionerSettings, token: str, message: dict[str, object]
+) -> object:
     """Authenticate to Home Assistant and execute one WebSocket command."""
-    async with (
-        aiohttp.ClientSession() as session,
-        session.ws_connect(websocket_url(settings), timeout=aiohttp.ClientWSTimeout(ws_receive=30)) as websocket,
-    ):
+    async with session.ws_connect(websocket_url(settings), timeout=aiohttp.ClientWSTimeout(ws_receive=30)) as websocket:
         auth_required = await websocket.receive_json()
         if not isinstance(auth_required, dict) or auth_required.get("type") != "auth_required":
             raise RuntimeError(f"Home Assistant WebSocket did not request authentication: {auth_required!r}")
@@ -183,10 +190,12 @@ def config_without_metadata(config: object) -> dict[str, object]:
     return {key: value for key, value in config.items() if key not in {"created_at", "error", "error_message"}}
 
 
-async def configure_http(settings: ProvisionerSettings, password: str, token: str) -> None:
+async def configure_http(
+    session: aiohttp.ClientSession, settings: ProvisionerSettings, password: str, token: str
+) -> None:
     """Converge Home Assistant's UI-managed HTTP settings through its admin API."""
     http_config = settings.http_config.model_dump()
-    current = await websocket_command(settings, token, {"id": 1, "type": "http/config"})
+    current = await websocket_command(session, settings, token, {"id": 1, "type": "http/config"})
     if not isinstance(current, dict):
         raise TypeError(f"Home Assistant returned an invalid HTTP config response: {current!r}")
     stable = config_without_metadata(current.get("stable"))
@@ -195,62 +204,65 @@ async def configure_http(settings: ProvisionerSettings, password: str, token: st
     if stable == http_config and pending is None:
         return
     if pending_config == http_config and current.get("active_config_type") == "pending":
-        await websocket_command(settings, token, {"id": 1, "type": "http/config/promote"})
+        await websocket_command(session, settings, token, {"id": 1, "type": "http/config/promote"})
         return
 
-    result = await websocket_command(settings, token, {"id": 1, "type": "http/config/configure", "config": http_config})
+    result = await websocket_command(
+        session, settings, token, {"id": 1, "type": "http/config/configure", "config": http_config}
+    )
     if not isinstance(result, dict) or not isinstance(result.get("restart"), bool):
         raise TypeError(f"Home Assistant returned an invalid HTTP configure response: {result!r}")
     if not result["restart"]:
         return
 
-    await asyncio.to_thread(wait_for_home_assistant, settings)
-    refreshed_token = await asyncio.to_thread(
-        exchange_token, settings, await asyncio.to_thread(login, settings, password)
-    )
-    await websocket_command(settings, refreshed_token, {"id": 1, "type": "http/config/promote"})
+    await wait_for_home_assistant(session, settings)
+    refreshed_token = await exchange_token(session, settings, await login(session, settings, password))
+    await websocket_command(session, settings, refreshed_token, {"id": 1, "type": "http/config/promote"})
 
 
-async def provision(settings: ProvisionerSettings, password: str) -> None:
+async def provision(session: aiohttp.ClientSession, settings: ProvisionerSettings, password: str) -> None:
     """Create the owner if necessary and finish all onboarding steps."""
-    completed = await asyncio.to_thread(wait_for_home_assistant, settings)
+    completed = await wait_for_home_assistant(session, settings)
     required_steps = settings.required_onboarding_steps
     if completed is None or completed >= required_steps:
-        token = await asyncio.to_thread(exchange_token, settings, await asyncio.to_thread(login, settings, password))
-        await configure_http(settings, password, token)
+        token = await exchange_token(session, settings, await login(session, settings, password))
+        await configure_http(session, settings, password, token)
         print("Home Assistant onboarding is already complete")
         return
 
     auth_code = (
-        await asyncio.to_thread(login, settings, password)
+        await login(session, settings, password)
         if "user" in completed
-        else await asyncio.to_thread(create_owner, settings, password)
+        else await create_owner(session, settings, password)
     )
-    token = await asyncio.to_thread(exchange_token, settings, auth_code)
+    token = await exchange_token(session, settings, auth_code)
     if "core_config" not in completed:
-        await asyncio.to_thread(request_json, settings, "/api/onboarding/core_config", data={}, token=token)
+        await request_json(session, settings, "/api/onboarding/core_config", data={}, token=token)
     if "integration" not in completed:
-        await asyncio.to_thread(
-            request_json,
+        await request_json(
+            session,
             settings,
             "/api/onboarding/integration",
             data={"client_id": settings.client_id, "redirect_uri": settings.redirect_uri},
             token=token,
         )
     if "analytics" not in completed:
-        await asyncio.to_thread(request_json, settings, "/api/onboarding/analytics", data={}, token=token)
-    await configure_http(settings, password, token)
+        await request_json(session, settings, "/api/onboarding/analytics", data={}, token=token)
+    await configure_http(session, settings, password, token)
     print("Home Assistant onboarding is complete")
 
 
-def main() -> None:
+async def main() -> None:
     """Install configured components and complete configured onboarding."""
     settings = load_settings()
     config_dir = Path("/config")
-    install_components(config_dir, settings.components)
-    if settings.onboarding_enabled:
-        asyncio.run(provision(settings, os.environ["HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD"]))
+    async with aiohttp.ClientSession() as session:
+        await install_components(session, config_dir, settings.components)
+        if settings.onboarding_enabled:
+            if settings.local_admin_password is None:
+                raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required for onboarding")
+            await provision(session, settings, settings.local_admin_password.get_secret_value())
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

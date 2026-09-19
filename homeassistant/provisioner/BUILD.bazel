@@ -22,7 +22,10 @@ py_library(
     name = "component_installer",
     srcs = ["component_installer.py"],
     imports = ["."],
-    deps = [":settings"],
+    deps = [
+        ":settings",
+        "@pypi//aiohttp",
+    ],
 )
 
 py_library(
