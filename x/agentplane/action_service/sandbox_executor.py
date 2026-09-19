@@ -71,8 +71,10 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
     agent cannot otherwise see, and naming an environment that does not exist is the most likely way
     to get `provision` wrong.
     """
+    # Descriptions are free text a deployment writes, so a trailing period is as likely as not and
+    # would double up against the sentence this is embedded in.
     offered = "; ".join(
-        f"{name}: {environment.description}" for name, environment in sorted(binding.environments.items())
+        f"{name}: {environment.description.rstrip('.')}" for name, environment in sorted(binding.environments.items())
     )
     return {
         SandboxAction.PROVISION: ActionDefinition(

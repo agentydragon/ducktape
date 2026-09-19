@@ -138,7 +138,9 @@ class Actions(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "delete"],
                 ),
-                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["get", "list"]),
+                # `get` alone: the Pod backing a Sandbox is named by the controller's
+                # `agents.x-k8s.io/pod-name` annotation and read by name, never searched for.
+                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["get"]),
                 # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,
                 # where kubectl POSTs.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
