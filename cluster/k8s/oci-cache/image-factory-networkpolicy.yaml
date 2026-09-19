@@ -8,6 +8,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: talos-image-factory
   ingress:
+    # The Gateway may reach only the public auth proxy for general requests.
+    # Nginx accepts GET/HEAD under /image/ and /v2/ and requires Basic auth.
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    # Only release/version metadata is public. Cilium also blocks the Gateway
+    # from reaching any other unauthenticated Factory API on this port.
     - fromEntities:
         - ingress
       toPorts:
@@ -17,11 +27,15 @@ spec:
           rules:
             http:
               - method: GET
-                path: "/.*"
+                path: "^/versions$"
               - method: HEAD
-                path: "/.*"
-    # kubectl port-forward reaches the Pod from the node host identity. Keep the
-    # write-capable API available there, but not through the public Gateway.
+                path: "^/versions$"
+              - method: GET
+                path: "^/version/[^/]+/(extensions|overlays)/official$"
+              - method: HEAD
+                path: "^/version/[^/]+/(extensions|overlays)/official$"
+    # kubectl port-forward reaches the Pod from the node host identity. Keep
+    # the full write-capable API available there, not through the Gateway.
     - fromEntities:
         - host
       toPorts:

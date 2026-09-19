@@ -57,6 +57,10 @@ provider "helm" {
 locals {
   talos_image_factory_public_url = "https://talos-image-factory.allegedly.works"
   talos_image_factory_registry   = "talos-image-factory.allegedly.works"
+  talos_image_factory_registry_auth = {
+    username = sensitive(data.sops_file.talos_image_factory_credential.data["stringData.username"])
+    password = sensitive(data.sops_file.talos_image_factory_credential.data["stringData.password"])
+  }
 }
 
 # The schematic provider resource has no-op Read/Delete methods. Replacing it
@@ -68,6 +72,10 @@ resource "terraform_data" "talos_image_factory_endpoint" {
 
 provider "talos" {
   image_factory_url = var.talos_image_factory_api_url
+}
+
+data "sops_file" "talos_image_factory_credential" {
+  source_file = "${path.module}/../../k8s/oci-cache/talos-image-factory-credential.sops.yaml"
 }
 
 data "sops_file" "ovh_credentials" {

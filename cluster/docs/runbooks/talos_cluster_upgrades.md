@@ -82,25 +82,28 @@ even when all pods are Ready.
 
 Before the first node roll using the self-hosted Factory, wait for the
 `oci-cache` Flux Kustomization and `talos-image-factory` Deployment to be Ready.
-Verify the public read endpoint and that public writes are denied:
+Verify public version metadata, anonymous artifact denial, and denied writes:
 
 ```bash
 kubectl -n ducktape-flux get kustomization oci-cache
 kubectl -n oci-cache get deployment talos-image-factory
 curl -fsS https://talos-image-factory.allegedly.works/versions
 curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://talos-image-factory.allegedly.works/v2/
+curl -sS -o /dev/null -w '%{http_code}\n' \
   -X POST -H 'Content-Type: application/yaml' --data '{}' \
   https://talos-image-factory.allegedly.works/schematics
 ```
 
-The public POST must be denied. The first Terraform plan against the new Factory
-must re-register the existing deterministic schematic IDs; the Talos provider's
+The unauthenticated registry request must return `401`; the public POST must be
+denied (`405` from the read-only proxy is expected). The first Terraform plan against
+the new Factory must re-register the existing deterministic schematic IDs; the Talos provider's
 schematic resource has a no-op `Read`, so it cannot discover missing server-side
 schematics. Use the private write path for this one-time migration, keeping the
 port-forward running in one terminal through both plan and apply:
 
 ```bash
-kubectl -n oci-cache port-forward svc/talos-image-factory 8080:8080
+kubectl -n oci-cache port-forward svc/talos-image-factory-internal 8080:8080
 ```
 
 In another terminal, create and review the saved plan:
@@ -185,13 +188,21 @@ bb run @multitool//tools/tofu:tofu -- \
 The saved plan is the application boundary; do not regenerate it between
 review and apply. If it is stale, discard it and review a new plan.
 
-Before cordoning the node, verify that the exact installer image from the plan
-is resolvable:
+Before cordoning the node, verify that the exact installer manifest from the
+plan is resolvable with the Factory credential. The helper creates and removes
+a temporary mode-600 netrc file without placing the password in curl's arguments:
 
 ```bash
-docker manifest inspect \
-  talos-image-factory.allegedly.works/metal-installer/<fleet-schematic-id>:<talos-version>
+cluster/scripts/talos-image-factory-curl \
+  --fail --silent --show-error --head \
+  https://talos-image-factory.allegedly.works/v2/metal-installer/<fleet-schematic-id>/manifests/<talos-version>
 ```
+
+The target's reviewed Terraform machine configuration must include the
+Factory's `machine.registries.config` credentials before `talosctl upgrade`;
+applying the target-only configuration is what enables that node to pull the
+authenticated OCI installer. The credential is shared by Talos nodes and is
+read-only at the proxy: it cannot register schematics or push artifacts.
 
 Do not infer registry availability from Terraform state alone: the
 `talos_image_factory_schematic` provider resource does not refresh its remote

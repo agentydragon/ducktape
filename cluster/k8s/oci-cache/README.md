@@ -73,20 +73,20 @@ repositories under `talos-factory/`. These repositories have their own retention
 not the pull-through cache's pull-recency rule. Older artifacts can be rebuilt; the node
 upgrade runbook still requires checking the exact installer manifest before draining.
 
-The Gateway exposes the Factory hostname publicly for artifact reads. Image Factory's
-[authentication configuration is Enterprise-only](https://github.com/siderolabs/image-factory/blob/main/docs/configuration.md#authentication),
-so Cilium's HTTP policy allows only `GET` and
-`HEAD` through the public Gateway. Writes, including schematic registration, are allowed
-only from the node-host path used by `kubectl port-forward`. Keep that boundary: public
-schematic writes or arbitrary installer builds could consume the shared SeaweedFS bucket.
-Public GETs can build assets only for schematics already registered by Terraform. The
-Factory limits concurrent builds to one and has bounded pod resources.
+The Gateway exposes only release/version metadata without authentication. All other
+public requests go through an Nginx Basic-auth proxy using the dedicated
+`talos-image-factory-credential` Secret; the proxy permits only `GET`/`HEAD` requests
+under `/image/` and `/v2/`. Its credential is distinct from Zot's broader puller
+credential. The public path therefore cannot register schematics or perform registry
+writes. Schematic registration and other Factory API writes remain available only from
+the node-host path used by `kubectl port-forward`. The Factory limits concurrent builds
+to one and has bounded pod resources.
 
 When changing a Terraform schematic, start this port-forward in one terminal and leave it
 running for both plan and apply:
 
 ```bash
-kubectl -n oci-cache port-forward svc/talos-image-factory 8080:8080
+kubectl -n oci-cache port-forward svc/talos-image-factory-internal 8080:8080
 ```
 
 In another terminal, point the Talos provider at it with an environment override:
@@ -99,28 +99,36 @@ TF_VAR_talos_image_factory_api_url=http://127.0.0.1:8080 \
 
 The provider re-registers existing schematic resources when the Factory endpoint changes
 (the provider's resource `Read` is a no-op). Terraform normalizes generated download URLs
-back to the public hostname, so machine configs and OVH/Proxmox downloads never point at
-the temporary localhost port-forward. For ordinary plans, the public endpoint is the
-provider default; GET/HEAD work publicly, while a schematic change requires the override.
+back to the public hostname, so machine configs and OVH downloads never point at the
+temporary localhost port-forward. For ordinary plans, the public endpoint is the
+provider default; read-only version metadata works publicly, while a schematic change
+requires the override.
 
-After the Factory Flux Kustomization is Ready, check its public read path and the write
-boundary before using it for a node roll:
+After the Factory Flux Kustomization is Ready, check its public metadata and verify
+artifact reads are authenticated before using it for a node roll:
 
 ```bash
 curl -fsS https://talos-image-factory.allegedly.works/versions
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  -X POST -H 'Content-Type: application/yaml' --data '{}' \
-  https://talos-image-factory.allegedly.works/schematics
+  https://talos-image-factory.allegedly.works/v2/
+curl --head -sS -o /dev/null -w '%{http_code}\n' \
+  https://talos-image-factory.allegedly.works/image/<schematic-id>/<version>/metal-amd64.iso
 ```
 
-The first request should return the supported Talos version list; the second should be
-denied by Cilium. Test schematic registration only through the port-forward and use the
-runbook's manifest check to prove that the actual installer is available.
+The metadata request should succeed; anonymous artifact requests should return `401`.
+The public proxy allows only `GET`/`HEAD` for artifacts and OCI pulls, never writes.
+Test schematic registration only through the port-forward and use the runbook's
+authenticated manifest check to prove that the actual installer is available. Talos
+nodes receive the separate registry username/password through their Terraform-managed
+`machine.registries.config`; apply that machine configuration before asking a node to
+upgrade from the private OCI registry. The retired Proxmox disk-download path is not
+yet authenticated and remains temporarily unusable if Proxmox Talos nodes are re-enabled.
 
-## Node-level pull-through (not yet wired)
+## Node-level Zot pull-through (not yet wired)
 
-The public authenticated endpoint is wired, but node-level pull-through is deliberately
-deferred because Talos machine-config changes reboot nodes.
+This is separate from the read-only credential Talos uses for Image Factory installer
+artifacts above. General node image pulls through Zot are deliberately deferred because
+changing Talos containerd mirrors requires a machine-config rollout.
 
 1. **Public credential rotation**. Generate the credential from the devshell and update
    `puller-credential.sops.yaml`; `htpasswd` is mounted into the nginx public-auth

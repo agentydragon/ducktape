@@ -9,11 +9,27 @@ spec:
   selector:
     app.kubernetes.io/name: talos-image-factory
   ports:
-    - name: http
+    - name: auth
       port: 8080
-      targetPort: http
+      targetPort: auth
       protocol: TCP
     - name: metrics
       port: 2122
       targetPort: metrics
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: talos-image-factory-internal
+  namespace: oci-cache
+  labels:
+    app.kubernetes.io/name: talos-image-factory
+spec:
+  selector:
+    app.kubernetes.io/name: talos-image-factory
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
       protocol: TCP

@@ -26,6 +26,7 @@ tf_module(
     data = [
         "//:nebula-mesh.json",
         "//cluster/k8s:flux_bootstrap_files",
+        "//cluster/k8s:talos_image_factory_credential",
         "//cluster/k8s/talos-cloud-controller-manager:helmrelease.yaml",
     ],
     providers = [

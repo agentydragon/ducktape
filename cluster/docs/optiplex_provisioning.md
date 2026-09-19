@@ -53,10 +53,13 @@ output has been written to state:
 ```bash
 cd cluster/terraform/main
 tofu init -upgrade
-tofu console <<< 'data.talos_image_factory_urls.kimsufi.urls.iso'
+iso_url=$(tofu console -json <<< 'data.talos_image_factory_urls.kimsufi.urls.iso' | jq -r .)
+../../scripts/talos-image-factory-curl \
+  --fail --location --output /tmp/talos.iso "$iso_url"
 ```
 
-The ISO and `machine.install.image` use the same schematic. Write the ISO to a
+The ISO and `machine.install.image` use the same schematic. The ISO download uses
+the private Factory credential from SOPS. Write the ISO to a
 USB drive, boot it via the Dell `F12` UEFI boot menu, and leave it running in
 maintenance mode. The non-Secure-Boot ISO requires Secure Boot to be disabled.
 Set BIOS power recovery to power on after AC loss.

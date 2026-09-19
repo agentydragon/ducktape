@@ -10,6 +10,7 @@ resources:
   - image-factory-httproute.yaml
   - image-factory-networkpolicy.yaml
   - image-factory-servicemonitor.yaml
+  - talos-image-factory-credential.sops.yaml
   - service.yaml
   - httproute.yaml
   - puller-credential.sops.yaml
@@ -24,6 +25,9 @@ configMapGenerator:
   - name: talos-image-factory-config
     files:
       - config.json=image-factory-config.json
+  - name: talos-image-factory-auth-proxy
+    files:
+      - image-factory-auth-proxy.conf
 generatorOptions:
   # Stable names; workload reloader annotations restart Zot/Factory on config changes.
   disableNameSuffixHash: true

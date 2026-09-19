@@ -123,6 +123,12 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+filegroup(
+    name = "talos_image_factory_credential",
+    srcs = ["oci-cache/talos-image-factory-credential.sops.yaml"],
+    visibility = ["//cluster/terraform/main:__pkg__"],
+)
+
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [

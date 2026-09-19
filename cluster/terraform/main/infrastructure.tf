@@ -237,6 +237,11 @@ locals {
     }
     registries = {
       mirrors = local.registry_mirrors
+      config = {
+        (local.talos_image_factory_registry) = {
+          auth = local.talos_image_factory_registry_auth
+        }
+      }
     }
     kubelet = {
       nodeIP = {
@@ -262,6 +267,11 @@ locals {
     }
     registries = {
       mirrors = local.registry_mirrors
+      config = {
+        (local.talos_image_factory_registry) = {
+          auth = local.talos_image_factory_registry_auth
+        }
+      }
     }
     kubelet = {
       nodeIP = {

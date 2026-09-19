@@ -5,9 +5,8 @@ metadata:
   namespace: oci-cache
   annotations:
     description: >-
-      Public Talos Image Factory API and artifact endpoint. The community
-      edition has no authentication; build concurrency and pod resources are
-      bounded in the Deployment and Factory config.
+      Public read-only release metadata plus Basic-authenticated Talos image
+      artifacts. Schematic writes are available only through port-forward.
 spec:
   parentRefs:
     - name: cluster-gateway
@@ -15,6 +14,30 @@ spec:
   hostnames:
     - "talos-image-factory.allegedly.works"
   rules:
+    - matches:
+        - method: GET
+          path:
+            type: Exact
+            value: /versions
+        - method: HEAD
+          path:
+            type: Exact
+            value: /versions
+      backendRefs:
+        - name: talos-image-factory-internal
+          port: 8080
+    - matches:
+        - method: GET
+          path:
+            type: PathPrefix
+            value: /version/
+        - method: HEAD
+          path:
+            type: PathPrefix
+            value: /version/
+      backendRefs:
+        - name: talos-image-factory-internal
+          port: 8080
     - backendRefs:
         - name: talos-image-factory
           port: 8080

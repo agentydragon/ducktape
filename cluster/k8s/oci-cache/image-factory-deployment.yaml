@@ -70,6 +70,43 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+        - name: auth-proxy
+          image: nginxinc/nginx-unprivileged:1.31-alpine
+          ports:
+            - name: auth
+              containerPort: 8081
+              protocol: TCP
+          volumeMounts:
+            - name: auth-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: auth
+              mountPath: /etc/nginx/auth
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            tcpSocket:
+              port: auth
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: auth
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: config
           configMap:
@@ -77,3 +114,12 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 1Gi
+        - name: auth-config
+          configMap:
+            name: talos-image-factory-auth-proxy
+        - name: auth
+          secret:
+            secretName: talos-image-factory-credential
+            items:
+              - key: htpasswd
+                path: htpasswd
