@@ -21,10 +21,6 @@ spec:
       kind: Secret
       name: alloy-control-plane-token
       namespace: monitoring
-    - apiVersion: v1
-      kind: Secret
-      name: alertmanager-ntfy-webhook
-      namespace: monitoring
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: kube-prometheus-stack

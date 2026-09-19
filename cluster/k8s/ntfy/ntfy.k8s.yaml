@@ -7,6 +7,32 @@ metadata:
   name: ntfy
 spec: {}
 ---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  annotations:
+    description: Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager.
+  name: kubernetes-ntfy-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - ntfy
+        - flux-system
+        - monitoring
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-secrets
+          namespace: external-secrets-system
+      remoteNamespace: ntfy
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -80,6 +106,35 @@ spec:
       data:
         NTFY_AUTH_TOKENS: alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android
         NTFY_AUTH_USERS: '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,{{ htpasswd "android" .android_password "bcrypt" }}:user'
+      engineVersion: v2
+      type: Opaque
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Alertmanager bearer credential for the self-hosted ntfy instance
+    ntfy.ducktape.io/auth-generation: "1"
+  name: alertmanager-ntfy-webhook
+  namespace: monitoring
+spec:
+  data:
+    - remoteRef:
+        key: ntfy-credentials
+        property: alertmanager-token
+      secretKey: alertmanager_token
+  refreshPolicy: OnChange
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ntfy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: alertmanager-ntfy-webhook
+    template:
+      data:
+        address: https://ntfy.allegedly.works/alerts
+        token: "{{ .alertmanager_token }}"
       engineVersion: v2
       type: Opaque
 ---

@@ -19,6 +19,9 @@ spec:
     - apiVersion: v1
       kind: Namespace
       name: ntfy
+    - apiVersion: external-secrets.io/v1
+      kind: ClusterSecretStore
+      name: kubernetes-ntfy-secret-store
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: ntfy-db
@@ -27,6 +30,10 @@ spec:
       kind: ExternalSecret
       name: ntfy-auth
       namespace: ntfy
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: alertmanager-ntfy-webhook
+      namespace: monitoring
     - apiVersion: apps/v1
       kind: Deployment
       name: ntfy

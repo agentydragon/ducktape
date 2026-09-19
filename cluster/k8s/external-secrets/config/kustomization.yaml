@@ -8,4 +8,3 @@ resources:
   - external-creds-secret-store.yaml
   - flux-system-secret-store.yaml
   - forgejo-images-secret-store.yaml
-  - ntfy-secret-store.yaml

@@ -10,8 +10,25 @@ def test_ntfy_auth_is_declarative_and_database_is_cnpg_owned() -> None:
     objects = Cdk8sTesting.synth(chart)
 
     auth = next(obj for obj in objects if obj["kind"] == "ExternalSecret")
+    assert auth["metadata"]["namespace"] == "ntfy"
     assert auth["spec"]["refreshPolicy"] == "OnChange"
     assert "htpasswd" in auth["spec"]["target"]["template"]["data"]["NTFY_AUTH_USERS"]
+
+    alertmanager_auth = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "ExternalSecret" and obj["metadata"]["name"] == "alertmanager-ntfy-webhook"
+    )
+    assert alertmanager_auth["metadata"]["namespace"] == "monitoring"
+    assert alertmanager_auth["spec"]["target"]["template"]["data"] == {
+        "address": "https://ntfy.allegedly.works/alerts",
+        "token": "{{ .alertmanager_token }}",
+    }
+
+    secret_store = next(obj for obj in objects if obj["kind"] == "ClusterSecretStore")
+    assert secret_store["metadata"]["name"] == "kubernetes-ntfy-secret-store"
+    assert secret_store["spec"]["conditions"] == [{"namespaces": ["ntfy", "flux-system", "monitoring"]}]
+    assert secret_store["spec"]["provider"]["kubernetes"]["remoteNamespace"] == "ntfy"
 
     database = next(obj for obj in objects if obj["kind"] == "Cluster")
     assert database["spec"]["bootstrap"]["initdb"] == {"database": "ntfy", "owner": "ntfy"}

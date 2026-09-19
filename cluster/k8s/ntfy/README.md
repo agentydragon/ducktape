@@ -16,6 +16,8 @@ Alertmanager and Flux notifications.
 - Passwords and tokens are encrypted in credentials.sops.yaml.
   ESO renders bcrypt auth-users and declarative auth-tokens into the
   ntfy-auth Secret. No bcrypt hashes are committed to Git.
+- The package owns the scoped `kubernetes-ntfy-secret-store`, which lets ESO
+  distribute those source credentials only to ntfy, Flux, and monitoring.
 - Alertmanager and Flux receive separate ESO-managed bearer-token Secrets in
   their own namespaces. Both can publish only to alerts; the Android token
   can subscribe to alerts but cannot publish.
@@ -26,9 +28,8 @@ When rotating a password or token:
 
 1. Edit credentials.sops.yaml with sops.
 2. Bump `ntfy.ducktape.io/auth-generation` in
-   `cluster/cdk8s/ntfy_constructs.py`,
-   `cluster/k8s/flux-webhook/ntfy-webhook-eso.yaml`, and
-   `cluster/k8s/monitoring/stack/alertmanager-ntfy-webhook-eso.yaml`.
+   `cluster/cdk8s/ntfy_constructs.py` and
+   `cluster/k8s/flux-webhook/ntfy-webhook-eso.yaml`.
 3. Regenerate manifests with `bb run //cluster/cdk8s:generate_manifests`.
 4. Verify the three ExternalSecrets are Ready, ntfy restarted after its
    derived Secret changed, and Alertmanager/Flux delivered a test notification.

@@ -8,8 +8,28 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import yaml
+
+
+def _remove_path(document: Any, path: str) -> None:
+    """Remove one dotted YAML path; numeric segments index arrays."""
+    parts = path.split(".")
+    if not all(parts):
+        raise ValueError(f"Invalid empty segment in path {path!r}")
+
+    node = document
+    try:
+        for part in parts[:-1]:
+            node = node[int(part)] if isinstance(node, list) else node[part]
+        final = parts[-1]
+        if isinstance(node, list):
+            del node[int(final)]
+        else:
+            del node[final]
+    except (IndexError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Cannot remove missing YAML path {path!r}") from exc
 
 
 def main() -> None:
@@ -23,6 +43,12 @@ def main() -> None:
             "served+storage one -- pass this to pin it explicitly."
         ),
     )
+    parser.add_argument(
+        "--remove-path",
+        action="append",
+        default=[],
+        help="Dotted YAML path to remove from the extracted document; numeric segments index arrays.",
+    )
     parser.add_argument("bundle", type=Path)
     parser.add_argument("out", type=Path)
     args = parser.parse_args()
@@ -34,6 +60,11 @@ def main() -> None:
                 if not versions:
                     raise SystemExit(f"No version {args.version!r} found on CRD {args.name!r}")
                 doc["spec"]["versions"] = versions
+            for path in args.remove_path:
+                try:
+                    _remove_path(doc, path)
+                except ValueError as exc:
+                    raise SystemExit(str(exc)) from exc
             args.out.write_text(yaml.dump(doc))
             return
     raise SystemExit(f"No CustomResourceDefinition named {args.name!r} found in {args.bundle}")

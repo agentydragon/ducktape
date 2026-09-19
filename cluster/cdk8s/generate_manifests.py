@@ -537,7 +537,7 @@ def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
 def _generate_ntfy(root: Path) -> None:
     """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
 
-    The two SOPS Secrets remain hand-written in this flat directory; the generated
+    The SOPS source Secret remains hand-written in this flat directory; the generated
     Kustomization lists them and therefore enables Flux SOPS decryption.
     """
     out_dir = root / _NTFY_DIR
@@ -566,7 +566,16 @@ def _generate_ntfy(root: Path) -> None:
                 timeout="10m",
                 decryption=_sops_decryption(resources),
                 health_checks=health_checks(
-                    chart, ("Namespace", "Cluster", "ExternalSecret", "Deployment", "HTTPRoute", "ServiceMonitor")
+                    chart,
+                    (
+                        "Namespace",
+                        "ClusterSecretStore",
+                        "Cluster",
+                        "ExternalSecret",
+                        "Deployment",
+                        "HTTPRoute",
+                        "ServiceMonitor",
+                    ),
                 ),
                 depends_on=[
                     KustomizationSpecDependsOn(name=dependency)

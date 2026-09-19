@@ -206,7 +206,7 @@ filegroup(
     name = "ntfy_manifest_contract_files",
     srcs = [
         "flux-webhook/ntfy-webhook-eso.yaml",
-        "monitoring/stack/alertmanager-ntfy-webhook-eso.yaml",
+        "ntfy/ntfy.k8s.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )

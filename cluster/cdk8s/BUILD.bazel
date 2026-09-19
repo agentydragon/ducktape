@@ -342,6 +342,7 @@ py_library(
         ":probes",
         "//cluster/cdk8s/agentplane:node_scheduling",
         "//third_party/cnpg:cluster",
+        "//third_party/external_secrets:clustersecretstore",
         "//third_party/external_secrets:externalsecret",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",

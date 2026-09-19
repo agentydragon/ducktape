@@ -43,6 +43,18 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecStorage,
 )
 from constructs import Construct
+from external_secret_store_crds.io.external_secrets import (
+    ClusterSecretStore,
+    ClusterSecretStoreSpec,
+    ClusterSecretStoreSpecConditions,
+    ClusterSecretStoreSpecProvider,
+    ClusterSecretStoreSpecProviderKubernetes,
+    ClusterSecretStoreSpecProviderKubernetesAuth,
+    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
+    ClusterSecretStoreSpecProviderKubernetesServer,
+    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
+    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
+)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
     ExternalSecretSpec,
@@ -82,10 +94,44 @@ _DATABASE_CLUSTER = "ntfy-db"
 _DATABASE_APP_SECRET = f"{_DATABASE_CLUSTER}-app"
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH_SECRET = "ntfy-auth"
+_SECRET_STORE = "kubernetes-ntfy-secret-store"
 
 
 def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
     return EnvValue.from_secret_value(SecretValue(secret=Secret.from_secret_name(scope, f"{id}-ref", name), key=key))
+
+
+def _secret_store(scope: Construct) -> None:
+    """Keep the shared credential source store owned by the ntfy package."""
+    ClusterSecretStore(
+        scope,
+        "secret-store",
+        metadata=ApiObjectMetadata(
+            name=_SECRET_STORE,
+            annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
+        ),
+        spec=ClusterSecretStoreSpec(
+            conditions=[ClusterSecretStoreSpecConditions(namespaces=[NAMESPACE, "flux-system", "monitoring"])],
+            provider=ClusterSecretStoreSpecProvider(
+                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
+                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
+                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name="external-secrets", namespace="external-secrets-system"
+                        )
+                    ),
+                    remote_namespace=NAMESPACE,
+                    server=ClusterSecretStoreSpecProviderKubernetesServer(
+                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name="kube-root-ca.crt",
+                            key="ca.crt",
+                            namespace="default",
+                        )
+                    ),
+                )
+            ),
+        ),
+    )
 
 
 def _auth_external_secret(scope: Construct) -> None:
@@ -107,7 +153,7 @@ def _auth_external_secret(scope: Construct) -> None:
         spec=ExternalSecretSpec(
             refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
             secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-ntfy-secret-store", kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
+                name=_SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
             ),
             target=ExternalSecretSpecTarget(
                 name=_AUTH_SECRET,
@@ -146,6 +192,44 @@ def _auth_external_secret(scope: Construct) -> None:
                     secret_key="android_token",
                     remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="android-token"),
                 ),
+            ],
+        ),
+    )
+
+
+def _alertmanager_webhook_secret(scope: Construct) -> None:
+    """Publish the ntfy bearer credential as Alertmanager's webhook Secret."""
+    ExternalSecret(
+        scope,
+        "alertmanager-webhook-external-secret",
+        metadata=metadata(
+            "alertmanager-ntfy-webhook",
+            "monitoring",
+            annotations={
+                "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
+        spec=ExternalSecretSpec(
+            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+            secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                name=_SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
+            ),
+            target=ExternalSecretSpecTarget(
+                name="alertmanager-ntfy-webhook",
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+                template=ExternalSecretSpecTargetTemplate(
+                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+                    type="Opaque",
+                    data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
+                ),
+            ),
+            data=[
+                ExternalSecretSpecData(
+                    secret_key="alertmanager_token",
+                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="alertmanager-token"),
+                )
             ],
         ),
     )
@@ -190,8 +274,10 @@ class Ntfy(Construct):
                 name=NAMESPACE, labels={"app.kubernetes.io/name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "true"}
             ),
         )
+        _secret_store(self)
         _database(self)
         _auth_external_secret(self)
+        _alertmanager_webhook_secret(self)
         deployment = self._add_deployment()
         self._add_service(deployment)
         https_route(self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostname=HOSTNAME, backend=NAME, port=PORT)
