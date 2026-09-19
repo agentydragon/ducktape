@@ -71,6 +71,10 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/matrix/app/flux-kustomization.yaml",
+    "cluster/k8s/matrix/db/flux-kustomization.yaml",
+    "cluster/k8s/matrix/namespace/flux-kustomization.yaml",
+    "cluster/k8s/matrix/user-provisioner/flux-kustomization.yaml",
 )
 
 
