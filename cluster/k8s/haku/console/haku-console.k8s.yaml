@@ -221,7 +221,8 @@ roleRef:
   kind: ClusterRole
   name: haku-console-subject-access-reviewer
 subjects:
-  - kind: ServiceAccount
+  - apiGroup: ""
+    kind: ServiceAccount
     name: haku-console
     namespace: haku-console
 ---

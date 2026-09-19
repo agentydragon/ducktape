@@ -2,12 +2,13 @@
 prove a Pod-bound workload bearer via `TokenReview`, and nothing else.
 
 cdk8s_plus_34's fluent `ClusterRole` only supports non-resource-URL rules
-(`ClusterRolePolicyRule` takes `endpoints`, not `resources`) -- a resource-scoped
-cluster rule like this one needs the tier-2 raw generated binding instead (same tier
-as `KubeResourceQuota`/`KubeLimitRange`; see AGENTS.md).
+(`ClusterRolePolicyRule` takes `endpoints`, not `resources`), so the resource-scoped
+role uses the generated `KubeClusterRole`. Its binding uses the fluent
+`ClusterRoleBinding` construct.
 """
 
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import ClusterRole, ClusterRoleBinding, ServiceAccount, k8s
 from constructs import Construct
 
 
@@ -20,10 +21,13 @@ def token_reviewer_cluster_rbac(
         metadata=k8s.ObjectMeta(name=name),
         rules=[k8s.PolicyRule(api_groups=["authentication.k8s.io"], resources=["tokenreviews"], verbs=["create"])],
     )
-    k8s.KubeClusterRoleBinding(
+    ClusterRoleBinding(
         scope,
         f"{id}-binding",
-        metadata=k8s.ObjectMeta(name=name),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=name),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=service_account_name, namespace=namespace)],
+        metadata=ApiObjectMetadata(name=name),
+        role=ClusterRole.from_cluster_role_name(scope, f"{id}-role-ref", name),
+    ).add_subjects(
+        ServiceAccount.from_service_account_name(
+            scope, f"{id}-service-account-ref", service_account_name, namespace_name=namespace
+        )
     )
