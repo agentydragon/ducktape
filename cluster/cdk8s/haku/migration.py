@@ -32,7 +32,7 @@ from constructs import Construct
 
 from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.haku import console_constructs
+from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
@@ -44,7 +44,7 @@ class Migration(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        namespace = console_constructs.NAMESPACE
+        namespace = console.NAMESPACE
         # No Kubernetes API work: separate from the API ServiceAccount, which can manage
         # narrowly scoped sandbox claims.
         service_account = ServiceAccount(
@@ -71,11 +71,11 @@ class Migration(Construct):
         )
         job.add_container(
             name="migrate",
-            image=f"{console_constructs.IMAGE}:{console_constructs.PLACEHOLDER_TAG}",
+            image=f"{console.IMAGE}:{console.PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=["migrate"],
             # The migration command consumes only the database URL.
-            env_variables=console_constructs.database_env(self),
+            env_variables=console.database_env(self),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),

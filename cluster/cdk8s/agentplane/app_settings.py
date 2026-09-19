@@ -6,7 +6,7 @@ routes and policies passed in here.
 from __future__ import annotations
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
-# The EgressPolicy objects egress_constructs creates in every environment, named here
+# The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
 BASIC_POLICY = "basic"
 GITHUB_PUBLIC_POLICY = "github-public"

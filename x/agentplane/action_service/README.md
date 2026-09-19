@@ -186,7 +186,7 @@ FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and
 paths through an `HTTPRoute` at
 `agentplane-actions-{staging,testing}.allegedly.works`
 (the `AgentplaneActions` construct's `HTTPRoute` in
-`cluster/cdk8s/agentplane/actions_constructs.py`); REST and operator endpoints
+`cluster/cdk8s/agentplane/actions.py`); REST and operator endpoints
 stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
 categorically rejecting requests carrying Origin; authority comes from the explicit validated
 bearer, not Origin or browser cookies.

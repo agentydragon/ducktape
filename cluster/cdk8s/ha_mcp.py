@@ -18,7 +18,9 @@ cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Cron, Duration, Size
+from pathlib import Path
+
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Cron, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     Capability,
@@ -60,12 +62,28 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDependsOn,
+    KustomizationSpecHealthChecks,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+    flux_kustomization,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
+from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import CRON_JOB_POD_SPEC_PATH, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "ha-mcp"
+OUTPUT_DIR = "cluster/k8s/agents/ha-mcp/app"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
 _PLACEHOLDER_TAG = "unset"
@@ -138,7 +156,7 @@ class HaMcpCredentialsProvisioner(Construct):
             ),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                # Unlike litellm_constructs.py's Deployment, no override needed here:
+                # Unlike litellm/proxy.py's Deployment, no override needed here:
                 # cdk8s_plus_34's hardened ensure_non_root default (true) already
                 # matches this container's real requirement (runAsNonRoot: true).
                 #
@@ -343,7 +361,7 @@ class HaMcpApp(Construct):
             # (readOnlyRootFilesystem/runAsNonRoot: true). Opt out explicitly to preserve
             # today's actual (unrestricted) behavior -- the real container's
             # filesystem-write/root needs were never audited, so silently hardening it here
-            # could break the running facade. Same rationale as litellm_constructs.py.
+            # could break the running facade. Same rationale as litellm/proxy.py.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
         return deployment
@@ -412,3 +430,72 @@ class HaMcp(Construct):
         )
         HaMcpCredentialsProvisioner(self, "provisioner")
         HaMcpApp(self, "app")
+
+
+def write_manifests(root: Path) -> None:
+    name = "ha-mcp"
+    depends_on = (
+        "external-secrets-config",
+        "forgejo-images",
+        "home-assistant",
+        "monitoring-crds",  # the ServiceMonitor CRD
+    )
+
+    app_dir = root / OUTPUT_DIR
+    app_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(app_dir))
+    chart = Chart(app, name, disable_resource_name_hashes=True)
+    HaMcp(chart, "ha-mcp")
+    add_fleet_rules(
+        chart,
+        provided_secrets={
+            "home-assistant-break-glass": "home-assistant",
+            # bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted; without a
+            # decryption block Flux applies the ENC[...] ciphertext literally.
+            "ha-mcp-bearer": "bearer.sops.yaml",
+            # Created imperatively by this directory's own token-provisioner Job, not by
+            # any static manifest in the chart -- this directory is always a valid
+            # provider of its own such Secrets.
+            "ha-mcp-home-assistant-token": name,
+        },
+        providers=frozenset({name, "bearer.sops.yaml", *depends_on}),
+    )
+    app.synth()
+
+    write_yaml(
+        app_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            name,
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                timeout="5m",
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
+                ),
+                path=f"./{OUTPUT_DIR}",
+                prune=True,
+                wait=True,
+                health_checks=[
+                    KustomizationSpecHealthChecks(
+                        api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
+                    ),
+                    KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
+                ],
+                # bearer.sops.yaml (hand-written, stays alongside this generated output --
+                # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
+                # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
+                decryption=KustomizationSpecDecryption(
+                    provider=KustomizationSpecDecryptionProvider.SOPS,
+                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+                ),
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+            ),
+        ),
+    )
+    write_yaml(
+        app_dir / "kustomization.yaml",
+        # bearer.sops.yaml stays hand-written; this generated file just lists it as a plain
+        # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
+        kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
+    )

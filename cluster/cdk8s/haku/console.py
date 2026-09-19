@@ -67,7 +67,7 @@ from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.haku import console_config, db_constructs
+from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
@@ -122,7 +122,7 @@ _DB_AUTHORITY = (
 def database_env(scope: Construct) -> dict[str, EnvValue]:
     """The CNPG app credential's parts and the SQLAlchemy asyncpg URL assembled from them, as the
     API and the migration Job both read them."""
-    secret = Secret.from_secret_name(scope, "db-app-secret", db_constructs.APP_SECRET)
+    secret = Secret.from_secret_name(scope, "db-app-secret", database.APP_SECRET)
     return {
         **{name: EnvValue.from_secret_value(SecretValue(secret=secret, key=key)) for name, key in _DB_ENV.items()},
         env_name(Settings, "database_url"): EnvValue.from_value(f"postgresql+asyncpg://{_DB_AUTHORITY}"),
@@ -160,7 +160,7 @@ class Console(Construct):
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # SubjectAccessReview is advisory only: it cannot mutate cluster state and gives the
         # console none of the reviewed subject's authority. The proxy ServiceAccount
-        # (kube_api_proxy_constructs.py) is the only identity that executes an allowed request.
+        # (kube_api_proxy.py) is the only identity that executes an allowed request.
         sar_reviewer = "haku-console-subject-access-reviewer"
         k8s.KubeClusterRole(
             self,
@@ -562,7 +562,7 @@ class Console(Construct):
 
     def _add_indexer_provisioner(self) -> None:
         """Applies indexer-role.sql's object GRANTs for `haku_indexer`. The role itself is
-        CNPG-managed (db_constructs.py); the grants need the recall_index schema, which the
+        CNPG-managed (database.py); the grants need the recall_index schema, which the
         migration Job creates in this same Kustomization with nothing sequencing the two --
         so this retries until that schema exists. Each attempt keeps its own Pod, so a real
         SQL error is still readable. No TTL: the TTL controller deleting a finished Job would
@@ -589,7 +589,7 @@ class Console(Construct):
             restart_policy=RestartPolicy.NEVER,
             automount_service_account_token=False,
         )
-        app_secret = Secret.from_secret_name(self, "indexer-db-app-secret", db_constructs.APP_SECRET)
+        app_secret = Secret.from_secret_name(self, "indexer-db-app-secret", database.APP_SECRET)
         container = job.add_container(
             name="psql",
             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
@@ -600,8 +600,8 @@ class Console(Construct):
             env_variables={
                 "PGUSER": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="username")),
                 "PGPASSWORD": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="password")),
-                "PGHOST": EnvValue.from_value(db_constructs.RW_HOST),
-                "PGDATABASE": EnvValue.from_value(db_constructs.DATABASE),
+                "PGHOST": EnvValue.from_value(database.RW_HOST),
+                "PGDATABASE": EnvValue.from_value(database.DATABASE),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10)),

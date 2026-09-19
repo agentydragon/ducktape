@@ -10,8 +10,8 @@ py_library(
 )
 
 py_library(
-    name = "db_constructs",
-    srcs = ["db_constructs.py"],
+    name = "database",
+    srcs = ["database.py"],
     deps = [
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:metadata",
@@ -26,11 +26,11 @@ py_library(
 )
 
 py_library(
-    name = "console_constructs",
-    srcs = ["console_constructs.py"],
+    name = "console",
+    srcs = ["console.py"],
     deps = [
         ":console_config",
-        ":db_constructs",
+        ":database",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
@@ -51,10 +51,10 @@ py_library(
 )
 
 py_library(
-    name = "kube_api_proxy_constructs",
-    srcs = ["kube_api_proxy_constructs.py"],
+    name = "kube_api_proxy",
+    srcs = ["kube_api_proxy.py"],
     deps = [
-        ":console_constructs",
+        ":console",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
@@ -69,10 +69,10 @@ py_library(
 )
 
 py_library(
-    name = "migration_constructs",
-    srcs = ["migration_constructs.py"],
+    name = "migration",
+    srcs = ["migration.py"],
     deps = [
-        ":console_constructs",
+        ":console",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
@@ -92,12 +92,13 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
-        ":console_constructs",
-        ":db_constructs",
-        ":kube_api_proxy_constructs",
-        ":migration_constructs",
+        ":console",
+        ":database",
+        ":kube_api_proxy",
+        ":migration",
         "//cluster/cdk8s:fleet_rules",
-        "//cluster/cdk8s:flux_constructs",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
         "@pypi//cdk8s",
     ],
 )
@@ -114,15 +115,15 @@ py_library(
 )
 
 py_test(
-    name = "test_console_constructs",
+    name = "test_console",
     # Synth imports the console's Settings, and with it the console runtime.
     size = "medium",
-    srcs = ["test_console_constructs.py"],
+    srcs = ["test_console.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
-        ":console_constructs",
+        ":console",
         "//:conftest",
         "//haku/console:settings",
         "//util:settings_contract",

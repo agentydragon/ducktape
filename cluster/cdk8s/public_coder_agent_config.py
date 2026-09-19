@@ -4,6 +4,12 @@ the model-name scheme and the Codex/Gemini rosters this pulls from.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from cdk8s import App, Chart
+
+from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
@@ -208,3 +214,17 @@ def config() -> dict:
             },
         },
     }
+
+
+def chart(app: App) -> Chart:
+    return config_map_chart(
+        app,
+        chart_name="public-coder-agent-config",
+        configmap_name="public-coder-agent-config",
+        namespace="public-coder-agent",
+        data={"openclaw.json5": json5_config(config())},
+    )
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, "cluster/k8s/agents/public-coder-agent/app", chart)

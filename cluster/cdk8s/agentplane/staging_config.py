@@ -6,7 +6,7 @@ model_rosters.py for the model-name scheme.
 from __future__ import annotations
 
 from cluster.cdk8s.agentplane.app_settings import settings
-from cluster.cdk8s.litellm_keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS
+from cluster.cdk8s.litellm.keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import codex_responses_name
 
 _NAMESPACE = "agentplane-staging"

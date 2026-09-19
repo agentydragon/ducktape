@@ -54,7 +54,7 @@ rides in a URL path or a Kubernetes resource name.
 
 The provider segment rides in front, not behind, because a key allowlist is a provider
 lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf (exported from
-litellm_keys.py) enumerates one provider's names explicitly, so the lane is the common
+litellm/keys.py) enumerates one provider's names explicitly, so the lane is the common
 prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
 renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
 entries, whose `audio_transcription` mode no shape slug covers yet. The bare
@@ -171,7 +171,7 @@ CLIPROXY_MODELS: list[str] = [
 # is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
 # actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
 # (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
-# the SSOT the LiteLLM config injects into model_info (test_litellm_config.py).
+# the SSOT the LiteLLM config injects into model_info (test_litellm/config.py).
 #
 # openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
 # all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
@@ -236,7 +236,7 @@ TANA_MODELS: list[tuple[str, str]] = [
 ]
 
 # Current-generation Anthropic roster, verified against the authenticated /v1/models
-# endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm_keys.py), and is
+# endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm/keys.py), and is
 # the exposed set for the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
 # subscription and the direct API serve the same current models, and sharing one list
@@ -271,7 +271,7 @@ class GeminiModel:
 # on 2026-08-30 and did not work with the current credential: Google returned
 # RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
 # out of the roster until that is verified. Feeds the gemini-clients Terraform
-# key (litellm_keys.py) and public-coder-agent's OpenClaw catalog.
+# key (litellm/keys.py) and public-coder-agent's OpenClaw catalog.
 GEMINI_MODELS: tuple[GeminiModel, ...] = (
     GeminiModel(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True),
     GeminiModel(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False),
@@ -354,7 +354,7 @@ def ollama_chat_variant(model: str, context: int) -> str:
     return f"{model}-1m" if context == 1024 * 1024 else f"{model}-{context // 1024}k"
 
 
-# The self-hosted Ollama embedding route (litellm_config.py's `_ollama_entries()`),
+# The self-hosted Ollama embedding route (litellm/config.py's `_ollama_entries()`),
 # also referenced by public-coder-agent's OpenClaw memory-search config so its
 # embedding backend names the same route it's actually served on.
 OLLAMA_EMBEDDING_MODEL = "qwen3-embedding-4b"

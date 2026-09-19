@@ -1,6 +1,8 @@
 """The cdk8s-generated ESO distribution for the temporary LiteLLM key."""
 
-from cdk8s import ApiObjectMetadata
+from pathlib import Path
+
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
@@ -27,6 +29,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 
 _LITELLM_NAMESPACE = "litellm"
@@ -35,6 +39,7 @@ _KEY_SECRET_NAME = "litellm-key-cheap-experiments"
 _READER_SERVICE_ACCOUNT_NAME = "external-creds-reader"
 _SOURCE_READER_ROLE_NAME = "litellm-cheap-experiments-reader"
 _SECRET_STORE_NAME = "kubernetes-litellm-cheap-experiments-secret-store"
+OUTPUT_DIR = "cluster/k8s/agentplane-testing/litellm-credentials"
 
 
 class CheapExperimentsCredentials(Construct):
@@ -109,3 +114,14 @@ class CheapExperimentsCredentials(Construct):
                 ),
             ),
         )
+
+
+def write_agentplane_testing_manifests(root: Path) -> None:
+    name = "litellm-credentials"
+    credentials_dir = root / OUTPUT_DIR
+    credentials_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(credentials_dir))
+    chart = Chart(app, name, disable_resource_name_hashes=True)
+    CheapExperimentsCredentials(chart, "cheap-experiments")
+    app.synth()
+    write_yaml(credentials_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{name}.k8s.yaml"]))

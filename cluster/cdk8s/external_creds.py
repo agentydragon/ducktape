@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 
+from cluster.cdk8s.flux import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+    flux_kustomization,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "ducktape-flux"
+OUTPUT_DIR = "cluster/k8s/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 
 
@@ -135,3 +146,30 @@ def chart(app: App) -> Chart:
                 )
             )
     return chart
+
+
+def write_manifests(root: Path) -> None:
+    """Generate credential grants and Kustomize/Flux wiring; SOPS files stay hand-written."""
+    resources = kustomize_resources()
+    write_charts(root, OUTPUT_DIR, chart)
+
+    out_dir = root / OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            "external-creds",
+            spec=KustomizationSpec(
+                interval="10m",
+                path=f"./{OUTPUT_DIR}",
+                prune=True,
+                decryption=sops_decryption(resources),
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
+                ),
+                depends_on=[KustomizationSpecDependsOn(name="claude-rbac")],
+                timeout="5m",
+            ),
+        ),
+    )
+    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))

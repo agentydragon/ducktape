@@ -8,7 +8,7 @@ from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions_constructs, staging_config
+from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import (
@@ -45,7 +45,7 @@ _FEDERATION_TARGET = {
 }
 _ACTION_FEDERATION = {
     "mode": "exchange",
-    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
+    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
     "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
     "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
     "target": _FEDERATION_TARGET,

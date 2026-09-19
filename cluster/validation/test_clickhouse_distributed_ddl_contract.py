@@ -9,15 +9,14 @@ import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s import aiquota_constructs, clickhouse_schema_constructs
+from cluster.cdk8s import aiquota
+from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 
 
 def _native_ddl_containers() -> list[dict[str, Any]]:
     """The schema Job's container and aiquota's `migrate` init container, synthesized in memory."""
-    schema_objects = cast(
-        list[dict[str, Any]], Cdk8sTesting.synth(clickhouse_schema_constructs.chart(Cdk8sTesting.app()))
-    )
-    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota_constructs.chart(Cdk8sTesting.app())))
+    schema_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(clickhouse_schema.chart(Cdk8sTesting.app())))
+    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota.chart(Cdk8sTesting.app())))
     job = one(obj for obj in schema_objects if obj["kind"] == "Job")
     deployment = one(obj for obj in aiquota_objects if obj["kind"] == "Deployment")
     return [

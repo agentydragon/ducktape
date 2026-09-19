@@ -11,7 +11,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s import aiquota_constructs
+from cluster.cdk8s import aiquota
 
 # pytest_plugins loads cluster.validation.haku_console_fixtures by name; gazelle cannot see
 # the dependency.
@@ -194,7 +194,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
     aiquota_ref = proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"]
-    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota_constructs.chart(Cdk8sTesting.app())))
+    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota.chart(Cdk8sTesting.app())))
     aiquota_mirror = one(
         obj
         for obj in aiquota_objects

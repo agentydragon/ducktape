@@ -8,6 +8,8 @@ Secrets.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -79,12 +81,24 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s.flux import (
+    NAMESPACE as FLUX_NAMESPACE,
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+    flux_kustomization,
+    health_checks,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 NAME = "ntfy"
+OUTPUT_DIR = "cluster/k8s/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586
@@ -369,3 +383,54 @@ def chart(app: App) -> Chart:
         provided_secrets={},
     )
     return chart
+
+
+def write_manifests(root: Path) -> None:
+    """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
+
+    The SOPS source Secret remains hand-written in this flat directory; the generated
+    Kustomization lists them and therefore enables Flux SOPS decryption.
+    """
+    out_dir = root / OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    rendered_chart = chart(app)
+    app.synth()
+
+    resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
+    write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            NAME,
+            description="Self-hosted ntfy for Android and cluster alert notifications.",
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                path=f"./{OUTPUT_DIR}",
+                prune=True,
+                wait=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
+                ),
+                timeout="10m",
+                decryption=sops_decryption(resources),
+                health_checks=health_checks(
+                    rendered_chart,
+                    (
+                        "Namespace",
+                        "ClusterSecretStore",
+                        "Cluster",
+                        "ExternalSecret",
+                        "Deployment",
+                        "HTTPRoute",
+                        "ServiceMonitor",
+                    ),
+                ),
+                depends_on=[
+                    KustomizationSpecDependsOn(name=dependency)
+                    for dependency in ("cnpg", "external-secrets-config", "gateway", "monitoring-crds")
+                ],
+            ),
+        ),
+    )
+    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))

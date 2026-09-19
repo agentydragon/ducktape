@@ -14,7 +14,7 @@ contract.
   RoleBinding for each approved consumer ServiceAccount. These are reconciled
   from `cluster/k8s/external-creds`; generated grants are collected in
   `external-creds.k8s.yaml`. The explicit authorization roster is
-  [`external_creds_constructs.py`](external_creds_constructs.py). Regenerate
+  [`external_creds.py`](external_creds.py). Regenerate
   manifests with `bb run //cluster/cdk8s:generate_manifests`.
 - `external-secrets-config` owns the shared `ClusterSecretStore`. Referent
   authentication resolves its `external-creds-reader` ServiceAccount in the
@@ -39,7 +39,7 @@ receive the credential.
 
 Add a credential by creating one encrypted source Secret under
 `cluster/k8s/external-creds` and adding its non-secret metadata to `CREDENTIALS`
-in `external_creds_constructs.py`. Add a consumer by adding its explicit
+in `external_creds.py`. Add a consumer by adding its explicit
 `ApprovedConsumer` entry there, then add the ServiceAccount, ExternalSecret,
 and namespace to the shared store's conditions. A namespace needs only one
 `external-creds-reader` ServiceAccount even when it receives multiple approved

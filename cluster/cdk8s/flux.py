@@ -20,11 +20,40 @@ from collections.abc import Sequence
 from typing import cast
 
 from cdk8s import ApiObject, ApiObjectMetadata, Chart, Testing
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
+    KustomizationSpecDependsOn,
+    KustomizationSpecHealthCheckExprs,
+    KustomizationSpecHealthChecks,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
+
+__all__ = [
+    "NAMESPACE",
+    "ConfigMapArgs",
+    "KustomizationSpecDecryption",
+    "KustomizationSpecDecryptionProvider",
+    "KustomizationSpecDecryptionSecretRef",
+    "KustomizationSpecDeletionPolicy",
+    "KustomizationSpecDependsOn",
+    "KustomizationSpecHealthCheckExprs",
+    "KustomizationSpecHealthChecks",
+    "KustomizationSpecSourceRef",
+    "KustomizationSpecSourceRefKind",
+    "flux_kustomization",
+    "health_checks",
+    "kustomize_kustomization",
+]
 
 
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:

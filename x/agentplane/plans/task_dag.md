@@ -824,7 +824,7 @@ _Retire, once the production path is proven and rollback is available:_
   because only the sibling proxy performs the swap. Whatever replaces the proxy inherits that
   contract or the agent's configuration changes with it.
 - The Haku Console side of the credential: `HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN` in
-  `cluster/cdk8s/haku/console_constructs.py` and `Secret/haku-console-public-coder-agent`. This is
+  `cluster/cdk8s/haku/console.py` and `Secret/haku-console-public-coder-agent`. This is
   the whole "`haku-console`" half of the name — Console is the bearer's authority, not a proxy.
 
 _Shared, so not this milestone's to delete:_

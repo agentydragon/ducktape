@@ -2,7 +2,7 @@
 
 Confirms the generated jsii package actually loads and synthesizes under Bazel, and
 that its `KustomizationSpecSourceRefKind` enum accepts the "ExternalArtifact" value
-cluster/cdk8s/flux_constructs.py currently emits as a plain string.
+cluster/cdk8s/flux.py currently emits as a plain string.
 """
 
 from pathlib import Path

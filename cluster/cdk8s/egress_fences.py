@@ -16,11 +16,13 @@ bound the name. Known gaps: cluster/k8s/TODO.md § Egress fences.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from cdk8s import App, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
@@ -311,3 +313,8 @@ def mitmproxy_cloud_api(app: App) -> Chart:
             cilium.egress_to_entities("cluster", ports=[11434, 80, 443, 8000, 8080]),
         ],
     )
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, "cluster/k8s/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike)
+    write_charts(root, "cluster/k8s/agents/mitmproxy", mitmproxy_cloud_api)

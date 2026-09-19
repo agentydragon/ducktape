@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from cdk8s import App, Chart
+
+from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -92,3 +98,17 @@ def claude_config() -> dict:
             }
         },
     }
+
+
+def chart(app: App) -> Chart:
+    return config_map_chart(
+        app,
+        chart_name="haku-openclaw-spike-config",
+        configmap_name="haku-openclaw-spike-config",
+        namespace="haku-openclaw-spike",
+        data={"openclaw.json": json5_config(config()), "claude.json": json5_config(claude_config())},
+    )
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, "cluster/k8s/agents/haku-openclaw-spike/app", chart)

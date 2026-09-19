@@ -73,14 +73,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import (
-    actions_constructs,
-    container_security,
-    db_constructs,
-    egress_constructs,
-    llm_ingress_constructs,
-    node_scheduling,
-)
+from cluster.cdk8s.agentplane import actions, container_security, database, egress, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -107,7 +100,7 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. The hop token is deliberately absent: it
 # carries the proxy's own audience, so it is not substitutable anywhere.
-_SUBSTITUTABLE_AUDIENCE_FILES = {egress_constructs.KUBERNETES_AUDIENCE: "kubernetes-token"}
+_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
 _NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
@@ -379,7 +372,7 @@ class App(Construct):
             ingress=[cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
             egress=[
                 dns_egress,
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT),
+                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.PROXY_PORT),
             ],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
@@ -396,16 +389,14 @@ class App(Construct):
                 cilium.egress_to_entities("kube-apiserver"),
                 *self._oidc_egress_rules(),
                 cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT),
+                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.ADMIN_PORT),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
-                cilium.egress_to(
-                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
-                ),
+                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
                 cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    db_constructs.POSTGRES_PORT,
+                    database.POSTGRES_PORT,
                 ),
             ],
         )
@@ -417,8 +408,7 @@ class App(Construct):
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
         litellm_url = (
-            f"http://agentplane-llm-ingress.{self.env.namespace}"
-            f".svc.cluster.local:{llm_ingress_constructs.CONTAINER_PORT}"
+            f"http://agentplane-llm-ingress.{self.env.namespace}.svc.cluster.local:{llm_ingress.CONTAINER_PORT}"
         )
         # The environment a harness child starts from: a bare NAME takes the runner's
         # value, NAME=value sets one. Both spellings of proxy vars, since clients
@@ -490,7 +480,7 @@ class App(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_EGRESS_CA_VOLUME_NAME,
                     mount_path=_CA_BUNDLE_PATH,
-                    sub_path=egress_constructs.CA_BUNDLE_KEY,
+                    sub_path=egress.CA_BUNDLE_KEY,
                     read_only=True,
                 ),
             ],
@@ -507,7 +497,7 @@ class App(Construct):
                     value=f"agentplane-egress.{namespace}.svc.cluster.local",
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "proxy_port"), value=str(egress_constructs.PROXY_PORT)
+                    name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
                     name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
@@ -597,7 +587,7 @@ class App(Construct):
                                     sources=[
                                         SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
                                             service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                                                audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+                                                audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
                                                 expiration_seconds=600,
                                                 path="token",
                                             )

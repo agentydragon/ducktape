@@ -45,7 +45,7 @@ CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 # The Sandbox runner's workload token audience: minted once by the runner
-# (app_constructs.py's projected ServiceAccountToken), verified unchanged by the
+# (app.py's projected ServiceAccountToken), verified unchanged by the
 # central egress proxy, then forwarded and verified again here -- every hop must accept
 # the same audience string.
 WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"

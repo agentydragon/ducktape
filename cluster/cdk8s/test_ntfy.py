@@ -1,7 +1,7 @@
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s.ntfy_constructs import Ntfy
+from cluster.cdk8s.ntfy import Ntfy
 
 
 def test_ntfy_auth_is_declarative_and_database_is_cnpg_owned() -> None:

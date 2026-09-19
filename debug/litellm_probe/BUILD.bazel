@@ -5,7 +5,7 @@ py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
     deps = [
-        "//cluster/cdk8s:litellm_config",
+        "//cluster/cdk8s/litellm:config",
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//jinja2",

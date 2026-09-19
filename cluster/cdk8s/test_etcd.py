@@ -2,7 +2,7 @@ import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
+from cluster.cdk8s.etcd import TalosEtcdMetrics
 from cluster.scripts.nebula_mesh import Host, Mesh
 
 

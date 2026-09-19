@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from cluster.cdk8s.litellm_config import main_proxy_config
+from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.model_rosters import ApiShape
 
 
