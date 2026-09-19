@@ -51,7 +51,7 @@ py_test(
     deps = [
         ":app",
         "//:conftest",
-        "//x/agentplane/egress:resources",
+        "//util:agent_sandbox",
         "//x/agentplane/testing:fake_apiserver",
         "//x/agentplane/workload_auth:http",
         "//x/agentplane/workload_auth:principal",

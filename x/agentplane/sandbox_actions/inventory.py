@@ -19,15 +19,13 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
+from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, condition, pod_name
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from x.agentplane.sandbox_actions.models import SandboxInfo, SandboxState
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
-
-SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
-SANDBOXES_PLURAL = "sandboxes"
 
 _PREFIX = "sandbox-actions.agentplane.allegedly.works"
 # What this surface will touch. The Action Service's `pods/exec` grant is namespace-wide and cannot
@@ -74,8 +72,7 @@ def _state(sandbox: dict[str, Any]) -> tuple[SandboxState, str | None]:
     reason is passed through verbatim rather than re-worded: `WarmPoolNotFound` tells its reader
     what to do, where "pod phase Pending" does not.
     """
-    conditions = cast(list[dict[str, Any]], sandbox.get("status", {}).get("conditions", []))
-    ready = next((condition for condition in conditions if condition.get("type") == "Ready"), None)
+    ready = condition(sandbox, "Ready")
     if ready is None:
         return SandboxState.NOT_READY, None
     if ready.get("status") == "True":
@@ -130,23 +127,32 @@ class SandboxInventory:
             raise ForeignSandboxError(f"a sandbox named {name!r} exists and is not yours")
         return sandbox
 
-    async def _pod(self, object_name: str) -> dict[str, Any] | None:
-        pods = await self._core_v1.list_namespaced_pod(
-            self._binding.namespace, label_selector=f"agents.x-k8s.io/sandbox-name={object_name}"
-        )
-        return pods.to_dict()["items"][0] if pods.items else None
+    async def _pod_name(self, sandbox: dict[str, Any]) -> str | None:
+        """The Pod backing this Sandbox, or None while the controller has not made one.
+
+        Confirms the Pod exists rather than trusting the annotation: a Sandbox that has been Ready
+        still names a Pod that a node drain or an eviction has since taken away, and `exec` needs
+        the one that is there now.
+        """
+        name = pod_name(sandbox)
+        try:
+            await self._core_v1.read_namespaced_pod(name, self._binding.namespace)
+        except ApiException as error:
+            if error.status == 404:
+                return None
+            raise
+        return name
 
     async def _info(self, caller: ServiceAccountRef, sandbox: dict[str, Any]) -> SandboxInfo:
         metadata = sandbox["metadata"]
         state, reason = _state(sandbox)
-        # Only for the name to exec into; readiness is the controller's answer above.
-        pod = await self._pod(metadata["name"]) if state is SandboxState.READY else None
         return SandboxInfo(
             name=metadata["labels"][NAME_LABEL],
             state=state,
             environment=metadata["labels"][ENVIRONMENT_LABEL],
             created_at=metadata.get("creationTimestamp"),
-            pod_name=pod["metadata"]["name"] if pod else None,
+            # Only for the name to exec into; readiness is the controller's answer above.
+            pod_name=await self._pod_name(sandbox) if state is SandboxState.READY else None,
             reason=reason,
         )
 
@@ -168,17 +174,13 @@ class SandboxInventory:
         template = cast(
             dict[str, Any],
             await self._custom_objects.get_namespaced_custom_object(
-                "extensions.agents.x-k8s.io",
-                "v1beta1",
-                self._binding.namespace,
-                "sandboxtemplates",
-                environment.template,
+                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, environment.template
             ),
         )
         pod_template = cast(dict[str, Any], template["spec"]["podTemplate"])
         spec = {**cast(dict[str, Any], pod_template.get("spec", {})), "serviceAccountName": caller.name}
         body = {
-            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
+            "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
             "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, key)},
             # Retain: this surface owns deletion, and a box whose caller is still working in it must
@@ -268,10 +270,15 @@ class SandboxInventory:
         if sandbox is None:
             raise SandboxActionError(f"no sandbox named {name!r}; provision it first")
         info = await self._info(caller, sandbox)
-        if info.state is not SandboxState.READY or info.pod_name is None:
+        if info.state is not SandboxState.READY:
             raise SandboxActionError(
-                f"sandbox {name!r} cannot run commands (state={info.state}, reason={info.reason or 'unknown'})"
+                f"sandbox {name!r} is not ready ({info.reason or 'the controller gives no reason'})"
             )
+        if info.pod_name is None:
+            # Ready but no Pod to reach: the controller has not published one yet, or the one it
+            # published is gone. Distinct from not-ready, and a caller that conflates them polls
+            # a box whose own controller says it is fine.
+            raise SandboxActionError(f"sandbox {name!r} is ready but has no running Pod to exec into")
         _, environment = self.environment(info.environment)
         return await self._exec_runner.run(
             pod_name=info.pod_name,

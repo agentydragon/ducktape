@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from util.agent_sandbox import SANDBOXES_PLURAL
 from util.net import pick_free_port
 from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
 from x.agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
@@ -26,7 +27,7 @@ from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from x.agentplane.app.inventory import SANDBOXES_PLURAL, ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,

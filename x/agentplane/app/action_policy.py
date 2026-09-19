@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.policies.resources import (
@@ -39,7 +40,7 @@ from x.agentplane.action_service.policy_view import (
 )
 from x.agentplane.app.action_federation import UpstreamFailure
 from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from x.agentplane.app.inventory import SANDBOX_API, InventoryError, SandboxView
+from x.agentplane.app.inventory import InventoryError, SandboxView
 from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -172,8 +173,8 @@ class ActionPolicyInventory:
                     # so the cascade holds.
                     "ownerReferences": [
                         {
-                            "apiVersion": "/".join(SANDBOX_API),
-                            "kind": "Sandbox",
+                            "apiVersion": SANDBOX_API.api_version,
+                            "kind": SANDBOX_KIND,
                             "name": sandbox.name,
                             "uid": str(sandbox.uid),
                             "controller": False,

@@ -76,6 +76,7 @@ py_library(
     srcs = ["inventory.py"],
     deps = [
         ":presets",
+        "//util:agent_sandbox",
         "//util:kubernetes",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
@@ -500,6 +501,7 @@ py_library(
     srcs = ["egress.py"],
     deps = [
         ":inventory",
+        "//util:agent_sandbox",
         "//util:kubernetes",
         "//x/agentplane:crd_group",
         "//x/agentplane:subjects",
@@ -644,6 +646,7 @@ py_test(
         ":shutdown",
         ":trajectory",
         "//:conftest",
+        "//util:agent_sandbox",
         "//util:net",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service:operator_oidc",
@@ -809,6 +812,7 @@ py_library(
         ":action_federation",
         ":egress",
         ":inventory",
+        "//util:agent_sandbox",
         "//util:kubernetes",
         "//x/agentplane:crd_group",
         "//x/agentplane:subjects",

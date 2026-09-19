@@ -50,7 +50,9 @@ class SandboxInfo(BaseModel):
     state: SandboxState
     environment: str = Field(description="The reviewed environment name this box was created from.")
     created_at: datetime | None = None
-    pod_name: str | None = Field(default=None, description="Absent until the sandbox has a Pod.")
+    pod_name: str | None = Field(
+        default=None, description="Absent until the sandbox has a Pod, and again if that Pod goes away."
+    )
     reason: str | None = Field(
         default=None,
         description="The controller's own message or reason when it is not ready — whether it is "

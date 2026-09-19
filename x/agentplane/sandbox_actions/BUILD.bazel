@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
@@ -15,6 +15,7 @@ py_library(
         ":binding",
         ":models",
         "//mcp_infra/exec:kubernetes",
+        "//util:agent_sandbox",
         "//util:kubernetes",
         "//x/agentplane:subjects",
         "@pypi//kubernetes_asyncio",
@@ -27,5 +28,23 @@ py_library(
     deps = [
         "//mcp_infra/exec:models",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_inventory",
+    srcs = ["test_inventory.py"],
+    deps = [
+        ":binding",
+        ":inventory",
+        ":models",
+        "//:conftest",
+        "//mcp_infra/exec:kubernetes",
+        "//mcp_infra/exec:models",
+        "//util:agent_sandbox",
+        "//x/agentplane:subjects",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

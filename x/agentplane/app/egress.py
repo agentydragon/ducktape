@@ -18,6 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
 from pydantic import BaseModel, ConfigDict, Field
 
+from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.inventory import InventoryError, SandboxView
 from x.agentplane.crd_group import GROUP, VERSION
@@ -40,7 +41,6 @@ EGRESS_API = (GROUP, VERSION)
 POLICIES_PLURAL = "egresspolicies"
 BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"
-_SANDBOX_API_VERSION = "agents.x-k8s.io/v1beta1"
 
 
 class BindingNotFoundError(InventoryError):
@@ -212,7 +212,7 @@ class EgressInventory:
                     # `--rules-namespace` away from the sandboxes has to replace this with a sweep.
                     "ownerReferences": [
                         {
-                            "apiVersion": _SANDBOX_API_VERSION,
+                            "apiVersion": SANDBOX_API.api_version,
                             "kind": "Sandbox",
                             "name": sandbox.name,
                             "uid": str(sandbox.uid),

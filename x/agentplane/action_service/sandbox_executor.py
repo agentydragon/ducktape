@@ -12,6 +12,7 @@ Pod as any account you can name".
 
 from __future__ import annotations
 
+import json
 import logging
 from enum import StrEnum
 from typing import Any, cast
@@ -71,14 +72,12 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
     agent cannot otherwise see, and naming an environment that does not exist is the most likely way
     to get `provision` wrong.
     """
-    offered = "; ".join(
-        f"{name}: {environment.description}" for name, environment in sorted(binding.environments.items())
-    )
+    offered = json.dumps({name: environment.description for name, environment in sorted(binding.environments.items())})
     return {
         SandboxAction.PROVISION: ActionDefinition(
             description=(
                 "Create or reach a sandbox that runs as your own ServiceAccount, and wait for it to "
-                f"come up. Idempotent on the name. Environments — {offered}. Defaults to "
+                f"come up. Idempotent on the name. Environments: {offered}. Defaults to "
                 f"{binding.default_environment!r}. May return state={SandboxState.NOT_READY} with the "
                 f"controller's reason if the box is slow; poll {SandboxAction.INFO} rather than "
                 "provisioning again."

@@ -27,16 +27,19 @@ from haku.sandbox.models import (
 )
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner, KubernetesWebSocketExecRunner, PodExecError
 from mcp_infra.exec.models import Exited, Killed, TimedOut
+from util.agent_sandbox import (
+    CLAIMS_PLURAL,
+    EXTENSIONS_API,
+    POD_NAME_ANNOTATION,
+    SANDBOX_API,
+    SANDBOXES_PLURAL,
+    Api,
+    condition,
+)
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
-CLAIM_GROUP = "extensions.agents.x-k8s.io"
-SANDBOX_GROUP = "agents.x-k8s.io"
-API_VERSION = "v1beta1"
-CLAIMS_PLURAL = "sandboxclaims"
-SANDBOXES_PLURAL = "sandboxes"
-POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
 
 MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 # Ownership marker written on every claim and required by every mutation, so it is a stored
@@ -184,7 +187,7 @@ class KubernetesSandboxClient:
                 message="The sandbox deadline has passed.",
             )
 
-        claim_ready = _condition(claim, "Ready")
+        claim_ready = condition(claim, "Ready")
         reason = _condition_text(claim_ready, "reason")
         message = _condition_text(claim_ready, "message")
         sandbox_name = _nested_string(claim, "status", "sandbox", "name")
@@ -201,7 +204,7 @@ class KubernetesSandboxClient:
                 message=message,
             )
 
-        sandbox = await self._get_custom(SANDBOX_GROUP, SANDBOXES_PLURAL, sandbox_name, "inspect Sandbox")
+        sandbox = await self._get_custom(SANDBOX_API, SANDBOXES_PLURAL, sandbox_name, "inspect Sandbox")
         if sandbox is None:
             return _info(
                 name,
@@ -235,7 +238,7 @@ class KubernetesSandboxClient:
             raise ToolError(_api_error("inspect the Sandbox pod", error)) from error
 
         claim_is_ready = claim_ready is not None and claim_ready.get("status") == "True"
-        sandbox_ready = _condition(sandbox, "Ready")
+        sandbox_ready = condition(sandbox, "Ready")
         sandbox_is_ready = sandbox_ready is not None and sandbox_ready.get("status") == "True"
         pod_is_ready = _pod_is_ready(pod, self._environment.sandbox.container)
         resources_ready = claim_is_ready and sandbox_is_ready and pod_is_ready
@@ -274,7 +277,7 @@ class KubernetesSandboxClient:
             if continue_token is not None:
                 list_kwargs["_continue"] = continue_token
             page = await self._custom_objects.list_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, **list_kwargs
+                *EXTENSIONS_API, self._environment.sandbox.namespace, CLAIMS_PLURAL, **list_kwargs
             )
         except ApiException as error:
             raise ToolError(_api_error("list sandbox claims", error)) from error
@@ -293,8 +296,7 @@ class KubernetesSandboxClient:
         self._require_owned(claim, name)
         try:
             await self._custom_objects.delete_namespaced_custom_object(
-                CLAIM_GROUP,
-                API_VERSION,
+                *EXTENSIONS_API,
                 self._environment.sandbox.namespace,
                 CLAIMS_PLURAL,
                 name,
@@ -309,7 +311,7 @@ class KubernetesSandboxClient:
     async def _create_or_adopt_claim(self, name: str) -> dict[str, Any]:
         expires_at = self._now() + timedelta(seconds=self._environment.sandbox.initial_ttl_seconds)
         body = {
-            "apiVersion": f"{CLAIM_GROUP}/{API_VERSION}",
+            "apiVersion": EXTENSIONS_API.api_version,
             "kind": "SandboxClaim",
             "metadata": {
                 "name": name,
@@ -328,7 +330,7 @@ class KubernetesSandboxClient:
         }
         try:
             return await self._custom_objects.create_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, body
+                *EXTENSIONS_API, self._environment.sandbox.namespace, CLAIMS_PLURAL, body
             )
         except ApiException as error:
             if error.status != 409:
@@ -399,8 +401,7 @@ class KubernetesSandboxClient:
             ]
             try:
                 await self._custom_objects.patch_namespaced_custom_object(
-                    CLAIM_GROUP,
-                    API_VERSION,
+                    *EXTENSIONS_API,
                     self._environment.sandbox.namespace,
                     CLAIMS_PLURAL,
                     name,
@@ -419,8 +420,7 @@ class KubernetesSandboxClient:
     async def _patch_annotations(self, name: str, annotations: dict[str, str]) -> None:
         try:
             await self._custom_objects.patch_namespaced_custom_object(
-                CLAIM_GROUP,
-                API_VERSION,
+                *EXTENSIONS_API,
                 self._environment.sandbox.namespace,
                 CLAIMS_PLURAL,
                 name,
@@ -431,12 +431,12 @@ class KubernetesSandboxClient:
             raise ToolError(_api_error("record sandbox bootstrap state", error)) from error
 
     async def _get_claim(self, name: str) -> dict[str, Any] | None:
-        return await self._get_custom(CLAIM_GROUP, CLAIMS_PLURAL, name, "inspect SandboxClaim")
+        return await self._get_custom(EXTENSIONS_API, CLAIMS_PLURAL, name, "inspect SandboxClaim")
 
-    async def _get_custom(self, group: str, plural: str, name: str, action: str) -> dict[str, Any] | None:
+    async def _get_custom(self, api: Api, plural: str, name: str, action: str) -> dict[str, Any] | None:
         try:
             return await self._custom_objects.get_namespaced_custom_object(
-                group, API_VERSION, self._environment.sandbox.namespace, plural, name
+                *api, self._environment.sandbox.namespace, plural, name
             )
         except ApiException as error:
             if error.status == 404:
@@ -575,21 +575,14 @@ class InClusterSandboxClient:
             self._client = None
 
 
-def _condition(resource: dict[str, Any], condition_type: str) -> dict[str, Any] | None:
-    for condition in resource.get("status", {}).get("conditions", []) or []:
-        if isinstance(condition, dict) and condition.get("type") == condition_type:
-            return {str(key): value for key, value in condition.items()}
-    return None
-
-
 def _is_bootstrap_state(value: str) -> TypeGuard[BootstrapState]:
     return value in {"pending", "running", "succeeded", "failed"}
 
 
-def _condition_text(condition: dict[str, Any] | None, key: str) -> str | None:
-    if condition is None or not condition.get(key):
+def _condition_text(entry: dict[str, Any] | None, key: str) -> str | None:
+    if entry is None or not entry.get(key):
         return None
-    return str(condition[key])
+    return str(entry[key])
 
 
 def _nested_string(value: dict[str, Any], *path: str) -> str | None:

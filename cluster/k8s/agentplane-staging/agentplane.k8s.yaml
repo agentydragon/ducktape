@@ -1954,7 +1954,6 @@ rules:
       - pods
     verbs:
       - get
-      - list
   - apiGroups:
       - ""
     resources:
