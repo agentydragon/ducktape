@@ -4,18 +4,18 @@ metadata:
   name: kubevirt-operator
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/kubevirt/operator
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: kubevirt-operator
-    namespace: ducktape-flux
-  wait: true
-  timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: virt-operator
       namespace: kubevirt
+  interval: 10m
+  path: ./cluster/k8s/kubevirt/operator
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kubevirt-operator
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

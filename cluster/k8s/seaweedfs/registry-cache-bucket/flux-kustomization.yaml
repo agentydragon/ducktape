@@ -4,19 +4,9 @@ metadata:
   name: seaweedfs-registry-cache-bucket
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/seaweedfs/registry-cache-bucket
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-registry-cache-bucket
-    namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-  wait: true
-  timeout: 5m
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -26,3 +16,13 @@ spec:
       kind: S3Credentials
       name: registry-cache
       namespace: oci-cache
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/registry-cache-bucket
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-registry-cache-bucket
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

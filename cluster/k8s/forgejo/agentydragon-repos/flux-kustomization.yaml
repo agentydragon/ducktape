@@ -4,27 +4,25 @@ metadata:
   name: forgejo-agentydragon-repos
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/forgejo/agentydragon-repos
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-agentydragon-repos
-    # Wait for the Terraform apply (adopts ducktape/gaffer-private, creates
-    # collaborator service users/keys, and grants repo access).
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: forgejo-agentydragon-repos
-      namespace: flux-system
   dependsOn:
-    - name: forgejo # Forgejo API must be up (provider target)
+    - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: forgejo-agentydragon-repos
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/forgejo/agentydragon-repos
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-agentydragon-repos
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

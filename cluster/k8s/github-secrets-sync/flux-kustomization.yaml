@@ -4,21 +4,6 @@ metadata:
   name: github-secrets-sync
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/github-secrets-sync
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-secrets-sync
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: github-secrets-sync
-      namespace: flux-system
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -26,10 +11,22 @@ spec:
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
-    # The Terraform module reads the canonical ducktape-ci registry credential
-    # from forgejo-images before publishing it to gaffer-private's GitHub Actions
-    # secrets.
     - name: forgejo-images
       namespace: ducktape-flux
     - name: seaweedfs-pr-visuals-bucket
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: github-secrets-sync
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/github-secrets-sync
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-secrets-sync
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

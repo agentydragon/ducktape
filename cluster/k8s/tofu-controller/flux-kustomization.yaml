@@ -4,16 +4,6 @@ metadata:
   name: tofu-controller
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m0s
-  path: ./cluster/k8s/tofu-controller
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: tofu-controller
-    namespace: ducktape-flux
-  timeout: 10m0s
-  wait: true
   dependsOn:
     - name: cert-manager
       namespace: ducktape-flux
@@ -28,3 +18,13 @@ spec:
       kind: CustomResourceDefinition
       name: terraforms.infra.contrib.fluxcd.io
       namespace: ""
+  interval: 10m0s
+  path: ./cluster/k8s/tofu-controller
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: tofu-controller
+    namespace: ducktape-flux
+  timeout: 10m0s
+  wait: true

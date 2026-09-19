@@ -6,7 +6,6 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
   interval: 1h
   path: ./cluster/k8s/parked/firecrawl/namespace
   prune: false
@@ -14,4 +13,5 @@ spec:
     kind: ExternalArtifact
     name: firecrawl-namespace
     namespace: ducktape-flux
+  suspend: true
   timeout: 1m

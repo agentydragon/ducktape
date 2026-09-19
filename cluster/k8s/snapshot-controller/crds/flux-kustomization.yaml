@@ -4,13 +4,13 @@ metadata:
   name: snapshot-controller-crds
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 1h
+  path: ./client/config/crd
+  prune: false
+  retryInterval: 1m
   sourceRef:
     kind: GitRepository
     name: external-snapshotter-source
     namespace: ducktape-flux
-  path: ./client/config/crd
-  prune: false
-  wait: true
   timeout: 2m
+  wait: true

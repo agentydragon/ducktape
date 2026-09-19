@@ -4,23 +4,22 @@ metadata:
   name: alloy-otlp-bearer
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: haku-rbac
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/alloy-otlp-bearer
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: alloy-otlp-bearer
-
     namespace: ducktape-flux
-  dependsOn:
-    - name: external-secrets-config # ClusterSecretStore + CRDs
-      namespace: ducktape-flux
-    - name: claude-rbac # claude-sandbox namespace
-      namespace: ducktape-flux
-    - name: haku-rbac # haku-sandbox namespace
-      namespace: ducktape-flux
   timeout: 2m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets

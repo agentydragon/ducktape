@@ -10,5 +10,4 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: flux-image-automation-ghcr
-
     namespace: ducktape-flux

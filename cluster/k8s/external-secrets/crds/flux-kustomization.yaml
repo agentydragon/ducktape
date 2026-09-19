@@ -4,14 +4,13 @@ metadata:
   name: external-secrets-crds
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 1h
-  # CRDs from the external-secrets repository
+  path: ./deploy/crds
+  prune: false
+  retryInterval: 1m
   sourceRef:
     kind: GitRepository
     name: external-secrets-source
     namespace: ducktape-flux
-  path: ./deploy/crds
-  prune: false # Don't delete CRDs on uninstall (safety)
-  wait: true
   timeout: 2m
+  wait: true

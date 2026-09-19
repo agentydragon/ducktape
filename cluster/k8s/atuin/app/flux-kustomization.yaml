@@ -4,21 +4,6 @@ metadata:
   name: atuin
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: atuin
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/atuin/app
-  prune: true
-  wait: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   dependsOn:
     - name: cert-manager-issuer-config
       namespace: ducktape-flux
@@ -30,3 +15,17 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/atuin/app
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: atuin
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

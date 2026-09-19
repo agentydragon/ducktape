@@ -4,19 +4,17 @@ metadata:
   name: tempo
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/tempo
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-tempo
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: grafana-helmrepository
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -30,11 +28,13 @@ spec:
       kind: HelmRelease
       name: tempo
       namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/tempo
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-tempo
+    namespace: ducktape-flux
+  suspend: false
   timeout: 5m
-  dependsOn:
-    - name: monitoring-crds # the chart's serviceMonitor.enabled
-      namespace: ducktape-flux
-    - name: grafana-helmrepository
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux

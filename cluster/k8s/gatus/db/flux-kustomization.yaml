@@ -4,24 +4,23 @@ metadata:
   name: gatus-db
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gatus-db
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/gatus/db
-  prune: true
-  wait: true
-  healthChecks:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: gatus-db
-      namespace: gatus
   dependsOn:
     - name: gatus-namespace
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: gatus-db
+      namespace: gatus
+  interval: 10m
+  path: ./cluster/k8s/gatus/db
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: gatus-db
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

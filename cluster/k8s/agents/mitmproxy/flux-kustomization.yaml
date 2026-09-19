@@ -4,14 +4,6 @@ metadata:
   name: agents-mitmproxy
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/agents/mitmproxy
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
-  timeout: 5m
   dependsOn:
     - name: agents-mitmproxy-namespace
       namespace: ducktape-flux
@@ -21,3 +13,11 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agents/mitmproxy
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  timeout: 5m

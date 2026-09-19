@@ -4,32 +4,13 @@ metadata:
   name: haku-state
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/forgejo/haku-state
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-state
-    # Wait for the Terraform apply (creates the Forgejo repo + service user + the
-    # haku-forgejo-git Secret) so scan runs can depend on it.
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: haku-state
-      namespace: flux-system
   dependsOn:
-    - name: forgejo # Forgejo API must be up (provider target)
+    - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    # The git-creds Secret is reflected into agentplane-index; wait for the
-    # aggregate to create that target Namespace before applying Terraform.
     - name: agentplane-index
       namespace: ducktape-flux
     - name: haku-namespace
@@ -38,3 +19,18 @@ spec:
       namespace: ducktape-flux
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: haku-state
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/forgejo/haku-state
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-state
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

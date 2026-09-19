@@ -4,18 +4,13 @@ metadata:
   name: cert-manager
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: cert-manager
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/cert-manager/app
-  prune: true
-  wait: true
-  # Health check ensures cert-manager pods are ready before dependents try to create Certificates
+  dependsOn:
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -29,15 +24,17 @@ spec:
       kind: Deployment
       name: cert-manager-webhook
       namespace: cert-manager
+  interval: 10m
+  path: ./cluster/k8s/cert-manager/app
   postBuild:
     substituteFrom:
       - kind: ConfigMap
         name: cert-manager-issuer-config
-  dependsOn:
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-    # Produces the namespace-local ConfigMap that postBuild reads.
-    - name: reflector
-      namespace: ducktape-flux
-    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
-      namespace: ducktape-flux
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cert-manager
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

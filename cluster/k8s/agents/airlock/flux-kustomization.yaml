@@ -4,26 +4,10 @@ metadata:
   name: airlock
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: airlock
-    namespace: ducktape-flux
-  path: ./cluster/k8s/agents/airlock
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: airlock
-      namespace: airlock
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
@@ -33,3 +17,19 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: airlock
+      namespace: airlock
+  interval: 10m
+  path: ./cluster/k8s/agents/airlock
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: airlock
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 5m
+  wait: true

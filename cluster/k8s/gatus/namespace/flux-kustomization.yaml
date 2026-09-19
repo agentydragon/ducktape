@@ -4,18 +4,17 @@ metadata:
   name: gatus-namespace
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gatus-namespace
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/gatus/namespace
-  prune: true
-  wait: true
   healthChecks:
     - apiVersion: v1
       kind: Namespace
       name: gatus
+  interval: 10m
+  path: ./cluster/k8s/gatus/namespace
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: gatus-namespace
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

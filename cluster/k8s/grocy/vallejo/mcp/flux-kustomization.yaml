@@ -4,21 +4,6 @@ metadata:
   name: grocy-mcp-vallejo
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-vallejo
-    namespace: ducktape-flux
-  path: ./cluster/k8s/grocy/vallejo/mcp
-  prune: true
-  wait: true
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: grocy-mcp-server
-      namespace: grocy-vallejo
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -34,5 +19,20 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+    - name: monitoring-crds
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: grocy-mcp-server
+      namespace: grocy-vallejo
+  interval: 10m
+  path: ./cluster/k8s/grocy/vallejo/mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: grocy-mcp-vallejo
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

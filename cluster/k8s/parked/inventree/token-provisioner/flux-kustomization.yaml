@@ -6,28 +6,25 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  retryInterval: 1m
-  suspend: true
-  interval: 10m
-  path: ./cluster/k8s/parked/inventree/token-provisioner
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: inventree-token-provisioner
-
-    namespace: ducktape-flux
-  # Explicitly health-check the InvenTree HelmRelease so the Job starts only after
-  # InvenTree pods are ready (HelmRelease wait:true guarantees this).
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: inventree
-      namespace: inventree
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: inventree # InvenTree HelmRelease is fully deployed
+    - name: inventree
     - name: claude-rbac
-      namespace: ducktape-flux # claude-sandbox namespace exists
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: inventree
+      namespace: inventree
+  interval: 10m
+  path: ./cluster/k8s/parked/inventree/token-provisioner
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: inventree-token-provisioner
+    namespace: ducktape-flux
+  suspend: true

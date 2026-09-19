@@ -4,19 +4,18 @@ metadata:
   name: node-feature-discovery
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: node-feature-discovery
-
-    namespace: ducktape-flux
-  path: "./cluster/k8s/node-feature-discovery"
-  prune: true
-  wait: true
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: nfd
       namespace: node-feature-discovery
+  interval: 10m
+  path: ./cluster/k8s/node-feature-discovery
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: node-feature-discovery
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

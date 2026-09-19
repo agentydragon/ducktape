@@ -1,21 +1,24 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-exporter
-  namespace: ducktape-flux
   annotations:
     description: GitHub API rate-limit metrics for the human and agent accounts.
+  name: github-exporter
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/github-exporter
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-exporter
-    namespace: ducktape-flux
-  timeout: 5m
+  dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: grafana-instance
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
@@ -33,16 +36,13 @@ spec:
       kind: Deployment
       name: github-exporter-agentydragon-agent
       namespace: monitoring
-  dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: monitoring-namespace
-      namespace: ducktape-flux
-    - name: monitoring-crds # ServiceMonitor
-      namespace: ducktape-flux
-    - name: grafana-instance
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/github-exporter
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-exporter
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

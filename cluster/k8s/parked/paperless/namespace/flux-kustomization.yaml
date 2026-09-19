@@ -6,12 +6,11 @@ metadata:
   annotations:
     ducktape.org/parked: "true"
 spec:
-  suspend: true
   interval: 10m
   path: ./cluster/k8s/parked/paperless/namespace
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: paperless-namespace
-
     namespace: ducktape-flux
+  suspend: true

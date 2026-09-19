@@ -7,21 +7,7 @@ metadata:
     description: Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage.
     ducktape.org/parked: "true"
 spec:
-  # Retain the declaration without allowing Flux to recreate retired objects.
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 15m
-  path: ./cluster/k8s/parked/archivebox
-  prune: true
-  # Captured web archives are user data. Removing this experimental controller
-  # must not implicitly delete the Deployment, namespace, or either PVC.
   deletionPolicy: Orphan
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: archivebox
-    namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-csi
       namespace: ducktape-flux
@@ -35,3 +21,14 @@ spec:
       kind: Deployment
       name: archivebox
       namespace: archivebox
+  interval: 10m
+  path: ./cluster/k8s/parked/archivebox
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: archivebox
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 15m
+  wait: true

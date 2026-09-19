@@ -4,14 +4,13 @@ metadata:
   name: grafana-helmrepository
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/monitoring/grafana-helmrepository
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: grafana-helmrepository
-
     namespace: ducktape-flux
-  wait: true
   timeout: 5m
+  wait: true
