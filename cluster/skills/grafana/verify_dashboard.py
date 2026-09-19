@@ -28,6 +28,8 @@ from playwright.sync_api import Page, sync_playwright
 
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
+# TODO: Replace admin-secret auth with narrower identities: Viewer for deployed-dashboard
+# checks and the minimum write-capable scope needed for temporary candidate dashboards.
 DATASOURCE_PLACEHOLDERS = {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}
 UNRESOLVED_MACRO = re.compile(r"\$__[_a-zA-Z0-9]+")
 UNRESOLVED_VARIABLE = re.compile(r"\$(?:__[_a-zA-Z0-9]+|[_a-zA-Z][_a-zA-Z0-9]*)")

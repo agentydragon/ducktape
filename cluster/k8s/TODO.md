@@ -9,9 +9,6 @@ Audit findings deferred for later.
       CPU/RAM, then pin the image, configure its token/callback, add a NetworkPolicy,
       and scrape renderer metrics; do not install the deprecated in-process plugin
       solely for occasional checks.
-- [ ] Replace the verifier's admin Grafana credential with narrower identities: use
-      Viewer access for deployed-dashboard checks and the minimum write-capable scope
-      needed to create/delete temporary candidate dashboards.
 
 ## Study Casino database backups
 
