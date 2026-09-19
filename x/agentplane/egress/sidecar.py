@@ -17,9 +17,10 @@ import asyncio
 import contextlib
 import logging
 import signal
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
-from types import TracebackType
+from types import MappingProxyType, TracebackType
 from typing import Any, Self
 
 from pydantic import Field
@@ -30,9 +31,13 @@ logger = logging.getLogger(__name__)
 REFUSED_HEADER = "x-agentplane-egress-sidecar"
 _MAX_HEAD_BYTES = 64 * 1024
 _PIPE_CHUNK = 64 * 1024
-# Never forwarded: the token header is the sidecar's alone to set, and Proxy-Connection is the
-# pre-standard keep-alive hint some clients send a proxy.
-_DROPPED_HEADERS = frozenset({b"proxy-authorization", b"proxy-connection"})
+PROJECTED_TOKEN_HEADER = "X-Agentplane-Workload-Token"
+# Never forwarded from the client: both token headers are the sidecar's alone to set, and
+# Proxy-Connection is the pre-standard keep-alive hint some clients send a proxy. The workload's
+# own headers pass through this relay, so dropping the projected one here is what makes its
+# presence upstream mean the sidecar put it there -- the central proxy reviews it as well, and
+# neither check is the other's excuse.
+_DROPPED_HEADERS = frozenset({b"proxy-authorization", b"proxy-connection", PROJECTED_TOKEN_HEADER.lower().encode()})
 
 
 class RefusalReason(StrEnum):
@@ -48,6 +53,18 @@ def _refusal(status: int, phrase: str, reason: RefusalReason) -> bytes:
     ).encode()
 
 
+def _read_token_file(path: Path) -> str | None:
+    """A projected token, or None when its file is missing, unreadable, or empty."""
+    try:
+        token = path.read_text().strip()
+    except OSError:
+        logger.exception("token file %s unreadable", path)
+        return None
+    if not token:
+        logger.error("token file %s is empty", path)
+    return token or None
+
+
 def _is_connect(head: bytes) -> bool:
     """Whether the request head opens a tunnel. Raises ValueError on a head that is not an HTTP/1.x request."""
     request_line = head.split(b"\r\n", 1)[0].split(b" ")
@@ -56,7 +73,7 @@ def _is_connect(head: bytes) -> bool:
     return request_line[0] == b"CONNECT"
 
 
-def _rewrite_head(head: bytes, *, token: str, is_connect: bool) -> bytes:
+def _rewrite_head(head: bytes, *, token: str, projected: Mapping[str, str], is_connect: bool) -> bytes:
     """The request head to send the central proxy."""
     lines = head[:-4].split(b"\r\n")
     kept = [line for line in lines[1:] if line.split(b":", 1)[0].strip().lower() not in _DROPPED_HEADERS]
@@ -64,6 +81,11 @@ def _rewrite_head(head: bytes, *, token: str, is_connect: bool) -> bytes:
         kept = [line for line in kept if line.split(b":", 1)[0].strip().lower() != b"connection"]
         kept.append(b"Connection: close")
     kept.append(b"Proxy-Authorization: Bearer " + token.encode())
+    # On a CONNECT too, and above all there: the requests inside the tunnel are behind its TLS, so
+    # what the CONNECT presents is the only thing the central proxy can substitute into them.
+    kept.extend(
+        f"{PROJECTED_TOKEN_HEADER}: {audience} {value}".encode() for audience, value in sorted(projected.items())
+    )
     return b"\r\n".join([lines[0], *kept]) + b"\r\n\r\n"
 
 
@@ -104,12 +126,14 @@ class SidecarRelay:
         proxy_host: str,
         proxy_port: int,
         token_file: Path,
+        audience_token_files: Mapping[str, Path] = MappingProxyType({}),
         listen_host: str = "127.0.0.1",
         listen_port: int = 0,
     ) -> None:
         self._proxy_host = proxy_host
         self._proxy_port = proxy_port
         self._token_file = token_file
+        self._audience_token_files = audience_token_files
         self._listen_host = listen_host
         self._listen_port = listen_port
         self._server: asyncio.Server | None = None
@@ -138,15 +162,20 @@ class SidecarRelay:
         return int(self._server.sockets[0].getsockname()[1])
 
     def _read_token(self) -> str | None:
-        """The current token, or None when the projected file is missing, unreadable, or empty."""
-        try:
-            token = self._token_file.read_text().strip()
-        except OSError:
-            logger.exception("token file %s unreadable", self._token_file)
-            return None
-        if not token:
-            logger.error("token file %s is empty", self._token_file)
-        return token or None
+        """The current hop token, or None when the projected file is missing, unreadable, or empty."""
+        return _read_token_file(self._token_file)
+
+    def _read_projected(self) -> dict[str, str]:
+        """The audience-scoped tokens to offer the central proxy, re-read like the hop token.
+
+        An audience whose file is missing or empty is left out rather than offered blank: the rule
+        naming it then denies at the point of use, where a blank would look like a rejected token.
+        """
+        return {
+            audience: token
+            for audience, path in self._audience_token_files.items()
+            if (token := _read_token_file(path)) is not None
+        }
 
     async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()
@@ -170,7 +199,7 @@ class SidecarRelay:
         if token is None:
             writer.write(_refusal(503, "Service Unavailable", RefusalReason.TOKEN_UNAVAILABLE))
             return
-        forwarded = _rewrite_head(head, token=token, is_connect=is_connect)
+        forwarded = _rewrite_head(head, token=token, projected=self._read_projected(), is_connect=is_connect)
         try:
             upstream_reader, upstream_writer = await asyncio.open_connection(self._proxy_host, self._proxy_port)
         except OSError as error:
@@ -204,6 +233,12 @@ class Settings(BaseSettings):
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")
     proxy_port: int = Field(default=8888, description="The central proxy's listener port.")
     token_file: Path = Field(description="The projected ServiceAccount token file, re-read on every request.")
+    audience_token_files: dict[str, Path] = Field(
+        default_factory=dict,
+        description="Audience to the projected token file holding this Pod's identity for it, offered to the "
+        "central proxy to substitute where a rule names that audience. The hop token above is not one of "
+        "these: it carries the proxy's own audience, which a destination validating its own refuses.",
+    )
     listen_host: str = Field(default="127.0.0.1", description="Bind address; loopback, the runner's own Pod.")
     listen_port: int = Field(default=3128, description="Port the runner container's HTTP(S)_PROXY names.")
 
@@ -227,6 +262,7 @@ async def async_main(settings: Settings) -> None:
         proxy_host=settings.proxy_host,
         proxy_port=settings.proxy_port,
         token_file=settings.token_file,
+        audience_token_files=settings.audience_token_files,
         listen_host=settings.listen_host,
         listen_port=settings.listen_port,
     ) as relay:

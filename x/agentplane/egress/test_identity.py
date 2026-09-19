@@ -12,13 +12,16 @@ from x.agentplane.egress.conftest import (
     AUDIENCE,
     POD_A_UID,
     POD_B_UID,
+    PROJECTED_AUDIENCE,
+    PROJECTED_TOKEN_A,
+    PROJECTED_TOKEN_B,
     SANDBOX_A,
     SANDBOX_B,
     SUBJECT_A,
     TOKEN_A,
     TOKEN_B,
 )
-from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
 from x.agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
@@ -99,6 +102,55 @@ async def test_pod_no_sandbox_owns_is_still_its_service_account(
         pod_name=SANDBOX_B,
         pod_uid=POD_B_UID,
     )
+
+
+@pytest.fixture
+def projected(api_client: ApiClient) -> ProjectedTokenVerifier:
+    return ProjectedTokenVerifier(
+        resolvers={
+            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
+                authentication=AuthenticationV1Api(api_client),
+                audience=PROJECTED_AUDIENCE,
+                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            )
+        }
+    )
+
+
+async def test_a_projected_token_for_the_presenting_pod_is_kept(
+    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
+) -> None:
+    identity = await verifier.identify(TOKEN_A)
+    assert await projected.verified({PROJECTED_AUDIENCE: PROJECTED_TOKEN_A}, identity) == {
+        PROJECTED_AUDIENCE: PROJECTED_TOKEN_A
+    }
+
+
+async def test_another_pods_projected_token_is_dropped(
+    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
+) -> None:
+    """The check the substitution rests on: a caller that somehow holds another Pod's token for this
+    audience cannot have the proxy spend it, even though the hop it arrived on authenticated."""
+    identity = await verifier.identify(TOKEN_A)
+    assert await projected.verified({PROJECTED_AUDIENCE: PROJECTED_TOKEN_B}, identity) == {}
+
+
+async def test_a_token_for_an_unconfigured_audience_is_dropped(
+    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
+) -> None:
+    """Which audiences may be substituted for is the deployment's to list, so one it never named is
+    refused whatever the token proves."""
+    identity = await verifier.identify(TOKEN_A)
+    assert await projected.verified({"https://unlisted.test.invalid": PROJECTED_TOKEN_A}, identity) == {}
+
+
+async def test_a_hop_bearer_presented_as_a_projected_token_is_dropped(
+    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
+) -> None:
+    """Audiences do not substitute for one another: the proxy's own bearer proves the same Pod and is
+    still refused for a destination that validates a different audience."""
+    identity = await verifier.identify(TOKEN_A)
+    assert await projected.verified({PROJECTED_AUDIENCE: TOKEN_A}, identity) == {}
 
 
 if __name__ == "__main__":

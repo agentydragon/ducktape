@@ -37,6 +37,7 @@ from x.agentplane.egress.resources import (
     EgressPolicy,
     ObjectMeta,
     PolicySpec,
+    ProjectedWorkloadTokenSource,
     Rule,
     SchemeTokenTarget,
     Secret,
@@ -74,6 +75,20 @@ def workload_credential(name: str, *targets: Target) -> EgressCredential:
         spec=CredentialSpec(
             source=CredentialSource(authenticated_workload_token=AuthenticatedWorkloadTokenSource()),
             description=f"the {name} calling workload",
+            targets=list(targets),
+        ),
+    )
+
+
+KUBERNETES_AUDIENCE = "https://kubernetes.test.invalid"
+
+
+def projected_credential(name: str, *targets: Target, audience: str = KUBERNETES_AUDIENCE) -> EgressCredential:
+    return EgressCredential(
+        metadata=ObjectMeta(name=name, generation=1),
+        spec=CredentialSpec(
+            source=CredentialSource(projected_workload_token=ProjectedWorkloadTokenSource(audience=audience)),
+            description=f"the {name} projected identity",
             targets=list(targets),
         ),
     )
@@ -441,6 +456,71 @@ def test_authenticated_workload_source_fails_without_authenticated_context() -> 
     )
 
 
+def _projected_index(credential_: EgressCredential) -> Index:
+    rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=credential_.metadata.name)})
+    return index(
+        policies=[policy("projected", rule)], bindings=[binding("b", policies=["projected"])], credentials=[credential_]
+    )
+
+
+def test_projected_workload_source_substitutes_the_token_for_its_own_audience() -> None:
+    """The hop bearer is not what a destination validating its own audience will take, so a rule
+    naming an audience gets the token presented for that audience and no other."""
+    projected = projected_credential("kubernetes-workload", BEARER)
+    api_server_token = "pod-a-api-server-token"
+    context = AuthenticatedWorkloadContext(
+        bearer="pod-a-hop-token",
+        caller=CALLER,
+        pod_uid="pod-a-uid",
+        projected={KUBERNETES_AUDIENCE: api_server_token, "https://other.test.invalid": "not-this-one"},
+    )
+    decision = evaluate(
+        _projected_index(projected),
+        CALLER,
+        request(authorization=f"Bearer {projected.placeholder}"),
+        NOW,
+        authenticated_workload=context,
+    )
+    assert decision == Allowed(
+        "b", "projected", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {api_server_token}",)),)
+    )
+    assert api_server_token not in repr(decision)
+    assert context.bearer not in repr(decision)
+
+
+def test_projected_workload_source_fails_when_its_audience_did_not_survive_review() -> None:
+    """A token the verifier dropped is absent rather than present and unusable, so the rule naming
+    it denies where it is used instead of spending some other audience's token."""
+    projected = projected_credential("kubernetes-workload", BEARER)
+    scoped = _projected_index(projected)
+    egress = request(authorization=f"Bearer {projected.placeholder}")
+    assert evaluate(scoped, CALLER, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    without = AuthenticatedWorkloadContext(bearer="hop", caller=CALLER, pod_uid="pod-a-uid", projected={})
+    assert evaluate(scoped, CALLER, egress, NOW, authenticated_workload=without) == Denied(
+        DenyReason.CREDENTIAL_UNAVAILABLE
+    )
+
+
+def test_projected_workload_source_is_unusable_by_another_caller() -> None:
+    """Context belongs to the caller it authenticated as: one subject's projected tokens are never
+    substituted into another's request, however well-formed they are."""
+    projected = projected_credential("kubernetes-workload", BEARER)
+    someone_else = AuthenticatedWorkloadContext(
+        bearer="hop",
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="someone-else"),
+        pod_uid="pod-b-uid",
+        projected={KUBERNETES_AUDIENCE: "pod-b-api-server-token"},
+    )
+    decision = evaluate(
+        _projected_index(projected),
+        CALLER,
+        request(authorization=f"Bearer {projected.placeholder}"),
+        NOW,
+        authenticated_workload=someone_else,
+    )
+    assert decision == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+
+
 def test_credential_source_requires_exactly_one_known_tag() -> None:
     with pytest.raises(ValueError, match="exactly one"):
         CredentialSource()
@@ -448,6 +528,11 @@ def test_credential_source_requires_exactly_one_known_tag() -> None:
         CredentialSource(
             secret_ref=SecretKeyRef(name="pat", key="token"),
             authenticated_workload_token=AuthenticatedWorkloadTokenSource(),
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        CredentialSource(
+            authenticated_workload_token=AuthenticatedWorkloadTokenSource(),
+            projected_workload_token=ProjectedWorkloadTokenSource(audience=KUBERNETES_AUDIENCE),
         )
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         CredentialSource.model_validate({"forgedSource": {}})

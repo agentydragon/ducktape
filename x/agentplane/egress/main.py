@@ -21,7 +21,7 @@ from x.agentplane.egress.addon import EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
-from x.agentplane.egress.identity import WorkloadIdentityVerifier
+from x.agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
+    projected_token_audiences: frozenset[str] = Field(
+        default=frozenset(),
+        description="Every audience a rule may substitute a sidecar's projected token for, the API server's "
+        "among them. Reviewing the list here is what decides which destinations this proxy will spend a "
+        "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
 
     resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
@@ -150,6 +156,18 @@ async def async_main(settings: Settings) -> None:
             audience=settings.token_audience,
             allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
+        # One resolver per audience, differing only in the audience each reviews for: a projected
+        # token proves the same Pod as the hop bearer or it is not substituted.
+        projected = ProjectedTokenVerifier(
+            resolvers={
+                audience: WorkloadPrincipalResolver(
+                    authentication=AuthenticationV1Api(api),
+                    audience=audience,
+                    allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
+                )
+                for audience in settings.projected_token_audiences
+            }
+        )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
         addon = EgressAddon(
             index=index,
@@ -157,6 +175,7 @@ async def async_main(settings: Settings) -> None:
             decision_log=decision_log,
             resolver=resolver,
             stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
+            projected=projected,
         )
         # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
         # so a verdict either reached is a verdict the other need not spend a TokenReview on.

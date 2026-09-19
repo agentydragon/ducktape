@@ -60,6 +60,11 @@ POD_A_IP = "127.0.0.1"
 POD_B_IP = "10.0.0.2"
 TOKEN_A = "token-of-pod-a"
 TOKEN_B = "token-of-pod-b"
+# A second audience the same Pods hold a token for, standing in for the API server's: the hop
+# bearers above are minted for the proxy and a destination validating its own refuses them.
+PROJECTED_AUDIENCE = "https://kubernetes.test.invalid"
+PROJECTED_TOKEN_A = "api-server-token-of-pod-a"
+PROJECTED_TOKEN_B = "api-server-token-of-pod-b"
 GITHUB_POLICY = "github"
 
 
@@ -70,12 +75,17 @@ def seed(fake: FakeApiServer) -> None:
     fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B))
     fake.pods[SANDBOX_A] = pod_for(fake, SANDBOX_A, pod_uid=POD_A_UID, ip=POD_A_IP)
     fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
-    for token, name, uid in ((TOKEN_A, SANDBOX_A, POD_A_UID), (TOKEN_B, SANDBOX_B, POD_B_UID)):
+    for token, name, uid, audience in (
+        (TOKEN_A, SANDBOX_A, POD_A_UID, AUDIENCE),
+        (TOKEN_B, SANDBOX_B, POD_B_UID, AUDIENCE),
+        (PROJECTED_TOKEN_A, SANDBOX_A, POD_A_UID, PROJECTED_AUDIENCE),
+        (PROJECTED_TOKEN_B, SANDBOX_B, POD_B_UID, PROJECTED_AUDIENCE),
+    ):
         fake.tokens[token] = TokenVerdict(
             username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{name}",
             pod_name=name,
             pod_uid=uid,
-            audiences=(AUDIENCE,),
+            audiences=(audience,),
         )
     fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": SECRET_VALUE}))
     fake.put(

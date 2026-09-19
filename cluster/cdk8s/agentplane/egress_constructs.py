@@ -8,6 +8,7 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredential,
     EgressCredentialSpec,
     EgressCredentialSpecSource,
+    EgressCredentialSpecSourceProjectedWorkloadToken,
     EgressCredentialSpecSourceSecretRef,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -72,7 +73,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress_constructs,
     node_scheduling,
 )
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.api_resource import custom_resource
@@ -95,6 +96,14 @@ PROXY_PORT = 8888
 ADMIN_PORT = 8081
 _AGENT_API_PORT = 8082
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
+# The audience the API server validates its own ServiceAccount tokens against, which is what
+# `--api-audiences` (defaulting to `--service-account-issuer`) is set to on this cluster. The
+# sidecar's projection asks for exactly this string and the proxy reviews against it, so a value
+# that does not match the cluster produces tokens the API server refuses -- a 401 inside the box,
+# not a proxy denial. Changing it means changing the cluster.
+KUBERNETES_AUDIENCE = "https://kubernetes.default.svc.cluster.local"
+# Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
+KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app_constructs.py) must name the same key.
@@ -145,6 +154,28 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         ),
     )
 
+    EgressCredential(
+        scope,
+        "egresscredential-kubernetes-workload",
+        metadata=ApiObjectMetadata(name="kubernetes-workload", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server "
+                "rather than for this proxy. Requests carrying it are authorized by the API server "
+                "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
+                "it, and this proxy adds only the rule's hosts, methods and paths on top."
+            ),
+            source=EgressCredentialSpecSource(
+                projected_workload_token=EgressCredentialSpecSourceProjectedWorkloadToken(audience=KUBERNETES_AUDIENCE)
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+
 
 def _egress_policies(scope: Construct, *, namespace: str) -> None:
     EgressPolicy(
@@ -181,6 +212,25 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     paths=["/openapi.json", "/v1/rules"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
                 ),
+            ]
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-kubernetes",
+        metadata=ApiObjectMetadata(name=KUBERNETES_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # No method or path list: what a sandbox may read or write is the API server's
+                # answer for its own ServiceAccount, and narrowing verbs here would be a second,
+                # weaker copy of RBAC that drifts from it. Upgrade verbs (exec, attach,
+                # port-forward) negotiate SPDY or WebSocket through an intercepting proxy and are
+                # not known to work; ordinary requests and watches are what this admits in practice.
+                EgressPolicySpecRules(
+                    hosts=[KUBERNETES_HOST],
+                    cluster_internal=True,
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="kubernetes-workload"),
+                )
             ]
         ),
     )
@@ -334,7 +384,13 @@ class Egress(Construct):
             metadata=metadata(f"{NAME}-settings", self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
-                    settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
+                    settings_file(
+                        Settings,
+                        {
+                            "allowed_service_account_namespaces": [self.env.namespace],
+                            "projected_token_audiences": [KUBERNETES_AUDIENCE],
+                        },
+                    )
                 )
             },
         )

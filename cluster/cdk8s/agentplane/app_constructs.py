@@ -101,6 +101,8 @@ from x.agentplane.egress import sidecar
 from x.agentplane.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
+# Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
+_EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 _NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
@@ -518,7 +520,11 @@ class App(Construct):
                     name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "token_file"), value="/var/run/agentplane-egress/token"
+                    name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"
+                ),
+                SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                    name=env_name(sidecar.Settings, "audience_token_files"),
+                    value=json.dumps({egress_constructs.KUBERNETES_AUDIENCE: f"{_EGRESS_TOKEN_DIR}/kubernetes-token"}),
                 ),
             ],
             security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
@@ -534,7 +540,7 @@ class App(Construct):
             ),
             volume_mounts=[
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                    name="egress-token", mount_path="/var/run/agentplane-egress", read_only=True
+                    name="egress-token", mount_path=_EGRESS_TOKEN_DIR, read_only=True
                 )
             ],
         )
@@ -580,9 +586,13 @@ class App(Construct):
                                     name=self.env.egress.ca_secret_name
                                 ),
                             ),
-                            # The Pod's identity to the central proxy: a ServiceAccount
-                            # token bound to this Pod, with the proxy's audience,
-                            # rotated by kubelet.
+                            # The Pod's identity, twice over and to nobody else: this volume is
+                            # mounted by the egress sidecar alone, so no token here is readable
+                            # from the container an agent runs commands in. `token` proves the Pod
+                            # to the central proxy; `kubernetes-token` is the same account minted
+                            # for the API server, which the proxy substitutes where a rule names
+                            # that audience and which is useless at the proxy itself. Both are
+                            # bound to this Pod and rotated by kubelet.
                             SandboxTemplateSpecPodTemplateSpecVolumes(
                                 name="egress-token",
                                 projected=SandboxTemplateSpecPodTemplateSpecVolumesProjected(
@@ -593,7 +603,14 @@ class App(Construct):
                                                 expiration_seconds=600,
                                                 path="token",
                                             )
-                                        )
+                                        ),
+                                        SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
+                                            service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
+                                                audience=egress_constructs.KUBERNETES_AUDIENCE,
+                                                expiration_seconds=600,
+                                                path="kubernetes-token",
+                                            )
+                                        ),
                                     ]
                                 ),
                             ),

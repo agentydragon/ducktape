@@ -121,6 +121,25 @@ class AuthenticatedWorkloadTokenSource(_Wire):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
 
+class ProjectedWorkloadTokenSource(_Wire):
+    """A token for another audience, projected into the sidecar and presented on the hop.
+
+    The hop bearer proves the caller to this proxy and carries the proxy's own audience, so a
+    destination validating its own -- the API server against `--api-audiences` above all -- refuses
+    it. This source is the same Pod's identity minted for that destination instead: the sidecar
+    holds it, the workload never does, and the proxy substitutes it only after reviewing it as the
+    very Pod that authenticated.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    audience: str = Field(
+        min_length=1,
+        description="Audience of the projected token to substitute, as the destination validates it "
+        "and as the sidecar's projection requests it.",
+    )
+
+
 class CredentialSource(_Wire):
     """Exactly one tagged source for the value substituted at a declared target."""
 
@@ -130,11 +149,15 @@ class CredentialSource(_Wire):
     authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = Field(
         default=None, alias="authenticatedWorkloadToken"
     )
+    projected_workload_token: ProjectedWorkloadTokenSource | None = Field(default=None, alias="projectedWorkloadToken")
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        if (self.secret_ref is None) == (self.authenticated_workload_token is None):
-            raise ValueError("source must set exactly one of secretRef or authenticatedWorkloadToken")
+        sources = (self.secret_ref, self.authenticated_workload_token, self.projected_workload_token)
+        if sum(source is not None for source in sources) != 1:
+            raise ValueError(
+                "source must set exactly one of secretRef, authenticatedWorkloadToken or projectedWorkloadToken"
+            )
         return self
 
 

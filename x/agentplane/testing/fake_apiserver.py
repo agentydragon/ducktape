@@ -322,6 +322,25 @@ def authenticated_workload_credential(
     }
 
 
+def projected_workload_credential(
+    name: str,
+    *,
+    audience: str,
+    targets: list[dict[str, Any]],
+    description: str = "the calling workload's identity for another audience",
+) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "EgressCredential",
+        "metadata": {"name": name},
+        "spec": {
+            "source": {"projectedWorkloadToken": {"audience": audience}},
+            "description": description,
+            "targets": targets,
+        },
+    }
+
+
 def binding(
     name: str, *, subjects: list[dict[str, Any]], policies: list[str], expires_at: str | None = None
 ) -> dict[str, Any]:

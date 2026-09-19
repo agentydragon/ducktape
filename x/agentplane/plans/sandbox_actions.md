@@ -1,7 +1,8 @@
 # Sandbox Actions: exec targets provisioned as the caller
 
-Status: **design agreed (2026-09-18), not started.** No DAG nodes are minted yet; they belong with
-the dispatch decision rather than with this note.
+Status: **design agreed (2026-09-18).** The `projectedWorkloadToken` credential source below has
+landed, contract in <../egress/SPEC.md>; nothing else here is started. No DAG nodes are minted yet;
+they belong with the dispatch decision rather than with this note.
 
 An Action group that provisions an Agentplane Sandbox and runs bounded commands in it. It exists
 for callers outside the cluster — Claude Code web and claude.ai, bound by OAuth to the `claude-ai`
@@ -82,12 +83,14 @@ intended consequences.
 **A sandbox is a caller.** It can provision and exec sandboxes itself, including ones it did not
 create, because they are one principal. The operation is closed: no chain gains authority.
 
-**Egress attribution collapses per principal.** `DecisionsClient.recent` (<../app/decisions.py>)
-asks the proxy for decisions _by ServiceAccount_, and a `Decision` carries no Pod field, so two
-sandboxes of one account are indistinguishable there and `GET /sandboxes/{name}/egress/decisions`
-returns one combined stream for each of them. Accounts still differ from each other. This knowingly
-deviates from the [egress specification](../egress/SPEC.md)'s "bind only an account dedicated to one
-workload".
+**Egress attribution collapses per principal in the app's view, not in the record.**
+`DecisionsClient.recent` (<../app/decisions.py>) asks the proxy for decisions _by ServiceAccount_
+and projects a `Decision` with no Pod field, so `GET /sandboxes/{name}/egress/decisions` returns one
+combined stream for every sandbox of one account. The proxy's own record does carry
+`source_pod_uid`, persisted with the rest (<../egress/decisions.py>), so per-box attribution is a
+field the app's projection does not read rather than evidence nobody has. Accounts still differ from
+each other. This knowingly deviates from the [egress specification](../egress/SPEC.md)'s "bind only
+an account dedicated to one workload".
 
 **The workload must never read the token.** `automountServiceAccountToken: false`, with the
 projected audience-scoped token mounted by the egress sidecar alone, is what keeps a shared account
@@ -142,12 +145,13 @@ The gap is the audience. The only token in play is projected with the proxy's ow
 [Workload authentication](../docs/workload_authentication.md) already defers exactly this as
 "Kubernetes API access under a distinct projected audience".
 
-**The sidecar projects a second token.** A `serviceAccountToken` source carrying the API server's
-audience, mounted by the sidecar alone and rotated by kubelet, presented for the proxy to substitute
-into `Authorization` on the rules that name it. The proxy gains no Kubernetes rights, the workload
-sees neither token, and the container boundary holding it is the one the design already rests on
+**The sidecar projects a second token.** Landed as the `projectedWorkloadToken` credential source
+(<../egress/SPEC.md>): a `serviceAccountToken` carrying the API server's audience, mounted by the
+sidecar alone and rotated by kubelet, presented on the hop for the proxy to substitute into
+`Authorization` on the rules that name it. The proxy gains no Kubernetes rights, the workload sees
+neither token, and the container boundary holding it is the one the design already rests on
 ([identity evidence](../docs/sandbox_egress_identity_evidence.md)). Before substituting, the proxy
-reviews that token against the API server audience and requires its subject to equal the subject it
+reviews that token against the API server audience and requires it to resolve to the same Pod it
 authenticated, so a substituted credential provably belongs to the caller being decided.
 
 RBAC is then standing on the calling account, beside its `EgressBinding`s, and every sandbox of that
@@ -177,6 +181,10 @@ extend to a portable credential for that account. It also breaks the sidecar-onl
 - Ordinary requests should pass, but `exec`, `attach` and `port-forward` upgrade to SPDY or
   WebSocket through a bumping proxy and a watch streams chunked. Haku's own API proxy answers `501`
   to the upgrade verbs, so this is where to expect trouble.
+- `KUBERNETES_AUDIENCE` (<../../../cluster/cdk8s/agentplane/egress_constructs.py>) must equal this
+  cluster's `--api-audiences`. It is not pinned anywhere in the repository and was not read off the
+  running cluster, so it is the one value here taken on the default rather than on evidence: wrong,
+  it yields tokens the API server refuses with `401` inside the box rather than any proxy denial.
 
 ## Tool surface
 
@@ -206,9 +214,10 @@ otherwise misreads every call:
    `EgressBinding`s.** Provable end to end from a claude.ai session against an existing template.
 4. **A dedicated exec-target template**, and the Forgejo `EgressCredential` a box needs to check out
    `haku-state`.
-5. **Kubernetes from the box.** The second projected audience in sidecar and template, the
-   subject-matched substitution in the proxy, the credential and rule, and the calling account's
-   RoleBindings. Its own clock: nothing above waits on it.
+5. **Kubernetes from the box.** The projected audience, the reviewed substitution, the credential
+   and the rule have landed. What remains is the calling account's RoleBindings, confirming
+   `KUBERNETES_AUDIENCE` against the cluster, and exercising `kubectl` from a box rather than
+   inferring it from the parts (below). Its own clock: nothing above waits on it.
 
 ## Not here
 
