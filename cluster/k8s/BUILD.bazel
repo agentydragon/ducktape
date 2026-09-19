@@ -94,6 +94,10 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "cert-manager/app/flux-kustomization.yaml",
+        "cert-manager/environment/flux-kustomization.yaml",
+        "cert-manager/issuer-config/flux-kustomization.yaml",
+        "cert-manager/trust/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
