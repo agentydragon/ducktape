@@ -125,7 +125,7 @@ async def ingress_clients(
         resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=AUDIENCE,
-            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
         )
         app = create_app(
             IngressResources(

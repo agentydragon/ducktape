@@ -31,7 +31,7 @@ sentinel for "no valuation modeled", distinct from any positive market cap.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -172,8 +172,8 @@ class PrivateEquityBundle:
         # Market cap is non-negative; all-zeros means the valuation channel is off.
         if np.any(company_valuation_usd < 0.0):
             raise ValueError(f"PE issuer {issuer_id!r} company_valuation_usd must be non-negative")
-        _require_code_values(regime_code, frozenset(int(c) for c in PrivateEquityRegimeCode), "regime_code")
-        _require_code_values(event_kind_code, frozenset(int(c) for c in PrivateEquityEventKindCode), "event_kind_code")
+        _require_code_values(regime_code, tuple(int(c) for c in PrivateEquityRegimeCode), "regime_code")
+        _require_code_values(event_kind_code, tuple(int(c) for c in PrivateEquityEventKindCode), "event_kind_code")
         # Invariant: a voluntary tender opportunity (`sale_opportunity_active`) is the same
         # thing as the TENDER event kind. Producers may not desync the two.
         tender_mask = event_kind_code == int(PrivateEquityEventKindCode.TENDER)
@@ -306,7 +306,7 @@ def _require_unit_interval(value: np.ndarray, expected_shape: tuple[int, int], l
         raise ValueError(f"private-equity bundle channel {label!r} must lie in [0, 1]")
 
 
-def _require_code_values(value: np.ndarray, allowed: frozenset[int], label: str) -> None:
+def _require_code_values(value: np.ndarray, allowed: Collection[int], label: str) -> None:
     unknown = sorted(int(code) for code in np.unique(value) if int(code) not in allowed)
     if unknown:
         raise ValueError(f"private-equity bundle channel {label!r} has unknown code(s) {unknown}")

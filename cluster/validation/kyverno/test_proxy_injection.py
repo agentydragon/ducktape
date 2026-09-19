@@ -36,6 +36,7 @@ this contract to them once the injection-vs-hand-rolled split is settled.
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,7 +85,7 @@ class Injection:
     proxy: str
     ca_bundle: str
     # `NO_PROXY`, as the union of the named groups above.
-    bypasses: frozenset[str]
+    bypasses: Collection[str]
 
 
 POLICIES: dict[str, Injection] = {

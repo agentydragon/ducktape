@@ -100,7 +100,7 @@ def workload_resolver() -> tuple[WorkloadPrincipalResolver, FakeAuthenticationAp
     resolver = WorkloadPrincipalResolver(
         authentication=cast(AuthenticationV1Api, authentication),
         audience=AUDIENCE,
-        allowed_service_account_namespaces=frozenset({NAMESPACE}),
+        allowed_service_account_namespaces=(NAMESPACE,),
     )
     return resolver, authentication
 

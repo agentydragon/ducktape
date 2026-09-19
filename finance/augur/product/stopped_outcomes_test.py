@@ -39,7 +39,7 @@ def _product(*, future_cpi: float = 10) -> ProductService:
         portfolio=PortfolioConfig(),
         initial_cash=2000,
         primary_agent_id="household",
-        known_location_ids=frozenset(),
+        known_location_ids=(),
         locations={},
         properties_by_id={},
         models={"synthetic": ConstantFrameModel(levels={InflationKey(): inflation})},

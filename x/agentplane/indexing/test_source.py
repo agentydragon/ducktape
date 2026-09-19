@@ -23,7 +23,7 @@ def source(
 async def test_snapshot_reads_regular_files_only(upstream: Upstream, tmp_path: Path) -> None:
     revision = upstream.commit(
         {"src/example.py": b"print('test')\n", "empty.txt": b"", "bin/tool": b"#!/bin/sh\n"},
-        executable=frozenset({"bin/tool"}),
+        executable=("bin/tool",),
         symlinks={"link": "empty.txt"},
         submodules={"vendor/dependency": SUBMODULE_COMMIT},
     )

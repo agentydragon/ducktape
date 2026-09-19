@@ -16,6 +16,8 @@ spec:
     - name: cli-proxy-api
     - name: external-secrets-operator
     - name: clickhouse-schema
+    - name: agent-machine-access-tf
+    - name: reflector
   interval: 10m
   path: ./cluster/k8s/aiquota
   prune: true

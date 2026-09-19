@@ -120,6 +120,8 @@ spec:
       securityContext:
         fsGroupChangePolicy: Always
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: ha-mcp-token-provisioner
       setHostnameAsFQDN: false
       shareProcessNamespace: false
@@ -176,6 +178,8 @@ spec:
           securityContext:
             fsGroupChangePolicy: Always
             runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
           serviceAccountName: ha-mcp-token-provisioner
           setHostnameAsFQDN: false
           shareProcessNamespace: false
@@ -376,6 +380,8 @@ spec:
       securityContext:
         fsGroupChangePolicy: Always
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30

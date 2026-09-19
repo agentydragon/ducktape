@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
@@ -250,8 +251,8 @@ def evaluate_sample_checks(
     *,
     rollout_count: int,
     horizon_months: int,
-    unmodeled_level_keys: frozenset[LevelSeriesKey] = frozenset(),
-    unmodeled_pe_issuers: frozenset[IssuerId] = frozenset(),
+    unmodeled_level_keys: Collection[LevelSeriesKey] = (),
+    unmodeled_pe_issuers: Collection[IssuerId] = (),
 ) -> list[SanityBandResult]:
     """Evaluate every check in `spec` against an already-sampled bundle.
 

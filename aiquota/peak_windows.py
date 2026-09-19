@@ -10,6 +10,7 @@ Schedules are vendor policy and change without notice; they are data, kept in
 `SCHEDULES` at the bottom, not logic.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -30,7 +31,7 @@ class PeakPeriod:
     post-midnight half belongs to the weekday the range started on.
     """
 
-    weekdays: frozenset[int]  # 0 = Monday, matching date.weekday()
+    weekdays: Collection[int]  # 0 = Monday, matching date.weekday()
     start: time
     end: time
 

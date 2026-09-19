@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, and_, or_, select
@@ -175,7 +175,7 @@ class PostgresGrantRepository:
             return self._row_to_model(row)
 
     async def end(
-        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
+        self, *, owner_agent_ids: Collection[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
     ) -> Grant:
         async with self._sessions.begin() as session:
             row = await session.scalar(

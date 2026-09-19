@@ -168,7 +168,7 @@ async def async_main(settings: Settings) -> None:
                 for audience in settings.projected_token_audiences
             }
         )
-        resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
+        resolver = UpstreamResolver(exempt=settings.exempt_networks)
         addon = EgressAddon(
             index=index,
             verifier=WorkloadIdentityVerifier(workload_resolver),

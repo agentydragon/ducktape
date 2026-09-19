@@ -12,6 +12,7 @@ only way in, and the API server's service proxy forwards caller headers, so it w
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -46,7 +47,7 @@ class TokenReviewer:
     without that, anyone who can mint a token for any ServiceAccount is a caller here.
     """
 
-    def __init__(self, authentication: AuthenticationV1Api, *, audience: str, subjects: frozenset[str]) -> None:
+    def __init__(self, authentication: AuthenticationV1Api, *, audience: str, subjects: Collection[str]) -> None:
         self._authentication = authentication
         # The app's own audience, so a token minted for some other service cannot be replayed here.
         self._audience = audience

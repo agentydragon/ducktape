@@ -59,6 +59,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
@@ -314,6 +315,7 @@ class LiteLLMProxy(Construct):
             # Same rationale as the pod-level override above.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
+        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )

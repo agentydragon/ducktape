@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING
 
 from reaktiv import Effect, Signal
@@ -95,7 +95,7 @@ class GitHubWatcher:
             branches = self._branches()
             await self._fetch_pr_data(branches)
 
-    async def _fetch_pr_data(self, branches: frozenset[str]) -> None:
+    async def _fetch_pr_data(self, branches: Collection[str]) -> None:
         """Fetch PR data for all given branches."""
         if not branches:
             self.pr_cache.update(lambda c: c.ok({}))

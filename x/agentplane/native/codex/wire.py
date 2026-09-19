@@ -99,7 +99,7 @@ class UnknownUserInput(Wire):
 
 UserInput = Annotated[
     Annotated[UserInputText, Tag("text")] | Annotated[UnknownUserInput, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("type", frozenset({"text"}))),
+    Discriminator(tag_or_unknown("type", ("text",))),
 ]
 
 
@@ -156,7 +156,7 @@ Item = Annotated[
     | Annotated[ReasoningItem, Tag("reasoning")]
     | Annotated[CommandExecutionItem, Tag("commandExecution")]
     | Annotated[UnknownItem, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("type", frozenset({"userMessage", "agentMessage", "reasoning", "commandExecution"}))),
+    Discriminator(tag_or_unknown("type", ("userMessage", "agentMessage", "reasoning", "commandExecution"))),
 ]
 
 
@@ -264,19 +264,17 @@ Notification = Annotated[
     Discriminator(
         tag_or_unknown(
             "method",
-            frozenset(
-                {
-                    "turn/started",
-                    "turn/completed",
-                    "item/started",
-                    "item/completed",
-                    "item/agentMessage/delta",
-                    "item/reasoning/summaryTextDelta",
-                    "item/commandExecution/outputDelta",
-                    "error",
-                    "hook/started",
-                    "hook/completed",
-                }
+            (
+                "turn/started",
+                "turn/completed",
+                "item/started",
+                "item/completed",
+                "item/agentMessage/delta",
+                "item/reasoning/summaryTextDelta",
+                "item/commandExecution/outputDelta",
+                "error",
+                "hook/started",
+                "hook/completed",
             ),
         )
     ),

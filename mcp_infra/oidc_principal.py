@@ -81,7 +81,7 @@ class _UnusableJwksError(Exception):
 @dataclass(frozen=True, slots=True)
 class _CachedSigningKeys:
     keys: tuple[PyJWK, ...]
-    unusable_kids: frozenset[str]
+    unusable_kids: Collection[str]
     expires_at: float
 
 
@@ -270,7 +270,7 @@ class OidcPrincipalResolver(ABC):
             raise _UnusableJwksError
         refreshed = _CachedSigningKeys(
             keys=tuple(keys),
-            unusable_kids=frozenset(unusable_kids),
+            unusable_kids=tuple(unusable_kids),
             expires_at=time.monotonic() + _JWKS_CACHE_LIFESPAN_SECONDS,
         )
         self._cached_signing_keys = refreshed
