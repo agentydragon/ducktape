@@ -18,6 +18,7 @@ from cluster.cdk8s import (
     stateful_infra,
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
+from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
@@ -35,6 +36,7 @@ def generate_manifests(root: Path) -> None:
     ssh_mcp_generation.write_manifests(root, mesh, devbox_service)
     litellm_proxy.write_app(root)
     ha_mcp.write_manifests(root)
+    agents_flux_kustomizations.write_manifests(root)
     external_creds.write_manifests(root)
     clickhouse_schema.write_manifests(root)
     aiquota.write_manifests(root)
