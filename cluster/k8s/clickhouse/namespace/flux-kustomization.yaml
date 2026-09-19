@@ -4,17 +4,17 @@ metadata:
   name: clickhouse-namespace
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn: []
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: clickhouse
   interval: 10m
   path: ./cluster/k8s/clickhouse/namespace
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: clickhouse-namespace
     namespace: ducktape-flux
   wait: true
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: clickhouse
-  dependsOn: []
