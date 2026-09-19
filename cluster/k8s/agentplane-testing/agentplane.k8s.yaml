@@ -1700,30 +1700,52 @@ spec:
             - --harness-env
             - PATH
             - --harness-env
-            - HTTP_PROXY=http://127.0.0.1:3128
+            - HTTP_PROXY
             - --harness-env
-            - HTTPS_PROXY=http://127.0.0.1:3128
+            - HTTPS_PROXY
             - --harness-env
-            - http_proxy=http://127.0.0.1:3128
+            - http_proxy
             - --harness-env
-            - https_proxy=http://127.0.0.1:3128
+            - https_proxy
             - --harness-env
-            - NO_PROXY=127.0.0.1,localhost
+            - NO_PROXY
             - --harness-env
-            - no_proxy=127.0.0.1,localhost
+            - no_proxy
             - --harness-env
-            - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+            - SSL_CERT_FILE
             - --harness-env
-            - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+            - NODE_EXTRA_CA_CERTS
             - --harness-env
-            - CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+            - CURL_CA_BUNDLE
             - --harness-env
-            - GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+            - GIT_SSL_CAINFO
             - --harness-env
-            - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+            - REQUESTS_CA_BUNDLE
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
