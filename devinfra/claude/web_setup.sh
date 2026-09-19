@@ -253,10 +253,9 @@ if [ "$MODE" = "home-manager" ]; then
 else
   # CRITICAL: remove first so install re-evaluates against the current flake
   # (see the "Pin drift on persistent rootfs" comment in the CRITICAL note
-  # above). Remove every known output variant (by attr name) so switching
+  # above). Remove both current output variants (by attr name) so switching
   # DUCKTAPE_WEB_SETUP_OUTPUT never leaves two closures fighting over PATH.
   nix profile remove devtools 2>/dev/null || true
-  nix profile remove devtools-rust 2>/dev/null || true
   nix profile remove agent-haku 2>/dev/null || true
   NIX_PROFILE="/nix/var/nix/profiles/default"
   nix profile install --max-jobs auto "${FLAKE}#${WEB_SETUP_OUTPUT}"

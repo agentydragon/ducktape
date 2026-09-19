@@ -345,7 +345,6 @@
         localOnlyPackages
         systemLibs
         devToolPackages
-        devToolPackagesRust
         ;
     in
     {
@@ -405,7 +404,6 @@
           ruffLatest
           localOnlyPackages
           devToolPackages
-          devToolPackagesRust
           ;
       };
 

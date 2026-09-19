@@ -88,14 +88,11 @@ let
     ducktapePkgs.claude-hook-rs
     ducktapePkgs.claude-statusline
   ];
-  # Compatibility alias for older setup scripts selecting #devtools-rust.
-  devToolPackagesRust = devToolPackages;
 in
 {
   inherit
     localOnlyPackages
     systemLibs
     devToolPackages
-    devToolPackagesRust
     ;
 }

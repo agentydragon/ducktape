@@ -11,7 +11,6 @@
   ruffLatest,
   localOnlyPackages,
   devToolPackages,
-  devToolPackagesRust,
 }:
 
 ducktapePkgs
@@ -32,11 +31,6 @@ ducktapePkgs
   devtools = pkgs.symlinkJoin {
     name = "ducktape-devtools";
     paths = devToolPackages ++ localOnlyPackages;
-  };
-  # Compatibility alias for old `web_setup.sh --impl=rust` installs.
-  devtools-rust = pkgs.symlinkJoin {
-    name = "ducktape-devtools-rust";
-    paths = devToolPackagesRust ++ localOnlyPackages;
   };
   # Lean devtools for RBE worker image (no rustfmt, ansible).
   rbetools = pkgs.symlinkJoin {
