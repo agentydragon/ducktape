@@ -4,10 +4,10 @@ metadata:
   name: coredns-custom
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 10m0s
   path: ./cluster/k8s/coredns-custom
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: coredns-custom
