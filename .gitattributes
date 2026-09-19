@@ -71,6 +71,21 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
+cluster/k8s/seaweedfs/cluster/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/db/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/external-credentials/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/forgejo-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/langfuse-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/loom-gym-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/monitoring/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/namespace/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/operator/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/pr-visuals-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/public-s3/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/registry-cache-bucket/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/secrets/flux-kustomization.yaml linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true

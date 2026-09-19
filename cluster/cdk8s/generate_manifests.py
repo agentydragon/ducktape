@@ -22,6 +22,7 @@ from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
+from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -45,6 +46,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
+    seaweedfs_flux_kustomizations.write_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
