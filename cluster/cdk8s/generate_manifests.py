@@ -6,6 +6,7 @@ from cluster.cdk8s import (
     aiquota,
     descheduler,
     dns_automation,
+    dns_automation_flux_kustomizations,
     egress_fences,
     etcd,
     external_creds,
@@ -52,6 +53,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    dns_automation_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 
