@@ -4,15 +4,15 @@ metadata:
   name: artifact-generators
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn:
+    - name: flux-system
+      namespace: flux-system
   interval: 10m
   path: ./cluster/k8s/artifact-generators
   prune: true
-  wait: true
+  retryInterval: 1m
   sourceRef:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-  dependsOn:
-    - name: flux-system
-      namespace: flux-system
+  wait: true

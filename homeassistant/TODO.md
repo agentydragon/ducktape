@@ -46,5 +46,9 @@
     operator-managed component state; preserve reproducible pins, rollback behavior, and the
     existing persistent `.storage` model. Track the broader question in
     [#6492](https://github.com/agentydragon/ducktape/issues/6492).
+  - Teach the Home Assistant provisioner to use the stored credentials in
+    `cluster/k8s/external-creds/dreo-account.sops.yaml` to automatically configure the Dreo
+    integration. Keep this Secret out of the active external-creds Kustomization until the
+    provisioner consumes it.
   - Re-evaluate `przemekhys/homeassistant-operator` after its APIs leave alpha and it can
     express node placement, pod customization, and custom-component lifecycle.

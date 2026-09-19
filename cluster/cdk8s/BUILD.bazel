@@ -1,4 +1,5 @@
 # gazelle:ignore
+# gazelle:resolve py source_watcher_crds //cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -410,6 +411,7 @@ py_library(
     ],
     deps = [
         ":aiquota_constructs",
+        ":artifact_generators",
         ":cheap_experiments_credentials",
         ":clickhouse_schema_constructs",
         ":config_format",
@@ -439,6 +441,18 @@ py_library(
         "//util/bazel:workspace",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "artifact_generators",
+    srcs = ["artifact_generators.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux_constructs",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -474,6 +488,9 @@ py_test(
         "//cluster/k8s:aiquota/aiquota.k8s.yaml",
         "//cluster/k8s:aiquota/flux-kustomization.yaml",
         "//cluster/k8s:aiquota/kustomization.yaml",
+        "//cluster/k8s:artifact-generators/artifact-generators.k8s.yaml",
+        "//cluster/k8s:artifact-generators/flux-kustomization.yaml",
+        "//cluster/k8s:artifact-generators/kustomization.yaml",
         "//cluster/k8s:clickhouse/schema/clickhouse-schema.k8s.yaml",
         "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
         "//cluster/k8s:clickhouse/schema/kustomization.yaml",

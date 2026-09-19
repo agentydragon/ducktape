@@ -79,13 +79,6 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   equality and configMapGenerator-name-vs-mount-name checks. Small enough this might
   not be worth a dedicated cdk8s chart on its own; reconsider if `mailbox/` gets
   touched for another reason first.
-- **`generators.yaml` / `test_actions_artifact.py`** — the hand-written
-  `artifact-generators/generators.yaml` retypes, per artifact, the source directory
-  that the directory's own `flux-kustomization.yaml` already names in `spec.path` and
-  `sourceRef` (~200 artifacts). The test discovers those consumers and checks the two
-  agree; one generator emitting both sides would make that hold by construction.
-  Largest single item here by far; needs its own scoping pass rather than folding
-  into an existing directory's conversion.
 
 ## Parked — lower priority
 

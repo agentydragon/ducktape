@@ -42,6 +42,7 @@ from cluster.cdk8s import (
 )
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.cheap_experiments_credentials import CheapExperimentsCredentials
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
@@ -773,6 +774,7 @@ def generate_manifests(root: Path) -> None:
     _generate_forgejo_image_automation(root)
     _generate_ntfy(root)
     _generate_agentplane_testing_credentials(root)
+    generate_artifact_generators(root)
 
 
 def main() -> None:
