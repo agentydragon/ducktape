@@ -31,8 +31,6 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
-- **One PodDisruptionBudget helper** for the three `_add_pdb` copies (actions, app,
-  egress).
 - **Cilium peers as constructs.** `cilium.endpoint_labels(namespace, name)`
   takes strings; the target construct's exported labels would make a renamed workload
   fail at synth instead of at runtime.
