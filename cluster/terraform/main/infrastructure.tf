@@ -21,11 +21,11 @@ locals {
   proxmox_gateway = "10.2.0.1"
 
   # Stable Talos endpoint used for post-bootstrap client configuration reads.
-  # Stage 2 (OVH storage tiering): moved 102453 -> 103656, the KS-5 node that stays
-  # control-plane throughout the reshuffle, so 102453 can later be demoted to a worker
-  # without breaking this reference. The bootstrap/kubeconfig resources below
-  # ignore_changes on this so the repoint does NOT re-trigger a cluster bootstrap.
-  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi["ovh-ns103656"].ip
+  # Stage 3 (OVH storage tiering): point this at the new SYS-1 control plane so the
+  # former KS-5 control plane can be demoted without leaving this reference on a worker.
+  # The bootstrap/kubeconfig resources below ignore_changes on this so the repoint
+  # does NOT re-trigger a cluster bootstrap.
+  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi["ovh-ns1001419"].ip
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)

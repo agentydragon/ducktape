@@ -94,8 +94,8 @@ locals {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
-  # Stage 2: emptied — the bootstrap CP (102453) was demoted into kimsufi_servers as a
-  # worker, and primary_controlplane_ip was repointed to 103656. Kept as an empty map so
+  # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
+  # workers in kimsufi_servers, and primary_controlplane_ip points to SYS-1. Kept as an empty map so
   # the kimsufi_cp_* resource shells (which for_each over active_kimsufi_cp_servers) reduce
   # to zero instances rather than being deleted from the config.
   kimsufi_cp_servers = {}
@@ -306,7 +306,7 @@ locals {
   data_disk_mount_renamed_nodes = toset([
     "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
     "ovh-ns102453", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
-    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (CP anchor; etcd on /dev/sda untouched)
+    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (etcd on /dev/sda untouched)
   ])
 
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
