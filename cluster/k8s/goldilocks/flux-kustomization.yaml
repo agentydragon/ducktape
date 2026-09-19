@@ -4,21 +4,20 @@ metadata:
   name: goldilocks
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: goldilocks
-
-    namespace: ducktape-flux
-  path: "./cluster/k8s/goldilocks"
-  prune: true
-  wait: true
+  dependsOn:
+    - name: vpa
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: goldilocks
       namespace: goldilocks
-  dependsOn:
-    - name: vpa
+  interval: 10m
+  path: ./cluster/k8s/goldilocks
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: goldilocks
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
