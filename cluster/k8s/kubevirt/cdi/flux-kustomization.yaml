@@ -4,16 +4,6 @@ metadata:
   name: cdi
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/kubevirt/cdi
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: cdi
-    namespace: ducktape-flux
-  wait: true
-  timeout: 10m
   dependsOn:
     - name: cdi-operator
       namespace: ducktape-flux
@@ -32,3 +22,13 @@ spec:
       kind: Deployment
       name: cdi-uploadproxy
       namespace: cdi
+  interval: 10m
+  path: ./cluster/k8s/kubevirt/cdi
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cdi
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
