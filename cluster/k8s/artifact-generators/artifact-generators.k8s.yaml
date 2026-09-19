@@ -884,6 +884,13 @@ spec:
     - copy:
         - exclude:
             - flux-kustomization.yaml
+          from: "@repo/cluster/k8s/forgejo/budget-namespace/**"
+          to: "@artifact/cluster/k8s/forgejo/budget-namespace/"
+      name: budget-namespace
+      originRevision: "@repo"
+    - copy:
+        - exclude:
+            - flux-kustomization.yaml
           from: "@repo/cluster/k8s/forgejo/cache/**"
           to: "@artifact/cluster/k8s/forgejo/cache/"
       name: forgejo-cache

@@ -408,9 +408,11 @@ application manifests). Not currently reconciled cluster state.
   source (`x/codex_pod_image/`) stays live and unparked; the other three had no
   ducktape-owned source elsewhere.
 - **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
-  ledger viewer. The underlying ledger data (a Forgejo git repo provisioned by
-  `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik SSO blueprint was
-  tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
+  ledger viewer. Its `budget` namespace remains active at
+  `cluster/k8s/forgejo/budget-namespace/` because the active ledger Terraform
+  Kustomization writes credentials there. The underlying ledger data (a Forgejo git
+  repo provisioned by `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik
+  SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;

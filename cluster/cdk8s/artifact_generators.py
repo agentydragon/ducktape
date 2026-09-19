@@ -168,6 +168,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("forgejo-agentydragon", ("cluster/k8s/forgejo/agentydragon",)),
     ("forgejo-agentydragon-repos", ("cluster/k8s/forgejo/agentydragon-repos",)),
     ("budget-ledger", ("cluster/k8s/forgejo/budget-ledger",)),
+    ("budget-namespace", ("cluster/k8s/forgejo/budget-namespace",)),
     ("forgejo-cache", ("cluster/k8s/forgejo/cache",)),
     ("forgejo-claude", ("cluster/k8s/forgejo/claude",)),
     ("cpap-data", ("cluster/k8s/forgejo/cpap-data",)),
