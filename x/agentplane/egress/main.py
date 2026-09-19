@@ -183,15 +183,19 @@ async def async_main(settings: Settings) -> None:
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (
+                EgressProxyServer(
+                    addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
+                ),
+                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
+                # Admitted last, so that /healthz answering at all means the two listeners above
+                # are bound. It is the readiness probe, and readiness gates every Service this Pod
+                # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
+                # of the two to bind, still refuses connections on the tunnel port.
                 serve_admin(
                     create_admin_app(decision_log, index, resync_seconds=settings.resync_seconds),
                     settings.admin_host,
                     settings.admin_port,
                 ) as admin_port,
-                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
-                EgressProxyServer(
-                    addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
-                ),
             ):
                 logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
                 logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
