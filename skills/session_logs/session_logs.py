@@ -15,6 +15,13 @@ from typing import Any
 
 HARNESS_NAMES = ("claude", "codex")
 MAX_REPORTED_PARSE_ISSUES = 20
+CODEX_HARNESS_INSERTION_KINDS = frozenset(
+    {
+        "agents_md.instructions",
+        "environments.environment_context",
+        "skills.selected_skill_instructions",
+    }
+)
 
 
 class SessionLogsError(RuntimeError):
@@ -201,9 +208,24 @@ def _codex_content(entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [part for part in content if isinstance(part, dict)] if isinstance(content, list) else []
 
 
-def _codex_user_text(entry: Mapping[str, Any]) -> str:
+def _codex_user_text(
+    entry: Mapping[str, Any],
+    *,
+    strip_kinds: frozenset[str] = CODEX_HARNESS_INSERTION_KINDS,
+) -> str:
+    payload = entry.get("payload")
+    metadata = payload.get("internal_chat_message_metadata_passthrough") if isinstance(payload, dict) else None
+    kinds = metadata.get("content_item_kinds") if isinstance(metadata, dict) else None
     return "\n".join(
-        str(part.get("text", "")) for part in _codex_content(entry) if part.get("type") in {"input_text", "text"}
+        str(part.get("text", ""))
+        for index, part in enumerate(_codex_content(entry))
+        if part.get("type") in {"input_text", "text"}
+        and not (
+            isinstance(kinds, list)
+            and index < len(kinds)
+            and isinstance(kinds[index], str)
+            and kinds[index] in strip_kinds
+        )
     )
 
 
@@ -223,7 +245,7 @@ def is_user(entry: Mapping[str, Any], harness: str) -> bool:
         and isinstance(payload, dict)
         and payload.get("type") == "message"
         and payload.get("role") == "user"
-        and bool(_codex_user_text(entry))
+        and bool(_codex_user_text(entry, strip_kinds=frozenset()))
     )
 
 
@@ -418,6 +440,24 @@ def _render_recent(recent: Sequence[tuple[str, str]], maximum: int) -> str:
 def main_conversation() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-display-text-length", type=int, default=1000)
+    parser.add_argument(
+        "--strip-agents-md",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="omit Codex-injected AGENTS.md instructions (default: enabled)",
+    )
+    parser.add_argument(
+        "--strip-environment-context",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="omit Codex-injected environment context (default: enabled)",
+    )
+    parser.add_argument(
+        "--strip-skill-instructions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="omit Codex-injected skill definitions (default: enabled)",
+    )
     parser.add_argument("positionals", nargs="*")
     args = parser.parse_args()
     if args.max_display_text_length < 100:
@@ -441,6 +481,15 @@ def main_conversation() -> int:
     stats = ParseStats()
     recent: list[tuple[str, str]] = []
     user_count = 0
+    strip_kinds = frozenset(
+        kind
+        for kind, should_strip in (
+            ("agents_md.instructions", args.strip_agents_md),
+            ("environments.environment_context", args.strip_environment_context),
+            ("skills.selected_skill_instructions", args.strip_skill_instructions),
+        )
+        if should_strip
+    )
     for entry in iter_entries(path, stats):
         if is_compaction(entry, harness):
             print(
@@ -451,8 +500,14 @@ def main_conversation() -> int:
             recent.append((_timestamp(entry), assistant_text(entry, harness)))
             del recent[:-2]
         elif is_user(entry, harness):
+            text = (
+                _codex_user_text(entry, strip_kinds=strip_kinds)
+                if harness == "codex"
+                else user_text(entry, harness)
+            )
+            if not text.strip():
+                continue
             user_count += 1
-            text = user_text(entry, harness)
             print(f"\n## User message {user_count} @ {_timestamp(entry)}")
             print(_render_recent(recent, args.max_display_text_length))
             print("--- user message ---")

@@ -22,7 +22,9 @@ The packaged skill contains three executable helpers:
 ```bash
 find_current_session.py [claude|codex]
 analyze_session.py [claude|codex|TRANSCRIPT.jsonl]
-conversation.py [--max-display-text-length N] [claude|codex] [TRANSCRIPT.jsonl]
+conversation.py [--max-display-text-length N] [--no-strip-agents-md]
+               [--no-strip-environment-context] [--no-strip-skill-instructions]
+               [claude|codex] [TRANSCRIPT.jsonl]
 ```
 
 `conversation.py` prints every user window in chronological order. Each window
@@ -34,6 +36,13 @@ The transcript is still scanned in full, and compaction markers are still
 preserved. Do not pipe it through `head`, `tail`, or a truncating pager when
 doing the recovery pass. For a large transcript, read the output in sequential
 chunks and verify the final user message number.
+
+For Codex transcripts, harness-injected AGENTS.md instructions, environment
+context, and selected skill instructions are omitted by default using
+`internal_chat_message_metadata_passthrough.content_item_kinds`. Ordinary user
+text is retained. Pass `--no-strip-agents-md`,
+`--no-strip-environment-context`, or `--no-strip-skill-instructions` to include
+one of those categories. These options do not change Claude transcript output.
 
 When running from a checkout rather than an installed package, use
 `skills/session_logs` in place of the installed skill directory below.
@@ -57,9 +66,9 @@ human text is in `type: "user"` entries whose content is a string or text block;
 traffic rather than user turns. Compaction is recorded as
 `type: "system", subtype: "compact_boundary"` in the same JSONL file.
 
-### Codex CLI 0.153.4
+### Codex CLI 0.154.0
 
-Validated on this machine with Codex CLI `0.153.4`:
+Validated on this machine with Codex CLI `0.154.0`:
 
 ```bash
 CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
@@ -76,8 +85,8 @@ Codex user turns are `response_item` records with
 `payload.type: "message", payload.role: "user"`; do not also read
 `event_msg` `user_message` records because they duplicate those turns. Codex
 compaction is `event_msg.payload.type: "context_compacted"` in the same file.
-Harness-injected role-user setup blocks are retained for completeness and should
-be distinguished from the user's actual request while interpreting the result.
+The `content_item_kinds` metadata parallels `payload.content` and identifies
+harness-injected blocks so the conversation helper can omit them by default.
 
 If the session-id environment variable is missing or the helper reports an
 ambiguous candidate, inspect `analyze_session.py` output and choose the file
