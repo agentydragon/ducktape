@@ -411,6 +411,7 @@ py_library(
         ":public_coder_agent_config",
         ":public_coder_devbox",
         ":stateful_infra",
+        "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
@@ -497,6 +498,7 @@ py_test(
         "//cluster/k8s:clickhouse/schema/kustomization.yaml",
         "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
         "//cluster/k8s:dns-automation/dns-records.k8s.yaml",
+        "//cluster/k8s:dns-automation/flux-kustomization.yaml",
         "//cluster/k8s:external-creds/external-creds.k8s.yaml",
         "//cluster/k8s:external-creds/flux-kustomization.yaml",
         "//cluster/k8s:external-creds/kustomization.yaml",
@@ -531,5 +533,16 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "flux_kustomizations_dns_automation",
+    srcs = ["dns_automation_flux_kustomizations.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":flux",
+        ":generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
     ],
 )
