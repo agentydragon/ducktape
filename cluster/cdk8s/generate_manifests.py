@@ -18,6 +18,9 @@ from cluster.cdk8s import (
     stateful_infra,
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
+from cluster.cdk8s.agentplane_egress_credentials import (
+    flux_kustomizations as agentplane_egress_credentials_flux_kustomizations,
+)
 from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
@@ -52,6 +55,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    agentplane_egress_credentials_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 
