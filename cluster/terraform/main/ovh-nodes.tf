@@ -94,6 +94,19 @@ locals {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
+  # Temporary Talos upgrade canary. Keep the generated machine-configuration
+  # contract at var.talos_version until the whole fleet moves; the
+  # talos_machine_configuration_apply resource applies configuration but does
+  # not upgrade the running OS. The canary is upgraded explicitly with
+  # talosctl after this installer image is reconciled.
+  kimsufi_talos_version_overrides = {
+    "ovh-ns103711" = "v1.14.0"
+  }
+  kimsufi_installer_version = {
+    for k in keys(local.kimsufi_servers) :
+    k => lookup(local.kimsufi_talos_version_overrides, k, var.talos_version)
+  }
+
   # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
   # workers in kimsufi_servers, and primary_controlplane_ip points to SYS-1. Kept as an empty map so
   # the kimsufi_cp_* resource shells (which for_each over active_kimsufi_cp_servers) reduce
@@ -337,7 +350,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -362,7 +375,7 @@ locals {
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
