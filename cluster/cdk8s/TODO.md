@@ -34,6 +34,16 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 - **Cilium peers as constructs.** `cilium.endpoint_labels(namespace, name)`
   takes strings; the target construct's exported labels would make a renamed workload
   fail at synth instead of at runtime.
+- **The egress fence as one construct.** A Pod sits behind the central proxy only with
+  all five of: the sidecar container, the projected-token volume, the CA mount, the
+  routing env on its workload container, and the labels `networkpolicy-runner` selects.
+  Those live inline across `_runner_container` and `_add_sandbox_template`, which is fine
+  for one template and a trap for the second — the sandbox Actions' `exec` reached
+  nothing because the routing env was a runner argument rather than container env, and
+  the fence correctly denied everything else. When an exec-target template earns its own
+  image, have one construct take a workload container and return the fenced pod spec,
+  so the five hold together by construction instead of by being copied. Not worth
+  extracting while `agentplane-runner` is the only caller.
 
 ## Ready to convert — small, focused, and the pattern to copy already exists in this repo
 

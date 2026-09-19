@@ -411,15 +411,10 @@ class App(Construct):
             f"http://agentplane-llm-ingress.{self.env.namespace}.svc.cluster.local:{llm_ingress.CONTAINER_PORT}"
         )
         # The environment a harness child starts from: a bare NAME takes the runner's
-        # value, NAME=value sets one. Both spellings of proxy vars, since clients
-        # disagree on case; NO_PROXY is loopback and nothing else.
-        harness_env = [
-            "HOME",
-            "PATH",
-            *(f"{name}={_MITM_PROXY_URL}" for name in _PROXY_VAR_NAMES),
-            *(f"{name}={_NO_PROXY_HOSTS}" for name in _NO_PROXY_VAR_NAMES),
-            *(f"{name}={_CA_BUNDLE_PATH}" for name in _CA_BUNDLE_VAR_NAMES),
-        ]
+        # value, NAME=value sets one. The routing vars are named rather than set, so the
+        # container env below is where they are written once and everything in the Pod
+        # agrees -- a harness child by this passthrough, anything else by inheritance.
+        harness_env = ["HOME", "PATH", *_PROXY_VAR_NAMES, *_NO_PROXY_VAR_NAMES, *_CA_BUNDLE_VAR_NAMES]
         args = [
             "--state-dir",
             _STATE_DIR,
@@ -447,6 +442,24 @@ class App(Construct):
             ),
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                # On the container and not just on the harness children the runner spawns: the
+                # CiliumNetworkPolicy lets this Pod reach DNS and the egress proxy and nothing
+                # else, so a process that does not know to use the proxy has no egress at all.
+                # Anything entering by another door -- `kubectl exec`, the sandbox Actions' exec,
+                # a debug shell -- is that kind of process. Both spellings, since clients disagree
+                # on case; NO_PROXY is loopback and nothing else.
+                *(
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_MITM_PROXY_URL)
+                    for name in _PROXY_VAR_NAMES
+                ),
+                *(
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_NO_PROXY_HOSTS)
+                    for name in _NO_PROXY_VAR_NAMES
+                ),
+                *(
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_CA_BUNDLE_PATH)
+                    for name in _CA_BUNDLE_VAR_NAMES
+                ),
                 # Neither a workload token nor a LiteLLM key: the placeholder the
                 # agentplane-workload EgressCredential derives from its name. Central
                 # substitutes the sidecar-only projected token; the ingress replaces
