@@ -1,27 +1,26 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: "Complete Agentplane repository-index service: namespace, ESO credentials, CNPG databases, and both index workers."
   name: agentplane-index
   namespace: ducktape-flux
-  annotations:
-    description: >-
-      Complete Agentplane repository-index service: namespace, ESO credentials,
-      CNPG databases, and both index workers.
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/agentplane-index
-  prune: true
-  # haku-state's Terraform Kustomization depends on this aggregate to create
-  # the target Namespace, then reflects haku-forgejo-git into it. Waiting for
-  # the haku-state Deployment here would deadlock that bootstrap: the Pod
-  # needs the Secret created by the dependency.
-  wait: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: agentplane-index
-    namespace: ducktape-flux
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux
+    - name: ollama
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation && has(status.extensions) && status.extensions.exists(e, e.name == 'vector' && e.applied)
+      kind: Database
   healthChecks:
     - apiVersion: v1
       kind: Namespace
@@ -34,21 +33,13 @@ spec:
       kind: Deployment
       name: ducktape
       namespace: agentplane-index
-  healthCheckExprs:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Database
-      current: >-
-        has(status.applied) && status.applied &&
-        has(status.observedGeneration) && status.observedGeneration == metadata.generation &&
-        has(status.extensions) && status.extensions.exists(e, e.name == 'vector' && e.applied)
-  dependsOn:
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: ollama
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agentplane-index
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-index
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: false
