@@ -8,7 +8,7 @@ from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from sshpiper_pipe_crds.com.sshpiper import Pipe, PipeSpec, PipeSpecFrom, PipeSpecTo, PipeSpecToPrivateKeySecret
 
-from cluster.cdk8s.ssh_mcp_config import SshMcpConfig
+from cluster.cdk8s.ssh_mcp.config import SshMcpConfig
 
 NAMESPACE = "public-coder-agent"
 PIPE_NAME = "devbox"

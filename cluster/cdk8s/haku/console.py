@@ -71,7 +71,7 @@ from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp_config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
+from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings

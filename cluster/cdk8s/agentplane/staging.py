@@ -21,7 +21,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.ssh_mcp_config import BEARER_SECRET_NAME, MCP_URL
+from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"

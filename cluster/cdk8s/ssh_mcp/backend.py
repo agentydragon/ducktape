@@ -50,7 +50,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp_config import (
+from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
     BEARER_SECRET_NAME,
     CONFIG_DIR,

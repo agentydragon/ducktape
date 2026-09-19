@@ -606,6 +606,7 @@ py_test(
     data = [
         "//:nebula-mesh.json",
         "//cluster/k8s:agents/public-coder-agent/devbox/service.yaml",
+        "//cluster/k8s:ssh_mcp_known_hosts",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
         "@nodejs_linux_amd64//:bin/node",
@@ -613,10 +614,10 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":agentplane_fixtures",
-        "//cluster/cdk8s:ssh_mcp_config",
-        "//cluster/cdk8s:ssh_mcp_constructs",
-        "//cluster/cdk8s:sshpiper_constructs",
         "//cluster/cdk8s/haku:console_config",
+        "//cluster/cdk8s/ssh_mcp:backend",
+        "//cluster/cdk8s/ssh_mcp:config",
+        "//cluster/cdk8s/ssh_mcp:sshpiper",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

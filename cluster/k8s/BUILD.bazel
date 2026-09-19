@@ -95,6 +95,15 @@ exports_files(
 )
 
 filegroup(
+    name = "ssh_mcp_known_hosts",
+    srcs = ["ssh-mcp/known_hosts"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+)
+
+filegroup(
     name = "openclaw_model_config",
     srcs = ["agents/haku-openclaw-spike/app/deployment.yaml"],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],

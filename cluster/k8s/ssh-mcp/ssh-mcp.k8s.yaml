@@ -44,6 +44,7 @@ metadata:
   namespace: ssh-mcp
 data:
   known_hosts: |
+    # Captured Nebula host keys for ssh-mcp; recapture and review after host-side rotation.
     wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ
     rugged.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm
     public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB

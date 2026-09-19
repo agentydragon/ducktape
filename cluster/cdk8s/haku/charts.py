@@ -36,6 +36,7 @@ from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
 from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
+from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_NAME
 
 _NAMESPACE_KUSTOMIZATION = "haku-console-namespace"
 
@@ -102,7 +103,7 @@ _PROVIDED_SECRETS = {
     # Reflected from the namespaces of tana-mcp, ha-mcp, ssh-mcp and aiquota.
     "tana-agentydragon-gmail-com-account-pat": "reflector",
     "ha-mcp-bearer": "reflector",
-    "ssh-mcp-bearer": "reflector",
+    BEARER_SECRET_NAME: "reflector",
     "aiquota-api-bearer-haku-console": "reflector",
     "haku-routine-launch-token": "routine-launch-token.sops.yaml",
     "haku-console-web-push-vapid": "web-push-vapid.sops.yaml",

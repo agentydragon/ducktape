@@ -28,16 +28,11 @@ CONFIG_DIR = "/etc/ssh-mcp"
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
 DEVBOX_SERVICE = "cluster/k8s/agents/public-coder-agent/devbox/service.yaml"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
+NEBULA_KNOWN_HOSTS = "cluster/k8s/ssh-mcp/known_hosts"
 
 _WYRM2 = "wyrm2.nebula.allegedly.works"
 _RUGGED = "rugged.nebula.allegedly.works"
 _ATLAS = "atlas.nebula.allegedly.works"
-_NEBULA_HOST_KEYS = {
-    # Captured over Nebula and cross-checked against the operator's own known_hosts
-    # fingerprints. Host-side rotation needs an explicit recapture and config update.
-    _WYRM2: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ",
-    _RUGGED: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm",
-}
 
 
 @dataclass(frozen=True)
@@ -81,7 +76,7 @@ def _targets(devbox_host: str) -> tuple[Target, ...]:
 
 
 def load(locate: Callable[[str], Path]) -> SshMcpConfig:
-    """Read the canonical devbox Service/key and return validated server configuration."""
+    """Read canonical host-key inputs and return validated server configuration."""
     service = yaml.safe_load(locate(DEVBOX_SERVICE).read_text())
     devbox_host = f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"
     [ssh_port] = service["spec"]["ports"]
@@ -97,7 +92,10 @@ def load(locate: Callable[[str], Path]) -> SshMcpConfig:
     }
     SshSettings.model_validate(settings)
     host_key = f"{key_type} {key}"
-    known_hosts = "".join(f"{host} {value}\n" for host, value in {**_NEBULA_HOST_KEYS, devbox_host: host_key}.items())
+    known_hosts = locate(NEBULA_KNOWN_HOSTS).read_text().rstrip()
+    if known_hosts:
+        known_hosts += "\n"
+    known_hosts += f"{devbox_host} {host_key}\n"
     return SshMcpConfig(
         devbox_host=devbox_host,
         devbox_key_type=key_type,

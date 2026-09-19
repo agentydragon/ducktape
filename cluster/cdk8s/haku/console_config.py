@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cluster.cdk8s.ssh_mcp_config import MCP_URL
+from cluster.cdk8s.ssh_mcp.config import MCP_URL
 
 # Every fixed-repository GitHub read policy grants the same tool list; only the trusted
 # owner/repository differs. search_pull_requests is safe only with its matching owner/repo

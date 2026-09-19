@@ -17,8 +17,8 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s import ssh_mcp_config, ssh_mcp_constructs, sshpiper_constructs
 from cluster.cdk8s.haku import console_config
+from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, sshpiper
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -40,7 +40,7 @@ def ssh_config() -> ssh_mcp_config.SshMcpConfig:
 @pytest.fixture(scope="module")
 def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
     chart = Cdk8sTesting.chart()
-    ssh_mcp_constructs.SshMcp(
+    ssh_mcp_backend.SshMcp(
         chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
     )
     return Cdk8sTesting.synth(chart)
@@ -49,7 +49,7 @@ def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any
 @pytest.fixture(scope="module")
 def sshpiper_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
     chart = Cdk8sTesting.chart()
-    sshpiper_constructs.construct(
+    sshpiper.construct(
         chart, config=ssh_config, downstream_key=_locate(ssh_mcp_config.AGENT_DOWNSTREAM_KEY).read_text()
     )
     return Cdk8sTesting.synth(chart)
@@ -144,7 +144,14 @@ def test_backend_and_sshpiper_pin_the_canonical_devbox_key(
     canonical_key = _locate(ssh_mcp_config.DEVBOX_HOST_KEY).read_text().split()
     expected = f"{ssh_config.devbox_host} {canonical_key[0]} {canonical_key[1]}"
     config_map = one(r for r in ssh_resources if r["kind"] == "ConfigMap")
-    assert expected in config_map["data"]["known_hosts"].splitlines()
+    known_hosts = config_map["data"]["known_hosts"].splitlines()
+    assert expected in known_hosts
+    nebula_host_keys = {
+        line
+        for line in _locate(ssh_mcp_config.NEBULA_KNOWN_HOSTS).read_text().splitlines()
+        if line and not line.startswith("#")
+    }
+    assert nebula_host_keys <= set(known_hosts)
 
     pipe = one(r for r in sshpiper_resources if r["kind"] == "Pipe")
     pipe_known_hosts = base64.b64decode(pipe["spec"]["to"]["known_hosts_data"]).decode().splitlines()

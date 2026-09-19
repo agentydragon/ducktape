@@ -1,0 +1,76 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        "//x/ssh_mcp_server:server",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
+        "//cluster/scripts:nebula_mesh",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "sshpiper",
+    srcs = ["sshpiper.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:metadata",
+        "//third_party/sshpiper:pipe",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "generation",
+    srcs = ["generation.py"],
+    deps = [
+        ":backend",
+        ":config",
+        ":sshpiper",
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+    ],
+)

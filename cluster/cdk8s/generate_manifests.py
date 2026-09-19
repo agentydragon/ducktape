@@ -21,6 +21,7 @@ from cluster.cdk8s.artifact_generators import generate_artifact_generators
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
+from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
@@ -29,6 +30,7 @@ from util.bazel.workspace import get_build_workspace_directory
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
+    ssh_mcp_generation.write_manifests(root, mesh)
     litellm_proxy.write_app(root)
     ha_mcp.write_manifests(root)
     external_creds.write_manifests(root)
