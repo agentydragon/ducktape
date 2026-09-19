@@ -1372,13 +1372,6 @@ spec:
     - copy:
         - exclude:
             - flux-kustomization.yaml
-          from: "@repo/cluster/k8s/sshpiper-crds/**"
-          to: "@artifact/cluster/k8s/sshpiper-crds/"
-      name: sshpiper-crds
-      originRevision: "@repo"
-    - copy:
-        - exclude:
-            - flux-kustomization.yaml
           from: "@repo/cluster/k8s/study-casino/app/**"
           to: "@artifact/cluster/k8s/study-casino/app/"
       name: study-casino-app

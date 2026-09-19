@@ -80,5 +80,5 @@ container in the proxy Pod that holds the GitHub PAT and Console bearer.
 
 ## Bumping the image
 
-The image tag and `../../../sshpiper-crds/crd-pipes.yaml` are vendored from the same upstream tag;
-move them together.
+The image tag, <../../../sshpiper-crds/gitrepository.yaml>'s upstream tag, and the
+`sshpiper_pipe_crd` `http_file` pin in the root `MODULE.bazel` must move together.

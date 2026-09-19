@@ -1,17 +1,14 @@
-# sshpiper-crds
+# sshpiper Pipe CRD
 
-`Pipe` (`sshpiper.com/v1beta1`), the routing resource the
-[sshpiper](https://github.com/tg123/sshpiper) `kubernetes` plugin watches. Vendored verbatim from
-upstream's `plugin/kubernetes/crd.yaml` at the tag the deployed image is pinned to, so the schema
-and the binding reading it move together.
+`sshpiper-source` fetches the upstream `plugin/kubernetes/crd.yaml` from the same `v1.6.1` tag as
+the [sshpiper deployment](../agents/public-coder-agent/sshpiper/). Its source ignore rules retain
+only that CRD, so the upstream sample Pipe is not applied. Flux creates a `kustomization.yaml` for
+the plain-YAML source path.
 
-Cluster-scoped and separate from any one consumer: the CRD outlives individual sshpiperd
-deployments, and pruning it would delete every route in the cluster. The only consumer today is
-<../agents/public-coder-agent/sshpiper/>.
+The cdk8s `Pipe` binding reads the same upstream file through the SHA-256-pinned
+`sshpiper_pipe_crd` Bazel repository in the root `MODULE.bazel`; the CRD is not copied into this
+repository. When upgrading sshpiper, update the image, Flux tag, and Bazel URL and digest together.
 
-Bumping the image means re-fetching this file at the new tag:
-
-```bash
-curl -sS -o cluster/k8s/sshpiper-crds/crd-pipes.yaml \
-  https://raw.githubusercontent.com/tg123/sshpiper/<tag>/plugin/kubernetes/crd.yaml
-```
+The CRD is managed separately from the consumer because the `sshpiper-crds` Kustomization must
+outlive individual sshpiperd deployments. Pruning it would delete every `Pipe`. The only consumer
+today is <../agents/public-coder-agent/sshpiper/>.

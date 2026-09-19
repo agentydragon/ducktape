@@ -250,15 +250,12 @@ filegroup(
     visibility = ["//loom/gym:__pkg__"],
 )
 
-# Inputs consumed by the cdk8s SSH MCP and sshpiper generators.
+# Input consumed by the cdk8s SSH MCP generator.
 exports_files(
     [
         "agents/public-coder-agent/devbox/service.yaml",
-        "sshpiper-crds/crd-pipes.yaml",
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-        "//third_party/sshpiper:__pkg__",
     ],
 )
