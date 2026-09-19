@@ -189,7 +189,10 @@ extend to a portable credential for that account. It also breaks the sidecar-onl
 
 ## Tool surface
 
-`provision`, `exec` and `list`, with `info` and `dispose`. Shapes follow
+`create`, `exec` and `list`, with `info` and `dispose`. `create` returns once the object exists and
+the caller polls `info` for the controller's conditions; the Action Service's execution lease is
+shorter than a cold start, so an Action that waited for readiness reported an unknown outcome for
+boxes that were fine. Shapes follow
 <../../../haku/console/tools/sandbox.py>, the surface already in daily use: one bounded Bash script
 per call, a per-environment ceiling on timeout and retained output patched into the advertised
 schema, and a nonzero exit reported as a result rather than a transport error.

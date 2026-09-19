@@ -21,7 +21,7 @@ from mcp_infra.exec.models import Exited
 from util.agent_sandbox import POD_NAME_ANNOTATION
 from x.agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from x.agentplane.sandbox_actions.inventory import SandboxActionError, SandboxInventory
-from x.agentplane.sandbox_actions.models import SandboxState
+from x.agentplane.sandbox_actions.models import READY_CONDITION
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -43,7 +43,11 @@ BINDING = SandboxExecutorBinding(
 
 def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = None) -> dict[str, Any]:
     """One Sandbox as the API server returns it."""
-    condition = {"type": "Ready", "status": "True" if ready else "False"}
+    condition = {
+        "type": READY_CONDITION,
+        "status": "True" if ready else "False",
+        "reason": "DependenciesReady" if ready else "PodNotReady",
+    }
     if reason is not None:
         condition["message"] = reason
     return {
@@ -108,7 +112,6 @@ async def test_the_pod_name_comes_from_the_controllers_annotation() -> None:
     core_v1 = FakeCoreV1(pods={"sandbox-pod-abc123"})
     inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
     info = await inventory.info(CALLER, "box")
-    assert info.state is SandboxState.READY
     assert info.pod_name == "sandbox-pod-abc123"
 
 
@@ -125,7 +128,6 @@ async def test_a_ready_sandbox_whose_pod_is_gone_reports_no_pod() -> None:
     core_v1 = FakeCoreV1(pods=set())
     inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
     info = await inventory.info(CALLER, "box")
-    assert info.state is SandboxState.READY
     assert info.pod_name is None
 
 
@@ -136,9 +138,41 @@ async def test_a_not_ready_sandbox_is_not_searched_for_a_pod() -> None:
         _sandbox(ready=False, pod_annotation=None, reason="Pod exists with phase: Pending"), core_v1, FakeExecRunner()
     )
     info = await inventory.info(CALLER, "box")
-    assert (info.state, info.reason) == (SandboxState.NOT_READY, "Pod exists with phase: Pending")
     assert info.pod_name is None
     assert core_v1.read == []
+
+
+async def test_every_condition_reaches_the_caller_as_the_controller_wrote_it() -> None:
+    """A Sandbox publishes more than readiness, and summarising it here would drop the rest.
+
+    `Suspended` is the case that motivates this: a stopped box and a box still coming up are both
+    "not Ready", and only its own condition distinguishes them.
+    """
+    sandbox = _sandbox(ready=False, pod_annotation=None, reason="Pod exists with phase: Pending")
+    sandbox["status"]["conditions"].insert(
+        0,
+        {
+            "type": "Suspended",
+            "status": "True",
+            "reason": "SuspendedByOperator",
+            "message": "Sandbox is suspended",
+            "lastTransitionTime": "2026-09-19T09:49:30Z",
+        },
+    )
+    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).info(CALLER, "box")
+    suspended, ready = info.conditions
+    assert (suspended.type, suspended.status, suspended.reason) == ("Suspended", "True", "SuspendedByOperator")
+    assert suspended.last_transition_time is not None
+    assert (ready.type, ready.status, ready.message) == (READY_CONDITION, "False", "Pod exists with phase: Pending")
+
+
+async def test_a_sandbox_with_no_status_yet_reports_no_conditions() -> None:
+    """The controller has not written one between the create call and the read that follows it."""
+    sandbox = _sandbox(ready=False, pod_annotation=None)
+    del sandbox["status"]
+    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).info(CALLER, "box")
+    assert info.conditions == []
+    assert info.pod_name is None
 
 
 async def test_exec_runs_against_the_pod_the_controller_named() -> None:
