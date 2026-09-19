@@ -15,6 +15,10 @@ generatorOptions:
 configMapGenerator:
   - name: home-assistant-configuration
     namespace: home-assistant
+    options:
+      # The configuration is mounted with subPath; a content hash forces the
+      # Deployment to restart when this file changes.
+      disableNameSuffixHash: false
     files:
       - configuration.yaml=configuration.yaml.conf
   - name: home-assistant-bootstrap

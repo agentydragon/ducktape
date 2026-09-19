@@ -10,7 +10,15 @@ def http_error(path: str, code: HTTPStatus) -> error.HTTPError:
     return error.HTTPError(f"http://home-assistant{path}", code, code.phrase, Message(), None)
 
 
-def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
+def disable_http_configuration(monkeypatch):
+    async def fake_configure_http(password: str, token: str) -> None:
+        pass
+
+    monkeypatch.setattr(bootstrap_onboarding, "configure_http", fake_configure_http)
+
+
+async def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
+    disable_http_configuration(monkeypatch)
     calls: list[tuple[str, dict[str, object] | None, str | None, bool]] = []
 
     def fake_request(
@@ -28,7 +36,7 @@ def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
         return {}
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
-    bootstrap_onboarding.provision("secret-password")
+    await bootstrap_onboarding.provision("secret-password")
 
     assert calls == [
         ("/api/", None, None, False),
@@ -62,7 +70,8 @@ def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
     ]
 
 
-def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
+async def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
+    disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
     def fake_request(
@@ -87,7 +96,7 @@ def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
         return {}
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
-    bootstrap_onboarding.provision("secret-password")
+    await bootstrap_onboarding.provision("secret-password")
 
     assert calls == [
         "/api/",
@@ -100,7 +109,8 @@ def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
     ]
 
 
-def test_completed_onboarding_is_a_noop(monkeypatch):
+async def test_completed_onboarding_converges_http_configuration(monkeypatch):
+    disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
     def fake_request(
@@ -111,15 +121,22 @@ def test_completed_onboarding_is_a_noop(monkeypatch):
             raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
             raise http_error(path, HTTPStatus.NOT_FOUND)
+        if path == "/auth/login_flow":
+            return {"flow_id": "login-flow"}
+        if path == "/auth/login_flow/login-flow":
+            return {"result": "login-code"}
+        if path == "/auth/token":
+            return {"access_token": "bootstrap-token"}
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
-    bootstrap_onboarding.provision("secret-password")
+    await bootstrap_onboarding.provision("secret-password")
 
-    assert calls == ["/api/", "/api/onboarding"]
+    assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
 
 
-def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch):
+async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch):
+    disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
     def fake_request(
@@ -132,16 +149,30 @@ def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch):
             raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
             raise http_error(path, HTTPStatus.NOT_FOUND)
+        if path == "/auth/login_flow":
+            return {"flow_id": "login-flow"}
+        if path == "/auth/login_flow/login-flow":
+            return {"result": "login-code"}
+        if path == "/auth/token":
+            return {"access_token": "bootstrap-token"}
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
     monkeypatch.setattr(bootstrap_onboarding.time, "sleep", lambda _: None)
-    bootstrap_onboarding.provision("secret-password")
+    await bootstrap_onboarding.provision("secret-password")
 
-    assert calls == ["/api/", "/api/", "/api/onboarding"]
+    assert calls == [
+        "/api/",
+        "/api/",
+        "/api/onboarding",
+        "/auth/login_flow",
+        "/auth/login_flow/login-flow",
+        "/auth/token",
+    ]
 
 
-def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
+async def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
+    disable_http_configuration(monkeypatch)
     calls: list[str] = []
 
     def fake_request(
@@ -152,12 +183,63 @@ def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
             raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
             return [{"step": step, "done": True} for step in [*bootstrap_onboarding.REQUIRED_STEPS, "future_step"]]
+        if path == "/auth/login_flow":
+            return {"flow_id": "login-flow"}
+        if path == "/auth/login_flow/login-flow":
+            return {"result": "login-code"}
+        if path == "/auth/token":
+            return {"access_token": "bootstrap-token"}
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
-    bootstrap_onboarding.provision("secret-password")
+    await bootstrap_onboarding.provision("secret-password")
 
-    assert calls == ["/api/", "/api/onboarding"]
+    assert calls == ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
+
+
+async def test_configure_http_is_idempotent(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_websocket_command(token: str, message: dict[str, object]) -> object:
+        calls.append(message)
+        return {
+            "stable": {**bootstrap_onboarding.HTTP_CONFIG, "created_at": "now", "error": None, "error_message": None},
+            "pending": None,
+            "active_config_type": "stable",
+        }
+
+    monkeypatch.setattr(bootstrap_onboarding, "websocket_command", fake_websocket_command)
+
+    await bootstrap_onboarding.configure_http("secret-password", "bootstrap-token")
+
+    assert calls == [{"id": 1, "type": "http/config"}]
+
+
+async def test_configure_http_restarts_and_promotes(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_websocket_command(token: str, message: dict[str, object]) -> object:
+        calls.append((token, message))
+        if message["type"] == "http/config":
+            return {"stable": {"server_port": 8124}, "pending": None, "active_config_type": "stable"}
+        if message["type"] == "http/config/configure":
+            return {"restart": True}
+        if message["type"] == "http/config/promote":
+            return None
+        raise AssertionError(f"unexpected message: {message}")
+
+    monkeypatch.setattr(bootstrap_onboarding, "websocket_command", fake_websocket_command)
+    monkeypatch.setattr(bootstrap_onboarding, "wait_for_home_assistant", lambda: None)
+    monkeypatch.setattr(bootstrap_onboarding, "login", lambda password: "refreshed-login-code")
+    monkeypatch.setattr(bootstrap_onboarding, "exchange_token", lambda auth_code: "refreshed-token")
+
+    await bootstrap_onboarding.configure_http("secret-password", "bootstrap-token")
+
+    assert calls == [
+        ("bootstrap-token", {"id": 1, "type": "http/config"}),
+        ("bootstrap-token", {"id": 1, "type": "http/config/configure", "config": bootstrap_onboarding.HTTP_CONFIG}),
+        ("refreshed-token", {"id": 1, "type": "http/config/promote"}),
+    ]
 
 
 if __name__ == "__main__":

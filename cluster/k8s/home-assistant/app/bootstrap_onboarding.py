@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
 from http import HTTPStatus
 from urllib import error, parse, request
+
+import aiohttp
 
 BASE_URL = os.environ.get("HOME_ASSISTANT_URL", "http://home-assistant.home-assistant.svc.cluster.local:8123")
 CLIENT_ID = "https://home.allegedly.works/"
@@ -14,6 +17,18 @@ REDIRECT_URI = CLIENT_ID
 USERNAME = "ha-local-admin"
 DISPLAY_NAME = "Home Assistant Local Administrator"
 REQUIRED_STEPS = frozenset({"user", "core_config", "integration", "analytics"})
+HTTP_CONFIG = {
+    "server_host": ["127.0.0.1"],
+    "server_port": 8124,
+    "cors_allowed_origins": ["https://cast.home-assistant.io"],
+    "use_x_forwarded_for": True,
+    "trusted_proxies": ["127.0.0.1/32"],
+    "login_attempts_threshold": -1,
+    "ip_ban_enabled": True,
+    "ssl_profile": "modern",
+    "use_x_frame_options": True,
+}
+HTTP_CONFIG_METADATA = frozenset({"created_at", "error", "error_message"})
 
 
 def request_json(
@@ -132,29 +147,100 @@ def exchange_token(auth_code: str) -> str:
     )
 
 
-def provision(password: str) -> None:
+def websocket_url() -> str:
+    """Return the Home Assistant WebSocket API URL."""
+    parsed = parse.urlsplit(BASE_URL)
+    websocket_scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme)
+    if websocket_scheme is None:
+        raise ValueError(f"Unsupported Home Assistant URL scheme: {parsed.scheme}")
+    return parse.urlunsplit((websocket_scheme, parsed.netloc, "/api/websocket", "", ""))
+
+
+async def websocket_command(token: str, message: dict[str, object]) -> object:
+    """Authenticate to Home Assistant and execute one WebSocket command."""
+    async with (
+        aiohttp.ClientSession() as session,
+        session.ws_connect(websocket_url(), timeout=aiohttp.ClientWSTimeout(ws_receive=30)) as websocket,
+    ):
+        auth_required = await websocket.receive_json()
+        if not isinstance(auth_required, dict) or auth_required.get("type") != "auth_required":
+            raise RuntimeError(f"Home Assistant WebSocket did not request authentication: {auth_required!r}")
+        await websocket.send_json({"type": "auth", "access_token": token})
+        auth_result = await websocket.receive_json()
+        if not isinstance(auth_result, dict) or auth_result.get("type") != "auth_ok":
+            raise RuntimeError(f"Home Assistant WebSocket authentication failed: {auth_result!r}")
+        await websocket.send_json(message)
+        result = await websocket.receive_json()
+    if not isinstance(result, dict) or result.get("type") != "result" or result.get("success") is not True:
+        raise RuntimeError(f"Home Assistant WebSocket command failed: {result!r}")
+    return result.get("result")
+
+
+def config_without_metadata(config: object) -> dict[str, object]:
+    """Validate and remove runtime metadata from a stored HTTP config."""
+    if not isinstance(config, dict):
+        raise TypeError(f"Home Assistant returned an invalid HTTP config: {config!r}")
+    return {key: value for key, value in config.items() if key not in HTTP_CONFIG_METADATA}
+
+
+async def configure_http(password: str, token: str) -> None:
+    """Converge Home Assistant's UI-managed HTTP settings through its admin API."""
+    current = await websocket_command(token, {"id": 1, "type": "http/config"})
+    if not isinstance(current, dict):
+        raise TypeError(f"Home Assistant returned an invalid HTTP config response: {current!r}")
+    stable = config_without_metadata(current.get("stable"))
+    pending = current.get("pending")
+    pending_config = config_without_metadata(pending) if pending is not None else None
+    if stable == HTTP_CONFIG and pending is None:
+        return
+    if pending_config == HTTP_CONFIG and current.get("active_config_type") == "pending":
+        await websocket_command(token, {"id": 1, "type": "http/config/promote"})
+        return
+
+    result = await websocket_command(token, {"id": 1, "type": "http/config/configure", "config": HTTP_CONFIG})
+    if not isinstance(result, dict) or not isinstance(result.get("restart"), bool):
+        raise TypeError(f"Home Assistant returned an invalid HTTP configure response: {result!r}")
+    if not result["restart"]:
+        return
+
+    await asyncio.to_thread(wait_for_home_assistant)
+    refreshed_token = await asyncio.to_thread(exchange_token, await asyncio.to_thread(login, password))
+    await websocket_command(refreshed_token, {"id": 1, "type": "http/config/promote"})
+
+
+async def provision(password: str) -> None:
     """Create the owner if necessary and finish all onboarding steps."""
-    completed = wait_for_home_assistant()
+    completed = await asyncio.to_thread(wait_for_home_assistant)
     if completed is None or completed >= REQUIRED_STEPS:
+        token = await asyncio.to_thread(exchange_token, await asyncio.to_thread(login, password))
+        await configure_http(password, token)
         print("Home Assistant onboarding is already complete")
         return
 
-    auth_code = login(password) if "user" in completed else create_owner(password)
-    token = exchange_token(auth_code)
+    auth_code = (
+        await asyncio.to_thread(login, password)
+        if "user" in completed
+        else await asyncio.to_thread(create_owner, password)
+    )
+    token = await asyncio.to_thread(exchange_token, auth_code)
     if "core_config" not in completed:
-        request_json("/api/onboarding/core_config", data={}, token=token)
+        await asyncio.to_thread(request_json, "/api/onboarding/core_config", data={}, token=token)
     if "integration" not in completed:
-        request_json(
-            "/api/onboarding/integration", data={"client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI}, token=token
+        await asyncio.to_thread(
+            request_json,
+            "/api/onboarding/integration",
+            data={"client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI},
+            token=token,
         )
     if "analytics" not in completed:
-        request_json("/api/onboarding/analytics", data={}, token=token)
+        await asyncio.to_thread(request_json, "/api/onboarding/analytics", data={}, token=token)
+    await configure_http(password, token)
     print("Home Assistant onboarding is complete")
 
 
-def main() -> None:
-    provision(os.environ["HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD"])
+async def main() -> None:
+    await provision(os.environ["HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD"])
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

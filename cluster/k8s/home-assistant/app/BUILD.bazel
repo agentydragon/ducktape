@@ -11,6 +11,7 @@ py_library(
     name = "bootstrap_onboarding",
     srcs = ["bootstrap_onboarding.py"],
     imports = ["."],
+    deps = ["@pypi//aiohttp"],
 )
 
 py_test(
@@ -19,6 +20,7 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/k8s/home-assistant/app:bootstrap_onboarding",
+        "@pypi//aiohttp",
         "@pypi//pytest_bazel",
     ],
 )

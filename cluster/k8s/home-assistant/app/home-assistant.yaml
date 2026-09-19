@@ -48,6 +48,11 @@ spec:
           env:
             - name: TZ
               value: America/Los_Angeles
+            # Home Assistant's HTTP settings are converged through the admin API
+            # after startup. This keeps the empty-PVC bootstrap port aligned with
+            # Caddy while the API applies the loopback/proxy settings.
+            - name: SETUP_PORT
+              value: "8124"
           ports:
             - name: backend
               containerPort: 8124
