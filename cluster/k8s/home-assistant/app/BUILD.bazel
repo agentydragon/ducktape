@@ -20,7 +20,6 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/k8s/home-assistant/app:bootstrap_onboarding",
-        "@pypi//aiohttp",
         "@pypi//pytest_bazel",
     ],
 )
