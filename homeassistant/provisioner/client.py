@@ -6,7 +6,6 @@ from enum import StrEnum
 from http import HTTPStatus
 from urllib import parse
 
-import aiohttp
 import httpx2
 from pydantic import BaseModel, StrictBool, TypeAdapter
 from settings import ProvisionerSettings
@@ -36,16 +35,13 @@ def _is_retryable_readiness_error(exc: BaseException) -> bool:
 
 
 class HomeAssistantClient:
-    """Home Assistant API operations using injected HTTP and WebSocket clients."""
+    """Home Assistant API operations using an injected HTTPX2 client."""
 
     readiness_timeout_secs = 300
     readiness_retry_interval_secs = 5
 
-    def __init__(
-        self, http_client: httpx2.AsyncClient, websocket_session: aiohttp.ClientSession, settings: ProvisionerSettings
-    ) -> None:
+    def __init__(self, http_client: httpx2.AsyncClient, settings: ProvisionerSettings) -> None:
         self.http_client = http_client
-        self.websocket_session = websocket_session
         self.settings = settings
         self._access_token: str | None = None
 
@@ -172,18 +168,16 @@ class HomeAssistantClient:
         """Authenticate to Home Assistant and execute one WebSocket command."""
         if self._access_token is None:
             raise RuntimeError("Home Assistant client has no access token; log in first")
-        async with self.websocket_session.ws_connect(
-            self.websocket_url(), timeout=aiohttp.ClientWSTimeout(ws_receive=30)
-        ) as websocket:
-            auth_required = await websocket.receive_json()
+        async with self.http_client.websocket(self.websocket_url()) as websocket:
+            auth_required = await websocket.receive_json(timeout=30)
             if not isinstance(auth_required, dict) or auth_required.get("type") != "auth_required":
                 raise RuntimeError(f"Home Assistant WebSocket did not request authentication: {auth_required!r}")
             await websocket.send_json({"type": "auth", "access_token": self._access_token})
-            auth_result = await websocket.receive_json()
+            auth_result = await websocket.receive_json(timeout=30)
             if not isinstance(auth_result, dict) or auth_result.get("type") != "auth_ok":
                 raise RuntimeError(f"Home Assistant WebSocket authentication failed: {auth_result!r}")
             await websocket.send_json(message)
-            result = await websocket.receive_json()
+            result = await websocket.receive_json(timeout=30)
         if not isinstance(result, dict) or result.get("type") != "result" or result.get("success") is not True:
             raise RuntimeError(f"Home Assistant WebSocket command failed: {result!r}")
         return result.get("result")

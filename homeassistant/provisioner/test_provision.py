@@ -1,15 +1,14 @@
 import json
 from http import HTTPStatus
-from typing import cast
 from urllib.parse import parse_qs
 
-import aiohttp
 import httpx2
 import provision
 import pytest
 import pytest_bazel
 import respx
 from client import HomeAssistantClient
+from httpx2.websockets import ASGIWebSocketTransport
 from pydantic import ValidationError
 from settings import ComponentConfig, HttpConfig, ProvisionerSettings
 
@@ -63,7 +62,7 @@ def provisioner_settings() -> ProvisionerSettings:
 @pytest.fixture
 async def home_assistant_client(provisioner_settings: ProvisionerSettings):
     async with httpx2.AsyncClient() as http_client:
-        yield HomeAssistantClient(http_client, cast(aiohttp.ClientSession, object()), provisioner_settings)
+        yield HomeAssistantClient(http_client, provisioner_settings)
 
 
 def disable_http_configuration(monkeypatch):
@@ -81,6 +80,33 @@ def http_status_error(status: HTTPStatus) -> httpx2.HTTPStatusError:
     request = httpx2.Request("GET", f"{BASE_URL}/api/")
     response = httpx2.Response(status, request=request)
     return httpx2.HTTPStatusError(f"HTTP {status}", request=request, response=response)
+
+
+async def test_websocket_command_authenticates_and_executes(provisioner_settings: ProvisionerSettings):
+    received_messages: list[object] = []
+
+    async def home_assistant(scope, receive, send):
+        assert scope["type"] == "websocket"
+        assert scope["path"] == "/api/websocket"
+        assert (await receive())["type"] == "websocket.connect"
+        await send({"type": "websocket.accept"})
+        await send({"type": "websocket.send", "text": json.dumps({"type": "auth_required"})})
+        auth_message = await receive()
+        received_messages.append(json.loads(auth_message["text"]))
+        await send({"type": "websocket.send", "text": json.dumps({"type": "auth_ok"})})
+        command = await receive()
+        received_messages.append(json.loads(command["text"]))
+        await send(
+            {"type": "websocket.send", "text": json.dumps({"type": "result", "success": True, "result": {"ok": True}})}
+        )
+
+    async with httpx2.AsyncClient(transport=ASGIWebSocketTransport(home_assistant)) as http_client:
+        client = HomeAssistantClient(http_client, provisioner_settings)
+        client._access_token = "access-token"
+        result = await client.websocket_command({"id": 1, "type": "http/config"})
+
+    assert received_messages == [{"type": "auth", "access_token": "access-token"}, {"id": 1, "type": "http/config"}]
+    assert result == {"ok": True}
 
 
 async def test_fresh_install_creates_owner_and_completes_onboarding(

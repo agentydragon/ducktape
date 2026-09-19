@@ -34,10 +34,10 @@ py_library(
     imports = ["."],
     deps = [
         ":settings",
-        "@pypi//aiohttp",
         "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//tenacity",
+        "@pypi//wsproto",  # keep: required by httpx2's optional WebSocket implementation
     ],
 )
 
@@ -50,7 +50,6 @@ py_library(
         ":client",
         ":component_installer",
         ":settings",
-        "@pypi//aiohttp",
         "@pypi//httpx2",
     ],
 )
@@ -64,7 +63,6 @@ py_test(
         ":provision",
         ":settings",
         "//:conftest",
-        "@pypi//aiohttp",
         "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//pytest",
