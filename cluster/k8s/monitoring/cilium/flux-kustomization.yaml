@@ -4,19 +4,9 @@ metadata:
   name: cilium-monitoring
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 2m
-  path: ./cluster/k8s/monitoring/cilium
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-cilium
-    namespace: ducktape-flux
   dependsOn:
-    - name: monitoring-crds # ServiceMonitor
+    - name: monitoring-crds
       namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: monitoring.coreos.com/v1
       kind: ServiceMonitor
@@ -26,3 +16,13 @@ spec:
       kind: ServiceMonitor
       name: hubble
       namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/cilium
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-cilium
+    namespace: ducktape-flux
+  timeout: 2m
+  wait: true

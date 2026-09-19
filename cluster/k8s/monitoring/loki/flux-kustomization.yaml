@@ -4,18 +4,15 @@ metadata:
   name: loki
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/loki
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-loki
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: grafana-helmrepository
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -29,9 +26,12 @@ spec:
       kind: S3Credentials
       name: loki
       namespace: loki
+  interval: 10m
+  path: ./cluster/k8s/monitoring/loki
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-loki
+    namespace: ducktape-flux
   timeout: 10m
-  dependsOn:
-    - name: grafana-helmrepository
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux

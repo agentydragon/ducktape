@@ -4,23 +4,23 @@ metadata:
   name: grafana-db
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: grafana-db-ovh
+      namespace: monitoring
   interval: 10m
   path: ./cluster/k8s/monitoring/grafana-db
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: monitoring-grafana-db
     namespace: ducktape-flux
   timeout: 5m
   wait: true
-  healthChecks:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: grafana-db-ovh
-      namespace: monitoring
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux

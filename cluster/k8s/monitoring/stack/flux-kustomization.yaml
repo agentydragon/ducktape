@@ -4,18 +4,23 @@ metadata:
   name: monitoring-stack
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/stack
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-stack
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: ntfy
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: v1
+      current: has(data.token) && data.token != ''
+      kind: Secret
   healthChecks:
     - apiVersion: v1
       kind: Secret
@@ -25,21 +30,12 @@ spec:
       kind: HelmRelease
       name: kube-prometheus-stack
       namespace: monitoring
-  # The built-in Secret health check only checks existence. This CEL check waits
-  # for the service-account token controller to populate data.token.
-  healthCheckExprs:
-    - apiVersion: v1
-      kind: Secret
-      current: has(data.token) && data.token != ''
+  interval: 10m
+  path: ./cluster/k8s/monitoring/stack
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-stack
+    namespace: ducktape-flux
   timeout: 10m
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
-    # The chart's Prometheus/Alertmanager CRs are rejected at admission until
-    # the CRDs exist, and the chart no longer installs them itself.
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: ntfy
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux

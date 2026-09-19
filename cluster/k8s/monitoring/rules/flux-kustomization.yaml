@@ -4,14 +4,13 @@ metadata:
   name: monitoring-rules
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/monitoring/rules
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: monitoring-rules
-
     namespace: ducktape-flux
-  dependsOn:
-    - name: monitoring-crds # PrometheusRule
-      namespace: ducktape-flux

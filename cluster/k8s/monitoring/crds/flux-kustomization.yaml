@@ -4,15 +4,13 @@ metadata:
   name: monitoring-crds
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 1h
-  # The description-bearing variant: the CRDs kube-prometheus-stack's own `crds`
-  # subchart installed, so adopting them changes no schema.
+  path: ./example/prometheus-operator-crd-full
+  prune: false
+  retryInterval: 1m
   sourceRef:
     kind: GitRepository
     name: prometheus-operator-source
     namespace: ducktape-flux
-  path: ./example/prometheus-operator-crd-full
-  prune: false # Don't delete CRDs on uninstall (safety)
-  wait: true
   timeout: 5m
+  wait: true
