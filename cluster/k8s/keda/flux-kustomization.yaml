@@ -4,21 +4,21 @@ metadata:
   name: keda
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  path: ./cluster/k8s/keda
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: keda
-    namespace: ducktape-flux
+  dependsOn:
+    - name: kyverno
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: keda
       namespace: keda
-  dependsOn:
-    - name: kyverno
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/keda
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: keda
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
