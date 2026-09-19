@@ -1,14 +1,15 @@
 # Plan: cdk8s adoption for cluster manifests
 
 **Status**: phase 1 landed. `cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app`
-are fully cdk8s-generated and committed. How the current system works (conventions,
-mechanisms, constraints) is documented in <../cdk8s.md>, not here — this file holds
-only what's still undecided or unbuilt.
+are fully cdk8s-generated and committed. This change also converts
+`cluster/k8s/external-creds`. How the current system works (conventions, mechanisms,
+constraints) is documented in <../cdk8s.md>, not here — this file holds only what's
+still undecided or unbuilt.
 
 ## Where to convert next
 
-Not scheduled yet — litellm/app should run in production for a while first — but
-recorded so the next candidate is picked by criteria, not arbitrarily:
+No further directory is scheduled yet. Choose the next after checking live Flux
+reconciliation in the staging and testing environments, using these criteria:
 
 - **No `dependsOn` rationale comments to lose is a green light, not a precondition.**
   Check with `grep -c '#' <dir>/flux-kustomization.yaml` before converting; most of

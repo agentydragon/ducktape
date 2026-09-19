@@ -4,17 +4,17 @@ metadata:
   name: external-creds
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/external-creds
-  prune: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: claude-rbac
+  interval: 10m
+  path: ./cluster/k8s/external-creds
+  prune: true
   sourceRef:
     kind: ExternalArtifact
     name: external-creds
     namespace: ducktape-flux
-  dependsOn:
-    - name: claude-rbac
   timeout: 5m

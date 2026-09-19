@@ -96,6 +96,17 @@ py_library(
 )
 
 py_library(
+    name = "external_creds_constructs",
+    srcs = ["external_creds_constructs.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":metadata",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "cilium",
     srcs = ["cilium.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -404,6 +415,7 @@ py_library(
         ":descheduler_constructs",
         ":egress_fences",
         ":etcd_constructs",
+        ":external_creds_constructs",
         ":fleet_rules",
         ":flux_constructs",
         ":forgejo_image_automation",
@@ -466,6 +478,9 @@ py_test(
         "//cluster/k8s:clickhouse/schema/kustomization.yaml",
         "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
         "//cluster/k8s:dns-automation/dns-records.k8s.yaml",
+        "//cluster/k8s:external-creds/external-creds.k8s.yaml",
+        "//cluster/k8s:external-creds/flux-kustomization.yaml",
+        "//cluster/k8s:external-creds/kustomization.yaml",
         "//cluster/k8s:flux-image-automation-forgejo/flux-image-automation-forgejo.k8s.yaml",
         "//cluster/k8s:flux-image-automation-forgejo/flux-kustomization.yaml",
         "//cluster/k8s:flux-image-automation-forgejo/kustomization.yaml",

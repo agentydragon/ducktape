@@ -10,7 +10,8 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 ## Three shapes of a directory
 
 1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
-   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
+   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `external-creds`,
+   `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
    (`flux_constructs.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for

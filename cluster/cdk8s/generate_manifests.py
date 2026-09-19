@@ -32,6 +32,7 @@ from cluster.cdk8s import (
     descheduler_constructs,
     egress_fences,
     etcd_constructs,
+    external_creds_constructs,
     forgejo_image_automation,
     haku_openclaw_spike_config,
     ntfy_constructs,
@@ -62,6 +63,7 @@ _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
+_EXTERNAL_CREDS_DIR = "cluster/k8s/external-creds"
 _FORGEJO_IMAGE_AUTOMATION_DIR = "cluster/k8s/flux-image-automation-forgejo"
 _NTFY_DIR = "cluster/k8s/ntfy"
 _AGENTPLANE_TESTING_CREDENTIALS_DIR = "cluster/k8s/agentplane-testing/litellm-credentials"
@@ -388,6 +390,33 @@ def _sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | 
         provider=KustomizationSpecDecryptionProvider.SOPS,
         secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
     )
+
+
+def _generate_external_creds(root: Path) -> None:
+    """Generate credential grants and Kustomize/Flux wiring; SOPS files stay hand-written."""
+    resources = external_creds_constructs.kustomize_resources()
+    _write_charts(root, _EXTERNAL_CREDS_DIR, external_creds_constructs.chart)
+
+    out_dir = root / _EXTERNAL_CREDS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            "external-creds",
+            spec=KustomizationSpec(
+                interval="10m",
+                path=f"./{_EXTERNAL_CREDS_DIR}",
+                prune=True,
+                decryption=_sops_decryption(resources),
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
+                ),
+                depends_on=[KustomizationSpecDependsOn(name="claude-rbac")],
+                timeout="5m",
+            ),
+        ),
+    )
+    _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
 
 
 def _generate_haku_console(root: Path) -> None:
@@ -720,6 +749,7 @@ def generate_manifests(root: Path) -> None:
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
+    _generate_external_creds(root)
     _generate_clickhouse_schema(root)
     _generate_aiquota(root)
     _generate_agentplane(root, staging.ENV, staging.chart)
