@@ -94,6 +94,10 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/flux-kustomization.yaml",
         "ssh-mcp/kustomization.yaml",
+        "litellm/db/flux-kustomization.yaml",
+        "litellm/keys-tf/flux-kustomization.yaml",
+        "litellm/namespace/flux-kustomization.yaml",
+        "litellm/secrets/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
