@@ -250,12 +250,13 @@ filegroup(
     visibility = ["//loom/gym:__pkg__"],
 )
 
-# Input consumed by the cdk8s SSH MCP generator.
+# Input consumed by the cdk8s SSH MCP generator and its consumer validation.
 exports_files(
     [
         "agents/public-coder-agent/devbox/service.yaml",
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
     ],
 )
