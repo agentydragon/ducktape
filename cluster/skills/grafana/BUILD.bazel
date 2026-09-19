@@ -1,3 +1,5 @@
+# gazelle:ignore
+
 load("//devinfra/python:defs.bzl", "py_binary")
 load("//skills:defs.bzl", "skill_package")
 

@@ -16,9 +16,9 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -444,7 +444,8 @@ def browser_verify(
     }
 
 
-def create_temporary_dashboard(api: GrafanaApi, dashboard: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+@contextlib.contextmanager
+def temporary_dashboard(api: GrafanaApi, dashboard: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
     temporary = copy.deepcopy(dashboard)
     uid = "verify-grafana-" + uuid.uuid4().hex[:12]
     temporary["id"] = None
@@ -456,50 +457,51 @@ def create_temporary_dashboard(api: GrafanaApi, dashboard: dict[str, Any]) -> tu
         "/api/dashboards/db",
         {"dashboard": temporary, "folderId": 0, "overwrite": False, "message": "temporary Grafana verification"},
     )
-    return uid, response
-
-
-def delete_temporary_dashboard(api: GrafanaApi, uid: str) -> None:
-    response = api.client.delete(f"/api/dashboards/uid/{uid}")
-    if response.status_code not in (200, 404):
-        raise VerificationError(f"failed to delete temporary dashboard {uid}: HTTP {response.status_code}")
+    try:
+        yield uid, response
+    finally:
+        delete_response = api.client.delete(f"/api/dashboards/uid/{uid}")
+        if delete_response.status_code not in (200, 404):
+            raise VerificationError(f"failed to delete temporary dashboard {uid}: HTTP {delete_response.status_code}")
 
 
 def main() -> int:
     args = parse_args()
     user, password = read_secret(args.secret)
     api = GrafanaApi(args.grafana_url, user, password)
-    temporary_uid: str | None = None
     try:
         by_name, by_uid = datasource_map(api)
         if args.dashboard:
             dashboard = resolve_dashboard_datasources(dashboard_from_file(args.dashboard), by_name)
-            temporary_uid, create_response = create_temporary_dashboard(api, dashboard)
-            dashboard = dashboard_from_live(api, temporary_uid)
-            print(f"temporary_dashboard={temporary_uid} url={create_response.get('url', '')}")
+            dashboard_context: contextlib.AbstractContextManager[tuple[str | None, dict[str, Any] | None]] = (
+                temporary_dashboard(api, dashboard)
+            )
         else:
-            dashboard = dashboard_from_live(api, args.live_uid)
-        from_ms = parse_time(args.from_range)
-        to_ms = parse_time(args.to_range)
-        if from_ms >= to_ms:
-            raise VerificationError("--from must be earlier than --to")
-        query_report = query_panels(
-            api, dashboard, by_name, by_uid, from_ms, to_ms, args.allow_empty_panel, args.allow_all_zero_panel
-        )
-        url = dashboard_url(args.grafana_url, dashboard["uid"], dashboard, args.from_range, args.to_range)
-        browser_report = browser_verify(url, dashboard, args.screenshot_dir, args.browser_wait_seconds, user, password)
-        print(json.dumps({"queries": query_report, "browser": browser_report}, indent=2, sort_keys=True))
-        print("VERIFIED: datasource queries and authenticated browser rendering passed")
-        return 0
-    except (VerificationError, httpx.HTTPError, subprocess.CalledProcessError) as exc:
-        print(f"VERIFICATION FAILED: {exc}", file=sys.stderr)
-        return 1
+            dashboard_context = contextlib.nullcontext((None, None))
+        with dashboard_context as temporary:
+            if args.dashboard:
+                temporary_uid, create_response = temporary
+                assert temporary_uid is not None
+                assert create_response is not None
+                dashboard = dashboard_from_live(api, temporary_uid)
+                print(f"temporary_dashboard={temporary_uid} url={create_response.get('url', '')}")
+            else:
+                dashboard = dashboard_from_live(api, args.live_uid)
+            from_ms = parse_time(args.from_range)
+            to_ms = parse_time(args.to_range)
+            if from_ms >= to_ms:
+                raise VerificationError("--from must be earlier than --to")
+            query_report = query_panels(
+                api, dashboard, by_name, by_uid, from_ms, to_ms, args.allow_empty_panel, args.allow_all_zero_panel
+            )
+            url = dashboard_url(args.grafana_url, dashboard["uid"], dashboard, args.from_range, args.to_range)
+            browser_report = browser_verify(
+                url, dashboard, args.screenshot_dir, args.browser_wait_seconds, user, password
+            )
+            print(json.dumps({"queries": query_report, "browser": browser_report}, indent=2, sort_keys=True))
+            print("VERIFIED: datasource queries and authenticated browser rendering passed")
+            return 0
     finally:
-        if temporary_uid:
-            try:
-                delete_temporary_dashboard(api, temporary_uid)
-            except VerificationError as exc:
-                print(f"CLEANUP FAILED: {exc}", file=sys.stderr)
         api.close()
 
 
