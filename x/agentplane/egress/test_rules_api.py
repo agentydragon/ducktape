@@ -26,7 +26,7 @@ def client(api_client: ApiClient, index: Index) -> httpx.AsyncClient:
         WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api_client),
             audience=AUDIENCE,
-            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
         )
     )
     app = create_rules_app(authenticator, RulesProjection(index, clock=lambda: NOW))

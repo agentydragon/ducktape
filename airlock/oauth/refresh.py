@@ -45,7 +45,7 @@ async def token_refresh_loop(
 
     refresh_errors: if provided, mutated in-place: cleared on success, set to exception repr on failure.
     """
-    known_secret_names = frozenset(
+    known_secret_names = tuple(
         name
         for provider in providers.values()
         for name in (provider.config.refresh_secret.name, provider.config.access_secret.name)

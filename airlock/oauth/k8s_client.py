@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from collections.abc import Collection
 from typing import Self
 
 from kubernetes_asyncio import client, config
@@ -29,7 +30,7 @@ class K8sTokenStore:
         return cls(client.CoreV1Api(), managed_by)
 
     async def write_token(
-        self, secret_name: str, namespace: str, token: TokenData, *, fields: frozenset[str] = ALL_TOKEN_FIELDS
+        self, secret_name: str, namespace: str, token: TokenData, *, fields: Collection[str] = ALL_TOKEN_FIELDS
     ) -> None:
         data = {k: v for k, v in token.model_dump(mode="json").items() if k in fields}
         secret = client.V1Secret(
@@ -60,7 +61,7 @@ class K8sTokenStore:
             if e.status != 404:
                 raise
 
-    async def delete_orphaned_secrets(self, namespace: str, known_names: frozenset[str]) -> None:
+    async def delete_orphaned_secrets(self, namespace: str, known_names: Collection[str]) -> None:
         """Delete managed secrets whose names are not in known_names."""
         label_selector = f"app.kubernetes.io/managed-by={self._managed_by}"
         secrets = await self._api.list_namespaced_secret(namespace, label_selector=label_selector)

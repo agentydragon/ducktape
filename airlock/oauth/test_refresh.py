@@ -191,7 +191,7 @@ async def test_refresh_loop_deletes_orphaned_secrets(provider: GenericOAuth2Prov
 
     await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
-    mock_store.delete_orphaned_secrets.assert_called_with("test-ns", frozenset({"test-tokens", "test-access-token"}))
+    mock_store.delete_orphaned_secrets.assert_called_with("test-ns", ("test-tokens", "test-access-token"))
 
 
 def test_scope_drift_no_drift_no_warning(caplog: pytest.LogCaptureFixture) -> None:

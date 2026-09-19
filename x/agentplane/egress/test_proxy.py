@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -253,15 +253,15 @@ class ProxyUnderTest:
 
 
 @pytest.fixture
-def exempt_networks() -> frozenset[Network]:
+def exempt_networks() -> Collection[Network]:
     """The scripted upstream listens on loopback, which the proxy refuses unless told otherwise."""
-    return frozenset({ip_network("127.0.0.0/8"), ip_network("::1/128")})
+    return (ip_network("127.0.0.0/8"), ip_network("::1/128"))
 
 
 class ServiceMappingResolver(UpstreamResolver):
     """Map Service port 80 to a local targetPort only after production policy pins port 80."""
 
-    def __init__(self, *, agent_api_port: int, exempt: frozenset[Network]) -> None:
+    def __init__(self, *, agent_api_port: int, exempt: Collection[Network]) -> None:
         super().__init__(exempt=exempt)
         self.agent_api_port = agent_api_port
         self.pin_calls: list[tuple[str, int, bool]] = []
@@ -293,7 +293,7 @@ async def proxy(
     fake: FakeApiServer,
     api_client: ApiClient,
     tmp_path: Path,
-    exempt_networks: frozenset[Network],
+    exempt_networks: Collection[Network],
     decision_log: DecisionLog,
 ) -> AsyncIterator[ProxyUnderTest]:
     interception_ca = make_ca("agentplane-egress-test-interception")
@@ -304,7 +304,7 @@ async def proxy(
     workload_resolver = WorkloadPrincipalResolver(
         authentication=AuthenticationV1Api(api_client),
         audience=AUDIENCE,
-        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+        allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
     )
     verifier = WorkloadIdentityVerifier(workload_resolver)
     informer_task = asyncio.create_task(informer(index, api_client).run())
@@ -769,8 +769,8 @@ async def test_unbound_subject_refused(fake: FakeApiServer, proxy: ProxyUnderTes
 
 class TestUpstreamAddress:
     @pytest.fixture
-    def exempt_networks(self) -> frozenset[Network]:
-        return frozenset()
+    def exempt_networks(self) -> Collection[Network]:
+        return ()
 
     async def test_host_resolving_into_a_private_range_is_refused_at_connect(self, proxy: ProxyUnderTest) -> None:
         """The policy admits the host by name; the name points at loopback, so the tunnel is refused."""

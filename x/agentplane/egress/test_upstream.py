@@ -12,7 +12,7 @@ from mitmproxy import connection
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.egress.upstream import UpstreamRefusedError, UpstreamResolver, reachable
 
-LOOPBACK = frozenset({ip_network("127.0.0.0/8"), ip_network("::1/128")})
+LOOPBACK = (ip_network("127.0.0.0/8"), ip_network("::1/128"))
 
 
 @pytest.mark.parametrize(
@@ -20,17 +20,17 @@ LOOPBACK = frozenset({ip_network("127.0.0.0/8"), ip_network("::1/128")})
     ["10.1.2.3", "172.16.0.1", "192.168.1.1", "100.64.0.1", "169.254.169.254", "127.0.0.1", "0.0.0.0", "224.0.0.1"],
 )
 def test_ipv4_special_purpose_ranges_are_not_reachable(address: str) -> None:
-    assert not reachable(ip_address(address), frozenset())
+    assert not reachable(ip_address(address), ())
 
 
 @pytest.mark.parametrize("address", ["::1", "fc00::1", "fe80::1", "ff02::1", "::ffff:10.0.0.1", "::ffff:127.0.0.1"])
 def test_ipv6_special_purpose_ranges_are_not_reachable(address: str) -> None:
-    assert not reachable(ip_address(address), frozenset())
+    assert not reachable(ip_address(address), ())
 
 
 @pytest.mark.parametrize("address", ["140.82.121.4", "2606:50c0:8000::153"])
 def test_global_unicast_is_reachable(address: str) -> None:
-    assert reachable(ip_address(address), frozenset())
+    assert reachable(ip_address(address), ())
 
 
 def test_exemption_covers_the_ipv4_mapped_form() -> None:
@@ -56,15 +56,15 @@ async def test_name_resolving_into_a_forbidden_range_is_refused() -> None:
 @pytest.mark.parametrize("address", ["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd00::1"])
 def test_a_rule_declaring_its_host_internal_reaches_a_private_address(address: str) -> None:
     """What lets an in-cluster Service be reached through the proxy at all."""
-    assert not reachable(ip_address(address), frozenset())
-    assert reachable(ip_address(address), frozenset(), internal=True)
+    assert not reachable(ip_address(address), ())
+    assert reachable(ip_address(address), (), internal=True)
 
 
 @pytest.mark.parametrize("address", ["127.0.0.1", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::1"])
 def test_declaring_a_host_internal_never_reaches_the_sandbox_s_own_interfaces(address: str) -> None:
     """`internal` means the cluster network. Loopback is the sidecar and the runner's own listeners,
     and link-local is whatever the node's metadata service is; neither is a Service."""
-    assert not reachable(ip_address(address), frozenset(), internal=True)
+    assert not reachable(ip_address(address), (), internal=True)
 
 
 async def test_a_private_address_pinned_for_an_internal_rule_is_not_served_to_another() -> None:

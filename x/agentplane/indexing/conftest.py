@@ -1,6 +1,6 @@
 """Isolated PostgreSQL/pgvector databases and throwaway upstream repositories for index service tests."""
 
-from collections.abc import AsyncGenerator, Generator, Mapping
+from collections.abc import AsyncGenerator, Collection, Generator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,7 +67,7 @@ class Upstream:
         self,
         files: Mapping[str, bytes | None],
         *,
-        executable: frozenset[str] = frozenset(),
+        executable: Collection[str] = (),
         symlinks: Mapping[str, str] | None = None,
         submodules: Mapping[str, str] | None = None,
     ) -> str:

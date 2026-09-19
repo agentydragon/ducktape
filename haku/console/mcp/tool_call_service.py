@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
@@ -112,14 +112,14 @@ class ToolCallRepository(Protocol):
     ) -> ToolCallRecord: ...
 
     async def get(
-        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord: ...
 
     async def list_tool_calls(
         self,
         *,
         actor: RuntimeActor,
-        fields: frozenset[ToolCallPayloadField] | None = None,
+        fields: Collection[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
@@ -436,7 +436,7 @@ class ToolCallApplicationService:
         )
 
     async def get(
-        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord:
         return await self._repository.get(tool_call_id, actor=self._require_actor(actor), fields=fields)
 
@@ -444,7 +444,7 @@ class ToolCallApplicationService:
         self,
         *,
         actor: RuntimeActor,
-        fields: frozenset[ToolCallPayloadField] | None = None,
+        fields: Collection[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,

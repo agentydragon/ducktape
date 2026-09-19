@@ -1495,7 +1495,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert fetched == by_id[agent_call_id]
 
         statements.clear()
-        summaries = await ledger.list_tool_calls(actor=actor, fields=frozenset())
+        summaries = await ledger.list_tool_calls(actor=actor, fields=())
         assert len(summaries) == 2
         assert len(statements) == 1, statements
         summary_sql = statements[0].casefold()
@@ -1504,7 +1504,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert "result_json" not in summary_sql
 
         statements.clear()
-        resolved = await ledger.get(agent_call_id, actor=actor, fields=frozenset({ToolCallPayloadField.RESULT}))
+        resolved = await ledger.get(agent_call_id, actor=actor, fields=(ToolCallPayloadField.RESULT,))
         assert resolved.tool_call_id == agent_call_id
         assert len(statements) == 1, statements
         result_sql = statements[0].casefold()

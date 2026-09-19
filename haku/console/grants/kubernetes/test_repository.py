@@ -135,7 +135,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         ) == (grant,)
 
         ended = await repository.end(
-            owner_agent_ids=frozenset({repository_client.agent_id}),
+            owner_agent_ids=(repository_client.agent_id,),
             grant_id=grant.grant_id,
             reason="no longer needed",
             now=_NOW + timedelta(minutes=1),
@@ -177,7 +177,7 @@ def test_repository_persists_permanent_grants(repository_client: _RepositoryClie
         ) == (grant,)
         assert (
             await repository.end(
-                owner_agent_ids=frozenset({repository_client.agent_id}), grant_id=grant.grant_id, reason=None, now=_NOW
+                owner_agent_ids=(repository_client.agent_id,), grant_id=grant.grant_id, reason=None, now=_NOW
             )
         ).status is GrantStatus.ENDED
 
@@ -256,7 +256,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
 
             with pytest.raises(GrantOwnershipError):
                 await repository.end(
-                    owner_agent_ids=frozenset({uuid4()}),
+                    owner_agent_ids=(uuid4(),),
                     grant_id=grants[0].grant_id,
                     reason="must not cross Agent ownership",
                     now=_NOW + timedelta(seconds=20),
@@ -271,7 +271,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             )
 
             ended_first = await repository.end(
-                owner_agent_ids=frozenset({agent_id}),
+                owner_agent_ids=(agent_id,),
                 grant_id=grants[0].grant_id,
                 reason="first scope no longer needed",
                 now=_NOW + timedelta(seconds=30),
@@ -279,7 +279,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert ended_first.status is GrantStatus.ENDED
 
             ended = await repository.end(
-                owner_agent_ids=frozenset({agent_id}),
+                owner_agent_ids=(agent_id,),
                 grant_id=grants[1].grant_id,
                 reason="operator ended probe",
                 now=_NOW + timedelta(minutes=1),
@@ -290,7 +290,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert ended.end_reason == "operator ended probe"
 
             repeated = await repository.end(
-                owner_agent_ids=frozenset({agent_id}),
+                owner_agent_ids=(agent_id,),
                 grant_id=grants[1].grant_id,
                 reason="different retry reason",
                 now=_NOW + timedelta(minutes=2),

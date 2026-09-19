@@ -948,7 +948,7 @@ def build_console_mcp(
     ) -> McpToolCallResponse:
         """Read one tool call: status, selected payloads, terminal reason, and approval link."""
         try:
-            record = await context.tool_calls.get(tool_call_id, actor=actor, fields=frozenset(fields))
+            record = await context.tool_calls.get(tool_call_id, actor=actor, fields=fields)
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
             raise ToolError(str(error)) from error
         return _mcp_tool_call_response(record, context.settings)
@@ -991,7 +991,7 @@ def build_console_mcp(
         """
         records = await context.tool_calls.list_tool_calls(
             actor=actor,
-            fields=frozenset(fields),
+            fields=fields,
             statuses=status,
             since=since,
             auto_approved=auto_approved,

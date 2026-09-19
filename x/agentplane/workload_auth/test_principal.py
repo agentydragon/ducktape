@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
@@ -55,7 +55,7 @@ def review(
 def resolver(
     token_reviews: Mapping[str, k8s_client.V1TokenReview],
     *,
-    allowed_service_account_namespaces: frozenset[str] = frozenset({NAMESPACE}),
+    allowed_service_account_namespaces: Collection[str] = (NAMESPACE,),
 ) -> tuple[WorkloadPrincipalResolver, AsyncMock]:
     async def create_token_review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
         return token_reviews[body.spec.token]
