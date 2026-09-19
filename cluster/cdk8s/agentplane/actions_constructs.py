@@ -28,7 +28,6 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
-    k8s,
 )
 from constructs import Construct
 
@@ -340,10 +339,5 @@ class Actions(Construct):
 
     def _add_pdb(self, min_available: int) -> None:
         add_pod_disruption_budget(
-            self,
-            "pdb",
-            name=_NAME,
-            namespace=self.env.namespace,
-            min_available=min_available,
-            selector=_LABELS,
+            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )

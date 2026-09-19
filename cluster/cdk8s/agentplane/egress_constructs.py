@@ -42,7 +42,6 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
-    k8s,
 )
 from cert_manager_crds.io.cert_manager import (
     Certificate,
@@ -498,12 +497,7 @@ class Egress(Construct):
 
     def _add_pdb(self, min_available: int) -> None:
         add_pod_disruption_budget(
-            self,
-            "pdb",
-            name=NAME,
-            namespace=self.env.namespace,
-            min_available=min_available,
-            selector=_LABELS,
+            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
     def _add_network_policy(self) -> None:
