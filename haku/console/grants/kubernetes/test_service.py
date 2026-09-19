@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -42,7 +43,7 @@ class FakeRepository:
 
     def __init__(self) -> None:
         self.grants: dict[UUID, Grant] = {}
-        self.end_calls: list[tuple[frozenset[UUID], UUID, str | None, datetime]] = []
+        self.end_calls: list[tuple[Collection[UUID], UUID, str | None, datetime]] = []
 
     @staticmethod
     def _active(grant: Grant, now: datetime) -> bool:
@@ -232,8 +233,8 @@ async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
 
     assert [grant.grant_id for grant in ended] == [grants[1].grant_id, grants[0].grant_id]
     assert repo.end_calls == [
-        (frozenset({_AGENT}), grants[1].grant_id, "probe complete", _NOW),
-        (frozenset({_AGENT}), grants[0].grant_id, "probe complete", _NOW),
+        ((_AGENT,), grants[1].grant_id, "probe complete", _NOW),
+        ((_AGENT,), grants[0].grant_id, "probe complete", _NOW),
     ]
 
 
@@ -260,7 +261,7 @@ async def test_end_many_normalizes_a_blank_reason() -> None:
 
     with pytest.raises(KeyError):
         await service.end_grants(owner_agent_id=_AGENT, grant_ids=[UUID(int=1)], reason="   ")
-    assert repo.end_calls == [(frozenset({_AGENT}), UUID(int=1), None, _NOW)]
+    assert repo.end_calls == [((_AGENT,), UUID(int=1), None, _NOW)]
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import threading
+from collections.abc import Collection
 from decimal import Decimal
 from typing import Any, overload
 
@@ -75,7 +76,7 @@ class ProductService:
         primary_agent_id: str,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
-        known_location_ids: frozenset[str],
+        known_location_ids: Collection[str],
         locations: dict[str, Location],
         properties_by_id: dict[str, Property],
         models: dict[str, Sampler],

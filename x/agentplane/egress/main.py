@@ -150,7 +150,7 @@ async def async_main(settings: Settings) -> None:
             audience=settings.token_audience,
             allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
-        resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
+        resolver = UpstreamResolver(exempt=settings.exempt_networks)
         addon = EgressAddon(
             index=index,
             verifier=WorkloadIdentityVerifier(workload_resolver),

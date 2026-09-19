@@ -225,7 +225,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
     app = create_app(
         service,
         WorkloadPrincipalResolver(
-            authentication=authentication, audience=AUDIENCE, allowed_service_account_namespaces=frozenset({NAMESPACE})
+            authentication=authentication, audience=AUDIENCE, allowed_service_account_namespaces=(NAMESPACE,)
         ),
         DisabledOperatorAuthenticator(),
         catalog,

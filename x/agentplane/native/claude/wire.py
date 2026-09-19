@@ -69,7 +69,7 @@ ControlRequestBody = Annotated[
     | Annotated[HookCallback, Tag("hook_callback")]
     | Annotated[McpMessage, Tag("mcp_message")]
     | Annotated[UnknownControlRequest, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("subtype", frozenset({"can_use_tool", "hook_callback", "mcp_message"}))),
+    Discriminator(tag_or_unknown("subtype", ("can_use_tool", "hook_callback", "mcp_message"))),
 ]
 
 
@@ -150,9 +150,7 @@ Delta = Annotated[
     | Annotated[InputJsonDelta, Tag("input_json_delta")]
     | Annotated[SignatureDelta, Tag("signature_delta")]
     | Annotated[UnknownDelta, Tag(UNKNOWN)],
-    Discriminator(
-        tag_or_unknown("type", frozenset({"text_delta", "thinking_delta", "input_json_delta", "signature_delta"}))
-    ),
+    Discriminator(tag_or_unknown("type", ("text_delta", "thinking_delta", "input_json_delta", "signature_delta"))),
 ]
 
 
@@ -197,9 +195,7 @@ StreamEvent = Annotated[
     | Annotated[ContentBlockStop, Tag("content_block_stop")]
     | Annotated[UnknownStreamEvent, Tag(UNKNOWN)],
     Discriminator(
-        tag_or_unknown(
-            "type", frozenset({"message_start", "content_block_start", "content_block_delta", "content_block_stop"})
-        )
+        tag_or_unknown("type", ("message_start", "content_block_start", "content_block_delta", "content_block_stop"))
     ),
 ]
 
@@ -280,17 +276,15 @@ ClaudeFrame = Annotated[
     Discriminator(
         tag_or_unknown(
             "type",
-            frozenset(
-                {
-                    "control_request",
-                    "control_response",
-                    "command_lifecycle",
-                    "system",
-                    "stream_event",
-                    "assistant",
-                    "user",
-                    "result",
-                }
+            (
+                "control_request",
+                "control_response",
+                "command_lifecycle",
+                "system",
+                "stream_event",
+                "assistant",
+                "user",
+                "result",
             ),
         )
     ),

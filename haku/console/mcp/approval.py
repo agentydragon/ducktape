@@ -15,7 +15,7 @@ import datetime
 import hashlib
 import logging
 import secrets
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Never, TypeVar, cast
@@ -303,7 +303,7 @@ class PostgresToolCallLedger:
             return record
 
     async def get(
-        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord:
         async with self._sessions.begin() as session:
             stmt = self._projection_stmt(actor, fields).where(McpToolCall.tool_call_id == tool_call_id)
@@ -316,7 +316,7 @@ class PostgresToolCallLedger:
         self,
         *,
         actor: RuntimeActor,
-        fields: frozenset[ToolCallPayloadField] | None = None,
+        fields: Collection[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
@@ -509,13 +509,13 @@ class PostgresToolCallLedger:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
     @staticmethod
-    def _selected_fields(fields: frozenset[ToolCallPayloadField] | None) -> frozenset[ToolCallPayloadField]:
+    def _selected_fields(fields: Collection[ToolCallPayloadField] | None) -> frozenset[ToolCallPayloadField]:
         """``None`` means the actor-scoped ledger reader (browser/internal callers): every field."""
-        return frozenset(ToolCallPayloadField) if fields is None else fields
+        return frozenset(ToolCallPayloadField) if fields is None else frozenset(fields)
 
     @classmethod
     def _projection_stmt(
-        cls, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None
+        cls, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None
     ) -> Select[tuple[Any, ...]]:
         """Select one actor-scoped row shape; ``fields`` only controls optional payload columns.
 
@@ -584,7 +584,7 @@ class PostgresToolCallLedger:
 
     @classmethod
     def _record_from_mapping(
-        cls, projection: Mapping[str, Any], *, fields: frozenset[ToolCallPayloadField] | None
+        cls, projection: Mapping[str, Any], *, fields: Collection[ToolCallPayloadField] | None
     ) -> ToolCallRecord:
         principal = cls._resolve_principal(
             projection["tool_call_id"],

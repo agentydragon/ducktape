@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address
@@ -44,7 +44,7 @@ def cluster_internal(address: Address) -> bool:
     )
 
 
-def reachable(address: Address, exempt: frozenset[Network], *, internal: bool = False) -> bool:
+def reachable(address: Address, exempt: Collection[Network], *, internal: bool = False) -> bool:
     """Globally reachable unicast by the IANA special-purpose registries, inside an exempt network,
     or -- when the deciding rule declared its host cluster-internal -- a private unicast address.
 
@@ -79,7 +79,7 @@ class UpstreamResolver:
     def __init__(
         self,
         *,
-        exempt: frozenset[Network] = frozenset(),
+        exempt: Collection[Network] = (),
         ttl: timedelta = timedelta(seconds=30),
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:

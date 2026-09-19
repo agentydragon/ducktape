@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from collections.abc import Collection
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -186,7 +187,7 @@ class GrantCatalog:
         )
 
     async def end_database_grant(
-        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None
+        self, *, owner_agent_ids: Collection[UUID], grant_id: UUID, reason: str | None
     ) -> Grant:
         """End one database grant without exposing which domain stores it."""
 
@@ -202,7 +203,7 @@ class GrantCatalog:
             )
 
     async def end_database_grants(
-        self, *, owner_agent_ids: frozenset[UUID], grant_ids: tuple[UUID, ...], reason: str | None
+        self, *, owner_agent_ids: Collection[UUID], grant_ids: tuple[UUID, ...], reason: str | None
     ) -> tuple[Grant, ...]:
         """End database grants by durable ID without exposing their storage domains."""
 

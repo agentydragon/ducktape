@@ -7,13 +7,13 @@ fail validation and never be mistaken for a nearby member.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
 UNKNOWN = "<unknown>"
 
 
-def tag_or_unknown(field: str, known: frozenset[str]) -> Callable[[Any], str]:
+def tag_or_unknown(field: str, known: Collection[str]) -> Callable[[Any], str]:
     """A pydantic `Discriminator` callable: the value's `field` when it names a known kind, else the
     fallback tag, for a union whose last member is tagged `UNKNOWN`."""
 

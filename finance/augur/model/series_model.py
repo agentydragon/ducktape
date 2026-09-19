@@ -13,6 +13,7 @@ keys; the level/PE split and role grouping are structural.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -126,7 +127,7 @@ class SeriesModelBundle(BaseModel):
         *,
         horizon_months: int,
         rollout_seeds: tuple[int, ...],
-        required_level_series: frozenset[LevelSeriesKey] = frozenset(),
+        required_level_series: Collection[LevelSeriesKey] = (),
     ) -> SampledExogenousBundle:
         model: Sampler = self.model
         return model.sample(

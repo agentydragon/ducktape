@@ -84,7 +84,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         ) == (grant,)
 
         ended = await repository.end(
-            owner_agent_ids=frozenset({repository_client.agent_id}),
+            owner_agent_ids=(repository_client.agent_id,),
             grant_id=grant.grant_id,
             reason="no longer needed",
             now=_NOW + timedelta(minutes=1),
@@ -124,7 +124,7 @@ def test_repository_persists_permanent_grants(repository_client: _RepositoryClie
         ) == (grant,)
         assert (
             await repository.end(
-                owner_agent_ids=frozenset({repository_client.agent_id}), grant_id=grant.grant_id, reason=None, now=_NOW
+                owner_agent_ids=(repository_client.agent_id,), grant_id=grant.grant_id, reason=None, now=_NOW
             )
         ).status is GrantStatus.ENDED
 
@@ -224,7 +224,7 @@ def test_expiry_is_derived_and_ending_an_expired_grant_records_nothing(make_clie
             )
             # A late end does not relabel the lease: expiry had already won.
             late = await repository.end(
-                owner_agent_ids=frozenset({agent_id}), grant_id=grant.grant_id, reason="too late", now=past_expiry
+                owner_agent_ids=(agent_id,), grant_id=grant.grant_id, reason="too late", now=past_expiry
             )
             assert late.status is GrantStatus.EXPIRED
             assert late.ended_at is None

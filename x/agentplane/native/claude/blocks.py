@@ -38,7 +38,7 @@ class UnknownBlock(BaseModel):
 
 ResultBlock = Annotated[
     Annotated[TextBlock, Tag("text")] | Annotated[UnknownBlock, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("type", frozenset({"text"}))),
+    Discriminator(tag_or_unknown("type", ("text",))),
 ]
 
 
@@ -61,7 +61,7 @@ Block = Annotated[
     | Annotated[ToolUseBlock, Tag("tool_use")]
     | Annotated[ToolResultBlock, Tag("tool_result")]
     | Annotated[UnknownBlock, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("type", frozenset({"text", "thinking", "tool_use", "tool_result"}))),
+    Discriminator(tag_or_unknown("type", ("text", "thinking", "tool_use", "tool_result"))),
 ]
 
 

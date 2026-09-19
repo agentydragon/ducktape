@@ -44,7 +44,7 @@ def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
             WorkloadPrincipalResolver(
                 authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review)),
                 audience="agentplane-egress",
-                allowed_service_account_namespaces=frozenset({NAMESPACE}),
+                allowed_service_account_namespaces=(NAMESPACE,),
             )
         ),
         create_token_review,

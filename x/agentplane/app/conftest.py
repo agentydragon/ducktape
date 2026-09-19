@@ -121,7 +121,7 @@ def authentication() -> FakeAuthenticationV1Api:
 
 @pytest.fixture
 def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
-    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=frozenset({AGENT}))
+    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=(AGENT,))
 
 
 @pytest.fixture

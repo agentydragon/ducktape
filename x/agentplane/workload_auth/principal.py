@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from kubernetes_asyncio import client as k8s_client
@@ -54,7 +55,7 @@ class WorkloadPrincipalResolver:
     """
 
     def __init__(
-        self, *, authentication: AuthenticationV1Api, audience: str, allowed_service_account_namespaces: frozenset[str]
+        self, *, authentication: AuthenticationV1Api, audience: str, allowed_service_account_namespaces: Collection[str]
     ) -> None:
         if not audience:
             raise ValueError("audience must not be empty")

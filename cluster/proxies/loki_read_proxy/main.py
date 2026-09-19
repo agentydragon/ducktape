@@ -50,7 +50,7 @@ import logging
 import os
 import re
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -285,7 +285,7 @@ class Settings:
     upstream_url: str
     # Namespaces readable *without* a bearer token; a token-bearing request is
     # authorized by Kubernetes RBAC alone and never consults this set.
-    namespace_allowlist: frozenset[str]
+    namespace_allowlist: Collection[str]
     kube_api_url: str
     # CA bundle that signs the apiserver's serving certificate; None trusts
     # the system store (an apiserver behind a public-CA certificate).
@@ -408,7 +408,7 @@ def create_app(
                 status_code=403, detail=f"not allowed to get pods/log in namespace {namespace!r}: {reason}"
             )
 
-    async def _authorize(request: Request, namespaces: frozenset[str]) -> None:
+    async def _authorize(request: Request, namespaces: Collection[str]) -> None:
         token = bearer_token(request.headers.get("authorization"))
         for namespace in sorted(namespaces):
             if token is not None:

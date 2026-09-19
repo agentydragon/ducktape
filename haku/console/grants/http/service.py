@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Protocol
 from uuid import UUID
 
@@ -45,7 +45,7 @@ class GrantRepository(Protocol):
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
     async def end(
-        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
+        self, *, owner_agent_ids: Collection[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
     ) -> Grant: ...
 
     async def list_for_request_principal(
@@ -149,9 +149,7 @@ class GrantService:
         now = self._now()
         return tuple(
             [
-                await self._repository.end(
-                    owner_agent_ids=frozenset({owner_agent_id}), grant_id=grant_id, reason=reason, now=now
-                )
+                await self._repository.end(owner_agent_ids=(owner_agent_id,), grant_id=grant_id, reason=reason, now=now)
                 for grant_id in grant_ids
             ]
         )
@@ -163,7 +161,7 @@ class GrantService:
             await self.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
         return await self.end_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
 
-    async def end_grant(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None) -> Grant:
+    async def end_grant(self, *, owner_agent_ids: Collection[UUID], grant_id: UUID, reason: str | None) -> Grant:
         if not owner_agent_ids:
             raise ValueError("owner_agent_ids must not be empty")
         return await self._repository.end(

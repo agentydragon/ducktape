@@ -30,7 +30,7 @@ def verifier(api_client: ApiClient) -> WorkloadIdentityVerifier:
         WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api_client),
             audience=AUDIENCE,
-            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
         )
     )
 

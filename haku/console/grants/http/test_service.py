@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Collection
 from datetime import UTC, timedelta
 from uuid import UUID, uuid4
 
@@ -60,7 +61,7 @@ class FakeRepository:
 
     def __init__(self) -> None:
         self.grants: dict[UUID, Grant] = {}
-        self.end_calls: list[tuple[frozenset[UUID], UUID, str | None, datetime.datetime]] = []
+        self.end_calls: list[tuple[Collection[UUID], UUID, str | None, datetime.datetime]] = []
 
     @staticmethod
     def _active(grant: Grant, now: datetime.datetime) -> bool:
@@ -356,8 +357,8 @@ async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
 
     assert [grant.grant_id for grant in ended] == [grants[1].grant_id, grants[0].grant_id]
     assert repo.end_calls == [
-        (frozenset({_AGENT}), grants[1].grant_id, "probe complete", _NOW),
-        (frozenset({_AGENT}), grants[0].grant_id, "probe complete", _NOW),
+        ((_AGENT,), grants[1].grant_id, "probe complete", _NOW),
+        ((_AGENT,), grants[0].grant_id, "probe complete", _NOW),
     ]
 
 
@@ -405,11 +406,11 @@ async def test_end_grant_accepts_multiple_owners() -> None:
     )
 
     ended = await service.end_grant(
-        owner_agent_ids=frozenset({_AGENT, _OTHER_AGENT}), grant_id=grant.grant_id, reason="operator ended"
+        owner_agent_ids=(_AGENT, _OTHER_AGENT), grant_id=grant.grant_id, reason="operator ended"
     )
 
     assert ended.status is GrantStatus.ENDED
-    assert repo.end_calls == [(frozenset({_AGENT, _OTHER_AGENT}), grant.grant_id, "operator ended", _NOW)]
+    assert repo.end_calls == [((_AGENT, _OTHER_AGENT), grant.grant_id, "operator ended", _NOW)]
 
 
 @pytest.mark.parametrize(

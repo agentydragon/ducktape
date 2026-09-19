@@ -9,7 +9,7 @@ the same app: one port, one guard, two credentials.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, cast
@@ -49,7 +49,7 @@ MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-mod
 # Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.
 class ServeApp(Protocol):
     def __call__(
-        self, subjects: frozenset[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
+        self, subjects: Collection[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
     ) -> AbstractAsyncContextManager[str]: ...
 
 
@@ -68,7 +68,7 @@ def serve(
 
     @asynccontextmanager
     async def serving(
-        subjects: frozenset[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
+        subjects: Collection[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
     ) -> AsyncIterator[str]:
         private_key, public_key = generate_rsa_keypair()
         idp_sock, app_sock = bind_free_port(), bind_free_port()
@@ -130,7 +130,7 @@ def serve(
 @pytest.fixture
 async def served(serve: ServeApp) -> AsyncIterator[str]:
     """That app, accepting a token from the one agent staging names and from nobody else."""
-    async with serve(frozenset({AGENT})) as app_url:
+    async with serve((AGENT,)) as app_url:
         yield app_url
 
 
@@ -163,7 +163,7 @@ async def test_logout_drops_the_session(browser: httpx.AsyncClient, served: str)
 
 async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_error(serve: ServeApp) -> None:
     async with (
-        serve(frozenset({AGENT}), reject_token_exchange=True) as app_url,
+        serve((AGENT,), reject_token_exchange=True) as app_url,
         httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser,
     ):
         refused = await browser.get("/auth/login")
@@ -217,7 +217,7 @@ async def test_a_token_for_another_service_account_is_refused(served: str) -> No
 async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeApp) -> None:
     """The default an app is deployed with, and the state naming nobody has to mean: the token path
     admits no one, and the browser's is untouched."""
-    async with serve(frozenset()) as app_url:
+    async with serve(()) as app_url:
         async with httpx.AsyncClient(base_url=app_url, headers=AGENT_AUTH) as agent:
             refused = await agent.get("/sandboxes")
         async with httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser:
@@ -259,7 +259,7 @@ async def test_logout_and_mutations_require_exact_origin(browser: httpx.AsyncCli
 @pytest.mark.parametrize("id_failure", ["issuer", "audience", "azp", "expired", "subject", "signature"])
 async def test_invalid_signed_login_never_creates_operator_session(serve: ServeApp, id_failure: str) -> None:
     async with (
-        serve(frozenset(), id_failure=id_failure) as app_url,
+        serve((), id_failure=id_failure) as app_url,
         httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser,
     ):
         refused = await browser.get("/auth/login")
