@@ -30,13 +30,14 @@ the same way regardless of which process (or how many restarts of it) happens to
 - **Per-Execution lease** (`action_execution.lease_token` / `lease_expires_at`): granted at claim
   time with an unguessable `lease_token`, the authentication artifact for every later
   worker-originated call about that one `request_id` — the seam a future out-of-process worker
-  would present over the wire, called in-process for v0 via `ExecutionLease.heartbeat()`. The MCP
-  adapter renews it on a fixed interval while `tools/call` is in flight, and the coordinator keeps
-  renewing while it persists the completion
+  would present over the wire, called in-process for v0 via `ExecutionLease.heartbeat()`. Every
+  adapter renews it on a fixed interval while its own call is in flight (`hold_lease`), and the
+  coordinator keeps renewing while it persists the completion
   ([README § Shutdown budgets](../action_service/README.md#shutdown-budgets)). Renewal proves the
-  local owner is alive, not that the backend is progressing: a hung call is bounded by the adapter's
-  execution deadline, which raises `ExecutionOutcomeUnknownError`, while lease expiry catches a
-  dead or stalled owner.
+  local owner is alive, not that the backend is progressing, so each adapter carries its own bound
+  on the call it renews across: the MCP adapter's execution deadline, and a sandbox command's own
+  `timeout_seconds`. Exceeding one raises `ExecutionOutcomeUnknownError`, while lease expiry
+  catches a dead or stalled owner.
 
 A periodic sweep (`ActionStore.expire_stale_leases`) — not process startup — marks a lease-holding
 Execution `execution_unknown` when its lease lapses. The owning coordinator also records

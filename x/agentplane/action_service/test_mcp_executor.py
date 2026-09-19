@@ -486,7 +486,7 @@ async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> 
         assert "test-private" not in str(error.value)
         assert calls == ["called"]
         assert lease.active == 0
-        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+        assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
     finally:
         await executor.close()
 
@@ -527,7 +527,7 @@ async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None
                     await task
         assert calls == []
         assert lease.active == 0
-        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+        assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
     finally:
         release_list.set()
         await executor.close()
@@ -557,7 +557,7 @@ async def test_mcp_cancellation_joins_renewal_task() -> None:
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert lease.active == 0
-        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+        assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
     finally:
         await executor.close()
 
@@ -579,7 +579,7 @@ async def test_mcp_deadline_stops_healthy_renewal(execution_lease: ExecutionLeas
                 await executor.execute(
                     _request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), execution_lease
                 )
-        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+        assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
     finally:
         await executor.close()
 

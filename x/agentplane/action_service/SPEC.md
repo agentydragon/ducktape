@@ -171,7 +171,8 @@ an explicit tool operation, separate from cancelling or disconnecting a receipt 
 
 ## Execution ownership and shutdown
 
-MCP execution renews its ownership lease while waiting for schema discovery and the tool result.
+Execution renews its ownership lease while the attempt is in flight: MCP schema discovery and the
+tool result, and a sandbox command for as long as its own timeout allows.
 Renewal proves that the local owner is alive, not that the backend is making progress. Loss of
 ownership, inability to renew, or an execution deadline stops local waiting and reports an unknown
 outcome. None is evidence that a remote side effect stopped or permission to replay it.

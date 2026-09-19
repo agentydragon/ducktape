@@ -16,9 +16,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import jsonschema
@@ -34,6 +35,7 @@ from x.agentplane.action_service.models import (
     CancellationResult,
     DecisionInput,
     ExecutionClaim,
+    ExecutionLease,
     ExecutionResult,
     ExecutionState,
     Executor,
@@ -116,6 +118,47 @@ class _StoreBackedLease:
             self._claim.lease_token,
             lease_duration=self._lease_duration,
         )
+
+
+async def renew_lease(lease: ExecutionLease) -> None:
+    """Prove this executor still owns the attempt, or stop waiting on an outcome it may no longer report."""
+    try:
+        async with asyncio.timeout(lease.renewal_interval.total_seconds()):
+            owned = await lease.heartbeat()
+    except Exception:
+        # Database/transport errors can contain credentials. Losing proof of ownership stops
+        # local waiting, not the external side effect, and never permits replay.
+        raise ExecutionOutcomeUnknownError("execution lease renewal failed") from None
+    if not owned:
+        raise ExecutionOutcomeUnknownError("execution lease lost")
+
+
+async def _renewal_loop(lease: ExecutionLease) -> None:
+    while True:
+        await asyncio.sleep(lease.renewal_interval.total_seconds())
+        await renew_lease(lease)
+
+
+async def hold_lease[T](lease: ExecutionLease, work: Coroutine[Any, Any, T]) -> T:
+    """Run `work` while renewing `lease`, so an attempt that outlives one lease window is not swept
+    out from under it as an unknown outcome.
+
+    Renewal is evidence that this executor is alive, not that the backend is progressing, so the
+    caller supplies the bound on `work`: nothing here stops a wedged call being renewed forever.
+    """
+    await renew_lease(lease)
+    execution = asyncio.create_task(work, name="action-execution")
+    renewal = asyncio.create_task(_renewal_loop(lease), name="action-execution-renewal")
+    try:
+        await asyncio.wait((execution, renewal), return_when=asyncio.FIRST_COMPLETED)
+        if execution.done():
+            return await execution
+        await renewal
+        raise AssertionError("lease renewal loop returned")
+    finally:
+        execution.cancel()
+        renewal.cancel()
+        await asyncio.gather(execution, renewal, return_exceptions=True)
 
 
 class ActionService:
