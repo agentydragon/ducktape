@@ -1,0 +1,305 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ssh-mcp-bearer
+  namespace: ssh-mcp
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ssh-mcp-bearer
+  namespace: ssh-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ssh-mcp-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: ssh-mcp-bearer
+    template:
+      data:
+        bearer-token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ^haku-console$,^agentplane-staging$
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ^haku-console$,^agentplane-staging$
+      type: Opaque
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssh-mcp-config
+  namespace: ssh-mcp
+data:
+  known_hosts: |
+    wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ
+    rugged.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm
+    public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB
+  settings.yaml: |
+    known_hosts_file: /etc/ssh-mcp/known_hosts
+    command_timeout_seconds: 300
+    connect_timeout_seconds: 10
+    output_limit_bytes: 65536
+    max_concurrent_executions: 4
+    targets:
+      - host: wyrm2.nebula.allegedly.works
+        user: agentydragon
+        identity_file: /etc/ssh-mcp/keys/wyrm2-agentydragon
+      - host: wyrm2.nebula.allegedly.works
+        user: root
+        identity_file: /etc/ssh-mcp/keys/wyrm2-root
+      - host: rugged.nebula.allegedly.works
+        user: agentydragon
+        identity_file: /etc/ssh-mcp/keys/rugged-agentydragon
+      - host: rugged.nebula.allegedly.works
+        user: root
+        identity_file: /etc/ssh-mcp/keys/rugged-root
+      - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+        user: root
+        identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-root
+      - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+        user: coder
+        identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-coder
+      - host: atlas.nebula.allegedly.works
+        user: root
+        identity_file: /etc/ssh-mcp/keys-atlas/atlas-root
+      - host: atlas.nebula.allegedly.works
+        user: agentydragon
+        identity_file: /etc/ssh-mcp/keys-atlas/atlas-agentydragon
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: ssh-mcp
+  name: ssh-mcp
+  namespace: ssh-mcp
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ssh-mcp
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ssh-mcp
+        cdk8s.io/metadata.addr: ssh-mcp-deployment-c8374da3
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: SSH_MCP_CONFIG_FILE
+              value: /etc/ssh-mcp/settings.yaml
+            - name: SSH_MCP_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: ssh-mcp-bearer
+            - name: SSH_MCP_HOST
+              value: 0.0.0.0
+            - name: SSH_MCP_PORT
+              value: "8080"
+          image: git.allegedly.works/ducktape-ci/ssh-mcp:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          name: server
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/ssh-mcp
+              name: configmap-ssh-mcp-config
+              readOnly: true
+            - mountPath: /etc/ssh-mcp/keys
+              name: keys
+              readOnly: true
+            - mountPath: /etc/ssh-mcp/keys-public-coder-devbox
+              name: keys-public-coder-devbox
+              readOnly: true
+            - mountPath: /etc/ssh-mcp/keys-atlas
+              name: keys-atlas
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: false
+      hostAliases:
+        - hostnames:
+            - wyrm2.nebula.allegedly.works
+          ip: 10.42.0.20
+        - hostnames:
+            - rugged.nebula.allegedly.works
+          ip: 10.42.0.30
+        - hostnames:
+            - atlas.nebula.allegedly.works
+          ip: 10.42.0.5
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: ssh-mcp-config
+          name: configmap-ssh-mcp-config
+        - name: keys
+          secret:
+            optional: true
+            secretName: ssh-mcp-keys
+        - name: keys-public-coder-devbox
+          secret:
+            optional: true
+            secretName: ssh-mcp-keys-public-coder-devbox
+        - name: keys-atlas
+          secret:
+            optional: true
+            secretName: ssh-mcp-keys-atlas
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssh-mcp
+  namespace: ssh-mcp
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: ssh-mcp-deployment-c8374da3
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ssh-mcp
+  namespace: ssh-mcp
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: public-coder-devbox
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    - toCIDR:
+        - 10.42.0.5/32
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ssh-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-actions
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+        - matchLabels:
+            app.kubernetes.io/name: haku-console
+            k8s:io.kubernetes.pod.namespace: haku-console
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: ssh-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson

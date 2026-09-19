@@ -55,6 +55,7 @@ exports_files(
         "artifact-generators/artifact-generators.k8s.yaml",
         "artifact-generators/flux-kustomization.yaml",
         "artifact-generators/kustomization.yaml",
+        "agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
         "aiquota/aiquota.k8s.yaml",
         "aiquota/flux-kustomization.yaml",
         "aiquota/kustomization.yaml",
@@ -86,6 +87,9 @@ exports_files(
         "ntfy/flux-kustomization.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "ssh-mcp/ssh-mcp.k8s.yaml",
+        "ssh-mcp/flux-kustomization.yaml",
+        "ssh-mcp/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
@@ -246,23 +250,15 @@ filegroup(
     visibility = ["//loom/gym:__pkg__"],
 )
 
-# //cluster/ssh_targets derives the last three from the devbox Service (and ssh_keys/).
+# Inputs consumed by the cdk8s SSH MCP and sshpiper generators.
 exports_files(
     [
         "agents/public-coder-agent/devbox/service.yaml",
-        "agents/public-coder-agent/sshpiper/pipe-devbox.yaml",
-        "ssh-mcp/known_hosts",
-        "ssh-mcp/settings.yaml",
+        "sshpiper-crds/crd-pipes.yaml",
     ],
-    visibility = ["//cluster/ssh_targets:__pkg__"],
-)
-
-filegroup(
-    name = "agentplane_actions_remote_mcp",
-    srcs = glob([
-        "agentplane-staging/**/*",
-        "agentplane-testing/**/*",
-        "ssh-mcp/**/*",
-    ]),
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+        "//third_party/sshpiper:__pkg__",
+    ],
 )

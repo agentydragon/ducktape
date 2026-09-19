@@ -600,21 +600,28 @@ py_test(
 
 py_test(
     name = "test_ssh_mcp_consumers",
-    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    # Syntheses import the agentplane Services' Settings and need jsii's Node runtime.
     size = "medium",
     srcs = ["test_ssh_mcp_consumers.py"],
-    # agentplane_manifests (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes
-    # a cdk8s chart in memory, which needs jsii's Node runtime.
     data = [
-        "//cluster/k8s:agentplane_actions_remote_mcp",
-        "@multitool//tools/kustomize",
+        "//:nebula-mesh.json",
+        "//cluster/k8s:agents/public-coder-agent/devbox/service.yaml",
+        "//ssh_keys:public-coder-agent-devbox.pub",
+        "//ssh_keys:public-coder-devbox-host.pub",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":agentplane_fixtures",
+        "//cluster/cdk8s:ssh_mcp_config",
+        "//cluster/cdk8s:ssh_mcp_constructs",
+        "//cluster/cdk8s:sshpiper_constructs",
+        "//cluster/cdk8s/haku:console_config",
+        "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
+        "@pypi//cdk8s",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

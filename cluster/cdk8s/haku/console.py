@@ -71,6 +71,7 @@ from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.ssh_mcp_config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
@@ -298,7 +299,7 @@ class Console(Construct):
                     "ha-mcp-bearer", "bearer-token", "mcp", "servers", "home_assistant", "backend", "auth", "token"
                 ),
                 self._from_secret(
-                    "ssh-mcp-bearer", "bearer-token", "mcp", "servers", "ssh", "backend", "auth", "token"
+                    BEARER_SECRET_NAME, BEARER_SECRET_KEY, "mcp", "servers", "ssh", "backend", "auth", "token"
                 ),
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in

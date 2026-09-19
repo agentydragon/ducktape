@@ -157,6 +157,11 @@ def egress_to_entities(
     )
 
 
+def egress_to_cidrs(*cidrs: str, ports: Sequence[int]) -> CiliumNetworkPolicySpecEgress:
+    """TCP `ports` on external IP ranges that do not receive a Cilium entity identity."""
+    return CiliumNetworkPolicySpecEgress(to_cidr=list(cidrs), to_ports=[_egress_ports(ports, "TCP")])
+
+
 def egress_via_gateway(*server_names: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
     """A public origin the hostNetwork Gateway serves. It resolves to node IPs, which FQDN and
     CIDR selectors cannot match with the cluster's Cilium configuration; TLS SNI narrows the
