@@ -54,7 +54,6 @@ class ProvisionerSettings(BaseSettings):
     username: str
     display_name: str
     local_admin_password: SecretStr | None = None
-    required_onboarding_steps: frozenset[str]
     http_config: HttpConfig
     components: tuple[ComponentConfig, ...]
     onboarding_enabled: bool

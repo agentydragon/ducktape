@@ -29,11 +29,24 @@ py_library(
 )
 
 py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["."],
+    deps = [
+        ":settings",
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
     name = "provision",
     srcs = ["provision.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        ":client",
         ":component_installer",
         ":settings",
         "@pypi//aiohttp",
@@ -45,9 +58,12 @@ py_test(
     srcs = ["test_provision.py"],
     imports = ["."],
     deps = [
+        ":client",
         ":provision",
         ":settings",
         "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

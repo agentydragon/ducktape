@@ -3,11 +3,6 @@ client_id: https://home.allegedly.works/
 redirect_uri: https://home.allegedly.works/
 username: ha-local-admin
 display_name: Home Assistant Local Administrator
-required_onboarding_steps:
-  - user
-  - core_config
-  - integration
-  - analytics
 onboarding_enabled: true
 http_config:
   server_host:
