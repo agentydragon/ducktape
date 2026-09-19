@@ -10,6 +10,7 @@ from cluster.cdk8s import (
     etcd,
     external_creds,
     forgejo_image_automation,
+    gateway_flux_kustomizations,
     ha_mcp,
     haku_openclaw_spike_config,
     ntfy,
@@ -52,6 +53,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    gateway_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 
