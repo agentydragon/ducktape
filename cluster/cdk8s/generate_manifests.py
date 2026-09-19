@@ -30,7 +30,9 @@ from cluster.cdk8s import (
     descheduler_constructs,
     egress_fences,
     etcd_constructs,
+    ha_mcp_constructs,
     haku_openclaw_spike_config,
+    litellm_constructs,
     public_coder_agent_config,
     stateful_infra,
     terraform_constructs,
@@ -39,11 +41,8 @@ from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_directory
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.directory import Directory, chart
-from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.haku import charts as haku_charts
-from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, ProxySpec, proxy_specs
 from cluster.cdk8s.litellm_keys import model_allowlists
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
@@ -136,19 +135,12 @@ def _write_flux_wiring(out_dir: Path, built_chart: Chart, directory: Directory) 
     )
 
 
-def _litellm_app_chart(app: App, spec: ProxySpec) -> Chart:
-    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    LiteLLMProxy(chart, "proxy", spec)
-    LiteLLMServiceMonitor(chart, "monitoring")
-    return chart
-
-
 def _litellm_app_directory() -> Directory:
-    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
+    (spec,) = litellm_constructs.proxy_specs()  # one proxy today; extend proxy_specs() when a second lands
     return Directory(
         name=spec.name,
         path=_LITELLM_APP_DIR,
-        build=lambda app: _litellm_app_chart(app, spec),
+        build=lambda app: litellm_constructs.app_chart(app, spec),
         depends_on=(
             "external-secrets-config",
             "forgejo-images",
@@ -183,20 +175,11 @@ def _litellm_app_directory() -> Directory:
     )
 
 
-_HA_MCP_NAME = "ha-mcp"
-
-
-def _ha_mcp_chart(app: App) -> Chart:
-    chart = Chart(app, _HA_MCP_NAME, disable_resource_name_hashes=True)
-    HaMcp(chart, _HA_MCP_NAME)
-    return chart
-
-
 def _ha_mcp_directory() -> Directory:
     return Directory(
-        name=_HA_MCP_NAME,
+        name=ha_mcp_constructs.NAME,
         path=_HA_MCP_DIR,
-        build=_ha_mcp_chart,
+        build=ha_mcp_constructs.chart,
         depends_on=(
             "external-secrets-config",
             "forgejo-images",
@@ -211,7 +194,7 @@ def _ha_mcp_directory() -> Directory:
             # Created imperatively by this directory's own token-provisioner Job, not by any
             # static manifest -- `directory.chart()` always accepts a directory as its own
             # provider.
-            "ha-mcp-home-assistant-token": _HA_MCP_NAME,
+            "ha-mcp-home-assistant-token": ha_mcp_constructs.NAME,
         },
         extra_resources=("bearer.sops.yaml",),
         timeout="5m",
@@ -275,20 +258,11 @@ def _aiquota_directory() -> Directory:
     )
 
 
-_ETCD_MONITORING_NAME = "etcd-monitoring"
-
-
-def _etcd_monitoring_chart(app: App, mesh: Mesh) -> Chart:
-    chart = Chart(app, _ETCD_MONITORING_NAME, disable_resource_name_hashes=True)
-    TalosEtcdMetrics(chart, "etcd", mesh)
-    return chart
-
-
 def _etcd_monitoring_directory(mesh: Mesh) -> Directory:
     return Directory(
-        name=_ETCD_MONITORING_NAME,
+        name=etcd_constructs.NAME,
         path=_ETCD_MONITORING_DIR,
-        build=lambda app: _etcd_monitoring_chart(app, mesh),
+        build=lambda app: etcd_constructs.chart(app, mesh),
         depends_on=("monitoring-crds",),  # the ServiceMonitor CRD
         timeout="2m",
         health_check_kinds=("ServiceMonitor",),

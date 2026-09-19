@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
@@ -400,3 +400,10 @@ class LiteLLMServiceMonitor(Construct):
                 ],
             ),
         )
+
+
+def app_chart(app: App, spec: ProxySpec) -> Chart:
+    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy", spec)
+    LiteLLMServiceMonitor(chart, "monitoring")
+    return chart
