@@ -32,6 +32,7 @@ from cluster.cdk8s import (
     descheduler_constructs,
     egress_fences,
     etcd_constructs,
+    forgejo_image_automation,
     haku_openclaw_spike_config,
     ntfy_constructs,
     public_coder_agent_config,
@@ -60,6 +61,7 @@ _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
+_FORGEJO_IMAGE_AUTOMATION_DIR = "cluster/k8s/flux-image-automation-forgejo"
 _NTFY_DIR = "cluster/k8s/ntfy"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
@@ -569,6 +571,49 @@ def _dns_records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     return chart
 
 
+def _generate_forgejo_image_automation(root: Path) -> None:
+    """The ImageRepository/ImagePolicy pair per CI image, as one chart. The directory had
+    one hand-written file per pair; a single generated file keeps each pair adjacent
+    (cluster/AGENTS.md § Colocating image repository and policy)."""
+    out_dir = root / _FORGEJO_IMAGE_AUTOMATION_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, forgejo_image_automation.NAME, disable_resource_name_hashes=True)
+    forgejo_image_automation.ForgejoImageAutomation(chart, "images")
+    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    app.synth()
+
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            forgejo_image_automation.NAME,
+            description=(
+                "Image automation for images hosted in our Forgejo registry "
+                "(authenticated scans via the reflected ducktape-ci credential)."
+            ),
+            spec=KustomizationSpec(
+                interval="10m",
+                path=f"./{_FORGEJO_IMAGE_AUTOMATION_DIR}",
+                prune=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
+                    name=forgejo_image_automation.NAME,
+                    namespace=NAMESPACE,
+                ),
+                depends_on=[
+                    # The source credential, reflected into flux-system.
+                    KustomizationSpecDependsOn(name="forgejo-images", namespace=NAMESPACE),
+                    # The all-images ImageUpdateAutomation lives there.
+                    KustomizationSpecDependsOn(name="flux-image-automation-ghcr", namespace=NAMESPACE),
+                ],
+            ),
+        ),
+    )
+    _write_yaml(
+        out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{forgejo_image_automation.NAME}.k8s.yaml"])
+    )
+
+
 def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
     name = "etcd-monitoring"
     out_dir = root / _ETCD_MONITORING_DIR
@@ -682,6 +727,7 @@ def generate_manifests(root: Path) -> None:
     _write_charts(root, _DNS_AUTOMATION_DIR, lambda app: _dns_records_chart(app, mesh))
     _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
     _generate_etcd_monitoring(root, mesh)
+    _generate_forgejo_image_automation(root)
     _generate_ntfy(root)
 
 
