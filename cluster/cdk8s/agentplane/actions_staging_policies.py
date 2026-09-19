@@ -18,10 +18,16 @@ from agentplane_actionpolicyset_crds.works.allegedly.agentplane import (
     ActionPolicySetSpecAutoApproveIf,
     ActionPolicySetSpecAutoApproveIfType,
 )
+from agentplane_egressbinding_crds.works.allegedly.agentplane import (
+    EgressBinding,
+    EgressBindingSpec,
+    EgressBindingSpecSubjects,
+)
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, KUBERNETES_POLICY
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -29,9 +35,11 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GITHUB_READS_SET,
 )
 from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
+from x.agentplane.sandbox_actions.executor import SANDBOX_GROUP, SandboxAction
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
+_SANDBOX_SET = "sandbox-self"
 _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 
 
@@ -247,6 +255,50 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
 
     # What the console's `haku_v1` grants for GitHub (github-reads and
+    # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
+    # box because that is what the account is entitled to: the proxy authenticates the Pod's
+    # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
+    # runs as it -- claude-ai has no Pod of its own -- so this grants reach to its sandboxes and to
+    # nothing else.
+    EgressBinding(
+        scope,
+        "egressbinding-claude-ai",
+        metadata=ApiObjectMetadata(
+            name="claude-ai",
+            namespace=_NAMESPACE,
+            annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
+        ),
+        spec=EgressBindingSpec(
+            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
+            policies=[BASIC_POLICY, KUBERNETES_POLICY],
+        ),
+    )
+
+    # Every sandbox Action, auto-approved. Approving each one individually would not be a
+    # boundary: a sandbox runs as the account that asked for it, so the whole group can do
+    # exactly what that account can already do, and `exec` inside it is not narrower than
+    # `provision` of it. What decides whether this is safe for an account is that account's own
+    # egress and Kubernetes authority, which is why this set is bound per caller and not by default.
+    _policy_set(
+        scope,
+        "actionpolicyset-sandbox-self",
+        metadata=ApiObjectMetadata(
+            name=_SANDBOX_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={SANDBOX_GROUP: sorted(SandboxAction)},
+                )
+            ]
+        ),
+    )
+
     # github-identity-reads), attached to the Claude.ai connector's principal. The
     # binding's existence is the grant: deleting it, or the label on the
     # ServiceAccount, puts every GitHub Action back on the human path.
@@ -257,11 +309,11 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-github-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub reads for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
             subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET],
+            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET, _SANDBOX_SET],
         ),
     )

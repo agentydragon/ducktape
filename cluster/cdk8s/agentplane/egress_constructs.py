@@ -96,12 +96,14 @@ PROXY_PORT = 8888
 ADMIN_PORT = 8081
 _AGENT_API_PORT = 8082
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
-# The audience the API server validates its own ServiceAccount tokens against, which is what
-# `--api-audiences` (defaulting to `--service-account-issuer`) is set to on this cluster. The
-# sidecar's projection asks for exactly this string and the proxy reviews against it, so a value
-# that does not match the cluster produces tokens the API server refuses -- a 401 inside the box,
-# not a proxy denial. Changing it means changing the cluster.
-KUBERNETES_AUDIENCE = "https://kubernetes.default.svc.cluster.local"
+# The audience the API server validates its own ServiceAccount tokens against. Read off this
+# cluster on 2026-09-19: Talos sets both `--api-audiences` and `--service-account-issuer` to this
+# on every kube-apiserver static pod. It is an issuer identifier and not an address anything dials,
+# so `localhost` here is not a mistake and not reachable -- do not "correct" it to the Service DNS
+# name, which is what the API server would then refuse. The sidecar's projection asks for exactly
+# this string and the proxy reviews against it, so a value that does not match the cluster yields a
+# 401 inside the box rather than a proxy denial. Changing it means changing the cluster.
+KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"

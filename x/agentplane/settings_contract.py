@@ -23,8 +23,16 @@ def _field_annotation(model: Any, name: str) -> Any:
 
 
 def _without_none(annotation: Any) -> Any:
+    """`X` for `X | None`, so an optional field is checked against what it actually holds.
+
+    A union with more than one real member is left whole: it is a type in its own right -- a
+    discriminated union of executor bindings is the case here -- and pydantic decides which member
+    a value is, where choosing one here would be a guess that rejects every other member.
+    """
     if get_origin(annotation) in (types.UnionType, Union):
-        (annotation,) = (arg for arg in get_args(annotation) if arg is not type(None))
+        present = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(present) == 1:
+            return present[0]
     return annotation
 
 

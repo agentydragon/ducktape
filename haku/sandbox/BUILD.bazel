@@ -24,9 +24,9 @@ py_library(
     deps = [
         ":config",
         ":models",
+        "//mcp_infra/exec:kubernetes",
         "//mcp_infra/exec:models",
         "//util:kubernetes",
-        "@pypi//aiohttp",
         "@pypi//fastmcp_slim",
         "@pypi//kubernetes_asyncio",
     ],

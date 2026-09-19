@@ -30,7 +30,6 @@ from haku.sandbox.kubernetes_client import (
     WARM_POOL_ANNOTATION,
     CommandResult,
     KubernetesSandboxClient,
-    _exec_handshake_error,
 )
 from mcp_infra.exec.models import Exited
 
@@ -392,21 +391,6 @@ async def test_dispose_is_idempotent(environment: SandboxEnvironmentConfig) -> N
     result = await _client(environment, custom, Mock(), Mock()).dispose("task-one")
 
     assert not result.deleted
-
-
-@pytest.mark.parametrize(
-    ("status", "needle"),
-    [
-        # 403 is the real bug: the async client execs via HTTP GET, so it needs `get pods/exec`.
-        (403, "get pods/exec"),
-        (401, "token was rejected"),
-        (503, "container is ready"),
-    ],
-)
-def test_exec_handshake_error_names_likely_cause(status: int, needle: str) -> None:
-    message = _exec_handshake_error(status, "Forbidden")
-    assert f"HTTP {status}" in message
-    assert needle in message
 
 
 if __name__ == "__main__":

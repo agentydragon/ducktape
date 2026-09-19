@@ -709,7 +709,7 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
     projected_token_audiences:
-      - https://kubernetes.default.svc.cluster.local
+      - https://localhost:7445
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1063,7 +1063,7 @@ spec:
   description: "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server rather than for this proxy. Requests carrying it are authorized by the API server as that account and by nothing here: what the sandbox may do is the RBAC bound to it, and this proxy adds only the rule's hosts, methods and paths on top."
   source:
     projectedWorkloadToken:
-      audience: https://kubernetes.default.svc.cluster.local
+      audience: https://localhost:7445
   targets:
     - header: Authorization
       method: schemeToken
@@ -1821,7 +1821,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://kubernetes.default.svc.cluster.local": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           resources:
@@ -1864,7 +1864,7 @@ spec:
                   expirationSeconds: 600
                   path: token
               - serviceAccountToken:
-                  audience: https://kubernetes.default.svc.cluster.local
+                  audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
   volumeClaimTemplates:
@@ -1953,6 +1953,36 @@ rules:
       - actionpolicybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2025,6 +2055,20 @@ data:
             url: https://kubectl-passthrough-mcp.allegedly.works/mcp
             server_id: kubernetes
             auth: oauth
+      sandbox:
+        title: Sandbox
+        description: Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A sandbox reaches what its caller's EgressBindings allow and is admitted back to this service as that same caller, so it confers no authority the caller did not hold.
+        executor:
+          kind: sandbox
+          description: Stamped and exec'd by this service, as the caller, in its own namespace.
+          namespace: agentplane-staging
+          environments:
+            runner:
+              template: agentplane-runner
+              container: runner
+              default_cwd: /state
+              description: "The shared runner image: python, git and the agent harnesses."
+          default_environment: runner
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.
@@ -2735,10 +2779,43 @@ spec:
           - search_code
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  annotations:
+    description: What sandboxes running as the claude-ai ServiceAccount may reach.
+  name: claude-ai
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: agentplane-staging
+      name: claude-ai
+  policies:
+    - basic
+    - kubernetes
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller.
+  name: sandbox-self
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        sandbox:
+          - dispose
+          - exec
+          - info
+          - list
+          - provision
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub reads for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-github-reads
   namespace: agentplane-staging
 spec:
@@ -2748,3 +2825,4 @@ spec:
   policySets:
     - github-reads
     - github-identity-reads
+    - sandbox-self

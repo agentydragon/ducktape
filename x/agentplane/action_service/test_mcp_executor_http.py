@@ -152,6 +152,12 @@ def fake_server(request: pytest.FixtureRequest) -> FakeMcpServer:
     return FakeMcpServer(sse=request.param)
 
 
+def mcp_binding(group: ActionGroup) -> McpExecutorBinding:
+    """This file builds only MCP groups, so narrowing the union is an assertion, not a branch."""
+    assert isinstance(group.executor, McpExecutorBinding)
+    return group.executor
+
+
 @pytest.fixture
 def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
     app = Starlette(routes=[Route("/test-mcp", fake_server.handle, methods=["POST", "GET", "DELETE"])])
@@ -455,7 +461,7 @@ async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
         await wait_retry(http_group)
         assert http_group.health is not None
         assert http_group.actions == {}
-        assert str(http_group.executor.config["url"]) not in http_group.health.model_dump_json()
+        assert str(mcp_binding(http_group).config["url"]) not in http_group.health.model_dump_json()
         assert fake_server.calls == []
         fake_server.list_unavailable = False
         fake_server.tools[0]["inputSchema"] = {"type": "object"}
@@ -545,7 +551,7 @@ async def test_production_http_composition_one_execution_no_replay(
         catalog = cast(ActionCatalog, app.state.action_catalog)
         await wait_available(http_group)
         assert catalog.action_view("remote", "echo").input_schema == fake_server.tools[0]["inputSchema"]
-        assert str(http_group.executor.config["url"]) not in "".join(
+        assert str(mcp_binding(http_group).config["url"]) not in "".join(
             view.model_dump_json() for view in catalog.group_views()
         )
         body = ActionRequestInput(
@@ -596,7 +602,7 @@ async def test_production_http_composition_one_execution_no_replay(
         for principal in (caller, operator):
             view = await service.get(pending.id, principal)
             assert "test-only" not in view.model_dump_json()
-            assert str(http_group.executor.config["url"]) not in view.model_dump_json()
+            assert str(mcp_binding(http_group).config["url"]) not in view.model_dump_json()
         if outcome == "invalid_schema":
             # Execution-time detection cleared the offered catalog; new submissions see the outage
             # until the backend publishes a valid schema again.
@@ -630,7 +636,7 @@ async def test_production_http_composition_one_execution_no_replay(
 
 async def test_static_credential_mount_recovers(http_group: ActionGroup, tmp_path: Path) -> None:
     token_file = tmp_path / "bearer"
-    http_group.executor.config.update(auth="static_bearer", bearer_file=str(token_file))
+    mcp_binding(http_group).config.update(auth="static_bearer", bearer_file=str(token_file))
     async with running_executor(ActionCatalog(groups={"remote": http_group})):
         await wait_retry(http_group)
         assert http_group.health is not None

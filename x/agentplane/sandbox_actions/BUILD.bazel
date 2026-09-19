@@ -1,0 +1,72 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "binding",
+    srcs = ["binding.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+    # The group key and its Action names, so the staging policy that auto-approves them is written
+    # from the roster that offers them rather than from a second copy.
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = [
+        ":binding",
+        ":inventory",
+        ":models",
+        "//mcp_infra/exec:kubernetes",
+        "//x/agentplane:subjects",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "inventory",
+    srcs = ["inventory.py"],
+    deps = [
+        ":binding",
+        ":models",
+        "//mcp_infra/exec:kubernetes",
+        "//util:kubernetes",
+        "//x/agentplane:subjects",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = [
+        "//mcp_infra/exec:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_executor",
+    srcs = ["test_executor.py"],
+    deps = [
+        ":binding",
+        ":executor",
+        ":inventory",
+        ":models",
+        "//:conftest",
+        "//mcp_infra/exec:kubernetes",
+        "//mcp_infra/exec:models",
+        "//x/agentplane:subjects",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

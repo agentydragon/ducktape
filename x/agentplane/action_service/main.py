@@ -23,6 +23,7 @@ from github_policy.visibility import (
     REQUEST_TIMEOUT_SECONDS,
     RepositoryVisibilityService,
 )
+from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
@@ -34,6 +35,7 @@ from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from x.agentplane.action_service.connections import ConnectionAuthority
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.enrollments import EnrollmentAuthority
+from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
@@ -44,6 +46,7 @@ from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from x.agentplane.sandbox_actions.inventory import SandboxClients
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -191,7 +194,14 @@ async def async_main(settings: Settings) -> None:
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
         stack.push_async_callback(mcp_linkage.close)
-        executors = await stack.enter_async_context(running_executor(catalog, mcp_linkage))
+        # Built unconditionally: a configured sandbox group must fail at startup rather than at the
+        # first dispatch, and an API client this process already holds costs nothing when unused.
+        sandboxes = SandboxClients(
+            custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+            core_v1=CoreV1Api(api),
+            exec_runner=KubernetesWebSocketExecRunner(configuration),
+        )
+        executors = await stack.enter_async_context(running_executor(catalog, mcp_linkage, sandboxes))
         push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
             push_notifier = ActionPushNotifier(
@@ -204,8 +214,11 @@ async def async_main(settings: Settings) -> None:
             push_notifier.start()
 
         def drain_backends() -> None:
+            # Only a supervised MCP client has a connection to wind down; a sandbox executor holds
+            # none, and the service's own drain is what stops dispatching to it.
             for executor in executors.values():
-                executor.begin_drain()
+                if isinstance(executor, McpActionGroupExecutor):
+                    executor.begin_drain()
 
         service = ActionService(
             ActionStore(make_sessionmaker(engine), external_grants=connections),

@@ -18,7 +18,10 @@ py_library(
 py_library(
     name = "catalog",
     srcs = ["catalog.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//x/agentplane/sandbox_actions:binding",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -181,6 +184,7 @@ py_library(
         ":connections",
         ":db",
         ":enrollments",
+        ":mcp_executor",
         ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
@@ -191,8 +195,10 @@ py_library(
         ":service",
         ":updates",
         "//github_policy:visibility",
+        "//mcp_infra/exec:kubernetes",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/sandbox_actions:inventory",
         "//x/agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -442,6 +448,10 @@ py_library(
         ":catalog",
         ":mcp_executor",
         ":mcp_linkage",
+        ":models",
+        "//x/agentplane/sandbox_actions:binding",
+        "//x/agentplane/sandbox_actions:executor",
+        "//x/agentplane/sandbox_actions:inventory",
         "@pypi//pydantic",
     ],
 )

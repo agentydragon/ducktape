@@ -394,6 +394,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
 
 async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path: Path) -> None:
     group = _group()
+    assert isinstance(group.executor, McpExecutorBinding)
     group.executor.config = {
         "transport": "stdio",
         "command": sys.executable,

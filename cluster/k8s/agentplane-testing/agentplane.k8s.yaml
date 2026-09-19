@@ -701,7 +701,7 @@ data:
     allowed_service_account_namespaces:
       - agentplane-testing
     projected_token_audiences:
-      - https://kubernetes.default.svc.cluster.local
+      - https://localhost:7445
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1034,7 +1034,7 @@ spec:
   description: "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server rather than for this proxy. Requests carrying it are authorized by the API server as that account and by nothing here: what the sandbox may do is the RBAC bound to it, and this proxy adds only the rule's hosts, methods and paths on top."
   source:
     projectedWorkloadToken:
-      audience: https://kubernetes.default.svc.cluster.local
+      audience: https://localhost:7445
   targets:
     - header: Authorization
       method: schemeToken
@@ -1759,7 +1759,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://kubernetes.default.svc.cluster.local": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           resources:
@@ -1800,7 +1800,7 @@ spec:
                   expirationSeconds: 600
                   path: token
               - serviceAccountToken:
-                  audience: https://kubernetes.default.svc.cluster.local
+                  audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
   volumeClaimTemplates:
@@ -1889,6 +1889,36 @@ rules:
       - actionpolicybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

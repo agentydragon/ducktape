@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shlex
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from types import TracebackType
-from typing import Any, Protocol, TypeGuard, cast
+from typing import Any, TypeGuard, cast
 
-from aiohttp import WSMessage, WSMsgType, WSServerHandshakeError
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, ApiException, Configuration, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
-from kubernetes_asyncio.stream import WsApiClient
-from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import (
@@ -30,7 +25,8 @@ from haku.sandbox.models import (
     SandboxWarning,
     SandboxWarningKind,
 )
-from mcp_infra.exec.models import ExecStream, Exited, Killed, TimedOut, TruncatedStream
+from mcp_infra.exec.kubernetes import CommandResult, ExecRunner, KubernetesWebSocketExecRunner, PodExecError
+from mcp_infra.exec.models import Exited, Killed, TimedOut
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -84,174 +80,6 @@ class _ProvenanceField:
     configured: str
 
 
-@dataclass(frozen=True, slots=True)
-class CommandResult:
-    exit: Exited | TimedOut | Killed
-    stdout: ExecStream
-    stderr: ExecStream
-    duration_seconds: float
-
-
-class ExecRunner(Protocol):
-    async def run(
-        self,
-        *,
-        pod_name: str,
-        namespace: str,
-        container: str,
-        script: str,
-        cwd: str,
-        max_output_bytes: int,
-        timeout_seconds: int,
-    ) -> CommandResult: ...
-
-
-class _ExecWebSocket(Protocol):
-    async def receive(self) -> WSMessage: ...
-
-    def exception(self) -> BaseException | None: ...
-
-
-class _ExecWebSocketContext(Protocol):
-    async def __aenter__(self) -> _ExecWebSocket: ...
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> bool | None: ...
-
-
-class _PodExecClient(Protocol):
-    async def connect_get_namespaced_pod_exec(
-        self,
-        name: str,
-        namespace: str,
-        *,
-        command: list[str],
-        container: str,
-        stderr: bool,
-        stdin: bool,
-        stdout: bool,
-        tty: bool,
-        _preload_content: bool,
-    ) -> _ExecWebSocketContext: ...
-
-
-@dataclass(slots=True)
-class _Capture:
-    limit: int
-    stored: bytearray = field(default_factory=bytearray)
-    total_bytes: int = 0
-
-    def append(self, chunk: bytes) -> None:
-        self.total_bytes += len(chunk)
-        remaining = self.limit - len(self.stored)
-        if remaining > 0:
-            self.stored.extend(chunk[:remaining])
-
-    def render(self) -> ExecStream:
-        text = bytes(self.stored).decode("utf-8", errors="replace")
-        if self.total_bytes > len(self.stored):
-            return TruncatedStream(truncated_text=text, total_bytes=self.total_bytes)
-        return text
-
-
-class KubernetesWebSocketExecRunner:
-    """Run one bounded, non-interactive Bash script through ``pods/exec``."""
-
-    def __init__(self, configuration: Configuration) -> None:
-        self._configuration = configuration
-
-    async def run(
-        self,
-        *,
-        pod_name: str,
-        namespace: str,
-        container: str,
-        script: str,
-        cwd: str,
-        max_output_bytes: int,
-        timeout_seconds: int,
-    ) -> CommandResult:
-        stdout = _Capture(max_output_bytes)
-        stderr = _Capture(max_output_bytes)
-        error_data = bytearray()
-        shell_script = f"cd -- {shlex.quote(cwd)}\n{script}"
-        command = [
-            "/usr/bin/timeout",
-            "--signal=TERM",
-            "--kill-after=5s",
-            f"{timeout_seconds}s",
-            "bash",
-            "-lc",
-            shell_script,
-        ]
-        loop = asyncio.get_running_loop()
-        started = loop.time()
-
-        try:
-            async with asyncio.timeout(timeout_seconds + 15):
-                async with WsApiClient(configuration=self._configuration) as ws_api:
-                    core_v1 = cast(_PodExecClient, k8s_client.CoreV1Api(api_client=ws_api))
-                    websocket = await core_v1.connect_get_namespaced_pod_exec(
-                        pod_name,
-                        namespace,
-                        command=command,
-                        container=container,
-                        stderr=True,
-                        stdin=False,
-                        stdout=True,
-                        tty=False,
-                        _preload_content=False,
-                    )
-                    async with websocket as ws:
-                        while True:
-                            message = await ws.receive()
-                            if message.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
-                                break
-                            if message.type == WSMsgType.ERROR:
-                                raise ToolError(f"Kubernetes exec WebSocket failed: {ws.exception()}")
-                            if message.type not in {WSMsgType.BINARY, WSMsgType.TEXT}:
-                                continue
-                            payload = message.data.encode() if isinstance(message.data, str) else message.data
-                            if not payload:
-                                continue
-                            channel, chunk = payload[0], payload[1:]
-                            if channel == STDOUT_CHANNEL:
-                                stdout.append(chunk)
-                            elif channel == STDERR_CHANNEL:
-                                stderr.append(chunk)
-                            elif channel == ERROR_CHANNEL:
-                                remaining = 64 * 1024 - len(error_data)
-                                if remaining > 0:
-                                    error_data.extend(chunk[:remaining])
-        except TimeoutError:
-            return CommandResult(
-                exit=TimedOut(), stdout=stdout.render(), stderr=stderr.render(), duration_seconds=loop.time() - started
-            )
-        except WSServerHandshakeError as error:
-            raise ToolError(_exec_handshake_error(error.status, error.message)) from error
-        except ApiException as error:
-            raise ToolError(_api_error("execute the sandbox command", error)) from error
-
-        if not error_data:
-            raise ToolError("Kubernetes exec ended without a command status frame; retry or inspect the sandbox")
-        try:
-            exit_code = WsApiClient.parse_error_data(bytes(error_data))
-        except (KeyError, TypeError, ValueError) as error:
-            raise ToolError("Kubernetes exec returned a malformed command status frame") from error
-
-        exit_status: Exited | TimedOut | Killed
-        if exit_code == 124:
-            exit_status = TimedOut()
-        elif exit_code >= 128:
-            exit_status = Killed(signal=exit_code - 128)
-        else:
-            exit_status = Exited(exit_code=exit_code)
-        return CommandResult(
-            exit=exit_status, stdout=stdout.render(), stderr=stderr.render(), duration_seconds=loop.time() - started
-        )
-
-
 class KubernetesSandboxClient:
     """Claim lifecycle, bootstrap, status, and execution orchestration."""
 
@@ -271,6 +99,13 @@ class KubernetesSandboxClient:
         self._core_v1 = core_v1
         self._exec_runner = exec_runner
         self._now = now or (lambda: datetime.now(UTC))
+
+    async def _exec(self, **kwargs: Any) -> CommandResult:
+        """Run through the shared runner, which knows nothing of MCP, and owe this surface a ToolError."""
+        try:
+            return await self._exec_runner.run(**kwargs)
+        except PodExecError as error:
+            raise ToolError(str(error)) from error
 
     async def aclose(self) -> None:
         await self._api_client.close()
@@ -310,7 +145,7 @@ class KubernetesSandboxClient:
                 f"bootstrap_state={info.bootstrap_state}, reason={info.reason or 'unknown'}); "
                 "call get_sandbox_info"
             )
-        result = await self._exec_runner.run(
+        result = await self._exec(
             pod_name=info.pod_name,
             namespace=sandbox.namespace,
             container=sandbox.container,
@@ -518,7 +353,7 @@ class KubernetesSandboxClient:
                 BOOTSTRAP_HASH_ANNOTATION: bootstrap.script_digest,
             },
         )
-        result = await self._exec_runner.run(
+        result = await self._exec(
             pod_name=info.pod_name,
             namespace=self._environment.sandbox.namespace,
             container=self._environment.sandbox.container,
@@ -841,24 +676,3 @@ def _exit_summary(result: CommandResult) -> str:
 def _api_error(action: str, error: ApiException) -> str:
     reason = f": {error.reason}" if error.reason else ""
     return f"Kubernetes could not {action} (HTTP {error.status or 'unknown'}{reason})"
-
-
-def _exec_handshake_error(status: int, message: str) -> str:
-    """Translate an opaque exec WebSocket handshake rejection into an actionable message.
-
-    aiohttp surfaces a bare ``WSServerHandshakeError`` ("invalid response status") that hides
-    the apiserver's reason, so name the most likely cause per HTTP status.
-    """
-    detail = f"HTTP {status}" + (f" {message}" if message else "")
-    match status:
-        case 403:
-            cause = (
-                "the sandbox MCP ServiceAccount lacks `get pods/exec` in the sandbox namespace — "
-                "kubernetes_asyncio opens exec with an HTTP GET, so it needs the `get` verb "
-                "(kubectl POSTs and needs `create`)"
-            )
-        case 401:
-            cause = "the ServiceAccount token was rejected"
-        case _:
-            cause = "check that the sandbox pod exists and its target container is ready"
-    return f"Kubernetes rejected the exec WebSocket handshake ({detail}); {cause}"

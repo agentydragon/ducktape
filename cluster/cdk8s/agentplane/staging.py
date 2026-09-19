@@ -103,6 +103,33 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
+        "sandbox": {
+            "title": "Sandbox",
+            "description": (
+                "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
+                "sandbox reaches what its caller's EgressBindings allow and is admitted back to this "
+                "service as that same caller, so it confers no authority the caller did not hold."
+            ),
+            "executor": {
+                "kind": "sandbox",
+                "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
+                "namespace": _NAMESPACE,
+                "environments": {
+                    # The integration app's runner template, for now: it already carries the egress
+                    # sidecar, the interception CA and the proxy environment, so the path is real
+                    # end to end. Its workload container is the runner image, which is the wrong
+                    # destination -- a dedicated exec target is the follow-up
+                    # (x/agentplane/plans/sandbox_actions.md).
+                    "runner": {
+                        "template": "agentplane-runner",
+                        "container": "runner",
+                        "default_cwd": "/state",
+                        "description": "The shared runner image: python, git and the agent harnesses.",
+                    }
+                },
+                "default_environment": "runner",
+            },
+        },
         "ssh": {
             "title": "SSH",
             "description": "SSH commands on configured targets; every Action remains subject to operator approval.",

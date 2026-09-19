@@ -1,8 +1,9 @@
 # Sandbox Actions: exec targets provisioned as the caller
 
-Status: **design agreed (2026-09-18).** The `projectedWorkloadToken` credential source below has
-landed, contract in <../egress/SPEC.md>; nothing else here is started. No DAG nodes are minted yet;
-they belong with the dispatch decision rather than with this note.
+Status: **implemented on staging, not yet exercised end to end.** The executor kind, the sandbox
+Actions, the auto-approval set and `claude-ai`'s egress binding are in; the
+`projectedWorkloadToken` credential source is in <../egress/SPEC.md>. What is left is a dedicated
+exec-target image and the evidence a real call produces, both below.
 
 An Action group that provisions an Agentplane Sandbox and runs bounded commands in it. It exists
 for callers outside the cluster — Claude Code web and claude.ai, bound by OAuth to the `claude-ai`
@@ -205,19 +206,19 @@ otherwise misreads every call:
 
 ## Work
 
-1. **The second executor kind.** Widen the union, validate the binding, let a group declare its
-   Actions statically. Independently reviewable, and what `ssh_durable_processes.md` needs.
-2. **The sandbox executor.** Provision, exec, list, info and dispose against Sandboxes running as
-   `request.caller`, under its own label, from its own template set, refusing anything it did not
-   create.
-3. **Group configuration, the auto-approval binding for `claude-ai`, and that account's
-   `EgressBinding`s.** Provable end to end from a claude.ai session against an existing template.
-4. **A dedicated exec-target template**, and the Forgejo `EgressCredential` a box needs to check out
-   `haku-state`.
-5. **Kubernetes from the box.** The projected audience, the reviewed substitution, the credential
-   and the rule have landed. What remains is the calling account's RoleBindings, confirming
-   `KUBERNETES_AUDIENCE` against the cluster, and exercising `kubectl` from a box rather than
-   inferring it from the parts (below). Its own clock: nothing above waits on it.
+Landed: the `sandbox` executor kind (<../action_service/catalog.py>), the Actions and their
+caller-scoped inventory (<../sandbox_actions/>), the Action Service's Sandbox and `pods/exec` grant,
+the `sandbox-self` policy set and `claude-ai`'s binding and `EgressBinding`, and Kubernetes reach
+through the egress proxy.
+
+Remaining:
+
+1. **A dedicated exec-target image.** The configured `runner` environment stamps the integration
+   app's runner template, which carries the egress sidecar, the interception CA and the proxy
+   environment, so the path is real -- but its workload container is the runner image and a box to
+   run commands in wants neither the harnesses nor the state volume.
+2. **The evidence.** Provision, exec, list and dispose from a claude.ai session against staging,
+   and `kubectl` from inside a box. Until that runs, everything here is a candidate.
 
 ## Not here
 

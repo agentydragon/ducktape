@@ -296,3 +296,29 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Kubernetes pods/exec execution - no MCP dependencies, shared by haku's sandbox client
+# and agentplane's sandbox Actions
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes",
+    srcs = ["test_kubernetes.py"],
+    deps = [
+        ":conftest",
+        ":kubernetes",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
