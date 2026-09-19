@@ -331,6 +331,38 @@ py_test(
 )
 
 py_library(
+    name = "ntfy_constructs",
+    srcs = ["ntfy_constructs.py"],
+    deps = [
+        ":cnpg",
+        ":fleet_rules",
+        ":gateway",
+        ":metadata",
+        ":pod_spec_patches",
+        ":probes",
+        "//cluster/cdk8s/agentplane:node_scheduling",
+        "//third_party/cnpg:cluster",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_ntfy_constructs",
+    srcs = ["test_ntfy_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":ntfy_constructs",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = [
@@ -350,6 +382,7 @@ py_library(
         ":litellm_constructs",
         ":litellm_keys",
         ":metadata",
+        ":ntfy_constructs",
         ":public_coder_agent_config",
         ":stateful_infra",
         ":terraform_constructs",
@@ -415,6 +448,9 @@ py_test(
         "//cluster/k8s:monitoring/etcd/etcd-monitoring.k8s.yaml",
         "//cluster/k8s:monitoring/etcd/flux-kustomization.yaml",
         "//cluster/k8s:monitoring/etcd/kustomization.yaml",
+        "//cluster/k8s:ntfy/flux-kustomization.yaml",
+        "//cluster/k8s:ntfy/kustomization.yaml",
+        "//cluster/k8s:ntfy/ntfy.k8s.yaml",
         "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:flux-kustomization.yaml",
         "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",

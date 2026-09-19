@@ -21,6 +21,10 @@ spec:
       kind: Secret
       name: alloy-control-plane-token
       namespace: monitoring
+    - apiVersion: v1
+      kind: Secret
+      name: alertmanager-ntfy-webhook
+      namespace: monitoring
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: kube-prometheus-stack
@@ -38,4 +42,8 @@ spec:
     # The chart's Prometheus/Alertmanager CRs are rejected at admission until
     # the CRDs exist, and the chart no longer installs them itself.
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: ntfy
+      namespace: ducktape-flux
+    - name: external-secrets-config
       namespace: ducktape-flux

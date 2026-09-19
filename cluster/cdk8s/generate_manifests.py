@@ -33,6 +33,7 @@ from cluster.cdk8s import (
     egress_fences,
     etcd_constructs,
     haku_openclaw_spike_config,
+    ntfy_constructs,
     public_coder_agent_config,
     stateful_infra,
     terraform_constructs,
@@ -59,6 +60,7 @@ _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
+_NTFY_DIR = "cluster/k8s/ntfy"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -532,6 +534,50 @@ def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
     )
 
 
+def _generate_ntfy(root: Path) -> None:
+    """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
+
+    The two SOPS Secrets remain hand-written in this flat directory; the generated
+    Kustomization lists them and therefore enables Flux SOPS decryption.
+    """
+    out_dir = root / _NTFY_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = ntfy_constructs.chart(app)
+    app.synth()
+
+    resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            ntfy_constructs.NAME,
+            description="Self-hosted ntfy for Android and cluster alert notifications.",
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                path=f"./{_NTFY_DIR}",
+                prune=True,
+                wait=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
+                    name=ntfy_constructs.NAME,
+                    namespace=NAMESPACE,
+                ),
+                timeout="10m",
+                decryption=_sops_decryption(resources),
+                health_checks=health_checks(
+                    chart, ("Namespace", "Cluster", "ExternalSecret", "Deployment", "HTTPRoute", "ServiceMonitor")
+                ),
+                depends_on=[
+                    KustomizationSpecDependsOn(name=dependency)
+                    for dependency in ("cnpg", "external-secrets-config", "gateway", "monitoring-crds")
+                ],
+            ),
+        ),
+    )
+    _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
@@ -557,6 +603,7 @@ def generate_manifests(root: Path) -> None:
     _write_charts(root, _DNS_AUTOMATION_DIR, lambda app: _dns_records_chart(app, mesh))
     _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
     _generate_etcd_monitoring(root, mesh)
+    _generate_ntfy(root)
 
 
 def main() -> None:

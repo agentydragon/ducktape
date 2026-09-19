@@ -67,6 +67,9 @@ exports_files(
         "monitoring/etcd/etcd-monitoring.k8s.yaml",
         "monitoring/etcd/flux-kustomization.yaml",
         "monitoring/etcd/kustomization.yaml",
+        "ntfy/ntfy.k8s.yaml",
+        "ntfy/flux-kustomization.yaml",
+        "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
@@ -201,7 +204,10 @@ exports_files(
 
 filegroup(
     name = "ntfy_manifest_contract_files",
-    srcs = ["flux-webhook/ntfy-webhook.sops.yaml"],
+    srcs = [
+        "flux-webhook/ntfy-webhook-eso.yaml",
+        "monitoring/stack/alertmanager-ntfy-webhook-eso.yaml",
+    ],
     visibility = ["//cluster/validation:__pkg__"],
 )
 

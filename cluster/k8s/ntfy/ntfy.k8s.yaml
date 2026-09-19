@@ -1,0 +1,258 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: ntfy
+    goldilocks.fairwinds.com/enabled: "true"
+  name: ntfy
+spec: {}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ntfy-db
+  namespace: ntfy
+spec:
+  affinity:
+    enablePodAntiAffinity: true
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: ntfy
+      owner: ntfy
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 2Gi
+    storageClass: local-path-ovh-hdd
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Derives ntfy bcrypt users and declarative tokens from SOPS values.
+    ntfy.ducktape.io/auth-generation: "1"
+  name: ntfy-auth
+  namespace: ntfy
+spec:
+  data:
+    - remoteRef:
+        key: ntfy-credentials
+        property: alertmanager-password
+      secretKey: alertmanager_password
+    - remoteRef:
+        key: ntfy-credentials
+        property: alertmanager-token
+      secretKey: alertmanager_token
+    - remoteRef:
+        key: ntfy-credentials
+        property: android-password
+      secretKey: android_password
+    - remoteRef:
+        key: ntfy-credentials
+        property: android-token
+      secretKey: android_token
+  refreshPolicy: OnChange
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ntfy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ntfy-auth
+    template:
+      data:
+        NTFY_AUTH_TOKENS: alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android
+        NTFY_AUTH_USERS: '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,{{ htpasswd "android" .android_password "bcrypt" }}:user'
+      engineVersion: v2
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: ntfy
+  name: ntfy
+  namespace: ntfy
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ntfy
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ntfy
+        cdk8s.io/metadata.addr: ntfy-deployment-c8475f85
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - serve
+          env:
+            - name: NTFY_BASE_URL
+              value: https://ntfy.allegedly.works
+            - name: NTFY_LISTEN_HTTP
+              value: :2586
+            - name: NTFY_AUTH_DEFAULT_ACCESS
+              value: deny-all
+            - name: NTFY_AUTH_ACCESS
+              value: alertmanager:alerts:wo,android:alerts:ro
+            - name: NTFY_BEHIND_PROXY
+              value: "true"
+            - name: NTFY_ENABLE_METRICS
+              value: "true"
+            - name: NTFY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: ntfy-db-app
+            - name: NTFY_AUTH_USERS
+              valueFrom:
+                secretKeyRef:
+                  key: NTFY_AUTH_USERS
+                  name: ntfy-auth
+            - name: NTFY_AUTH_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  key: NTFY_AUTH_TOKENS
+                  name: ntfy-auth
+          image: binwiederhier/ntfy:v2.28.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 2586
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: ntfy
+          ports:
+            - containerPort: 2586
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 12
+            httpGet:
+              path: /v1/health
+              port: 2586
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 20m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: false
+      hostNetwork: false
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: ntfy
+  name: ntfy
+  namespace: ntfy
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 2586
+      protocol: TCP
+      targetPort: 2586
+  selector:
+    cdk8s.io/metadata.addr: ntfy-deployment-c8475f85
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  hostnames:
+    - ntfy.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: ntfy
+          port: 2586
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/name: ntfy
+    release: kube-prometheus-stack
+  name: ntfy
+  namespace: ntfy
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ntfy

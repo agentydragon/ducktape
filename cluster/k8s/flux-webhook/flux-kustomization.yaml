@@ -19,5 +19,9 @@ spec:
   dependsOn:
     - name: flux-webhook-token
       namespace: ducktape-flux
+    - name: ntfy
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
