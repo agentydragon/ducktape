@@ -19,6 +19,7 @@ from cluster.cdk8s import (
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.artifact_generators import generate_artifact_generators
+from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
 from cluster.cdk8s.clickhouse import schema as clickhouse_schema
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
@@ -52,6 +53,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     ntfy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    cert_manager_flux_kustomizations.write_manifests(root)
     generate_artifact_generators(root)
 
 
