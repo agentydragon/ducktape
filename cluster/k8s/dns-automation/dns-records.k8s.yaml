@@ -35,6 +35,9 @@ spec:
       value: Z02901943N8ZFQFOD9P5I
     - name: public_nodes
       value:
+        ovh-ns1001419:
+          public_ip: 51.81.245.180
+          role: control-plane
         ovh-ns102453:
           public_ip: 147.135.37.175
           role: worker

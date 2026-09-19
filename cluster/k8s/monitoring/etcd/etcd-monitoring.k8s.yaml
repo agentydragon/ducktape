@@ -45,6 +45,12 @@ endpoints:
       ready: true
     hostname: ovh-ns104963
     nodeName: ovh-ns104963
+  - addresses:
+      - 10.42.0.19
+    conditions:
+      ready: true
+    hostname: ovh-ns1001419
+    nodeName: ovh-ns1001419
 ports:
   - name: metrics
     port: 2381

@@ -37,6 +37,15 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
+    "ovh-ns1001419": {
+      "nebula_ip": "10.42.0.19",
+      "endpoint": "51.81.245.180:4242",
+      "role": "control-plane",
+      "lighthouse": true,
+      "relay": true,
+      "managed_by": "tofu-ovh",
+      "cert_groups": ["lighthouse"]
+    },
     "ovh-ns102453": {
       "nebula_ip": "10.42.0.15",
       "endpoint": "147.135.37.175:4242",

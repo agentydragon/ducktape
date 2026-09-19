@@ -45,7 +45,7 @@ spec:
       # /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
       # (allowedTopologies zone=hil-ovh) routes OVH-local PVCs here.
       #
-      # KS-5 nodes use /dev/sdb; KS-GAME nodes use their second NVMe. List
+      # KS-5 nodes use /dev/sdb; NVMe nodes use their second NVMe. List
       # every node that should be eligible for local-path-ovh placement.
       - node: ovh-ns103656
         paths:
@@ -60,6 +60,9 @@ spec:
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: ovh-ns104963
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: ovh-ns1001419
         paths:
           - /var/mnt/seaweedfs-data/local-path
       # Home Assistant is deliberately tied to the physical home LAN and the
