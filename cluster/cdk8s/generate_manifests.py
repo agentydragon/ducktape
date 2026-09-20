@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from cdk8s import Testing
+from cdk8s import App, Chart
 
 from cluster.cdk8s import (
     aiquota,
@@ -56,7 +56,6 @@ from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook
 from cluster.cdk8s.forgejo import flux_kustomizations as forgejo_flux_kustomizations
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
 from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_branch_protection import flux_kustomizations as github_branch_protection_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
@@ -141,7 +140,10 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
-    flux_chart = Testing.chart()
+    flux_output = root / "cluster/k8s/flux"
+    flux_output.mkdir(parents=True, exist_ok=True)
+    flux_app = App(outdir=str(flux_output))
+    flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
     agentplane_egress_credentials_namespace_kustomization = (
         agentplane_egress_credentials_flux_kustomizations.agentplane_egress_credentials_namespace(flux_chart)
@@ -1142,35 +1144,7 @@ def generate_manifests(root: Path) -> None:
         haku_console_kustomization,
         airlock_kustomization,
     )
-    for manifest in Testing.synth(flux_chart):
-        assert isinstance(manifest, dict)
-        metadata = manifest["metadata"]
-        spec = manifest["spec"]
-        assert isinstance(metadata, dict)
-        assert isinstance(spec, dict)
-        name = metadata["name"]
-        flux_path = spec["path"]
-        assert isinstance(name, str)
-        assert isinstance(flux_path, str)
-
-        if name == "external-secrets-crds":
-            output_directory = Path("cluster/k8s/external-secrets/crds")
-        elif name == "monitoring-crds":
-            output_directory = Path("cluster/k8s/monitoring/crds")
-        elif name == "haku-dispatch":
-            output_directory = Path("cluster/k8s/parked/haku-dispatch")
-        elif name == "snapshot-controller":
-            output_directory = Path("cluster/k8s/snapshot-controller/app")
-        elif name == "snapshot-controller-crds":
-            output_directory = Path("cluster/k8s/snapshot-controller/crds")
-        elif name == "sshpiper-crds":
-            output_directory = Path("cluster/k8s/sshpiper-crds")
-        else:
-            output_directory = Path(flux_path.removeprefix("./"))
-
-        output_path = root / output_directory / "flux-kustomization.yaml"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        write_yaml(output_path, manifest)
+    flux_app.synth()
 
 
 def main() -> None:

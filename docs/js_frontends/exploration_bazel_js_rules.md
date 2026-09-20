@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document comprehensively surveys all available Bazel rulesets for JavaScript/TypeScript development, with focus on dependency management, module resolution, workspace support, and linting integration. The goal is to understand all available options for building 3 JS frontends (2 Svelte, 1 React) with Bazel.
+This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent frontends (1 Svelte, 3 React).
 
 ---
 
@@ -137,7 +137,7 @@ npm.npm_translate_lock(
 The ducktape repository currently uses aspect_rules_js for:
 
 - **Props frontend** (SvelteKit): Vite build, svelte-check, storybook, playwright visual tests
-- **Airlock frontend** (Svelte): esbuild, svelte-check, playwright visual tests
+- **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
 - **rspcache admin_ui** (React): Vite build
 
 All use cases work well for bundling and dev servers, but Playwright test runner hits the module identity issue (#1).
@@ -383,13 +383,13 @@ Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources
 
 ## 10. Recommended Setup for Ducktape
 
-Given the current architecture (2 Svelte frontends, 1 React):
+Given the current architecture (1 Svelte frontend, 3 React frontends):
 
 ### Primary Stack
 
 - **Dependency management:** `aspect_rules_js` with pnpm
 - **TypeScript:** `aspect_rules_ts` (ts_project rule)
-- **Bundling:** Vite (via aspect_rules_js npm packages, not dedicated rules)
+- **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
 - **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
 - **Browser binaries:** `rules_playwright` for playwright tests
 - **Framework tooling:** Let Vite/SvelteKit/build tools handle framework specifics

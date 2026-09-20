@@ -16,10 +16,3 @@ filegroup(
     ),
     visibility = ["//cluster/validation:__pkg__"],
 )
-
-exports_files(
-    [
-        "flux-kustomization.yaml",
-    ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-)

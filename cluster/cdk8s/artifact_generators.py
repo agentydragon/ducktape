@@ -256,20 +256,14 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _FLUX_SYSTEM_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (("external-creds", ("cluster/k8s/external-creds",)),)
 
 
-def _copy_operation(source_path: str, *, exclude_consumer: bool) -> ArtifactGeneratorSpecArtifactsCopy:
-    return ArtifactGeneratorSpecArtifactsCopy(
-        from_=f"@repo/{source_path}/**",
-        to=f"@artifact/{source_path}/",
-        exclude=["flux-kustomization.yaml"] if exclude_consumer else None,
-    )
+def _copy_operation(source_path: str) -> ArtifactGeneratorSpecArtifactsCopy:
+    return ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source_path}/**", to=f"@artifact/{source_path}/")
 
 
 def _artifacts(definitions: tuple[tuple[str, tuple[str, ...]], ...]) -> list[ArtifactGeneratorSpecArtifacts]:
     return [
         ArtifactGeneratorSpecArtifacts(
-            name=name,
-            origin_revision="@repo",
-            copy=[_copy_operation(path, exclude_consumer=index == 0) for index, path in enumerate(source_paths)],
+            name=name, origin_revision="@repo", copy=[_copy_operation(path) for path in source_paths]
         )
         for name, source_paths in definitions
     ]

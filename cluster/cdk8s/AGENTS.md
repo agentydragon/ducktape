@@ -3,6 +3,27 @@
 Design and conversion mechanics: <../docs/cdk8s.md>. Which directories are generated and
 how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
+## Boundaries
+
+- **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
+  values.** Nothing here introduces a concept those do not have: no marker annotation,
+  no "provides" declaration, no record type standing in for an object, no registry, no
+  convention a reader must learn on top of the objects' own fields. When a change seems
+  to need one, stop and ask; the operator approves the design before it is built. The
+  same applies to a rule or check that would only work with such a marker.
+- **Construction runs forward** (§ The Flux graph): inputs are values or constructs
+  built earlier, and every fact a node depends on is in its signature.
+- **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
+  and anything a person authored survive every conversion and restructuring; caches may
+  be dropped. A Kustomization that owns PVCs carries `deletionPolicy: Orphan`, and an
+  ownership change goes through § Restructuring. The repository-level rule that deployed
+  state is disposable covers schemas and wire formats, not volumes.
+- **Escape hatches stay.** Every Flux and Kustomize field remains expressible, so an
+  incident `suspend`, the two-step ownership move, a VolSync restore, or a one-off
+  hand-written sibling file is a plain edit and not a fight with the generator. A shape
+  is made unrepresentable only where the operator asked for that; by default the safe
+  procedure is documented and possible, not enforced.
+
 ## Shape of a generator
 
 Model with constructs, deploy with one props object per environment.
@@ -48,19 +69,98 @@ Model with constructs, deploy with one props object per environment.
   `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
   call sites have (SNI list, listener, timeout), not variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
-  Action Service allowlist and its egress rule from one tuple in `staging.py`;
-  `Environment.provided_secrets` ties each externally provided Secret to the Flux
-  dependency that creates it. When two artifacts must agree, derive both from one value;
-  never write a test that reads both.
+  Action Service allowlist and its egress rule from one tuple in `staging.py`. When
+  two artifacts must agree, derive both from one value; never write a test that reads
+  both.
 - **New Kustomization directories default to cdk8s** when they hold more than a
   `HelmRelease` plus values.
+
+## The Flux graph
+
+Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
+its parameters. `generate_manifests.py` is the topological order, written out by hand.
+
+- **A node is `name(chart, *predecessors: Kustomization) -> Kustomization`.** It builds
+  its `KustomizationSpec` with the literals from its directory and returns
+  `flux.flux_kustomization(chart, name, spec=...)`. `dependsOn` is
+  `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
+  off the constructs it is handed; the entry carries an explicit `namespace` for that
+  reason. The predecessor is a value the caller already built, never a string, a
+  module-level lookup, or something resolved later.
+- **The entry point calls the nodes in dependency order** and passes each result as a
+  local to the nodes that need it. A wrong order is a `NameError` at synth; a cycle
+  cannot be written. Never add a registry, a sorter, a lazy reference, a class or record
+  that "describes" a node, or a module that builds nodes on import.
+- **A resource chart joins the graph in three steps, in this order**: build the resource
+  chart (`staging.chart(app)`, `haku.charts.console_chart(app)`); then its Kustomization
+  node takes the _values_ derived from that chart, computed at the join in
+  `generate_manifests.py` (`health_checks=flux.health_checks(chart, kinds)`), plus its
+  predecessor Kustomizations; then dependents take the returned Kustomization. The node
+  never takes the `Chart` itself: a Kustomization reads the rendered directory at
+  runtime, not a construct, and a node whose inputs are plain values shows every fact
+  that crosses in its signature and can be tested with hand-supplied values, without
+  importing the workload modules. A second fact that needs to cross is a second
+  parameter, and that is the review signal. Chart before Kustomization before
+  dependents; a Kustomization never builds the chart it describes. Both current
+  instances predate this rule: `agentplane_staging` (`agentplane/staging.py`) takes the
+  chart, and `haku_console` (`haku/charts.py`) builds it inside the node; both are the
+  shape to fix, not the shape to copy.
+- **Each object is built from what it reads at runtime, never from what reads it.** A
+  Kustomization is built from its artifact, its path and its predecessors; an artifact
+  from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
+  Kustomization from the artifact inventory, or the inventory from the Kustomizations'
+  `sourceRef` names, is the same mistake facing opposite ways.
+- **Repetition is not a reason to abstract yet.** Two hundred nodes say
+  `interval="10m"`; keep saying it. The operational fields (`interval`,
+  `retry_interval`, `timeout`, `prune`, `wait`, `suspend`) are per-node choices a reader
+  must see on the node, and Flux's own defaults differ from ours. A literal that is the
+  same _fact_ in two places (the node's name in `metadata` and in its own `sourceRef`)
+  becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
+  entry) may become one module constant. Nothing else until every node it would touch is
+  in Python.
+- **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
+  is not their own directory listed explicitly in the writer. Keep those explicit.
+
+The worked edge, `monitoring-crds -> cilium-monitoring`:
+
+```python
+def monitoring_crds(chart: Chart) -> Kustomization:
+    name = "monitoring-crds"
+    return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
+
+
+def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+    name = "cilium-monitoring"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            ...,
+            # The ServiceMonitor CRD.
+            depends_on=flux_kustomization_depends_on_many(monitoring_crds),
+        ),
+    )
+
+
+# generate_manifests.py
+monitoring_crds_kustomization = monitoring.monitoring_crds(flux_chart)
+monitoring.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
+```
+
+The one edge still written as a string is `artifact-generators -> flux-system`
+(`artifact_generators.py`): `gotk-sync.yaml` owns the bootstrap Kustomization, which
+isn't a node in the generated Flux chart.
+
+If a typed field cannot represent a directory's YAML, an in-graph dependency cannot be
+passed as a parameter, or finishing a change appears to need another helper, class or
+indirection, stop and ask before changing the design.
 
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates every converted directory in memory and asserts equality with the
-  committed files; a change to generated output is a diff in the PR that makes it. No
-  other test reads a committed `.k8s.yaml` or `flux-kustomization.yaml`.
+  regenerates every generated file in memory and asserts equality with the committed
+  files, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart; a change
+  to generated output is a diff in the PR that makes it.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through

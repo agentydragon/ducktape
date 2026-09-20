@@ -27,7 +27,7 @@ entries:
   # resolves the referenced Authentik object by slug at blueprint-apply
   # time. The Flux dep chain actually runs `sso-providers-tf` AFTER
   # `authentik` (see cluster/k8s/authentik/sso-providers-tf/
-  # flux-kustomization.yaml), so on a cold bootstrap this blueprint's
+  # central Flux chart), so on a cold bootstrap this blueprint's
   # first apply can fail to resolve the source; Authentik's blueprint
   # reconciler retries, and the next pass after TF creates the source
   # succeeds. Keep this reference's slug aligned with the TF resource.

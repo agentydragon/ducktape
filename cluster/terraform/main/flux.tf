@@ -1,13 +1,13 @@
 # Flux GitOps bootstrap — requires infrastructure to be applied first.
 #
-# The Flux manifests in cluster/k8s/flux-system are the source of truth. Keep
+# The Flux bootstrap manifests in cluster/k8s/flux/flux-system are the source of truth. Keep
 # OpenTofu out of the business of regenerating them: Flux bootstrap
 # customization is reviewed in git, and this resource only seeds those committed
 # manifests into an empty cluster.
 
 locals {
-  flux_bootstrap_components_path = "${path.module}/../../k8s/flux-system/gotk-components.yaml"
-  flux_bootstrap_sync_path       = "${path.module}/../../k8s/flux-system/gotk-sync.yaml"
+  flux_bootstrap_components_path = "${path.module}/../../k8s/flux/flux-system/gotk-components.yaml"
+  flux_bootstrap_sync_path       = "${path.module}/../../k8s/flux/flux-system/gotk-sync.yaml"
 }
 
 removed {

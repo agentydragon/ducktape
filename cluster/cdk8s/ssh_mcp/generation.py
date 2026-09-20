@@ -10,6 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
     KustomizationSpecDependsOn,
+    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -45,17 +46,26 @@ def ssh_mcp(
 
     app = App(outdir=str(out_dir))
     chart = backend.chart(app, config=ssh_config, mesh=mesh)
-    add_fleet_rules(
-        chart,
-        provided_secrets={
-            "ssh-mcp-keys": "keys.sops.yaml",
-            "ssh-mcp-keys-public-coder-devbox": "keys-public-coder-devbox.sops.yaml",
-            "ssh-mcp-keys-atlas": "keys-atlas.sops.yaml",
-        },
-        providers=frozenset({"ssh-mcp", "external-secrets-config", "forgejo-images", *_KEY_FILES}),
-    )
+    add_fleet_rules(chart)
     app.synth()
 
+    namespace_kustomization = flux_kustomization(
+        flux_chart,
+        "ssh-mcp-namespace",
+        description="Namespace for the standalone SSH MCP backend.",
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="2m",
+            path="./cluster/k8s/ssh-mcp/namespace",
+            prune=False,
+            wait=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
+            ),
+            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="ssh-mcp")],
+        ),
+    )
     kustomization = flux_kustomization(
         flux_chart,
         config.NAME,
@@ -72,7 +82,8 @@ def ssh_mcp(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=config.NAME, namespace=NAMESPACE
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="ssh-mcp-namespace"),
+                # Preserve the source YAML's omitted namespace field; Flux resolves it in this CR's namespace.
+                KustomizationSpecDependsOn(name=namespace_kustomization.name),
                 *flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
             ],
         ),

@@ -143,12 +143,13 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
             all_yaml_files.add(yaml_file.resolve())
             kustomize_files[yaml_file] = parse_kustomize_file(yaml_file)
 
-        elif yaml_file.name == "flux-kustomization.yaml":
+        elif yaml_file.name in {"flux-kustomization.yaml", "kustomizations.k8s.yaml"}:
             parsed_flux = parse_flux_kustomizations(yaml_file)
-            if parsed_flux and all(spec.parked for spec in parsed_flux.values()):
+            parsed_active_flux = {name: spec for name, spec in parsed_flux.items() if not spec.parked}
+            if parsed_flux and not parsed_active_flux:
                 continue
             all_yaml_files.add(yaml_file.resolve())
-            flux_kustomizations.update(parsed_flux)
+            flux_kustomizations.update(parsed_active_flux)
 
         else:
             all_yaml_files.add(yaml_file.resolve())

@@ -151,7 +151,7 @@ def write_manifests(root: Path) -> None:
     app = App(outdir=str(out_dir))
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     ForgejoImageAutomation(chart, "images")
-    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    add_fleet_rules(chart)
     app.synth()
 
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

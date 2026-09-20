@@ -433,42 +433,13 @@ def litellm(
 ) -> Kustomization:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
 
-    # Upstream Flux Kustomizations whose Secrets this directory reads, for the fleet-rules provider check.
-    providers = (
-        "external-secrets-config",
-        "forgejo-images",
-        "litellm-secrets",
-        "litellm-db",
-        "gateway",
-        "cert-manager-environment",
-        "langfuse-secrets",
-        "reflector",
-        "tana-mcp",
-        "monitoring-crds",
-    )
-
     app_dir = root / APP_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring")
-    add_fleet_rules(
-        chart,
-        provided_secrets={
-            "litellm-master-key": "litellm-secrets",
-            "litellm-salt-key": "litellm-secrets",
-            "litellm-anthropic-key": "litellm-secrets",
-            "litellm-groq-key": "litellm-secrets",
-            "litellm-gemini-key": "litellm-secrets",
-            "litellm-mistral-key": "litellm-secrets",
-            "litellm-cliproxy-key": "litellm-secrets",
-            "litellm-db-app": "litellm-db",
-            "langfuse-secrets": "langfuse-secrets",
-            "tana-firebase-refresh-token": "tana-mcp",
-        },
-        providers=frozenset(providers),
-    )
+    add_fleet_rules(chart)
     app.synth()
 
     kustomization = flux_kustomization(
