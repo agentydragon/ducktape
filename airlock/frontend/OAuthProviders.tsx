@@ -133,7 +133,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderStatus }): JSX.Elem
               </Badge>
             )}
           </Group>
-          <Table.ScrollContainer>
+          <Table.ScrollContainer minWidth={0}>
             <Table withTableBorder>
               <Table.Thead>
                 <Table.Tr>
