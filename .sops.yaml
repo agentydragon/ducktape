@@ -114,11 +114,11 @@ creation_rules:
           - *agent-box-codex-user
           - *haku
 
-  # Brave Search API key — Flux applies the canonical external-creds Secret and
-  # ESO distributes it to the egress proxy (cluster-secrets), while workstations
-  # read it directly as $BRAVE_API_KEY via ducktape.sopsEnv (user keys). More
-  # specific than the generic cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/external-creds/brave-search-api-key\.sops\.yaml$
+  # Brave Search API key — external-creds is canonical and ESO distributes it
+  # to the egress proxy; workstations read it directly via ducktape.sopsEnv.
+  # The legacy shared-secrets copy remains managed during the initial cutover
+  # and is removed under pruning after the consumer ExternalSecret is verified.
+  - path_regex: cluster/k8s/(agents/shared-secrets|external-creds)/brave-search-api-key\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
