@@ -204,7 +204,6 @@ def generate_manifests(root: Path) -> None:
     openhands_namespace_kustomization = parked_flux_kustomizations.openhands_namespace(flux_chart)
     openhands_sandboxes_kustomization = parked_flux_kustomizations.openhands_sandboxes(flux_chart)
     paperless_namespace_kustomization = parked_flux_kustomizations.paperless_namespace(flux_chart)
-    tandoor_namespace_kustomization = parked_flux_kustomizations.tandoor_namespace(flux_chart)
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart)
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(flux_chart)
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
@@ -342,9 +341,6 @@ def generate_manifests(root: Path) -> None:
     paperless_db_kustomization = parked_flux_kustomizations.paperless_db(
         flux_chart, paperless_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
-    tandoor_db_kustomization = parked_flux_kustomizations.tandoor_db(
-        flux_chart, tandoor_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
@@ -475,13 +471,6 @@ def generate_manifests(root: Path) -> None:
         gateway_kustomization,
         authentik_kustomization,
         external_secrets_operator_kustomization,
-    )
-    parked_flux_kustomizations.tandoor(
-        flux_chart,
-        tandoor_namespace_kustomization,
-        tandoor_db_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
     )
     flux_webhook_token_kustomization = flux_webhook_token_flux_kustomizations.flux_webhook_token(
         flux_chart,

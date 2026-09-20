@@ -367,8 +367,9 @@ application manifests). Not currently reconciled cluster state.
   declarations remain in Git.
 - **OpenHands**: `cluster/k8s/parked/openhands/` — experimental and not currently used;
   its namespace, secrets, sandbox, and app declarations remain in Git.
-- **Tandoor**: `cluster/k8s/parked/tandoor/` — replaced by Grocy; its namespace,
-  database, and app declarations remain in Git.
+- **Tandoor**: `cluster/k8s/parked/tandoor/` — replaced by Grocy; its three Flux
+  Kustomizations are removed from the active bundle. Namespace, database, and app
+  manifests remain in Git for possible manual revival.
 - **Browsertrix**: `cluster/k8s/parked/browsertrix/` — decommissioned; its revival
   package remains in Git.
 - **ArchiveBox**: `cluster/k8s/parked/archivebox/` — decommissioned; its revival
