@@ -1,13 +1,23 @@
 #!/bin/sh
-set -ex
+set -e
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: $0 IMAGE_URL INSTALL_DISK" >&2
+  echo "usage: $0 IMAGE_URL INSTALL_DISK < NETRC_CONTENT" >&2
   exit 2
 fi
 
 image_url=$1
 install_disk=$2
+netrc=/tmp/talos-image-factory.netrc
+installer_script=$0
+
+# Terraform provides the netrc entry on stdin, keeping credentials out of
+# argv. Create it privately and remove both temporary files on every exit.
+umask 077
+trap 'rm -f "$netrc" "$installer_script"' EXIT
+cat >"$netrc"
+chmod 0600 "$netrc"
+test -s "$netrc"
 
 case "$install_disk" in
   /dev/*) ;;
@@ -23,7 +33,7 @@ esac
 # xz-utils is preinstalled; install zstd for current Factory images.
 apt-get update -qq && apt-get install -y -qq zstd
 
-wget -q -O /tmp/talos.bin "$image_url"
+wget --netrc-file="$netrc" -q -O /tmp/talos.bin "$image_url"
 case "$image_url" in
   *.zst) zstd -dc /tmp/talos.bin >/tmp/talos.raw ;;
   *.xz) xz -dc /tmp/talos.bin >/tmp/talos.raw ;;

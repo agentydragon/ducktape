@@ -168,8 +168,9 @@ data "ovh_dedicated_server" "kimsufi_cp" {
 # Picking [0] from the list gives iPXE shell → SSH never comes up → install hangs.
 # Verified via GET /dedicated/server/{name}/boot/{id}.
 locals {
-  kimsufi_rescue_boot_id   = 218949 # rescue12-customer (Debian-12)
-  kimsufi_harddisk_boot_id = 1      # harddisk
+  kimsufi_rescue_boot_id       = 218949 # rescue12-customer (Debian-12)
+  kimsufi_harddisk_boot_id     = 1      # harddisk
+  kimsufi_talos_disk_image_url = replace(data.talos_image_factory_urls.kimsufi.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url)
 }
 
 # SSH KEY — for OVH rescue mode authentication
@@ -255,9 +256,12 @@ resource "null_resource" "install_talos_kimsufi" {
 
   provisioner "remote-exec" {
     # Workers and control planes share the installer; only the target disk
-    # differs. Image URLs still come directly from the public Image Factory.
-    inline = [
-      "/bin/sh /tmp/install_talos_from_image_factory.sh '${replace(data.talos_image_factory_urls.kimsufi.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url)}' '${each.value.install_disk}'",
+    # differs. Feed credentials on stdin so they never become command args.
+    inline = [<<-EOT
+      /bin/sh /tmp/install_talos_from_image_factory.sh '${local.kimsufi_talos_disk_image_url}' '${each.value.install_disk}' <<'TALOS_IMAGE_FACTORY_NETRC'
+      machine ${local.talos_image_factory_registry} login ${local.talos_image_factory_registry_auth.username} password ${local.talos_image_factory_registry_auth.password}
+      TALOS_IMAGE_FACTORY_NETRC
+    EOT
     ]
   }
 
@@ -614,8 +618,11 @@ resource "null_resource" "install_talos_kimsufi_cp" {
   }
 
   provisioner "remote-exec" {
-    inline = [
-      "/bin/sh /tmp/install_talos_from_image_factory.sh '${replace(data.talos_image_factory_urls.kimsufi.urls.disk_image, var.talos_image_factory_api_url, local.talos_image_factory_public_url)}' '${each.value.install_disk}'",
+    inline = [<<-EOT
+      /bin/sh /tmp/install_talos_from_image_factory.sh '${local.kimsufi_talos_disk_image_url}' '${each.value.install_disk}' <<'TALOS_IMAGE_FACTORY_NETRC'
+      machine ${local.talos_image_factory_registry} login ${local.talos_image_factory_registry_auth.username} password ${local.talos_image_factory_registry_auth.password}
+      TALOS_IMAGE_FACTORY_NETRC
+    EOT
     ]
   }
 
