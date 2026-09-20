@@ -17,6 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from agentplane.action_service.main import ActionServiceDeploymentSettings
 from agentplane.action_service.mcp_linkage import McpOAuthServer, McpProvider
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import DirectFederationSettings
@@ -67,10 +68,10 @@ _ACTION_FEDERATION = DirectFederationSettings(
     target=_FEDERATION_TARGET,
     scope="openid",
 )
-_ACTIONS_SETTINGS = {
-    "operator_oidc": _FEDERATION_TARGET.model_dump(mode="json", exclude_unset=True),
-    "allowed_service_account_namespaces": [_NAMESPACE],
-    "mcp_servers": {
+_ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
+    operator_oidc=_FEDERATION_TARGET,
+    allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    mcp_servers={
         "example": McpOAuthServer(
             server_id="example",
             provider=McpProvider.EXAMPLE,
@@ -79,9 +80,9 @@ _ACTIONS_SETTINGS = {
             client_secret_file="/etc/agentplane-mcp/client-secret",
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
             scopes=["openid"],
-        ).model_dump(mode="json", exclude_unset=True)
+        )
     },
-    "action_groups": {
+    action_groups={
         "everything": ActionGroup(
             title="Upstream Everything",
             description="Credentialless MCP reference server for testing acceptance.",
@@ -94,7 +95,7 @@ _ACTIONS_SETTINGS = {
                     "auth": "none",
                 },
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "example": ActionGroup(
             title="OAuth Example",
             description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
@@ -108,9 +109,9 @@ _ACTIONS_SETTINGS = {
                     "auth": "oauth",
                 },
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
     },
-}
+)
 
 
 ENV = Environment(

@@ -79,6 +79,32 @@ class GitHubVisibilitySettings(BaseModel):
     )
 
 
+class WebPushDeploymentSettings(BaseModel):
+    """The Web Push fields cdk8s authors; the private key comes from the mounted Secret."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str
+    public_base_url: str
+    allowed_push_hosts: list[str]
+
+
+class ActionServiceDeploymentSettings(BaseModel):
+    """The Action Service settings authored by cdk8s and written to its YAML file.
+
+    Runtime-only inputs such as the database URL and Web Push private key come from
+    Kubernetes Secrets and environment variables.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    operator_oidc: OperatorOidcSettings
+    allowed_service_account_namespaces: frozenset[str]
+    web_push: WebPushDeploymentSettings | None = None
+    mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
+    action_groups: dict[Key, ActionGroup] = Field(default_factory=dict)
+
+
 # Names the YAML settings file a deployment mounts; not a field, so not a flag.
 CONFIG_FILE_ENV = "AGENTPLANE_ACTIONS_CONFIG_FILE"
 

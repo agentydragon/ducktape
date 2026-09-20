@@ -155,7 +155,11 @@ class Actions(Construct):
             self,
             "settings",
             metadata=metadata("agentplane-actions-settings", self.env.namespace),
-            data={"settings.yaml": yaml_config(settings_file(Settings, self.env.actions.settings))},
+            data={
+                "settings.yaml": yaml_config(
+                    settings_file(Settings, self.env.actions.settings.model_dump(mode="json", exclude_unset=True))
+                )
+            },
         )
 
     def _database_env(self) -> dict[str, EnvValue]:

@@ -17,6 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
 from agentplane.action_service.mcp_linkage import McpOAuthServer, McpProvider
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import ExchangeFederationSettings
@@ -71,18 +72,15 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
     target=_FEDERATION_TARGET,
     scope="openid",
 )
-_ACTIONS_SETTINGS = {
-    "operator_oidc": _FEDERATION_TARGET.model_dump(mode="json", exclude_unset=True),
-    "allowed_service_account_namespaces": [_NAMESPACE],
-    # Plain dict, not a full WebPushSettings(...): private_key_pem is a required field
-    # supplied by a mounted Secret at container runtime (settings_file's `supplied=`
-    # mechanism), not by this cdk8s-authored dict.
-    "web_push": {
-        "subject": "mailto:agentydragon@gmail.com",
-        "public_base_url": f"https://{_HOSTNAME}",
-        "allowed_push_hosts": list(_WEB_PUSH_ALLOWED_HOSTS),
-    },
-    "mcp_servers": {
+_ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
+    operator_oidc=_FEDERATION_TARGET,
+    allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    web_push=WebPushDeploymentSettings(
+        subject="mailto:agentydragon@gmail.com",
+        public_base_url=f"https://{_HOSTNAME}",
+        allowed_push_hosts=list(_WEB_PUSH_ALLOWED_HOSTS),
+    ),
+    mcp_servers={
         "github": McpOAuthServer(
             server_id="github",
             provider=McpProvider.GITHUB,
@@ -90,16 +88,16 @@ _ACTIONS_SETTINGS = {
             client_id="configured-by-secret",
             client_secret_file="/etc/agentplane-github/client_secret",
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "kubernetes": McpOAuthServer(
             server_id="kubernetes",
             provider=McpProvider.KUBERNETES,
             server_url=_KUBERNETES_MCP_URL,
             client_id="kubectl-passthrough-mcp",
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
     },
-    "action_groups": {
+    action_groups={
         "github": ActionGroup(
             title="GitHub MCP",
             description="GitHub's operator-linked MCP tools; every Action remains subject to operator approval.",
@@ -108,7 +106,7 @@ _ACTIONS_SETTINGS = {
                 description="GitHub MCP executed with the linked operator GitHub account.",
                 config={"transport": "streamable-http", "url": _GITHUB_MCP_URL, "server_id": "github", "auth": "oauth"},
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "kubernetes": ActionGroup(
             title="Kubernetes MCP",
             description="Kubernetes passthrough MCP tools; every Action remains subject to operator approval.",
@@ -122,7 +120,7 @@ _ACTIONS_SETTINGS = {
                     "auth": "oauth",
                 },
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "sandbox": ActionGroup(
             title="Sandbox",
             description=(
@@ -149,7 +147,7 @@ _ACTIONS_SETTINGS = {
                 },
                 default_environment="runner",
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "ssh": ActionGroup(
             title="SSH",
             description="SSH commands on configured targets; every Action remains subject to operator approval.",
@@ -163,7 +161,7 @@ _ACTIONS_SETTINGS = {
                     "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
                 },
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
         "home_assistant": ActionGroup(
             title="Home Assistant MCP",
             description="Home Assistant tools; every Action remains subject to operator approval.",
@@ -177,9 +175,9 @@ _ACTIONS_SETTINGS = {
                     "bearer_file": "/run/secrets/ha-mcp/bearer-token",
                 },
             ),
-        ).model_dump(mode="json", exclude_unset=True),
+        ),
     },
-}
+)
 
 ENV = Environment(
     namespace=_NAMESPACE,

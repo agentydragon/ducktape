@@ -276,6 +276,7 @@ py_library(
     name = "environment",
     srcs = ["environment.py"],
     deps = [
+        "//agentplane/action_service:main",
         "//agentplane/app:main",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
@@ -332,6 +333,7 @@ py_library(
         ":generation",
         ":staging_config",
         "//agentplane/action_service:catalog",
+        "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:operator_oidc",
         "//agentplane/app:action_federation",
@@ -359,6 +361,7 @@ py_library(
         ":generation",
         ":testing_config",
         "//agentplane/action_service:catalog",
+        "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:operator_oidc",
         "//agentplane/app:action_federation",
