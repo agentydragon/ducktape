@@ -2,26 +2,34 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def langfuse() -> dict[str, object]:
+def langfuse(
+    chart: Chart,
+    langfuse_namespace: Kustomization,
+    langfuse_secrets: Kustomization,
+    langfuse_cache: Kustomization,
+    langfuse_db: Kustomization,
+    clickhouse: Kustomization,
+    langfuse_seaweed: Kustomization,
+    gateway: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "langfuse"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -38,23 +46,26 @@ def langfuse() -> dict[str, object]:
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="langfuse", namespace="langfuse"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="langfuse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="langfuse-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="langfuse-cache", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="langfuse-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="clickhouse", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="langfuse-seaweed", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="claude-rbac", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                langfuse_namespace,
+                langfuse_secrets,
+                langfuse_cache,
+                langfuse_db,
+                clickhouse,
+                langfuse_seaweed,
+                gateway,
+                claude_rbac,
+            ),
         ),
     )
 
 
-def langfuse_cache() -> dict[str, object]:
+def langfuse_cache(
+    chart: Chart, langfuse_namespace: Kustomization, valkey: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "langfuse-cache"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -66,18 +77,17 @@ def langfuse_cache() -> dict[str, object]:
             path="./cluster/k8s/langfuse/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="langfuse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, valkey, local_path_provisioner),
         ),
     )
 
 
-def langfuse_db() -> dict[str, object]:
+def langfuse_db(
+    chart: Chart, langfuse_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "langfuse-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -90,18 +100,15 @@ def langfuse_db() -> dict[str, object]:
             path="./cluster/k8s/langfuse/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="langfuse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, cnpg, local_path_provisioner),
         ),
     )
 
 
-def langfuse_namespace() -> dict[str, object]:
+def langfuse_namespace(chart: Chart) -> Kustomization:
     name = "langfuse-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -115,9 +122,12 @@ def langfuse_namespace() -> dict[str, object]:
     )
 
 
-def langfuse_seaweed() -> dict[str, object]:
+def langfuse_seaweed(
+    chart: Chart, langfuse_namespace: Kustomization, seaweedfs_cluster: Kustomization
+) -> Kustomization:
     name = "langfuse-seaweed"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -138,17 +148,17 @@ def langfuse_seaweed() -> dict[str, object]:
                     api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="langfuse", namespace="langfuse"
                 ),
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="langfuse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, seaweedfs_cluster),
         ),
     )
 
 
-def langfuse_secrets() -> dict[str, object]:
+def langfuse_secrets(
+    chart: Chart, langfuse_namespace: Kustomization, seaweedfs_cluster: Kustomization
+) -> Kustomization:
     name = "langfuse-secrets"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -164,30 +174,6 @@ def langfuse_secrets() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="10m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="langfuse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, seaweedfs_cluster),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/langfuse/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse())
-    path = root / "cluster/k8s/langfuse/cache/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse_cache())
-    path = root / "cluster/k8s/langfuse/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse_db())
-    path = root / "cluster/k8s/langfuse/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse_namespace())
-    path = root / "cluster/k8s/langfuse/seaweed/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse_seaweed())
-    path = root / "cluster/k8s/langfuse/secrets/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, langfuse_secrets())

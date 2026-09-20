@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: egress-proxy-rugged
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: egress-proxy-rugged
+  namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/k8s/parked/egress-proxy-rugged

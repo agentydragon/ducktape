@@ -2,25 +2,28 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def activitywatch() -> dict[str, object]:
+def activitywatch(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
     name = "activitywatch"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             # Revived 2026-08-26: the central aw-server is fed by the repo-owned
@@ -43,16 +46,8 @@ def activitywatch() -> dict[str, object]:
             # Only local-path-proxmox (activitywatch-data) is used now that Syncthing and its
             # seaweedfs sync-inbox are gone -- so no seaweedfs-csi dependency, which otherwise
             # blocks the revive whenever seaweedfs-csi is degraded.
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config, forgejo_images, local_path_provisioner
+            ),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/activitywatch/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, activitywatch())

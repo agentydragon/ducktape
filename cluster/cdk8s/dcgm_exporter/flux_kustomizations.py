@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def dcgm_exporter() -> dict[str, object]:
+def dcgm_exporter(chart: Chart, nvidia_device_plugin: Kustomization, monitoring_crds: Kustomization) -> Kustomization:
     name = "dcgm-exporter"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -29,15 +27,13 @@ def dcgm_exporter() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="2m",
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # RuntimeClass "nvidia" + the containerd nvidia runtime.
-                KustomizationSpecDependsOn(name="nvidia-device-plugin", namespace="ducktape-flux"),
+                nvidia_device_plugin,
                 # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # PodMonitor
-                    namespace="ducktape-flux",
-                ),
-            ],
+                # PodMonitor
+                monitoring_crds,
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -46,9 +42,3 @@ def dcgm_exporter() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/dcgm-exporter/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, dcgm_exporter())

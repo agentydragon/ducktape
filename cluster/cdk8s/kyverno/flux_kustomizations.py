@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def kyverno() -> dict[str, object]:
+def kyverno(chart: Chart) -> Kustomization:
     name = "kyverno"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -73,17 +71,16 @@ def kyverno() -> dict[str, object]:
     )
 
 
-def kyverno_policies() -> dict[str, object]:
+def kyverno_policies(chart: Chart, kyverno: Kustomization) -> Kustomization:
     name = "kyverno-policies"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
             depends_on=[
-                KustomizationSpecDependsOn(
-                    name="kyverno",  # Policies require Kyverno CRDs to be installed
-                    namespace="ducktape-flux",
-                )
+                # Policies require Kyverno CRDs to be installed
+                flux_kustomization_depends_on(kyverno)
             ],
             interval="5m",
             path="./cluster/k8s/kyverno/policies",
@@ -95,12 +92,3 @@ def kyverno_policies() -> dict[str, object]:
             timeout="2m",
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/kyverno/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kyverno())
-    path = root / "cluster/k8s/kyverno/policies/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kyverno_policies())

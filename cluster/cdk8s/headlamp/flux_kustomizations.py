@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def headlamp() -> dict[str, object]:
+def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomization) -> Kustomization:
     name = "headlamp"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -36,15 +34,6 @@ def headlamp() -> dict[str, object]:
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="headlamp", namespace="headlamp"
                 ),
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="sso-providers-tf", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/headlamp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, headlamp())

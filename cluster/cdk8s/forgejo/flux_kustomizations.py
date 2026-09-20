@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def forgejo_agentydragon_repos() -> dict[str, object]:
+def forgejo_agentydragon_repos(
+    chart: Chart, forgejo: Kustomization, tofu_controller: Kustomization, tofu_state_db: Kustomization
+) -> Kustomization:
     name = "forgejo-agentydragon-repos"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -43,21 +43,20 @@ def forgejo_agentydragon_repos() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+            ),
         ),
     )
 
 
-def forgejo_agentydragon() -> dict[str, object]:
+def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization) -> Kustomization:
     name = "forgejo-agentydragon"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -77,17 +76,27 @@ def forgejo_agentydragon() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
         ),
     )
 
 
-def forgejo() -> dict[str, object]:
+def forgejo(
+    chart: Chart,
+    forgejo_namespace: Kustomization,
+    forgejo_db: Kustomization,
+    forgejo_cache: Kustomization,
+    gateway: Kustomization,
+    cert_manager: Kustomization,
+    seaweedfs_cluster: Kustomization,
+    reflector: Kustomization,
+    sso_providers_tf: Kustomization,
+    authentik: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "forgejo"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -115,45 +124,40 @@ def forgejo() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="forgejo-cache",  # shared valkey for cache + queue (HA prerequisite)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="seaweedfs-cluster",  # SeaweedFS CRDs, operator, and backend
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="reflector",  # Mirrors forgejo-oauth-client-secret into the namespace
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="sso-providers-tf",  # Writes forgejo-oauth-client-secret to authentik namespace
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="authentik",  # Authentik must be running for OIDC
-                    namespace="ducktape-flux",
-                ),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_namespace,
+                forgejo_db,
+                # shared valkey for cache + queue (HA prerequisite)
+                forgejo_cache,
+                gateway,
+                cert_manager,
+                # SeaweedFS CRDs, operator, and backend
+                seaweedfs_cluster,
+                # Mirrors forgejo-oauth-client-secret into the namespace
+                reflector,
+                # Writes forgejo-oauth-client-secret to authentik namespace
+                sso_providers_tf,
+                # Authentik must be running for OIDC
+                authentik,
                 # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
                 # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
-            ],
+                # the ServiceMonitor/PodMonitor CRD
+                monitoring_crds,
+            ),
         ),
     )
 
 
-def budget_ledger() -> dict[str, object]:
+def budget_ledger(
+    chart: Chart,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    budget_namespace: Kustomization,
+) -> Kustomization:
     name = "budget-ledger"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -175,25 +179,22 @@ def budget_ledger() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="budget-namespace",  # the git-creds Secret lands in the budget namespace
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+                # the git-creds Secret lands in the budget namespace
+                budget_namespace,
+            ),
         ),
     )
 
 
-def budget_namespace() -> dict[str, object]:
+def budget_namespace(chart: Chart) -> Kustomization:
     name = "budget-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="1h",
@@ -207,9 +208,12 @@ def budget_namespace() -> dict[str, object]:
     )
 
 
-def forgejo_cache() -> dict[str, object]:
+def forgejo_cache(
+    chart: Chart, forgejo_namespace: Kustomization, valkey: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "forgejo-cache"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -221,18 +225,21 @@ def forgejo_cache() -> dict[str, object]:
             path="./cluster/k8s/forgejo/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, valkey, local_path_provisioner),
         ),
     )
 
 
-def forgejo_claude() -> dict[str, object]:
+def forgejo_claude(
+    chart: Chart,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "forgejo-claude"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -255,25 +262,28 @@ def forgejo_claude() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="claude-rbac",  # the credentials Secret lands in claude-sandbox
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+                # the credentials Secret lands in claude-sandbox
+                claude_rbac,
+            ),
         ),
     )
 
 
-def cpap_data() -> dict[str, object]:
+def cpap_data(
+    chart: Chart,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    cpap_sync: Kustomization,
+) -> Kustomization:
     name = "cpap-data"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -295,25 +305,22 @@ def cpap_data() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="cpap-sync",  # the git-creds Secrets land in the cpap-sync namespace
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+                # the git-creds Secrets land in the cpap-sync namespace
+                cpap_sync,
+            ),
         ),
     )
 
 
-def forgejo_db() -> dict[str, object]:
+def forgejo_db(chart: Chart, forgejo_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
     name = "forgejo-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -331,17 +338,24 @@ def forgejo_db() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, cnpg),
         ),
     )
 
 
-def haku_state() -> dict[str, object]:
+def haku_state(
+    chart: Chart,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    agentplane_index: Kustomization,
+    haku_namespace: Kustomization,
+    haku_console_namespace: Kustomization,
+    haku_egress_proxy_namespace: Kustomization,
+) -> Kustomization:
     name = "haku-state"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -363,27 +377,26 @@ def haku_state() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # The git-creds Secret is reflected into agentplane-index; wait for the
                 # aggregate to create that target Namespace before applying Terraform.
-                KustomizationSpecDependsOn(name="agentplane-index", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="haku-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="haku-console-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="haku-egress-proxy-namespace", namespace="ducktape-flux"),
-            ],
+                agentplane_index,
+                haku_namespace,
+                haku_console_namespace,
+                haku_egress_proxy_namespace,
+            ),
         ),
     )
 
 
-def forgejo_namespace() -> dict[str, object]:
+def forgejo_namespace(chart: Chart) -> Kustomization:
     name = "forgejo-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="1h",
@@ -395,39 +408,3 @@ def forgejo_namespace() -> dict[str, object]:
             timeout="1m",
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/forgejo/agentydragon-repos/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_agentydragon_repos())
-    path = root / "cluster/k8s/forgejo/agentydragon/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_agentydragon())
-    path = root / "cluster/k8s/forgejo/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo())
-    path = root / "cluster/k8s/forgejo/budget-ledger/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, budget_ledger())
-    path = root / "cluster/k8s/forgejo/budget-namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, budget_namespace())
-    path = root / "cluster/k8s/forgejo/cache/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_cache())
-    path = root / "cluster/k8s/forgejo/claude/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_claude())
-    path = root / "cluster/k8s/forgejo/cpap-data/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cpap_data())
-    path = root / "cluster/k8s/forgejo/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_db())
-    path = root / "cluster/k8s/forgejo/haku-state/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, haku_state())
-    path = root / "cluster/k8s/forgejo/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_namespace())

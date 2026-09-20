@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: sdr
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: sdr
+  namespace: ducktape-flux
 spec:
   dependsOn:
     - name: external-secrets-config

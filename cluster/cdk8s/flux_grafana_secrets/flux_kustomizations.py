@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def flux_grafana_secrets() -> dict[str, object]:
+def flux_grafana_secrets(
+    chart: Chart, grafana_instance: Kustomization, grafana_operator: Kustomization
+) -> Kustomization:
     name = "flux-grafana-secrets"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -37,15 +37,6 @@ def flux_grafana_secrets() -> dict[str, object]:
                 )
             ],
             timeout="5m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="grafana-instance", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-operator", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(grafana_instance, grafana_operator),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/flux-grafana-secrets/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, flux_grafana_secrets())

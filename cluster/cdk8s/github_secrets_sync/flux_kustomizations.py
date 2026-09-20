@@ -2,26 +2,31 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def github_secrets_sync() -> dict[str, object]:
+def github_secrets_sync(
+    chart: Chart,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    github_secrets_sync_secrets: Kustomization,
+    forgejo_images: Kustomization,
+    seaweedfs_pr_visuals_bucket: Kustomization,
+) -> Kustomization:
     name = "github-secrets-sync"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -41,23 +46,26 @@ def github_secrets_sync() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="github-secrets-sync-secrets", namespace="ducktape-flux"),
+            depends_on=flux_kustomization_depends_on_many(
+                tofu_controller,
+                tofu_state_db,
+                github_secrets_sync_secrets,
                 # The Terraform module reads the canonical ducktape-ci registry credential
                 # from forgejo-images before publishing it to gaffer-private's GitHub Actions
                 # secrets.
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-pr-visuals-bucket", namespace="ducktape-flux"),
-            ],
+                forgejo_images,
+                seaweedfs_pr_visuals_bucket,
+            ),
         ),
     )
 
 
-def github_secrets_sync_secrets() -> dict[str, object]:
+def github_secrets_sync_secrets(
+    chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization
+) -> Kustomization:
     name = "github-secrets-sync-secrets"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -70,10 +78,7 @@ def github_secrets_sync_secrets() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="2m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-creds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="external-secrets.io/v1",
@@ -88,12 +93,3 @@ def github_secrets_sync_secrets() -> dict[str, object]:
             ),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/github-secrets-sync/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, github_secrets_sync())
-    path = root / "cluster/k8s/github-secrets-sync/secrets/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, github_secrets_sync_secrets())

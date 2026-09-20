@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def oci_cache() -> dict[str, object]:
+def oci_cache(
+    chart: Chart, valkey: Kustomization, seaweedfs_registry_cache_bucket: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "oci-cache"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -45,19 +45,13 @@ def oci_cache() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="zot", namespace="oci-cache"
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Namespace, app, and ServiceMonitor are managed together here.
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
+                valkey,
                 # S3 backend: tenant-local Bucket and operator-generated credentials.
-                KustomizationSpecDependsOn(name="seaweedfs-registry-cache-bucket", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux"),
-            ],
+                seaweedfs_registry_cache_bucket,
+                monitoring_crds,
+            ),
         ),
         description="Zot OCI pull-through cache and its namespace-local monitoring.",
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/oci-cache/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, oci_cache())

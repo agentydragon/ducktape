@@ -2,28 +2,34 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def agent_box() -> dict[str, object]:
+def agent_box(
+    chart: Chart,
+    kubevirt: Kustomization,
+    cdi: Kustomization,
+    external_secrets_operator: Kustomization,
+    seaweedfs_public_s3: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
     name = "agent-box"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Keep this controller inactive while the unschedulable legacy VM is retired.
             # Its VM and local disk remain untouched until explicitly deleted.
@@ -40,13 +46,9 @@ def agent_box() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="kubevirt", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cdi", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-public-s3", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-box"),
@@ -68,14 +70,14 @@ def agent_box() -> dict[str, object]:
             ],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def archivebox() -> dict[str, object]:
+def archivebox(chart: Chart, seaweedfs_csi: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
     name = "archivebox"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Retain the declaration without allowing Flux to recreate retired objects.
             suspend=True,
@@ -91,10 +93,7 @@ def archivebox() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-csi", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_csi, local_path_provisioner),
             health_checks=[
                 KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="archivebox"),
                 KustomizationSpecHealthChecks(
@@ -106,23 +105,20 @@ def archivebox() -> dict[str, object]:
             "Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage."
         ),
     )
-    manifest["metadata"] = {
-        "name": name,
-        "namespace": "ducktape-flux",
-        "annotations": {
-            "description": (
-                "Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage."
-            ),
-            "ducktape.org/parked": "true",
-        },
-    }
-    return manifest
 
 
-def augur_evidence() -> dict[str, object]:
+def augur_evidence(
+    chart: Chart,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    budget_namespace: Kustomization,
+) -> Kustomization:
     name = "augur-evidence"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -144,28 +140,24 @@ def augur_evidence() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="budget-namespace",  # the git-creds Secrets land in the budget namespace
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo API must be up (provider target)
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+                # the git-creds Secrets land in the budget namespace
+                budget_namespace,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def authelia() -> dict[str, object]:
+def authelia(chart: Chart, gateway: Kustomization, cert_manager_environment: Kustomization) -> Kustomization:
     name = "authelia"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -185,20 +177,25 @@ def authelia() -> dict[str, object]:
                 )
             ],
             timeout="5m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def browsertrix() -> dict[str, object]:
+def browsertrix(
+    chart: Chart,
+    browsertrix_namespace: Kustomization,
+    seaweedfs_browsertrix_bucket: Kustomization,
+    seaweedfs_secrets: Kustomization,
+    reflector: Kustomization,
+    local_path_provisioner: Kustomization,
+    seaweedfs_csi: Kustomization,
+) -> Kustomization:
     name = "browsertrix"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -214,14 +211,14 @@ def browsertrix() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="browsertrix-app", namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="browsertrix-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-browsertrix-bucket", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-csi", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                browsertrix_namespace,
+                seaweedfs_browsertrix_bucket,
+                seaweedfs_secrets,
+                reflector,
+                local_path_provisioner,
+                seaweedfs_csi,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",
@@ -232,16 +229,18 @@ def browsertrix() -> dict[str, object]:
             ],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def seaweedfs_browsertrix_bucket() -> dict[str, object]:
+def seaweedfs_browsertrix_bucket(
+    chart: Chart, seaweedfs_cluster: Kustomization, seaweedfs_secrets: Kustomization
+) -> Kustomization:
     # Retain the existing resource name so moving its source path does not delete
     # the live Bucket before its explicit retirement.
     name = "seaweedfs-browsertrix-bucket"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -255,10 +254,7 @@ def seaweedfs_browsertrix_bucket() -> dict[str, object]:
                 name="browsertrix-bucket",
                 namespace="ducktape-flux",
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-secrets", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_cluster, seaweedfs_secrets),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="browsertrix", namespace="seaweedfs"
@@ -266,14 +262,14 @@ def seaweedfs_browsertrix_bucket() -> dict[str, object]:
             ],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def browsertrix_namespace() -> dict[str, object]:
+def browsertrix_namespace(chart: Chart) -> Kustomization:
     name = "browsertrix-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -287,14 +283,14 @@ def browsertrix_namespace() -> dict[str, object]:
             ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def browsertrix_retained() -> dict[str, object]:
+def browsertrix_retained(chart: Chart) -> Kustomization:
     name = "browsertrix-retained"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -307,14 +303,16 @@ def browsertrix_retained() -> dict[str, object]:
             ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def budget() -> dict[str, object]:
+def budget(
+    chart: Chart, budget_ledger: Kustomization, gateway: Kustomization, authentik: Kustomization
+) -> Kustomization:
     name = "budget"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -326,24 +324,22 @@ def budget() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="budget-ledger",  # provisions budget-ledger-git-creds in the budget ns
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # provisions budget-ledger-git-creds in the budget ns
+                budget_ledger,
+                gateway,
+                authentik,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def buildbuddy_executor() -> dict[str, object]:
+def buildbuddy_executor(chart: Chart) -> Kustomization:
     name = "buildbuddy-executor"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -369,14 +365,21 @@ def buildbuddy_executor() -> dict[str, object]:
             ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def haku_cloud_agent() -> dict[str, object]:
+def haku_cloud_agent(
+    chart: Chart,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    kubectl_machine_mcp: Kustomization,
+) -> Kustomization:
     name = "haku-cloud-agent"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -403,25 +406,25 @@ def haku_cloud_agent() -> dict[str, object]:
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-creds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+            depends_on=flux_kustomization_depends_on_many(
+                external_creds,
+                external_secrets_config,
+                tofu_controller,
+                tofu_state_db,
                 # The agent reaches the cluster through this MCP; its first deployment run
                 # needs it serving.
-                KustomizationSpecDependsOn(name="kubectl-machine-mcp", namespace="ducktape-flux"),
-            ],
+                kubectl_machine_mcp,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def docker_ci() -> dict[str, object]:
+def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac: Kustomization) -> Kustomization:
     name = "docker-ci"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -438,23 +441,23 @@ def docker_ci() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="docker-ci", namespace="docker-ci"
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
                 # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
                 # claude-sandbox namespace the client Certificate lives in.
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="claude-rbac", namespace="ducktape-flux"),
-            ],
+                cert_manager_environment,
+                claude_rbac,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def egress_proxy_rugged() -> dict[str, object]:
+def egress_proxy_rugged(chart: Chart) -> Kustomization:
     name = "egress-proxy-rugged"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Decommissioned by operator request; keep its configuration but stop reconciliation.
             suspend=True,
@@ -469,14 +472,16 @@ def egress_proxy_rugged() -> dict[str, object]:
             wait=True,
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def firecrawl() -> dict[str, object]:
+def firecrawl(
+    chart: Chart, firecrawl_namespace: Kustomization, firecrawl_db: Kustomization, gateway: Kustomization
+) -> Kustomization:
     name = "firecrawl"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -492,21 +497,19 @@ def firecrawl() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="firecrawl-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="firecrawl-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(firecrawl_namespace, firecrawl_db, gateway),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def firecrawl_db() -> dict[str, object]:
+def firecrawl_db(
+    chart: Chart, firecrawl_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "firecrawl-db"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -518,21 +521,17 @@ def firecrawl_db() -> dict[str, object]:
             path="./cluster/k8s/parked/firecrawl/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="firecrawl-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(firecrawl_namespace, cnpg, local_path_provisioner),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def firecrawl_namespace() -> dict[str, object]:
+def firecrawl_namespace(chart: Chart) -> Kustomization:
     name = "firecrawl-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="1h",
@@ -544,14 +543,22 @@ def firecrawl_namespace() -> dict[str, object]:
             timeout="1m",
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def gecko() -> dict[str, object]:
+def gecko(
+    chart: Chart,
+    gecko_namespace: Kustomization,
+    kubevirt: Kustomization,
+    cdi: Kustomization,
+    external_secrets_operator: Kustomization,
+    seaweedfs_public_s3: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
     name = "gecko"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Keep this controller inactive while the unschedulable legacy VM is retired.
             # Its VM and local disk remain untouched until explicitly deleted.
@@ -568,14 +575,9 @@ def gecko() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="gecko-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="kubevirt", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cdi", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-public-s3", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -593,14 +595,14 @@ def gecko() -> dict[str, object]:
             ],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def gecko_namespace() -> dict[str, object]:
+def gecko_namespace(chart: Chart) -> Kustomization:
     name = "gecko-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # The retired VM stack and its namespace were intentionally deleted.
             # Keep this controller paused so Flux does not recreate the empty namespace.
@@ -617,14 +619,16 @@ def gecko_namespace() -> dict[str, object]:
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gecko")],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def google_workspace_mcp() -> dict[str, object]:
+def google_workspace_mcp(
+    chart: Chart, airlock: Kustomization, local_path_provisioner: Kustomization, reflector: Kustomization
+) -> Kustomization:
     name = "google-workspace-mcp"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -636,24 +640,30 @@ def google_workspace_mcp() -> dict[str, object]:
             path="./cluster/k8s/parked/google-workspace-mcp",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="airlock",  # google-client-credentials (Reflector mirrors it here)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                # google-client-credentials (Reflector mirrors it here)
+                airlock,
+                local_path_provisioner,
+                reflector,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def haku_dispatch() -> dict[str, object]:
+def haku_dispatch(
+    chart: Chart,
+    cnpg: Kustomization,
+    local_path_provisioner: Kustomization,
+    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
+    litellm: Kustomization,
+    litellm_keys_tf: Kustomization,
+) -> Kustomization:
     name = "haku-dispatch"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Haku dispatch is intentionally parked. Flip this to false only when the
             # worker-zone and provider wiring has been deliberately restored.
@@ -668,14 +678,14 @@ def haku_dispatch() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="litellm", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="litellm-keys-tf", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg,
+                local_path_provisioner,
+                external_secrets_config,
+                external_secrets_operator,
+                litellm,
+                litellm_keys_tf,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="workers-litellm", namespace="haku-dispatch"
@@ -686,14 +696,23 @@ def haku_dispatch() -> dict[str, object]:
             ],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def inventree() -> dict[str, object]:
+def inventree(
+    chart: Chart,
+    forgejo_images: Kustomization,
+    inventree_namespace: Kustomization,
+    inventree_db: Kustomization,
+    sso_providers_tf: Kustomization,
+    reflector: Kustomization,
+    gateway: Kustomization,
+    authentik: Kustomization,
+) -> Kustomization:
     name = "inventree"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             retry_interval="1m",
             suspend=True,
@@ -710,30 +729,29 @@ def inventree() -> dict[str, object]:
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="inventree-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="inventree-db"),
-                KustomizationSpecDependsOn(
-                    name="sso-providers-tf",  # writes inventree-sso-providers into the authentik namespace
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="reflector"  # mirrors inventree-sso-providers into the inventree namespace
-                ),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                inventree_namespace,
+                inventree_db,
+                # writes inventree-sso-providers into the authentik namespace
+                sso_providers_tf,
+                # mirrors inventree-sso-providers into the inventree namespace
+                reflector,
+                gateway,
+                authentik,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def inventree_db() -> dict[str, object]:
+def inventree_db(
+    chart: Chart, inventree_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "inventree-db"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             retry_interval="1m",
             suspend=True,
@@ -745,21 +763,17 @@ def inventree_db() -> dict[str, object]:
             path="./cluster/k8s/parked/inventree/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="inventree-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(inventree_namespace, cnpg, local_path_provisioner),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def inventree_namespace() -> dict[str, object]:
+def inventree_namespace(chart: Chart) -> Kustomization:
     name = "inventree-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="1h",
@@ -771,14 +785,20 @@ def inventree_namespace() -> dict[str, object]:
             timeout="1m",
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def inventree_token_provisioner() -> dict[str, object]:
+def inventree_token_provisioner(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    inventree: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "inventree-token-provisioner"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             retry_interval="1m",
             suspend=True,
@@ -795,27 +815,24 @@ def inventree_token_provisioner() -> dict[str, object]:
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="inventree"  # InvenTree HelmRelease is fully deployed
-                ),
-                KustomizationSpecDependsOn(
-                    name="claude-rbac",
-                    namespace="ducktape-flux",  # claude-sandbox namespace exists
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                # InvenTree HelmRelease is fully deployed
+                inventree,
+                # claude-sandbox namespace exists
+                claude_rbac,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def kubectl_machine_mcp() -> dict[str, object]:
+def kubectl_machine_mcp(chart: Chart, gateway: Kustomization, agent_machine_access_tf: Kustomization) -> Kustomization:
     name = "kubectl-machine-mcp"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -835,22 +852,31 @@ def kubectl_machine_mcp() -> dict[str, object]:
                     namespace="kubectl-machine-mcp",
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
+            depends_on=flux_kustomization_depends_on_many(
+                gateway,
                 # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
                 # discovery + JWKS this server validates against) is created by this TF.
-                KustomizationSpecDependsOn(name="agent-machine-access-tf", namespace="ducktape-flux"),
-            ],
+                agent_machine_access_tf,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def haku_managed_agent() -> dict[str, object]:
+def haku_managed_agent(
+    chart: Chart,
+    forgejo_images: Kustomization,
+    agent_shared_secrets: Kustomization,
+    external_secrets_config: Kustomization,
+    haku_namespace: Kustomization,
+    haku_rbac: Kustomization,
+    haku_state: Kustomization,
+    haku_egress_proxy: Kustomization,
+) -> Kustomization:
     name = "haku-managed-agent"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -871,37 +897,38 @@ def haku_managed_agent() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="haku-managed-agent", namespace="haku-sandbox"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="agent-shared-secrets",  # provides ankiweb-credentials in claude-sandbox
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="external-secrets-config",  # provides the claude-sandbox SecretStore
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="haku-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="haku-rbac", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="haku-state",  # provides the haku-forgejo-git secret in haku-sandbox
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="haku-egress-proxy",  # injects the egress proxy + CA the worker imports
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                # provides ankiweb-credentials in claude-sandbox
+                agent_shared_secrets,
+                # provides the claude-sandbox SecretStore
+                external_secrets_config,
+                haku_namespace,
+                haku_rbac,
+                # provides the haku-forgejo-git secret in haku-sandbox
+                haku_state,
+                # injects the egress proxy + CA the worker imports
+                haku_egress_proxy,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def manifold_mcp() -> dict[str, object]:
+def manifold_mcp(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    valkey: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "manifold-mcp"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -922,28 +949,33 @@ def manifold_mcp() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="manifold-mcp", namespace="manifold-mcp"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="agent-machine-access-tf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor CRD
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
+                # the ServiceMonitor CRD
+                monitoring_crds,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def openhands() -> dict[str, object]:
+def openhands(
+    chart: Chart,
+    openhands_namespace: Kustomization,
+    openhands_sandboxes: Kustomization,
+    gateway: Kustomization,
+    authentik: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
     name = "openhands"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -959,23 +991,19 @@ def openhands() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="openhands-namespace"),
-                KustomizationSpecDependsOn(name="openhands-sandboxes"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-operator", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                openhands_namespace, openhands_sandboxes, gateway, authentik, external_secrets_operator
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def openhands_namespace() -> dict[str, object]:
+def openhands_namespace(chart: Chart) -> Kustomization:
     name = "openhands-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -987,14 +1015,14 @@ def openhands_namespace() -> dict[str, object]:
             timeout="2m",
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def openhands_sandboxes() -> dict[str, object]:
+def openhands_sandboxes(chart: Chart) -> Kustomization:
     name = "openhands-sandboxes"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -1005,14 +1033,14 @@ def openhands_sandboxes() -> dict[str, object]:
             ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def osm_mcp() -> dict[str, object]:
+def osm_mcp(chart: Chart, external_secrets_config: Kustomization, forgejo_images: Kustomization) -> Kustomization:
     name = "osm-mcp"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -1030,22 +1058,28 @@ def osm_mcp() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="osm-mcp", namespace="osm-mcp"
                 ),
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
                 # forgejo-images-creds-eso.yaml extracts the source Secret from the
                 # forgejo-images namespace, so it must exist first.
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-            ],
+                forgejo_images,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def paperless() -> dict[str, object]:
+def paperless(
+    chart: Chart,
+    paperless_namespace: Kustomization,
+    paperless_cache: Kustomization,
+    paperless_db: Kustomization,
+    gateway: Kustomization,
+) -> Kustomization:
     name = "paperless"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -1060,22 +1094,19 @@ def paperless() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="paperless-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="paperless-cache", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="paperless-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, paperless_cache, paperless_db, gateway),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def paperless_cache() -> dict[str, object]:
+def paperless_cache(
+    chart: Chart, paperless_namespace: Kustomization, valkey: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "paperless-cache"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -1087,21 +1118,19 @@ def paperless_cache() -> dict[str, object]:
             path="./cluster/k8s/parked/paperless/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="paperless-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, valkey, local_path_provisioner),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def paperless_db() -> dict[str, object]:
+def paperless_db(
+    chart: Chart, paperless_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "paperless-db"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -1113,21 +1142,17 @@ def paperless_db() -> dict[str, object]:
             path="./cluster/k8s/parked/paperless/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="paperless-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, cnpg, local_path_provisioner),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def paperless_namespace() -> dict[str, object]:
+def paperless_namespace(chart: Chart) -> Kustomization:
     name = "paperless-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             interval="10m",
@@ -1138,14 +1163,23 @@ def paperless_namespace() -> dict[str, object]:
             ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def postscanmail_mcp() -> dict[str, object]:
+def postscanmail_mcp(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    valkey: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "postscanmail-mcp"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             suspend=True,
             retry_interval="1m",
@@ -1166,28 +1200,32 @@ def postscanmail_mcp() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="postscanmail-mcp", namespace="postscanmail-mcp"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="agent-machine-access-tf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor CRD
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
+                # the ServiceMonitor CRD
+                monitoring_crds,
+            ),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def sdr() -> dict[str, object]:
+def sdr(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    authentik: Kustomization,
+) -> Kustomization:
     name = "sdr"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             interval="10m",
             # Temporarily disabled until the radio is set up again after relocation.
@@ -1200,22 +1238,23 @@ def sdr() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def tandoor() -> dict[str, object]:
+def tandoor(
+    chart: Chart,
+    tandoor_namespace: Kustomization,
+    tandoor_db: Kustomization,
+    gateway: Kustomization,
+    authentik: Kustomization,
+) -> Kustomization:
     name = "tandoor"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Suspended — currently using Grocy instead.
             suspend=True,
@@ -1228,22 +1267,19 @@ def tandoor() -> dict[str, object]:
             path="./cluster/k8s/parked/tandoor/app",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="tandoor-namespace"),
-                KustomizationSpecDependsOn(name="tandoor-db"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tandoor_namespace, tandoor_db, gateway, authentik),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def tandoor_db() -> dict[str, object]:
+def tandoor_db(
+    chart: Chart, tandoor_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "tandoor-db"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             # Suspended — currently using Grocy instead.
             suspend=True,
@@ -1256,21 +1292,17 @@ def tandoor_db() -> dict[str, object]:
             path="./cluster/k8s/parked/tandoor/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="tandoor-namespace"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tandoor_namespace, cnpg, local_path_provisioner),
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
 
 
-def tandoor_namespace() -> dict[str, object]:
+def tandoor_namespace(chart: Chart) -> Kustomization:
     name = "tandoor-namespace"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        annotations={"ducktape.org/parked": "true"},
         spec=KustomizationSpec(
             interval="10m",
             # Suspended — currently using Grocy instead.
@@ -1283,128 +1315,3 @@ def tandoor_namespace() -> dict[str, object]:
             timeout="2m",
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "ducktape-flux", "annotations": {"ducktape.org/parked": "true"}}
-    return manifest
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/parked/agent-box/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, agent_box())
-    path = root / "cluster/k8s/parked/archivebox/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, archivebox())
-    path = root / "cluster/k8s/parked/augur-evidence/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, augur_evidence())
-    path = root / "cluster/k8s/parked/authelia/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authelia())
-    path = root / "cluster/k8s/parked/browsertrix/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, browsertrix())
-    path = root / "cluster/k8s/parked/browsertrix/bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_browsertrix_bucket())
-    path = root / "cluster/k8s/parked/browsertrix/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, browsertrix_namespace())
-    path = root / "cluster/k8s/parked/browsertrix/retained/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, browsertrix_retained())
-    path = root / "cluster/k8s/parked/budget/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, budget())
-    path = root / "cluster/k8s/parked/buildbuddy-executor/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, buildbuddy_executor())
-    path = root / "cluster/k8s/parked/cloud-agent-tf/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, haku_cloud_agent())
-    path = root / "cluster/k8s/parked/docker-ci/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, docker_ci())
-    path = root / "cluster/k8s/parked/egress-proxy-rugged/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, egress_proxy_rugged())
-    path = root / "cluster/k8s/parked/firecrawl/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, firecrawl())
-    path = root / "cluster/k8s/parked/firecrawl/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, firecrawl_db())
-    path = root / "cluster/k8s/parked/firecrawl/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, firecrawl_namespace())
-    path = root / "cluster/k8s/parked/gecko/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gecko())
-    path = root / "cluster/k8s/parked/gecko/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gecko_namespace())
-    path = root / "cluster/k8s/parked/google-workspace-mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, google_workspace_mcp())
-    path = root / "cluster/k8s/parked/haku-dispatch/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, haku_dispatch())
-    path = root / "cluster/k8s/parked/inventree/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, inventree())
-    path = root / "cluster/k8s/parked/inventree/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, inventree_db())
-    path = root / "cluster/k8s/parked/inventree/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, inventree_namespace())
-    path = root / "cluster/k8s/parked/inventree/token-provisioner/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, inventree_token_provisioner())
-    path = root / "cluster/k8s/parked/kubectl-machine-mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kubectl_machine_mcp())
-    path = root / "cluster/k8s/parked/managed-agent/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, haku_managed_agent())
-    path = root / "cluster/k8s/parked/manifold-mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, manifold_mcp())
-    path = root / "cluster/k8s/parked/openhands/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, openhands())
-    path = root / "cluster/k8s/parked/openhands/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, openhands_namespace())
-    path = root / "cluster/k8s/parked/openhands/sandboxes/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, openhands_sandboxes())
-    path = root / "cluster/k8s/parked/osm-mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, osm_mcp())
-    path = root / "cluster/k8s/parked/paperless/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, paperless())
-    path = root / "cluster/k8s/parked/paperless/cache/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, paperless_cache())
-    path = root / "cluster/k8s/parked/paperless/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, paperless_db())
-    path = root / "cluster/k8s/parked/paperless/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, paperless_namespace())
-    path = root / "cluster/k8s/parked/postscanmail-mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, postscanmail_mcp())
-    path = root / "cluster/k8s/parked/sdr/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, sdr())
-    path = root / "cluster/k8s/parked/tandoor/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tandoor())
-    path = root / "cluster/k8s/parked/tandoor/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tandoor_db())
-    path = root / "cluster/k8s/parked/tandoor/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tandoor_namespace())

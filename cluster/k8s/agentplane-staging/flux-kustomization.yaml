@@ -13,21 +13,37 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: agentplane-crds
+      namespace: ducktape-flux
     - name: agent-sandbox-controller
+      namespace: ducktape-flux
     - name: cert-manager-environment
+      namespace: ducktape-flux
     - name: cert-manager-trust
+      namespace: ducktape-flux
     - name: claude-rbac
+      namespace: ducktape-flux
     - name: cnpg
+      namespace: ducktape-flux
     - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
+      namespace: ducktape-flux
     - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
+      namespace: ducktape-flux
     - name: litellm-keys-tf
+      namespace: ducktape-flux
     - name: local-path-provisioner
+      namespace: ducktape-flux
     - name: reflector
+      namespace: ducktape-flux
     - name: sso-providers-tf
+      namespace: ducktape-flux
     - name: ssh-mcp
+      namespace: ducktape-flux
     - name: haku-console
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation

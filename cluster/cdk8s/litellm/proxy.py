@@ -48,8 +48,8 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -63,7 +63,12 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
@@ -412,13 +417,24 @@ class LiteLLMServiceMonitor(Construct):
         )
 
 
-def write_app(root: Path) -> None:
+def litellm(
+    flux_chart: Chart,
+    root: Path,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    litellm_secrets: Kustomization,
+    litellm_db: Kustomization,
+    gateway: Kustomization,
+    cert_manager_environment: Kustomization,
+    langfuse_secrets: Kustomization,
+    reflector: Kustomization,
+    tana_mcp: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
 
-    # The Flux Kustomizations this directory waits on, and the Secret each one provides
-    # that a Pod here reads -- shared between the depends_on list below and the fleet
-    # rules' provider check, so the two can't drift.
-    depends_on = (
+    # Upstream Flux Kustomizations whose Secrets this directory reads, for the fleet-rules provider check.
+    providers = (
         "external-secrets-config",
         "forgejo-images",
         "litellm-secrets",
@@ -428,8 +444,6 @@ def write_app(root: Path) -> None:
         "langfuse-secrets",
         "reflector",
         "tana-mcp",
-        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-        # litellm-servicemonitor Kustomization, #7103).
         "monitoring-crds",
     )
 
@@ -453,23 +467,34 @@ def write_app(root: Path) -> None:
             "langfuse-secrets": "langfuse-secrets",
             "tana-firebase-refresh-token": "tana-mcp",
         },
-        providers=frozenset(depends_on),
+        providers=frozenset(providers),
     )
     app.synth()
 
-    write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            "litellm",
-            spec=KustomizationSpec(
-                interval="10m",
-                path=f"./{APP_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
-                ),
-                timeout="10m",
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+    kustomization = flux_kustomization(
+        flux_chart,
+        "litellm",
+        spec=KustomizationSpec(
+            interval="10m",
+            path=f"./{APP_DIR}",
+            prune=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
+            ),
+            timeout="10m",
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                litellm_secrets,
+                litellm_db,
+                gateway,
+                cert_manager_environment,
+                langfuse_secrets,
+                reflector,
+                tana_mcp,
+                # The ServiceMonitor/PodMonitor CRD (folded in from the retired
+                # litellm-servicemonitor Kustomization, #7103).
+                monitoring_crds,
             ),
         ),
     )
@@ -477,3 +502,4 @@ def write_app(root: Path) -> None:
         app_dir / "kustomization.yaml",
         kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
     )
+    return kustomization

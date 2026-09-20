@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def gaffer_private_source() -> dict[str, object]:
+def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomization) -> Kustomization:
     name = "gaffer-private-source"
-    manifest = flux_kustomization(
+    return flux_kustomization(
+        chart,
         name,
+        namespace="flux-system",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
@@ -35,14 +34,6 @@ def gaffer_private_source() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[KustomizationSpecDependsOn(name="flux-image-automation-ghcr", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
         ),
     )
-    manifest["metadata"] = {"name": name, "namespace": "flux-system"}
-    return manifest
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/gaffer-private-source/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gaffer_private_source())

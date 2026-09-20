@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def volsync() -> dict[str, object]:
+def volsync(chart: Chart, snapshot_controller: Kustomization) -> Kustomization:
     name = "volsync"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -31,7 +29,7 @@ def volsync() -> dict[str, object]:
             path="./cluster/k8s/volsync",
             prune=True,
             wait=True,
-            depends_on=[KustomizationSpecDependsOn(name="snapshot-controller", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(snapshot_controller)],
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",
@@ -49,9 +47,3 @@ def volsync() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/volsync/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, volsync())

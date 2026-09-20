@@ -12,12 +12,19 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-config
+      namespace: ducktape-flux
     - name: forgejo-images
+      namespace: ducktape-flux
     - name: cli-proxy-api
+      namespace: ducktape-flux
     - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: clickhouse-schema
+      namespace: ducktape-flux
     - name: agent-machine-access-tf
+      namespace: ducktape-flux
     - name: reflector
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/aiquota
   prune: true

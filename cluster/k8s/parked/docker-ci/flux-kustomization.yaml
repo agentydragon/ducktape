@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: docker-ci
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: docker-ci
+  namespace: ducktape-flux
 spec:
   dependsOn:
     - name: cert-manager-environment
