@@ -1,23 +1,11 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: sdr
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: sdr
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  # Temporarily disabled until the radio is set up again after relocation.
-  suspend: true
-  retryInterval: 1m
-  path: ./cluster/k8s/parked/sdr
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: sdr
-    namespace: ducktape-flux
-  timeout: 5m
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -27,3 +15,14 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/parked/sdr
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: sdr
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

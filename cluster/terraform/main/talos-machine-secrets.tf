@@ -14,7 +14,7 @@
 #   tofu import talos_machine_secrets.cluster /tmp/ms.yaml && rm /tmp/ms.yaml
 
 resource "talos_machine_secrets" "cluster" {
-  talos_version = var.talos_version
+  talos_version = var.talos_machine_secrets_version
 
   lifecycle {
     prevent_destroy = true

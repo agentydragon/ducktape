@@ -94,17 +94,16 @@ locals {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
-  # Temporary Talos upgrade canary. Keep the generated machine-configuration
-  # contract at var.talos_version until the whole fleet moves; the
-  # talos_machine_configuration_apply resource applies configuration but does
-  # not upgrade the running OS. The canary is upgraded explicitly with
-  # talosctl after this installer image is reconciled.
-  kimsufi_talos_version_overrides = {
+  # Per-node OS upgrade targets. Keep the machine-configuration generator at
+  # var.talos_version during serial rolls; these overrides change only
+  # machine.install.image, while talosctl performs the actual OS upgrade.
+  talos_installer_version_overrides = {
     "ovh-ns103711" = "v1.14.0"
+    "optiplex"     = "v1.14.0"
   }
   kimsufi_installer_version = {
     for k in keys(local.kimsufi_servers) :
-    k => lookup(local.kimsufi_talos_version_overrides, k, var.talos_version)
+    k => lookup(local.talos_installer_version_overrides, k, var.talos_version)
   }
 
   # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
@@ -125,9 +124,14 @@ resource "talos_image_factory_schematic" "kimsufi" {
       # KS-5 has no physical display; we only see boot output via OVH IPMI SOL.
       # Without console=ttyS0 every Talos boot log is invisible — silent reboot
       # loops mask whether the kernel even started.
+      # The previous schematic registered but its v1.14.0 artifacts returned
+      # 404 (issue #7262). consoleblank=0 is the Linux default; it creates a
+      # fresh content-addressed ID without changing behavior. This variant's
+      # v1.14.0 metal-installer manifest resolves from the official Factory.
       extraKernelArgs = [
         "console=tty0",
         "console=ttyS0,115200n8",
+        "consoleblank=0",
       ]
       systemExtensions = {
         officialExtensions = [
@@ -342,7 +346,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -367,7 +371,7 @@ locals {
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
@@ -498,7 +502,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates

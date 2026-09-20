@@ -225,7 +225,7 @@ platform(
 )
 
 # bbr wheel — standalone `bb remote` wrapper (own package, not bundled into
-# claude-hooks, so it's available when using the Rust claude-hook binary).
+# the Python statusline wheel, so it's available with the Rust claude-hook).
 py_package(
     name = "bbr_pkg",
     packages = ["devinfra"],
@@ -238,7 +238,7 @@ py_wheel(
     entry_points = {
         "console_scripts": ["bbr = devinfra.bbr:main"],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = ["pygit2>=1.14"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
@@ -269,7 +269,7 @@ py_wheel(
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (ducktape-git-hooks). When adding a dependency, update BOTH places.
     requires = [
@@ -284,49 +284,6 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":ducktape_git_hooks_pkg"],
-)
-
-# Claude hooks wheel — Python statusline only. Active hook dispatch is the Rust
-# `claude-hook` binary packaged separately by Nix.
-py_package(
-    name = "claude_hooks_pkg",
-    packages = [
-        "devinfra.claude",
-        "devinfra.claude.claude_api",
-        "devinfra.claude.claude_api.hooks",
-        "devinfra.claude.statusline",
-    ],
-    deps = [
-        "//devinfra/claude/statusline",
-    ],
-)
-
-py_wheel(
-    name = "claude_hooks_wheel",
-    distribution = "claude_hooks",
-    entry_points = {
-        "console_scripts": [
-            "claude-statusline = devinfra.claude.statusline.statusline:main",
-        ],
-    },
-    python_requires = ">=3.13",
-    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
-    # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
-    # When adding a dependency, update BOTH places.
-    #
-    # `aiquota` is the local artifact-pinned wheel (not on PyPI); the statusline
-    # imports it for quota data. Nix provides it via the aiquota derivation in
-    # propagatedBuildInputs (which also brings typer/atomicwrites transitively).
-    requires = [
-        "aiquota",
-        "httpx",
-        "platformdirs",
-        "pydantic>=2.0",
-        "rich",
-    ],
-    version = "0.1.0",
-    visibility = ["//visibility:public"],
-    deps = [":claude_hooks_pkg"],
 )
 
 # Ducktape wheel - bundles CLI tools for distribution
@@ -378,7 +335,7 @@ py_wheel(
             "ws = devinfra.ws.cli:main",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = [
         # git_commit_ai deps
         "aiodocker",

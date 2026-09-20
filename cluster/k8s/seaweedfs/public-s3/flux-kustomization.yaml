@@ -4,17 +4,10 @@ metadata:
   name: seaweedfs-public-s3
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  path: ./cluster/k8s/seaweedfs/public-s3
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-public-s3
-    # Gate on Bucket CRs managed in this repo that the public identities target.
-    # Claude and DriveFS identities authenticate through native IAM; static
-    # gateway configuration now contains only the credential-free anonymous read.
-    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-external-credentials
       namespace: ducktape-flux
@@ -28,12 +21,6 @@ spec:
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
-  wait: true
-  timeout: 5m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -71,3 +58,13 @@ spec:
       kind: S3PolicyBinding
       name: claude-reader-buckets
       namespace: seaweedfs
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/public-s3
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-public-s3
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

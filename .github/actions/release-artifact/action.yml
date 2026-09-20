@@ -3,7 +3,7 @@ description: Build a Bazel artifact via RBE, upload to GitHub Release if content
 
 inputs:
   pkg:
-    description: "Package name (e.g. claude-hooks)"
+    description: "Package name (e.g. claude-statusline)"
     required: true
   bazel_targets:
     description: "Space-separated Bazel targets that produce the release assets"

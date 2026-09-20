@@ -1,33 +1,16 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket, plus the one-shot restore into the optiplex worker PVC that migrates the state off the control plane.
   name: haku-openclaw-spike-backup
   namespace: ducktape-flux
-  annotations:
-    description: >-
-      Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated
-      private SeaweedFS S3 bucket, plus the one-shot restore into the optiplex
-      worker PVC that migrates the state off the control plane.
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  wait: true
-  path: ./cluster/k8s/agents/haku-openclaw-spike/backup
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-openclaw-spike-backup
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
-    # The Bucket and S3Credentials remain app-owned, but their readiness is
-    # retried by the ExternalSecret rather than coupling this Kustomization to
-    # the app Deployment health check.
     - name: haku-openclaw-spike-namespace
       namespace: ducktape-flux
     - name: seaweedfs-cluster
@@ -36,3 +19,13 @@ spec:
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agents/haku-openclaw-spike/backup
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-openclaw-spike-backup
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

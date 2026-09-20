@@ -53,7 +53,7 @@ uploads every output. For backward compatibility, a one-asset release retains
 the SHA-256 of that asset as its release identity.
 
 `nixPackage: false` means release.yml still publishes it but the PR gate
-skips it — typical for binary drops (bbapi, claude-hook-rs, debundle,
+skips it — typical for binary drops (bbapi, claude-hook, debundle,
 skills) whose nix package is a trivial `install`/`autoPatchelfHook`;
 bazel-ci already rebuilds them from source so the gate would be redundant.
 

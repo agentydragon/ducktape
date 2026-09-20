@@ -1,25 +1,16 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: public-coder-agent-proxy
-  namespace: ducktape-flux
   annotations:
     description: OpenClaw Iron proxy plus interception CA.
+  name: public-coder-agent-proxy
+  namespace: ducktape-flux
 spec:
-  interval: 1h
-  retryInterval: 1m
-  path: ./cluster/k8s/agents/public-coder-agent/proxy
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-proxy
-    namespace: ducktape-flux
-  timeout: 5m
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: public-coder-agent-namespace
+      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: cert-manager-trust
@@ -28,26 +19,12 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-    # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
     - name: agent-machine-access-tf
       namespace: ducktape-flux
-    # The standing access-profile RBAC and execution ceiling (formerly a separate
-    # public-coder-agent-k8s-reader Kustomization) now live in public-coder-agent-app,
-    # which itself depends on this proxy -- depending on it here would cycle. RBAC
-    # objects have no pod-startup ordering requirement; if the ceiling lands after
-    # this proxy, credential mediation is briefly unconstrained-by-that-check rather
-    # than blocked, and self-heals on the next reconcile.
-    # Console depends on haku-workspaces, which depends on this proxy. Do not point this edge back
-    # at Console: the proxy can become Ready before its clients, while a cycle would prevent a
-    # fresh cluster from ever reaching the claim-creation boundary.
-    # The proxy reads the reflected Matrix bot password from its namespace.
     - name: matrix
       namespace: ducktape-flux
-    # aiquota creates the sole bearer, then reflects its constrained mirror to
-    # this namespace for the proxy-only substitution rule.
     - name: aiquota
       namespace: ducktape-flux
-    # Mints the public-coder LiteLLM key reflected into this namespace for runner-proxy-only use.
     - name: litellm-keys-tf
       namespace: ducktape-flux
   healthChecks:
@@ -59,3 +36,13 @@ spec:
       kind: Certificate
       name: public-coder-agent-proxy-root-ca
       namespace: public-coder-agent
+  interval: 1h
+  path: ./cluster/k8s/agents/public-coder-agent/proxy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-proxy
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

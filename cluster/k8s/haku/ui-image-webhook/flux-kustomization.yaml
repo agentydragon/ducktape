@@ -4,16 +4,13 @@ metadata:
   name: haku-ui-image-webhook
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: haku-state
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/ui-image-webhook
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: haku-ui-image-webhook
-
     namespace: ducktape-flux
-  dependsOn:
-    # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
-    # and the Forgejo package webhook that targets this receiver.
-    - name: haku-state
-      namespace: ducktape-flux

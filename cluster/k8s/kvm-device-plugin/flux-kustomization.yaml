@@ -4,17 +4,17 @@ metadata:
   name: kvm-device-plugin
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/kvm-device-plugin
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: kvm-device-plugin
-    namespace: ducktape-flux
-  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: DaemonSet
       name: generic-device-plugin
       namespace: kvm-device-plugin
+  interval: 10m
+  path: ./cluster/k8s/kvm-device-plugin
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kvm-device-plugin
+    namespace: ducktape-flux
+  timeout: 2m

@@ -10,10 +10,10 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
-    "claude-hooks": {
-      "target": "//:claude_hooks_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
-      "release": "claude-hooks"
+    "claude-statusline": {
+      "target": "//devinfra/claude/statusline:claude_statusline_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/statusline/claude_statusline-0.1.0-py3-none-any.whl",
+      "release": "claude-statusline"
     },
     "ducktape-git-hooks": {
       "target": "//:ducktape_git_hooks_wheel",
@@ -45,10 +45,10 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
       "release": "bbapi"
     },
-    "claude-hook-rs": {
+    "claude-hook": {
       "target": "//devinfra/claude/claude_hook:claude_hook",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
-      "release": "claude-hook-rs"
+      "release": "claude-hook"
     },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
@@ -75,7 +75,7 @@
       "tests": "//devinfra:test_bbr",
       "nixPackage": true
     },
-    "claude-hooks": {
+    "claude-statusline": {
       "tests": "//devinfra/claude/...",
       "nixPackage": true
     },
@@ -99,7 +99,7 @@
       "tests": "//devinfra/buildbuddy_cli/...",
       "nixPackage": false
     },
-    "claude-hook-rs": {
+    "claude-hook": {
       "tests": "//devinfra/claude/claude_hook/...",
       "nixPackage": false
     },

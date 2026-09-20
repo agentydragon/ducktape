@@ -4,15 +4,14 @@ metadata:
   name: kube-system
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/kube-system
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: kube-system
-
-    namespace: ducktape-flux
   dependsOn:
     - name: goldilocks
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/kube-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kube-system
+    namespace: ducktape-flux

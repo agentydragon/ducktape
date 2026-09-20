@@ -4,20 +4,16 @@ metadata:
   name: haku-egress-proxy
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/agents/haku-egress-proxy
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-egress-proxy
-    namespace: ducktape-flux
-  timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
       namespace: ducktape-flux
-    - name: haku-state # proxy-held Forgejo and Haku Console credentials
+    - name: haku-state
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
@@ -31,7 +27,11 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
+  interval: 10m
+  path: ./cluster/k8s/agents/haku-egress-proxy
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-egress-proxy
+    namespace: ducktape-flux
+  timeout: 5m

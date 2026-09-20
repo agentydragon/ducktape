@@ -7,6 +7,14 @@ from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
+    KustomizationSpecHealthCheckExprs,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, staging_config
@@ -23,6 +31,9 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.generation import _health_checks
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
@@ -277,3 +288,68 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_staging_action_policies(chart)
     return chart
+
+
+def agentplane_staging(
+    flux_chart: Chart,
+    resource_chart: Chart,
+    agentplane_crds: Kustomization,
+    agent_sandbox_controller: Kustomization,
+    cert_manager_environment: Kustomization,
+    cert_manager_trust: Kustomization,
+    claude_rbac: Kustomization,
+    cnpg: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    litellm_keys_tf: Kustomization,
+    local_path_provisioner: Kustomization,
+    reflector: Kustomization,
+    sso_providers_tf: Kustomization,
+    ssh_mcp: Kustomization,
+    haku_console: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        ENV.namespace,
+        description=ENV.flux_description,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="10m",
+            path=f"./cluster/k8s/{ENV.namespace}",
+            prune=True,
+            # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
+            # deletion would take the database with them.
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+            health_checks=_health_checks(resource_chart, ENV.namespace),
+            health_check_exprs=[
+                KustomizationSpecHealthCheckExprs(
+                    api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
+                )
+            ],
+            decryption=sops_decryption(ENV.extra_resources),
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
+            ),
+            depends_on=flux_kustomization_depends_on_many(
+                agentplane_crds,
+                agent_sandbox_controller,
+                cert_manager_environment,
+                cert_manager_trust,
+                claude_rbac,
+                cnpg,
+                external_creds,
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                litellm_keys_tf,
+                local_path_provisioner,
+                reflector,
+                sso_providers_tf,
+                ssh_mcp,
+                haku_console,
+            ),
+        ),
+    )

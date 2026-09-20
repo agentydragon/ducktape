@@ -2,6 +2,11 @@
 
 Generated 2026-03-24. Total closure: **538.4 MiB**.
 
+This is a historical snapshot from before the Python statusline and Rust hook
+were exposed as separate `claude-statusline` and `claude-hook` packages. Its
+`claude-hooks` dependency graph and Python 3.13 closure measurements are not
+the current `.#devtools` package layout.
+
 Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
 ## Top paths by NAR size

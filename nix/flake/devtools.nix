@@ -40,7 +40,7 @@ let
   ];
   # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
-  # Common dev tools shared by both Python and Rust hook implementations.
+  # Common dev tools used alongside Claude hook dispatch and the Python statusline.
   devToolsCommon = [
     ducktapePkgs.bb
     ducktapePkgs.bbapi
@@ -82,10 +82,9 @@ let
     ducktapePkgs.bazel-diff
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
-  # remains Python, exposed through a package that does not put the legacy
-  # Python `claude-hook` on PATH.
+  # remains Python and is exposed separately as `claude-statusline`.
   devToolPackages = devToolsCommon ++ [
-    ducktapePkgs.claude-hook-rs
+    ducktapePkgs.claude-hook
     ducktapePkgs.claude-statusline
   ];
 in

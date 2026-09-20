@@ -6,6 +6,7 @@ metadata:
 spec:
   dependsOn:
     - name: clickhouse
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: batch/v1
       kind: Job

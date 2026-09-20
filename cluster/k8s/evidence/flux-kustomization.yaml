@@ -5,12 +5,12 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  retryInterval: 1m
   path: ./cluster/k8s/evidence
   prune: true
-  wait: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: evidence-market-roster
     namespace: ducktape-flux
   timeout: 2m
+  wait: true

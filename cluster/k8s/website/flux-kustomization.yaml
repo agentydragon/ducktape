@@ -4,18 +4,16 @@ metadata:
   name: website
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
+  dependsOn:
+    - name: gateway
+      namespace: ducktape-flux
   interval: 10m
-  timeout: 5m
+  path: ./cluster/k8s/website
+  prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: website
-
     namespace: ducktape-flux
-  path: ./cluster/k8s/website
-  prune: true
+  timeout: 5m
   wait: true
-  dependsOn:
-    # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
-    - name: gateway
-      namespace: ducktape-flux

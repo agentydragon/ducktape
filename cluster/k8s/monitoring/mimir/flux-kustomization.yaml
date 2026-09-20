@@ -4,19 +4,17 @@ metadata:
   name: mimir
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/monitoring/mimir
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-mimir
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: grafana-helmrepository
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -34,13 +32,13 @@ spec:
       kind: HelmRelease
       name: mimir
       namespace: monitoring
+  interval: 10m
+  path: ./cluster/k8s/monitoring/mimir
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-mimir
+    namespace: ducktape-flux
+  suspend: false
   timeout: 10m
-  dependsOn:
-    - name: monitoring-crds # the chart's metaMonitoring.serviceMonitor
-      namespace: ducktape-flux
-    - name: grafana-helmrepository
-      namespace: ducktape-flux
-    # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
-    # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux

@@ -1,23 +1,11 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agent-box
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: agent-box
+  namespace: ducktape-flux
 spec:
-  # Keep this controller inactive while the unschedulable legacy VM is retired.
-  # Its VM and local disk remain untouched until explicitly deleted.
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 30m
-  path: ./cluster/k8s/parked/agent-box
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: agent-box
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -33,7 +21,6 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: v1
       kind: Namespace
@@ -50,3 +37,14 @@ spec:
       kind: VirtualMachine
       name: agent-box
       namespace: agent-box
+  interval: 10m
+  path: ./cluster/k8s/parked/agent-box
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agent-box
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 30m
+  wait: true
