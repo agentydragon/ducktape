@@ -12,6 +12,7 @@ py_library(
     deps = [
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic_settings",
         "@pypi//tenacity",
     ],
 )
