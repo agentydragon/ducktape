@@ -558,9 +558,6 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.kubectl_passthrough_mcp(
         flux_chart, gateway_kustomization, agent_machine_access_tf_kustomization
     )
-    kubectl_machine_mcp_kustomization = parked_flux_kustomizations.kubectl_machine_mcp(
-        flux_chart, gateway_kustomization, agent_machine_access_tf_kustomization
-    )
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
         forgejo_namespace_kustomization,
@@ -650,7 +647,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
-        kubectl_machine_mcp_kustomization,
     )
     forgejo_agentydragon_repos_kustomization = forgejo_flux_kustomizations.forgejo_agentydragon_repos(
         flux_chart, forgejo_kustomization, tofu_controller_kustomization, tofu_state_db_kustomization
@@ -881,7 +877,6 @@ def generate_manifests(root: Path) -> None:
         reflector_kustomization,
         monitoring_crds_kustomization,
     )
-    parked_flux_kustomizations.osm_mcp(flux_chart, external_secrets_config_kustomization, forgejo_images_kustomization)
     parked_flux_kustomizations.postscanmail_mcp(
         flux_chart,
         external_secrets_config_kustomization,

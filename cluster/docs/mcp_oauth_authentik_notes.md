@@ -221,12 +221,12 @@ that prefixed group.
 ## Current state
 
 The scoped `kubectl-sandbox-mcp` endpoint and its dedicated Authentik provider
-have been retired. The remaining Kubernetes MCP endpoints are:
+have been retired. `kubectl-machine-mcp` is also parked. The remaining Kubernetes
+MCP endpoint is:
 
 | Name                      | Transport | Auth                                    | Permissions                         |
 | ------------------------- | --------- | --------------------------------------- | ----------------------------------- |
 | `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE) | caller's own OIDC group permissions |
-| `kubectl-machine-mcp`     | HTTP      | OAuth passthrough (machine credentials) | caller's own OIDC group permissions |
 
 Equivalent CLI:
 

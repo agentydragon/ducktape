@@ -373,7 +373,6 @@ def haku_cloud_agent(
     external_secrets_config: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
-    kubectl_machine_mcp: Kustomization,
 ) -> Kustomization:
     name = "haku-cloud-agent"
     return flux_kustomization(
@@ -407,13 +406,7 @@ def haku_cloud_agent(
                 )
             ],
             depends_on=flux_kustomization_depends_on_many(
-                external_creds,
-                external_secrets_config,
-                tofu_controller,
-                tofu_state_db,
-                # The agent reaches the cluster through this MCP; its first deployment run
-                # needs it serving.
-                kubectl_machine_mcp,
+                external_creds, external_secrets_config, tofu_controller, tofu_state_db
             ),
         ),
     )
@@ -827,41 +820,6 @@ def inventree_token_provisioner(
     )
 
 
-def kubectl_machine_mcp(chart: Chart, gateway: Kustomization, agent_machine_access_tf: Kustomization) -> Kustomization:
-    name = "kubectl-machine-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/kubectl-machine-mcp",
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="kubectl-machine-mcp",
-                    namespace="kubectl-machine-mcp",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                gateway,
-                # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
-                # discovery + JWKS this server validates against) is created by this TF.
-                agent_machine_access_tf,
-            ),
-        ),
-    )
-
-
 def haku_managed_agent(
     chart: Chart,
     forgejo_images: Kustomization,
@@ -1030,39 +988,6 @@ def openhands_sandboxes(chart: Chart) -> Kustomization:
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-        ),
-    )
-
-
-def osm_mcp(chart: Chart, external_secrets_config: Kustomization, forgejo_images: Kustomization) -> Kustomization:
-    name = "osm-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/osm-mcp",
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="osm-mcp"),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="osm-mcp", namespace="osm-mcp"
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # forgejo-images-creds-eso.yaml extracts the source Secret from the
-                # forgejo-images namespace, so it must exist first.
-                forgejo_images,
             ),
         ),
     )
