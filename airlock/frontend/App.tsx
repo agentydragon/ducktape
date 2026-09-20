@@ -2,6 +2,7 @@ import { Anchor, Badge, Box, Container, Group, Stack, Text, Title } from "@manti
 import { type JSX, useEffect, useState } from "react";
 
 import { getApiClient } from "./api";
+import { isAuthenticationRedirectStarted } from "./auth";
 import type { DeploymentInfo } from "./types";
 import { OAuthProviders } from "./OAuthProviders";
 
@@ -13,7 +14,7 @@ export default function App(): JSX.Element {
       .getDeploymentInfo()
       .then(setDeploymentInfo)
       .catch((error: unknown) => {
-        console.error("Failed to load Airlock deployment info", error);
+        if (!isAuthenticationRedirectStarted()) console.error("Failed to load Airlock deployment info", error);
       });
   }, []);
 

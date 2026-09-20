@@ -17,6 +17,7 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { getApiClient } from "./api";
+import { isAuthenticationRedirectStarted } from "./auth";
 import type { OAuthProviderStatus } from "./types";
 
 type ScopeRow = {
@@ -218,10 +219,12 @@ export function OAuthProviders(): JSX.Element {
         if (active) setProviders(result);
       })
       .catch((failure: unknown) => {
-        if (active) setError(failure instanceof Error ? failure.message : String(failure));
+        if (active && !isAuthenticationRedirectStarted()) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+        }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && !isAuthenticationRedirectStarted()) setLoading(false);
       });
 
     return () => {
