@@ -73,12 +73,18 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   that "describes" a node, or a module that builds nodes on import.
 - **A resource chart joins the graph in three steps, in this order**: build the resource
   chart (`staging.chart(app)`, `haku.charts.console_chart(app)`); then its Kustomization
-  node takes that chart _and_ its predecessor Kustomizations and derives `healthChecks`
-  from the chart's own objects (`flux.health_checks(chart, kinds)`); then dependents take
-  the returned Kustomization. The two instances: `agentplane_staging` in
-  `agentplane/staging.py` and `haku_console` in `haku/charts.py`.
-  Chart before Kustomization before dependents; a Kustomization never builds the chart
-  it describes.
+  node takes the _values_ derived from that chart, computed at the join in
+  `generate_manifests.py` (`health_checks=flux.health_checks(chart, kinds)`), plus its
+  predecessor Kustomizations; then dependents take the returned Kustomization. The node
+  never takes the `Chart` itself: a Kustomization reads the rendered directory at
+  runtime, not a construct, and a node whose inputs are plain values shows every fact
+  that crosses in its signature and can be tested with hand-supplied values, without
+  importing the workload modules. A second fact that needs to cross is a second
+  parameter, and that is the review signal. Chart before Kustomization before
+  dependents; a Kustomization never builds the chart it describes. Both current
+  instances predate this rule: `agentplane_staging` (`agentplane/staging.py`) takes the
+  chart, and `haku_console` (`haku/charts.py`) builds it inside the node; both are the
+  shape to fix, not the shape to copy.
 - **Each object is built from what it reads at runtime, never from what reads it.** A
   Kustomization is built from its artifact, its path and its predecessors; an artifact
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
