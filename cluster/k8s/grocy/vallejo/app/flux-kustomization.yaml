@@ -4,16 +4,6 @@ metadata:
   name: grocy-vallejo
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-vallejo
-    namespace: ducktape-flux
-  path: ./cluster/k8s/grocy/vallejo/app
-  prune: true
-  wait: true
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
@@ -27,3 +17,13 @@ spec:
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/grocy/vallejo/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: grocy-vallejo
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

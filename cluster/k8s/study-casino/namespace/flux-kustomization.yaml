@@ -4,13 +4,13 @@ metadata:
   name: study-casino-namespace
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 10m
-  timeout: 1m
+  path: ./cluster/k8s/study-casino/namespace
+  prune: false
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: study-casino-namespace
     namespace: ducktape-flux
-  path: ./cluster/k8s/study-casino/namespace
-  prune: false
+  timeout: 1m
   wait: true

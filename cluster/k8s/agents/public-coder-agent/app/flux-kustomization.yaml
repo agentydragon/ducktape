@@ -1,32 +1,19 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: public-coder-agent-app
-  namespace: ducktape-flux
   annotations:
     description: OpenClaw coder agent at public-coder-agent.allegedly.works -- Authentik-gated, egress-confined to its own proxy.
+  name: public-coder-agent-app
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/app
-  prune: true
-  # Safety net for a planned cdk8s conversion of this directory that may move which
-  # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
-  # landing. This directory holds real PVCs (pvc-v2.yaml, pvc-diagnostics.yaml).
-  deletionPolicy: Orphan
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-app
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  timeout: 5m
-  retryInterval: 1m
+  deletionPolicy: Orphan
   dependsOn:
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
-    # The proxy layer owns the trust Bundle this pod mounts, so it must land first.
     - name: public-coder-agent-proxy
       namespace: ducktape-flux
     - name: external-secrets-config
@@ -40,3 +27,12 @@ spec:
       kind: Deployment
       name: public-coder-agent
       namespace: public-coder-agent
+  interval: 10m
+  path: ./cluster/k8s/agents/public-coder-agent/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-app
+    namespace: ducktape-flux
+  timeout: 5m

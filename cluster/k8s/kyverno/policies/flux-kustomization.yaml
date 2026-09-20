@@ -4,17 +4,16 @@ metadata:
   name: kyverno-policies
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   dependsOn:
-    - name: kyverno # Policies require Kyverno CRDs to be installed
+    - name: kyverno
       namespace: ducktape-flux
   interval: 5m
   path: ./cluster/k8s/kyverno/policies
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: kyverno-policies
-
     namespace: ducktape-flux
-  wait: true
   timeout: 2m
+  wait: true

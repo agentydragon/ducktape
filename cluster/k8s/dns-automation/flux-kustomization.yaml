@@ -4,19 +4,6 @@ metadata:
   name: dns-automation
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/dns-automation
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: dns-automation
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: dns-records
-      namespace: flux-system
   decryption:
     provider: sops
     secretRef:
@@ -26,3 +13,16 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: dns-records
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/dns-automation
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: dns-automation
+    namespace: ducktape-flux

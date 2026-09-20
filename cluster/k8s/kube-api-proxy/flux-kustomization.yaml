@@ -4,15 +4,6 @@ metadata:
   name: kube-api-proxy
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/kube-api-proxy
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: kube-api-proxy
-
-    namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -22,3 +13,11 @@ spec:
       kind: HTTPRoute
       name: kubeapi-allegedly-works
       namespace: default
+  interval: 10m
+  path: ./cluster/k8s/kube-api-proxy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kube-api-proxy
+    namespace: ducktape-flux

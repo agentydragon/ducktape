@@ -4,16 +4,10 @@ metadata:
   name: study-casino-db
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 10m
-  sourceRef:
-    kind: ExternalArtifact
-    name: study-casino-db
-    namespace: ducktape-flux
-  path: ./cluster/k8s/study-casino/db
-  prune: true
-  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
@@ -23,7 +17,13 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
+  interval: 10m
+  path: ./cluster/k8s/study-casino/db
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: study-casino-db
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

@@ -4,21 +4,6 @@ metadata:
   name: grocy-vallejo-user-perms
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-vallejo-user-perms
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/grocy/vallejo/user-perms
-  prune: true
-  # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
-  # the Job-completion healthcheck makes this kustomization Ready only once the
-  # policy in policy.yaml has actually been applied — so a fresh cluster converges
-  # to the committed user→permission policy.
-  wait: true
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
@@ -29,3 +14,13 @@ spec:
       kind: Job
       name: grocy-user-perms-provisioner
       namespace: grocy-vallejo
+  interval: 10m
+  path: ./cluster/k8s/grocy/vallejo/user-perms
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: grocy-vallejo-user-perms
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

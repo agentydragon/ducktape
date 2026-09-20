@@ -4,22 +4,21 @@ metadata:
   name: vector-talos-logs
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/vector-talos-logs
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: vector-talos-logs
-    namespace: ducktape-flux
-  timeout: 2m
   dependsOn:
-    # loki-write is the log sink.
     - name: loki
       namespace: ducktape-flux
-  wait: true
   healthChecks:
     - apiVersion: apps/v1
       kind: DaemonSet
       name: vector-talos-logs
       namespace: vector-talos-logs
+  interval: 10m
+  path: ./cluster/k8s/vector-talos-logs
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: vector-talos-logs
+    namespace: ducktape-flux
+  timeout: 2m
+  wait: true

@@ -1,21 +1,20 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: authentik-db-backups
-  namespace: ducktape-flux
   annotations:
     description: Creates the Authentik CNPG backup schedule and its SeaweedFS storage.
+  name: authentik-db-backups
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 15m
-  path: ./cluster/k8s/authentik/db-backups
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: authentik-db-backups
-    namespace: ducktape-flux
+  dependsOn:
+    - name: authentik-db
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
+    - name: authentik-namespace
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -33,12 +32,13 @@ spec:
       kind: ObjectStore
       name: authentik-db-ovh
       namespace: authentik
-  dependsOn:
-    - name: authentik-db
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-    - name: authentik-namespace
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/authentik/db-backups
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: authentik-db-backups
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true

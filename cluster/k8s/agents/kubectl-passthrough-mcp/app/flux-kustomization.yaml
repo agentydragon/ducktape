@@ -4,25 +4,24 @@ metadata:
   name: kubectl-passthrough-mcp
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: kubectl-passthrough-mcp
-    namespace: ducktape-flux
-  path: ./cluster/k8s/agents/kubectl-passthrough-mcp/app
-  prune: true
-  wait: true
+  dependsOn:
+    - name: gateway
+      namespace: ducktape-flux
+    - name: agent-machine-access-tf
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: kubectl-passthrough-mcp
       namespace: kubectl-passthrough-mcp
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agents/kubectl-passthrough-mcp/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kubectl-passthrough-mcp
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 5m
+  wait: true

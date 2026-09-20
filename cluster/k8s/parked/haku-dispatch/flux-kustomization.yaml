@@ -1,25 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-dispatch
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: haku-dispatch
+  namespace: ducktape-flux
 spec:
-  # Haku dispatch is intentionally parked. Flip this to false only when the
-  # worker-zone and provider wiring has been deliberately restored.
-  suspend: true
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./haku/x/dispatch/deploy
-  prune: true
-  wait: true
   deletionPolicy: WaitForTermination
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
@@ -42,3 +29,14 @@ spec:
       kind: Deployment
       name: dispatcher
       namespace: haku-dispatch
+  interval: 10m
+  path: ./haku/x/dispatch/deploy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 10m
+  wait: true

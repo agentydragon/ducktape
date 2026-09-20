@@ -4,27 +4,25 @@ metadata:
   name: volsync
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: volsync
-    namespace: ducktape-flux
-  path: ./cluster/k8s/volsync
-  prune: true
-  wait: true
   dependsOn:
     - name: snapshot-controller
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: v1
+      current: has(data.token) && data.token != ''
+      kind: Secret
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: volsync
       namespace: volsync-system
-  # The token controller populates data.token asynchronously. Do not declare
-  # the VolSync auth material ready until Alloy can actually use it.
-  healthCheckExprs:
-    - apiVersion: v1
-      kind: Secret
-      current: has(data.token) && data.token != ''
+  interval: 10m
+  path: ./cluster/k8s/volsync
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: volsync
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

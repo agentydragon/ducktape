@@ -4,30 +4,27 @@ metadata:
   name: forgejo-claude
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/forgejo/claude
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-claude
-    # Wait for the Terraform apply (creates the claude Forgejo service user + the
-    # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
-    # tf/thrive-scrape) and agent sessions can depend on it.
-    namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: forgejo-claude
-      namespace: flux-system
   dependsOn:
-    - name: forgejo # Forgejo API must be up (provider target)
+    - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: claude-rbac # the credentials Secret lands in claude-sandbox
+    - name: claude-rbac
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: forgejo-claude
+      namespace: flux-system
+  interval: 10m
+  path: ./cluster/k8s/forgejo/claude
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-claude
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

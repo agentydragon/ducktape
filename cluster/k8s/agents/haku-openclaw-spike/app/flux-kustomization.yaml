@@ -1,33 +1,19 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-openclaw-spike-app
-  namespace: ducktape-flux
   annotations:
     description: Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy.
+  name: haku-openclaw-spike-app
+  namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 10m
-  path: ./cluster/k8s/agents/haku-openclaw-spike/app
-  prune: true
-  # Safety net for a planned cdk8s conversion of this directory that may move which
-  # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
-  # landing. This directory holds real PVCs (pvc.yaml, pvc-v2.yaml).
   deletionPolicy: Orphan
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-openclaw-spike-app
-    namespace: ducktape-flux
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
+      namespace: ducktape-flux
     - name: haku-egress-proxy
       namespace: ducktape-flux
-    # forgejo-images-creds-eso.yaml extracts the source Secret from the
-    # forgejo-images namespace, so it must exist first.
     - name: forgejo-images
       namespace: ducktape-flux
     - name: flux-image-automation-forgejo
@@ -47,3 +33,13 @@ spec:
       kind: Deployment
       name: haku-openclaw-spike
       namespace: haku-openclaw-spike
+  interval: 10m
+  path: ./cluster/k8s/agents/haku-openclaw-spike/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-openclaw-spike-app
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

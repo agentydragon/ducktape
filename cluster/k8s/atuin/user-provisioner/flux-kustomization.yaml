@@ -4,16 +4,15 @@ metadata:
   name: atuin-user-provisioner
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: atuin
+      namespace: ducktape-flux
+    - name: user-agentydragon
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/atuin/user-provisioner
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: atuin-user-provisioner
-
     namespace: ducktape-flux
-  dependsOn:
-    - name: atuin
-      namespace: ducktape-flux
-    - name: user-agentydragon
-      namespace: ducktape-flux

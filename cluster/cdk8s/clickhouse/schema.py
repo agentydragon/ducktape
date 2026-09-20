@@ -15,8 +15,8 @@ from pathlib import Path
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -27,6 +27,7 @@ from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
+    flux_kustomization_depends_on,
     health_checks,
     kustomize_kustomization,
 )
@@ -83,7 +84,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def clickhouse_schema(flux_chart: Chart, root: Path, clickhouse: Kustomization) -> Kustomization:
     name = NAME
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -100,23 +101,21 @@ def write_manifests(root: Path) -> None:
     )
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="20m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-                ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=health_checks(rendered_chart, ("Job",)),
-                depends_on=[KustomizationSpecDependsOn(name="clickhouse")],
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="20m",
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
             ),
+            path=f"./{OUTPUT_DIR}",
+            prune=True,
+            wait=True,
+            health_checks=health_checks(rendered_chart, ("Job",)),
+            depends_on=[flux_kustomization_depends_on(clickhouse)],
         ),
     )
     write_yaml(
@@ -125,3 +124,4 @@ def write_manifests(root: Path) -> None:
         # Job mounts. See cluster/docs/cdk8s.md.
         kustomize_kustomization(resources=[f"{name}.k8s.yaml"], config_map_generator=[SCHEMA_CONFIG_MAP]),
     )
+    return kustomization

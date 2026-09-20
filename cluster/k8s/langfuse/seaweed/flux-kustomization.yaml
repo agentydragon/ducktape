@@ -4,17 +4,11 @@ metadata:
   name: langfuse-seaweed
   namespace: ducktape-flux
 spec:
-  suspend: false
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/langfuse/seaweed
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-seaweed
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
+  dependsOn:
+    - name: langfuse-namespace
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -24,8 +18,14 @@ spec:
       kind: S3Credentials
       name: langfuse
       namespace: langfuse
-  dependsOn:
-    - name: langfuse-namespace
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/langfuse/seaweed
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: langfuse-seaweed
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 5m
+  wait: true

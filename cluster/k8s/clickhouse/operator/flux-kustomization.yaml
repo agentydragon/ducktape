@@ -4,27 +4,27 @@ metadata:
   name: clickhouse-operator
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/clickhouse/operator
-  prune: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: clickhouse-namespace
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: clickhouse-operator
+      namespace: clickhouse
+  interval: 10m
+  path: ./cluster/k8s/clickhouse/operator
+  prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: clickhouse-operator
     namespace: ducktape-flux
   timeout: 10m
   wait: true
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: clickhouse-operator
-      namespace: clickhouse
-  dependsOn:
-    - name: clickhouse-namespace
-      namespace: ducktape-flux
-    - name: monitoring-crds # the chart's serviceMonitor.enabled
-      namespace: ducktape-flux

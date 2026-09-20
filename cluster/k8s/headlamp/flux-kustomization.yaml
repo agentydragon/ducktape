@@ -4,16 +4,11 @@ metadata:
   name: headlamp
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 10m
-  sourceRef:
-    kind: ExternalArtifact
-    name: headlamp-app
-    namespace: ducktape-flux
-  path: ./cluster/k8s/headlamp
-  prune: true
-  wait: true
+  dependsOn:
+    - name: gateway
+      namespace: ducktape-flux
+    - name: sso-providers-tf
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: v1
       kind: Namespace
@@ -22,8 +17,13 @@ spec:
       kind: HelmRelease
       name: headlamp
       namespace: headlamp
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/headlamp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: headlamp-app
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true

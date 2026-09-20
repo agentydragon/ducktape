@@ -4,16 +4,6 @@ metadata:
   name: github-api-proxy
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  retryInterval: 1m
-  timeout: 5m
-  path: ./cluster/k8s/github-api-proxy/app
-  prune: true
-  wait: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-api-proxy
-    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -27,9 +17,19 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-csi
       namespace: ducktape-flux
-    - name: monitoring-crds # PodMonitor + PrometheusRule
+    - name: monitoring-crds
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: reloader
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/github-api-proxy/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-api-proxy
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

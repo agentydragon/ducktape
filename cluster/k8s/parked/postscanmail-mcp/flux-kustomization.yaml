@@ -1,31 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: postscanmail-mcp
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: postscanmail-mcp
+  namespace: ducktape-flux
 spec:
-  suspend: true
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: postscanmail-mcp
-    namespace: ducktape-flux
-  path: ./cluster/k8s/parked/postscanmail-mcp
-  prune: true
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: postscanmail-mcp
-      namespace: postscanmail-mcp
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -39,5 +23,21 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: monitoring-crds # the ServiceMonitor CRD
+    - name: monitoring-crds
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: postscanmail-mcp
+      namespace: postscanmail-mcp
+  interval: 10m
+  path: ./cluster/k8s/parked/postscanmail-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: postscanmail-mcp
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

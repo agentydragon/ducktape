@@ -1,32 +1,29 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: kubectl-machine-mcp
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: kubectl-machine-mcp
+  namespace: ducktape-flux
 spec:
-  suspend: true
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: kubectl-machine-mcp
-
-    namespace: ducktape-flux
-  path: ./cluster/k8s/parked/kubectl-machine-mcp
-  prune: true
-  wait: true
+  dependsOn:
+    - name: gateway
+      namespace: ducktape-flux
+    - name: agent-machine-access-tf
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: kubectl-machine-mcp
       namespace: kubectl-machine-mcp
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
-    # discovery + JWKS this server validates against) is created by this TF.
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/parked/kubectl-machine-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kubectl-machine-mcp
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 5m
+  wait: true

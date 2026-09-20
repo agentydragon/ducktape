@@ -4,20 +4,10 @@ metadata:
   name: external-secrets-operator
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m0s
-  path: ./cluster/k8s/external-secrets/operator
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: external-secrets-operator
-    namespace: ducktape-flux
-  timeout: 5m0s
-  wait: true
   dependsOn:
-    - name: external-secrets-crds # CRDs must be in kustomize-controller cache first
+    - name: external-secrets-crds
       namespace: ducktape-flux
-    - name: cert-manager # ESO uses Issuer resources
+    - name: cert-manager
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -32,10 +22,19 @@ spec:
       kind: Deployment
       name: external-secrets-webhook
       namespace: external-secrets-system
-    # Ensure both webhook configurations are registered before dependents create resources
     - apiVersion: admissionregistration.k8s.io/v1
       kind: ValidatingWebhookConfiguration
       name: externalsecret-validate
     - apiVersion: admissionregistration.k8s.io/v1
       kind: ValidatingWebhookConfiguration
       name: secretstore-validate
+  interval: 10m0s
+  path: ./cluster/k8s/external-secrets/operator
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: external-secrets-operator
+    namespace: ducktape-flux
+  timeout: 5m0s
+  wait: true

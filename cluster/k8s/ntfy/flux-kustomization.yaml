@@ -12,9 +12,13 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: cnpg
+      namespace: ducktape-flux
     - name: external-secrets-config
+      namespace: ducktape-flux
     - name: gateway
+      namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: v1
       kind: Namespace

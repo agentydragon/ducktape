@@ -4,17 +4,31 @@ metadata:
   name: forgejo
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 5m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo
-    namespace: ducktape-flux
-  path: ./cluster/k8s/forgejo/app
-  prune: true
-  wait: true
-  # Health check ensures Forgejo is fully operational with SSO
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: forgejo-namespace
+      namespace: ducktape-flux
+    - name: forgejo-db
+      namespace: ducktape-flux
+    - name: forgejo-cache
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
+    - name: sso-providers-tf
+      namespace: ducktape-flux
+    - name: authentik
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
@@ -28,30 +42,13 @@ spec:
       kind: HelmRelease
       name: forgejo
       namespace: forgejo
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: forgejo-namespace
-      namespace: ducktape-flux
-    - name: forgejo-db
-      namespace: ducktape-flux
-    - name: forgejo-cache # shared valkey for cache + queue (HA prerequisite)
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster # SeaweedFS CRDs, operator, and backend
-      namespace: ducktape-flux
-    - name: reflector # Mirrors forgejo-oauth-client-secret into the namespace
-      namespace: ducktape-flux
-    - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace
-      namespace: ducktape-flux
-    - name: authentik # Authentik must be running for OIDC
-      namespace: ducktape-flux
-    # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
-    # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.
-    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/forgejo/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
