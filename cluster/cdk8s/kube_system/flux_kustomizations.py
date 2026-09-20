@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def kube_system() -> dict[str, object]:
+def kube_system(chart: Chart, goldilocks: Kustomization) -> Kustomization:
     name = "kube-system"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -27,12 +25,6 @@ def kube_system() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="goldilocks", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(goldilocks)],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/kube-system/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kube_system())

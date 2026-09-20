@@ -503,6 +503,7 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -859,6 +860,7 @@ py_library(
         ":flux",
         ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -870,6 +872,7 @@ py_library(
         ":flux",
         ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -881,6 +884,7 @@ py_library(
         ":flux",
         ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -892,6 +896,7 @@ py_library(
         ":flux",
         ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -903,5 +908,6 @@ py_library(
         ":flux",
         ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )

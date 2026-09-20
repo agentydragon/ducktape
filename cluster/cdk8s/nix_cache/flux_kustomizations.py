@@ -2,26 +2,33 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def nix_cache() -> dict[str, object]:
+def nix_cache(
+    chart: Chart,
+    cnpg: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    cert_manager: Kustomization,
+    seaweedfs_cluster: Kustomization,
+) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -48,20 +55,8 @@ def nix_cache() -> dict[str, object]:
                     namespace="nix-cache",
                 ),
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-creds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, external_creds, external_secrets_config, forgejo_images, gateway, cert_manager, seaweedfs_cluster
+            ),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/nix-cache/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, nix_cache())

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -14,13 +12,20 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def atuin() -> dict[str, object]:
+def atuin(
+    chart: Chart,
+    cert_manager_issuer_config: Kustomization,
+    atuin_namespace: Kustomization,
+    atuin_db: Kustomization,
+    gateway: Kustomization,
+    cert_manager_environment: Kustomization,
+) -> Kustomization:
     name = "atuin"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -39,20 +44,19 @@ def atuin() -> dict[str, object]:
                     )
                 ]
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="atuin-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="atuin-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cert_manager_issuer_config, atuin_namespace, atuin_db, gateway, cert_manager_environment
+            ),
         ),
     )
 
 
-def atuin_db() -> dict[str, object]:
+def atuin_db(
+    chart: Chart, atuin_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "atuin-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -64,18 +68,15 @@ def atuin_db() -> dict[str, object]:
             path="./cluster/k8s/atuin/db",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="atuin-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(atuin_namespace, cnpg, local_path_provisioner),
         ),
     )
 
 
-def atuin_namespace() -> dict[str, object]:
+def atuin_namespace(chart: Chart) -> Kustomization:
     name = "atuin-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -89,9 +90,10 @@ def atuin_namespace() -> dict[str, object]:
     )
 
 
-def atuin_user_provisioner() -> dict[str, object]:
+def atuin_user_provisioner(chart: Chart, atuin: Kustomization, user_agentydragon: Kustomization) -> Kustomization:
     name = "atuin-user-provisioner"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -100,24 +102,6 @@ def atuin_user_provisioner() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="atuin", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="user-agentydragon", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/atuin/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, atuin())
-    path = root / "cluster/k8s/atuin/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, atuin_db())
-    path = root / "cluster/k8s/atuin/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, atuin_namespace())
-    path = root / "cluster/k8s/atuin/user-provisioner/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, atuin_user_provisioner())

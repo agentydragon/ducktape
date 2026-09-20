@@ -6,6 +6,7 @@ metadata:
 spec:
   dependsOn:
     - name: monitoring-crds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: monitoring.coreos.com/v1
       kind: ServiceMonitor

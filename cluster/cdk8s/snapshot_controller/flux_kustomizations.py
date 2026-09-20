@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecImages,
     KustomizationSpecPatches,
@@ -15,13 +13,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def snapshot_controller() -> dict[str, object]:
+def snapshot_controller(chart: Chart, snapshot_controller_crds: Kustomization) -> Kustomization:
     name = "snapshot-controller"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -35,7 +33,7 @@ def snapshot_controller() -> dict[str, object]:
             prune=True,
             wait=True,
             timeout="5m",
-            depends_on=[KustomizationSpecDependsOn(name="snapshot-controller-crds", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(snapshot_controller_crds)],
             images=[KustomizationSpecImages(name="registry.k8s.io/sig-storage/snapshot-controller", new_tag="v8.6.0")],
             patches=[
                 KustomizationSpecPatches(
@@ -57,9 +55,10 @@ def snapshot_controller() -> dict[str, object]:
     )
 
 
-def snapshot_controller_crds() -> dict[str, object]:
+def snapshot_controller_crds(chart: Chart) -> Kustomization:
     name = "snapshot-controller-crds"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -75,12 +74,3 @@ def snapshot_controller_crds() -> dict[str, object]:
             timeout="2m",
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/snapshot-controller/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, snapshot_controller())
-    path = root / "cluster/k8s/snapshot-controller/crds/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, snapshot_controller_crds())

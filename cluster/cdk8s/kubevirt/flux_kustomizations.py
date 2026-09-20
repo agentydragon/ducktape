@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
-def kubevirt() -> dict[str, object]:
+def kubevirt(chart: Chart, kubevirt_operator: Kustomization) -> Kustomization:
     name = "kubevirt"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -30,7 +33,7 @@ def kubevirt() -> dict[str, object]:
             ),
             wait=True,
             timeout="10m",
-            depends_on=[KustomizationSpecDependsOn(name="kubevirt-operator", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="virt-api", namespace="kubevirt"
@@ -46,9 +49,10 @@ def kubevirt() -> dict[str, object]:
     )
 
 
-def cdi_operator() -> dict[str, object]:
+def cdi_operator(chart: Chart) -> Kustomization:
     name = "cdi-operator"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -71,9 +75,10 @@ def cdi_operator() -> dict[str, object]:
     )
 
 
-def cdi() -> dict[str, object]:
+def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
     name = "cdi"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -85,10 +90,7 @@ def cdi() -> dict[str, object]:
             ),
             wait=True,
             timeout="10m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="cdi-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="cdi-apiserver", namespace="cdi"
@@ -104,9 +106,10 @@ def cdi() -> dict[str, object]:
     )
 
 
-def kubevirt_operator() -> dict[str, object]:
+def kubevirt_operator(chart: Chart) -> Kustomization:
     name = "kubevirt-operator"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -125,18 +128,3 @@ def kubevirt_operator() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/kubevirt/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kubevirt())
-    path = root / "cluster/k8s/kubevirt/cdi-operator/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cdi_operator())
-    path = root / "cluster/k8s/kubevirt/cdi/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cdi())
-    path = root / "cluster/k8s/kubevirt/operator/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, kubevirt_operator())

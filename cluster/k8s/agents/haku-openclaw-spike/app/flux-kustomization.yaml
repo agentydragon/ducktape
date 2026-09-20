@@ -11,6 +11,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
+      namespace: ducktape-flux
     - name: haku-egress-proxy
       namespace: ducktape-flux
     - name: forgejo-images

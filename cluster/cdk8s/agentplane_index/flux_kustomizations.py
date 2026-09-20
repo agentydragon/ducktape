@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def agentplane_index() -> dict[str, object]:
+def agentplane_index(
+    chart: Chart,
+    cnpg: Kustomization,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    local_path_provisioner: Kustomization,
+    ollama: Kustomization,
+) -> Kustomization:
     name = "agentplane-index"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -59,22 +64,12 @@ def agentplane_index() -> dict[str, object]:
                     ),
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="ollama", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, external_secrets_config, forgejo_images, local_path_provisioner, ollama
+            ),
         ),
         description=(
             "Complete Agentplane repository-index service: namespace, ESO "
             "credentials, CNPG databases, and both index workers."
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/agentplane-index/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, agentplane_index())

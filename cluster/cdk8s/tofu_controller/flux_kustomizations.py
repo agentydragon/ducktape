@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def tofu_controller() -> dict[str, object]:
+def tofu_controller(chart: Chart, cert_manager: Kustomization, kyverno: Kustomization) -> Kustomization:
     name = "tofu-controller"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -30,10 +28,7 @@ def tofu_controller() -> dict[str, object]:
             ),
             timeout="10m0s",
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="kyverno", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",
@@ -50,9 +45,3 @@ def tofu_controller() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/tofu-controller/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tofu_controller())

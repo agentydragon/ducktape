@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def grocy_sf() -> dict[str, object]:
+def grocy_sf(
+    chart: Chart,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    cert_manager_issuer_config: Kustomization,
+    cert_manager_environment: Kustomization,
+    authentik: Kustomization,
+    volsync: Kustomization,
+) -> Kustomization:
     name = "grocy-sf"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -30,21 +36,27 @@ def grocy_sf() -> dict[str, object]:
             path="./cluster/k8s/grocy/sf/app",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="volsync", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            ),
         ),
     )
 
 
-def grocy_mcp_sf() -> dict[str, object]:
+def grocy_mcp_sf(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    grocy_sf: Kustomization,
+    valkey: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "grocy-mcp-sf"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -61,26 +73,25 @@ def grocy_mcp_sf() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-sf"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grocy-sf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="agent-machine-access-tf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                grocy_sf,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
+                # the ServiceMonitor/PodMonitor CRD
+                monitoring_crds,
+            ),
         ),
     )
 
 
-def grocy_sf_user_perms() -> dict[str, object]:
+def grocy_sf_user_perms(chart: Chart, forgejo_images: Kustomization, grocy_sf: Kustomization) -> Kustomization:
     name = "grocy-sf-user-perms"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -96,10 +107,7 @@ def grocy_sf_user_perms() -> dict[str, object]:
             # in policy.yaml has actually been applied — so a fresh cluster converges to the
             # committed user→permission policy.
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grocy-sf", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_sf),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-sf"
@@ -109,9 +117,18 @@ def grocy_sf_user_perms() -> dict[str, object]:
     )
 
 
-def grocy_vallejo() -> dict[str, object]:
+def grocy_vallejo(
+    chart: Chart,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    cert_manager_issuer_config: Kustomization,
+    cert_manager_environment: Kustomization,
+    authentik: Kustomization,
+    volsync: Kustomization,
+) -> Kustomization:
     name = "grocy-vallejo"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -123,21 +140,27 @@ def grocy_vallejo() -> dict[str, object]:
             path="./cluster/k8s/grocy/vallejo/app",
             prune=True,
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="volsync", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            ),
         ),
     )
 
 
-def grocy_mcp_vallejo() -> dict[str, object]:
+def grocy_mcp_vallejo(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    grocy_vallejo: Kustomization,
+    valkey: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "grocy-mcp-vallejo"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -154,26 +177,27 @@ def grocy_mcp_vallejo() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-vallejo"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grocy-vallejo", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="valkey", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="agent-machine-access-tf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                grocy_vallejo,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
+                # the ServiceMonitor/PodMonitor CRD
+                monitoring_crds,
+            ),
         ),
     )
 
 
-def grocy_vallejo_user_perms() -> dict[str, object]:
+def grocy_vallejo_user_perms(
+    chart: Chart, forgejo_images: Kustomization, grocy_vallejo: Kustomization
+) -> Kustomization:
     name = "grocy-vallejo-user-perms"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -189,10 +213,7 @@ def grocy_vallejo_user_perms() -> dict[str, object]:
             # policy in policy.yaml has actually been applied — so a fresh cluster converges
             # to the committed user→permission policy.
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grocy-vallejo", namespace="ducktape-flux"),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_vallejo),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-vallejo"
@@ -200,24 +221,3 @@ def grocy_vallejo_user_perms() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/grocy/sf/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_sf())
-    path = root / "cluster/k8s/grocy/sf/mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_mcp_sf())
-    path = root / "cluster/k8s/grocy/sf/user-perms/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_sf_user_perms())
-    path = root / "cluster/k8s/grocy/vallejo/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_vallejo())
-    path = root / "cluster/k8s/grocy/vallejo/mcp/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_mcp_vallejo())
-    path = root / "cluster/k8s/grocy/vallejo/user-perms/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, grocy_vallejo_user_perms())

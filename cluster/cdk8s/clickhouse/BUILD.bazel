@@ -46,5 +46,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )

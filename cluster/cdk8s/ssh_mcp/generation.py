@@ -7,6 +7,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Service
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
@@ -14,7 +15,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.ssh_mcp import backend, config, sshpiper
 from cluster.scripts.nebula_mesh import Mesh
@@ -24,7 +30,14 @@ _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
-def write_manifests(root: Path, mesh: Mesh, devbox_service: Service) -> None:
+def ssh_mcp(
+    flux_chart: Chart,
+    root: Path,
+    mesh: Mesh,
+    devbox_service: Service,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+) -> Kustomization:
     """Write the generated backend and sshpiper manifests under ``root``."""
     ssh_config = config.load(devbox_service)
     out_dir = root / _OUTPUT_DIR
@@ -43,27 +56,25 @@ def write_manifests(root: Path, mesh: Mesh, devbox_service: Service) -> None:
     )
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            config.NAME,
-            description="Standalone SSH MCP backend for haku-console and Agentplane staging.",
-            spec=KustomizationSpec(
-                interval="10m",
-                retry_interval="1m",
-                timeout="5m",
-                path=f"./{_OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                decryption=sops_decryption(_KEY_FILES),
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=config.NAME, namespace=NAMESPACE
-                ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=name)
-                    for name in ("ssh-mcp-namespace", "external-secrets-config", "forgejo-images")
-                ],
+    kustomization = flux_kustomization(
+        flux_chart,
+        config.NAME,
+        description="Standalone SSH MCP backend for haku-console and Agentplane staging.",
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="5m",
+            path=f"./{_OUTPUT_DIR}",
+            prune=True,
+            wait=True,
+            decryption=sops_decryption(_KEY_FILES),
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=config.NAME, namespace=NAMESPACE
             ),
+            depends_on=[
+                KustomizationSpecDependsOn(name="ssh-mcp-namespace"),
+                *flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
+            ],
         ),
     )
     write_yaml(
@@ -79,3 +90,4 @@ def write_manifests(root: Path, mesh: Mesh, devbox_service: Service) -> None:
     pipe_chart = Chart(pipe_app, "pipe-devbox", disable_resource_name_hashes=True)
     sshpiper.construct(pipe_chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key)
     pipe_app.synth()
+    return kustomization

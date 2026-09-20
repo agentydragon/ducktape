@@ -11,17 +11,19 @@ implementation patch. The base is the generated Flux Kustomization layer in
    topological order for the current DAG. Keep each dependency's position and
    its nearby explanatory comment.
 2. Adapt the existing `flux_kustomization` helper to receive one shared cdk8s
-   `Chart` and return the generated Flux `Kustomization` CRD construct. Add one
-   small helper, `flux_kustomization_depends_on(kustomization)`, to produce a
-   typed `KustomizationSpecDependsOn` from that construct's name and namespace.
-   `flux_kustomization` receives a complete spec and passes it to the CRD
-   constructor unchanged.
+   `Chart` and return the generated Flux `Kustomization` CRD construct. Add
+   `flux_kustomization_depends_on(kustomization)` to produce a typed
+   `KustomizationSpecDependsOn` from that construct's name and namespace, plus
+   `flux_kustomization_depends_on_many(*dependencies)` to return a list of those
+   entries for multiple constructs. `flux_kustomization` receives a complete
+   spec and passes it to the CRD constructor unchanged.
 3. Update each existing per-Kustomization factory in place. Its parameters are
    the shared chart and explicit construct parameters for its generated
-   predecessors. Each factory builds the final typed `depends_on` list with
-   `flux_kustomization_depends_on(predecessor)` calls, then creates and returns
-   its Flux CRD. Keep the existing field values, comments, module locations,
-   and non-Flux generation logic.
+   predecessors. Each factory uses
+   `flux_kustomization_depends_on_many(predecessor_a, predecessor_b, ...)` for
+   multiple generated predecessors, then creates and returns its Flux CRD. Keep
+   the existing field values, comments, module locations, and non-Flux
+   generation logic.
 4. In `generate_manifests.py`, construct one chart and make explicit factory
    calls in topological order, passing predecessor locals directly to
    dependents. Synthesize the chart once and write the resulting manifests to
@@ -89,6 +91,12 @@ def flux_kustomization_depends_on(
         name=dependency.name,
         namespace=dependency.metadata.namespace,
     )
+
+
+def flux_kustomization_depends_on_many(
+    *dependencies: Kustomization,
+) -> list[KustomizationSpecDependsOn]:
+    return [flux_kustomization_depends_on(dependency) for dependency in dependencies]
 
 
 def flux_kustomization(

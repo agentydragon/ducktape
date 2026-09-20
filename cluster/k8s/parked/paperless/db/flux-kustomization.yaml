@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: paperless-db
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: paperless-db
+  namespace: ducktape-flux
 spec:
   dependsOn:
     - name: paperless-namespace

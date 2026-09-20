@@ -8,13 +8,13 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
@@ -147,28 +147,27 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    """Generate credential grants and Kustomize/Flux wiring; SOPS files stay hand-written."""
+def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) -> Kustomization:
+    """Generate credential grants and Kustomize wiring; SOPS files stay hand-written."""
     resources = kustomize_resources()
     write_charts(root, OUTPUT_DIR, chart)
 
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            "external-creds",
-            spec=KustomizationSpec(
-                interval="10m",
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                decryption=sops_decryption(resources),
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
-                ),
-                depends_on=[KustomizationSpecDependsOn(name="claude-rbac")],
-                timeout="5m",
+    kustomization = flux_kustomization(
+        flux_chart,
+        "external-creds",
+        spec=KustomizationSpec(
+            interval="10m",
+            path=f"./{OUTPUT_DIR}",
+            prune=True,
+            decryption=sops_decryption(resources),
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
             ),
+            depends_on=[flux_kustomization_depends_on(claude_rbac)],
+            timeout="5m",
         ),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
+    return kustomization

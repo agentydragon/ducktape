@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def haku_ci() -> dict[str, object]:
+def haku_ci(
+    chart: Chart, forgejo: Kustomization, keda: Kustomization, reflector: Kustomization, haku_forgejo_tea: Kustomization
+) -> Kustomization:
     name = "haku-ci"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -31,25 +31,15 @@ def haku_ci() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo (with Actions enabled, #2556) must be up first
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="keda",  # supplies the ScaledObject and TriggerAuthentication CRDs
-                    namespace="ducktape-flux",
-                ),
+            depends_on=flux_kustomization_depends_on_many(
+                # Forgejo (with Actions enabled, #2556) must be up first
+                forgejo,
+                # supplies the ScaledObject and TriggerAuthentication CRDs
+                keda,
                 # Reflector mirrors haku-forgejo-tea from the completed haku-forgejo-tea
                 # Kustomization into haku-ci for the native Forgejo KEDA scaler.
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="haku-forgejo-tea", namespace="ducktape-flux"),
-            ],
+                reflector,
+                haku_forgejo_tea,
+            ),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/haku-ci/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, haku_ci())

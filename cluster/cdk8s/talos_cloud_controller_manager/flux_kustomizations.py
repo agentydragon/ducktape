@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecHealthChecks,
@@ -11,13 +10,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
-def talos_cloud_controller_manager() -> dict[str, object]:
+def talos_cloud_controller_manager(chart: Chart) -> Kustomization:
     name = "talos-cloud-controller-manager"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -39,9 +38,3 @@ def talos_cloud_controller_manager() -> dict[str, object]:
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/talos-cloud-controller-manager/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, talos_cloud_controller_manager())
