@@ -27,3 +27,10 @@ subjects:
   - kind: Group
     name: oidc-ksbx-groups:agent-box-codex
     apiGroup: rbac.authorization.k8s.io
+  # claude-ai: the principal for Connections enrolled from the Claude.ai MCP connector
+  # (cluster/cdk8s/agentplane/actions_staging_policies.py), and every sandbox stamped
+  # for it (agentplane/docs/sandbox_actions.md). Secret-free cluster diagnostics only,
+  # same bar as every other agent identity above -- no RBAC beyond it today.
+  - kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
