@@ -50,7 +50,7 @@ spec:
           weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    podAntiAffinityType: preferred
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:

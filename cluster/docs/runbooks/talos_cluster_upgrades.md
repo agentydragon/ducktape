@@ -56,7 +56,12 @@ kubectl top nodes
 Review CNPG state with `kubectl cnpg -n <namespace> status <cluster>` (or list
 `Cluster` resources and inspect their status). Every multi-instance cluster
 that could be affected must have all instances healthy and a ready replica on
-another node. Identify the target's current primary before draining.
+another node. Record the target's current primary and each instance's node
+before draining. A CNPG PDB showing zero allowed disruptions while the target
+hosts the primary is a cue to switch primaries, not a reason to treat the
+cluster as permanently undrainable. For a node-local PVC, expect an evicted
+replica to remain Pending until its bound node returns; this does not prevent
+the drain once the primary is healthy off-node.
 
 Check Flux, active alerts, and recent warning events. Record known unrelated
 baseline conditions (for example, intentionally offline roaming nodes) and
@@ -170,7 +175,16 @@ kubectl cnpg -n <namespace> status <cluster>
 
 Confirm the new primary is the selected off-node replica and every instance is
 healthy before continuing. This uses CNPG's planned promotion path; do not
-delete the primary pod or its PVC to force a role change.
+delete the primary pod or its PVC to force a role change. Once the primary is
+confirmed off the target, a remaining non-primary CNPG instance on that node
+does not by itself block a normal, eviction-based drain. Do not treat the
+cluster's primary-protection PDB as a blanket blocker for that replica; let
+`kubectl drain` evaluate eviction normally. If eviction is rejected, re-check
+the live CNPG roles, health, and the specific PDB selecting that pod. Do not
+bypass a PDB or force-delete the pod. If no ready replica is off-node, or the
+primary cannot be moved off the target, stop and resolve that condition before
+the node roll. After the node returns and is uncordoned, verify the local-PVC
+replica schedules and catches up before moving to the next node.
 
 ### Explicitly approved single-instance testing CNPG
 
