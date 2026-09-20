@@ -10,7 +10,10 @@ spec:
     kind: ClusterSecretStore
   target:
     name: openclaw-telegram-bot-token
-    creationPolicy: Owner
+    # This target already exists without an ExternalSecret owner reference.
+    # Orphan lets ESO refresh it in place; deleting this ExternalSecret leaves
+    # the target Secret behind, which then needs explicit cleanup.
+    creationPolicy: Orphan
   data:
     - secretKey: token
       remoteRef:
