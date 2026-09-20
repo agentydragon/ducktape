@@ -455,15 +455,19 @@ class HaMcpApp(Construct):
                 _NAMESPACE,
                 annotations={
                     "description": (
-                        "Default-deny ingress for HA-MCP. Only haku-console reaches the facade port; the "
-                        "upstream server port is reachable only over pod-local loopback. No Gateway ingress "
-                        "-- this MCP is cluster-internal since the move to a static bearer."
+                        "Default-deny ingress for HA-MCP. Only haku-console and agentplane-staging reach the "
+                        "facade port; the upstream server port is reachable only over pod-local loopback. No "
+                        "Gateway ingress -- this MCP is cluster-internal since the move to a static bearer."
                     )
                 },
             ),
             selector=_APP_LABELS,
             ingress=[
-                cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "haku-console"}, ports=[_APP_FACADE_PORT]),
+                cilium.ingress_from(
+                    {"k8s:io.kubernetes.pod.namespace": "haku-console"},
+                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"},
+                    ports=[_APP_FACADE_PORT],
+                ),
                 cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
             ],
         )

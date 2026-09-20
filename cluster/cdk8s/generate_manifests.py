@@ -992,7 +992,7 @@ def generate_manifests(root: Path) -> None:
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, forgejo_images_kustomization, grocy_vallejo_kustomization
     )
-    ha_mcp.ha_mcp(
+    ha_mcp_kustomization = ha_mcp.ha_mcp(
         flux_chart,
         root,
         external_secrets_config_kustomization,
@@ -1158,6 +1158,7 @@ def generate_manifests(root: Path) -> None:
         sso_providers_tf_kustomization,
         ssh_mcp_kustomization,
         haku_console_kustomization,
+        ha_mcp_kustomization,
     )
     flux_app.synth()
 
