@@ -2003,7 +2003,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/shared-secrets
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: agent-shared-secrets
@@ -3338,18 +3338,29 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: agent-shared-secrets
       namespace: ducktape-flux
     - name: ollama
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: openclaw-telegram-bot-token
+      namespace: claude-sandbox
   interval: 10m
   path: ./cluster/k8s/agents/claude-sandbox-secrets
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: claude-sandbox-secrets
     namespace: ducktape-flux
   timeout: 5m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

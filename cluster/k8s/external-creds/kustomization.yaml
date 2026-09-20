@@ -13,3 +13,4 @@ resources:
   - github-agentydragon.sops.yaml
   - groq.sops.yaml
   - mistral.sops.yaml
+  - openclaw-telegram-bot-token.sops.yaml

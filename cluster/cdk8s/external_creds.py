@@ -119,6 +119,11 @@ CREDENTIALS = (
         secret_name="llm-mistral",
         consumers=(ApprovedConsumer("litellm", "llm-mistral-litellm-reader"),),
     ),
+    Credential(
+        secret_file="openclaw-telegram-bot-token.sops.yaml",
+        secret_name="openclaw-telegram-bot-token",
+        consumers=(ApprovedConsumer("claude-sandbox", "openclaw-telegram-bot-token-claude-sandbox-reader"),),
+    ),
 )
 
 
