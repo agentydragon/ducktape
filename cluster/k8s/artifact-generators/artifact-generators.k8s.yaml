@@ -305,11 +305,6 @@ spec:
       name: seaweedfs-external-credentials
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/study-casino/namespace/**"
-          to: "@artifact/cluster/k8s/study-casino/namespace/"
-      name: study-casino-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/tana-mcp/**"
           to: "@artifact/cluster/k8s/agents/tana-mcp/"
       name: tana-mcp
@@ -986,14 +981,9 @@ spec:
       name: ssh-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/study-casino/app/**"
-          to: "@artifact/cluster/k8s/study-casino/app/"
-      name: study-casino-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/study-casino/db/**"
-          to: "@artifact/cluster/k8s/study-casino/db/"
-      name: study-casino-db
+        - from: "@repo/cluster/k8s/study-casino/**"
+          to: "@artifact/cluster/k8s/study-casino/"
+      name: study-casino
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/talos-cloud-controller-manager/**"

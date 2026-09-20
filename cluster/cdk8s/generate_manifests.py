@@ -211,7 +211,6 @@ def generate_manifests(root: Path) -> None:
     )
     ssh_mcp_namespace_kustomization = ssh_mcp_generation.ssh_mcp_namespace(flux_chart)
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
-    study_casino_namespace_kustomization = study_casino_flux_kustomizations.study_casino_namespace(flux_chart)
     (talos_cloud_controller_manager_flux_kustomizations.talos_cloud_controller_manager(flux_chart))
     tofu_state_namespace_kustomization = tofu_state_flux_kustomizations.tofu_state_namespace(flux_chart)
     user_agentydragon_kustomization = user_agentydragon_flux_kustomizations.user_agentydragon(flux_chart)
@@ -343,13 +342,6 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
-    )
-    study_casino_db_kustomization = study_casino_flux_kustomizations.study_casino_db(
-        flux_chart,
-        cnpg_kustomization,
-        study_casino_namespace_kustomization,
-        local_path_provisioner_kustomization,
-        reflector_kustomization,
     )
     tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(
         flux_chart, tofu_state_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
@@ -904,13 +896,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
     )
     study_casino_flux_kustomizations.study_casino(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        study_casino_namespace_kustomization,
-        study_casino_db_kustomization,
-        claude_rbac_kustomization,
+        flux_chart, cnpg_kustomization, external_secrets_operator_kustomization
     )
     haku_state_kustomization = forgejo_flux_kustomizations.haku_state(
         flux_chart,
