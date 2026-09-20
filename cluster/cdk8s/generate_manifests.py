@@ -1049,7 +1049,7 @@ def generate_manifests(root: Path) -> None:
         ssh_mcp_kustomization,
         monitoring_crds_kustomization,
     )
-    agents_flux_kustomizations.public_coder_agent_app(
+    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_namespace_kustomization,
         public_coder_agent_proxy_kustomization,
@@ -1066,6 +1066,7 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
         agent_shared_secrets_kustomization,
+        public_coder_agent_app_kustomization,
     )
     staging.agentplane_staging(
         flux_chart,

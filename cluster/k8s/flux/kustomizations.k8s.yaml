@@ -6652,6 +6652,8 @@ spec:
       namespace: ducktape-flux
     - name: agent-shared-secrets
       namespace: ducktape-flux
+    - name: public-coder-agent-app
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine
