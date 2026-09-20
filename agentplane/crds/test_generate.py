@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
 from agentplane.crds.generate import CRD_FILES, CRDS_DIR, generated_files
+from util.bazel.runfiles import get_required_path
 
 
 def _committed(relative: Path) -> str:

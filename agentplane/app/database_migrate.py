@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from util.db_migrations import MigrationRunner
 from agentplane.app.trajectory import Base
+from util.db_migrations import MigrationRunner
 
 # `Base` is declared in operator_sessions.py; trajectory.py's own Thread/Event tables and
 # operator_sessions.py's BrowserSession all share it, and importing it here (via trajectory.py,

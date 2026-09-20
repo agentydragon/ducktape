@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from util.bazel.runfiles import get_required_path
 from agentplane.harness_tests.claude import harness as claude_harness
 from agentplane.harness_tests.codex import harness as codex_harness
 from agentplane.runner import protocol_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from util.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

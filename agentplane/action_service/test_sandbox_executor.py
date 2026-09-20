@@ -16,8 +16,6 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue
 
-from mcp_infra.exec.kubernetes import CommandResult, PodExecError
-from mcp_infra.exec.models import Exited
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
 from agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
@@ -26,6 +24,8 @@ from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecut
 from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
 from agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
+from mcp_infra.exec.kubernetes import CommandResult, PodExecError
+from mcp_infra.exec.models import Exited
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")

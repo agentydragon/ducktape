@@ -159,17 +159,17 @@ The condition this note set for the repo-wide fix — "if this keeps recurring o
 is met. Two packages that share nothing with augur, and nothing with each other, flake the
 same way. All figures are `bbr test --nocache_test_results --runs_per_test=10`.
 
-| target                                | TIMEOUTs | note                    |
-| ------------------------------------- | -------: | ----------------------- |
+| target                              | TIMEOUTs | note                    |
+| ----------------------------------- | -------: | ----------------------- |
 | `//agentplane/egress:test_proxy`    |     4/10 | 5/10 when run alone     |
 | `//agentplane/egress:test_sidecar`  |     4/10 |                         |
 | `//agentplane/egress:test_policy`   |     3/10 | no I/O at all           |
 | `//agentplane/egress:test_admin`    |     3/10 |                         |
 | `//agentplane/egress:test_identity` |     3/10 |                         |
 | `//agentplane/egress:test_upstream` |     2/10 |                         |
-| `//util:test_sqlalchemy_types`        |     2/10 | control, unrelated tree |
-| `//util:test_image_tag`               |     1/10 | control, unrelated tree |
-| `//util/bazel:test_workspace`         |     1/10 | control, unrelated tree |
+| `//util:test_sqlalchemy_types`      |     2/10 | control, unrelated tree |
+| `//util:test_image_tag`             |     1/10 | control, unrelated tree |
+| `//util/bazel:test_workspace`       |     1/10 | control, unrelated tree |
 
 The controls are what make this general: they were run precisely to falsify "the egress
 package is special", and they flake too. `//agentplane/egress:test_policy` rules out the
@@ -191,11 +191,11 @@ pytest for 11 tests, a green `test_informer` 0.35s. Call it three seconds of Pyt
 The cost is the execution platform. BuildBuddy's own per-execution timings, same invocation:
 
 | phase                                | `//util:test_image_tag` | `//agentplane/egress:test_policy` |
-| ------------------------------------ | ----------------------: | ----------------------------------: |
-| queued -> worker                     |                   0.06s |                               0.09s |
-| worker -> input fetch (VM/container) |               **4.43s** |                         **252.83s** |
-| input fetch                          |                   0.85s |                               9.62s |
-| execution                            |              **40.69s** |           60.96s, killed at the cap |
+| ------------------------------------ | ----------------------: | --------------------------------: |
+| queued -> worker                     |                   0.06s |                             0.09s |
+| worker -> input fetch (VM/container) |               **4.43s** |                       **252.83s** |
+| input fetch                          |                   0.85s |                             9.62s |
+| execution                            |              **40.69s** |         60.96s, killed at the cap |
 
 `test_image_tag` is a trivial test: ~3s of Python inside a 40s execution, behind 4s of VM preparation.
 `test_policy` waited over four minutes for an executor to prepare a filesystem. So `size = "small"`

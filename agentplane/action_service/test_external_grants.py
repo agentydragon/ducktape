@@ -13,7 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from agentplane.action_service.conftest import RecordingExecutor
 from agentplane.action_service.connections import (
@@ -49,6 +48,7 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.subjects import ServiceAccountRef
+from github_policy.visibility import RepositoryVisibilityService
 
 ISSUER = "https://actions.example.test"
 OPERATOR = OperatorPrincipal(issuer="operator", subject="single")

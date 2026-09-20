@@ -12,7 +12,6 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
-from util.kubernetes import CustomObjectsClient
 from agentplane.action_service.models import NamespacedName
 from agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
@@ -28,6 +27,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import FakeApiServer, fake_apiserver
+from util.kubernetes import CustomObjectsClient
 
 NAMESPACE = "agentplane-policy-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)

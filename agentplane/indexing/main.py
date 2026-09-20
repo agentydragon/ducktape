@@ -16,12 +16,12 @@ from pydantic import BeforeValidator, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
-from haku.recall_index.openai_embedder import OpenAIEmbedder
 from agentplane.indexing.app import create_app
 from agentplane.indexing.maintenance import Maintenance
 from agentplane.indexing.source import GitSource, SnapshotLimits
 from agentplane.indexing.store import Store
+from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from haku.recall_index.openai_embedder import OpenAIEmbedder
 
 # SQLAlchemy imports the configured driver dynamically.
 # gazelle:include_dep @pypi//asyncpg

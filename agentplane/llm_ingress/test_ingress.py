@@ -17,7 +17,6 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from more_itertools import one
 
-from util.agent_sandbox import SANDBOXES_PLURAL
 from agentplane.llm_ingress.app import IngressResources, create_app
 from agentplane.testing.fake_apiserver import (
     SANDBOX_NAMESPACE,
@@ -29,6 +28,7 @@ from agentplane.testing.fake_apiserver import (
 )
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.agent_sandbox import SANDBOXES_PLURAL
 
 AUDIENCE = "agentplane-egress"
 SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"

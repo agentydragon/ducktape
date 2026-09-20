@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from util.bazel.runfiles import get_required_path
 from agentplane.harness_tests.claude.harness import ClaudeHarness
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture

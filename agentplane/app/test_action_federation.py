@@ -12,16 +12,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions, OperatorFederationError
+from agentplane.app.oidc import OIDCSettings, OperatorSession
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_jwks, generate_rsa_keypair, sign_jwt
-from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
-from agentplane.app.action_federation import (
-    DirectFederationSettings,
-    FederatedOperatorActions,
-    OperatorFederationError,
-)
-from agentplane.app.oidc import OIDCSettings, OperatorSession
 
 
 @pytest.fixture

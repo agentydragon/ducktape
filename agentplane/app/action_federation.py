@@ -18,11 +18,11 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.identity import CallerIdentity, CallerKind
 from agentplane.app.oidc import OIDCSettings, OperatorSession, operator_session
+from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 
 logger = logging.getLogger(__name__)
 

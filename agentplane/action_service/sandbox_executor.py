@@ -19,15 +19,8 @@ from typing import Any, cast
 
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from mcp_infra.exec.kubernetes import PodExecError
 from agentplane.action_service.catalog import ActionDefinition
-from agentplane.action_service.models import (
-    ExecutionLease,
-    ExecutionRequest,
-    ExecutionResult,
-    ExecutionState,
-    Executor,
-)
+from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.service import hold_lease
 from agentplane.sandbox_actions.binding import SandboxExecutorBinding
 from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
@@ -42,6 +35,7 @@ from agentplane.sandbox_actions.models import (
     SandboxList,
 )
 from agentplane.subjects import ServiceAccountRef
+from mcp_infra.exec.kubernetes import PodExecError
 
 logger = logging.getLogger(__name__)
 

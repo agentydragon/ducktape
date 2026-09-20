@@ -22,11 +22,11 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
-from util.kubernetes import CustomObjectsClient
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.app.presets import SandboxBinding, ThreadDefaults
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
+from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"

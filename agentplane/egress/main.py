@@ -16,7 +16,6 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api,
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from util.kubernetes import CustomObjectsClient
 from agentplane.egress.addon import EgressAddon
 from agentplane.egress.admin import create_admin_app, serve_admin
 from agentplane.egress.decision_log import DecisionLog
@@ -30,6 +29,7 @@ from agentplane.egress.upstream import UpstreamResolver
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.kubernetes import CustomObjectsClient
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml

@@ -37,7 +37,6 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.kubernetes import CustomObjectsClient
 from agentplane.action_service.policies import resources as policy_resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import (
@@ -68,6 +67,7 @@ from agentplane.app.shutdown import Shutdown
 from agentplane.app.trajectory import ThreadView, TrajectoryStore
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
+from util.kubernetes import CustomObjectsClient
 
 PODS_PLURAL = "pods"
 

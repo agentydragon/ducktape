@@ -10,6 +10,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from agentplane.action_service.models import OperatorPrincipal
 from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
@@ -17,7 +18,6 @@ from mcp_infra.oidc_principal import (
     OidcPrincipalResolver,
     OidcPrincipalVerificationUnavailableError,
 )
-from agentplane.action_service.models import OperatorPrincipal
 
 
 class OperatorTokenProfile(StrEnum):

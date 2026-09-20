@@ -32,9 +32,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from agentplane.action_service.catalog import (
     ActionCatalog,
     ActionGroup,
@@ -62,6 +59,9 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
 from agentplane.action_service.test_fixtures.lifecycle import wait_available, wait_retry
 from agentplane.subjects import ServiceAccountRef
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_sync
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 
 class FakeMcpServer:

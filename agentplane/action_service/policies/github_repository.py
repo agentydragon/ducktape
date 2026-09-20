@@ -9,10 +9,10 @@ from typing import Literal
 
 from pydantic import Field, JsonValue
 
-from github_policy.repository import RepositoryMatch, RepositoryMismatch, evaluate_fixed_repository
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import MatchedRepository, PolicyKind
 from agentplane.action_service.policies.kind import Kind, Matched, NotMatched
+from github_policy.repository import RepositoryMatch, RepositoryMismatch, evaluate_fixed_repository
 
 
 class GitHubRepository(Kind):

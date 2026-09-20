@@ -18,8 +18,6 @@ from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.agent_sandbox import SANDBOX_API
-from util.kubernetes import CustomObjectsClient
 from agentplane.app.inventory import InventoryError, SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import (
@@ -32,6 +30,8 @@ from agentplane.egress.resources import (
     TargetMethod,
 )
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOX_API
+from util.kubernetes import CustomObjectsClient
 
 # Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging);
 # nothing at runtime deletes such a binding, since the next reconcile would apply it again.

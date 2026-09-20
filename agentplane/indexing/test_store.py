@@ -9,10 +9,10 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.indexing.store import Blob, Content, Embedding, Snapshot, Store
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.content import content_sha
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
-from agentplane.indexing.store import Blob, Content, Embedding, Snapshot, Store
 
 REPOSITORY = "https://example.test/repo.git"
 

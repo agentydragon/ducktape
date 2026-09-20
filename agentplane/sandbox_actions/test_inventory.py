@@ -16,13 +16,13 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiException
 
-from mcp_infra.exec.kubernetes import CommandResult
-from mcp_infra.exec.models import Exited
-from util.agent_sandbox import POD_NAME_ANNOTATION
 from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from agentplane.sandbox_actions.inventory import SandboxActionError, SandboxInventory
 from agentplane.sandbox_actions.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
+from mcp_infra.exec.kubernetes import CommandResult
+from mcp_infra.exec.models import Exited
+from util.agent_sandbox import POD_NAME_ANNOTATION
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")

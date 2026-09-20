@@ -8,7 +8,6 @@ from typing import Annotated
 
 from pydantic import Field, JsonValue
 
-from github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.policies import (
     argument_schema,
@@ -17,6 +16,7 @@ from agentplane.action_service.policies import (
     github_repository,
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
+from github_policy.visibility import RepositoryVisibilityService
 
 Policy = Annotated[
     exact_actions.ExactActions

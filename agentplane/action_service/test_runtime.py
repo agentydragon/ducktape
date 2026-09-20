@@ -24,7 +24,6 @@ from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from util.bazel.runfiles import get_required_path
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
@@ -55,6 +54,7 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.bazel.runfiles import get_required_path
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")

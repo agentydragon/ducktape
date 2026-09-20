@@ -15,13 +15,13 @@ import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
 
-from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from util.bazel.runfiles import get_required_path
+from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

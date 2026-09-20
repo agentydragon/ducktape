@@ -22,9 +22,6 @@ from sqlalchemy import select, update
 from starlette.responses import Response
 from starlette.routing import Route
 
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge
@@ -39,6 +36,9 @@ from agentplane.app.operator_sessions import BrowserSession
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from agentplane.app.trajectory import TrajectoryStore
+from util.net import bind_free_port
+from util.testing.asgi import serve_app
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"

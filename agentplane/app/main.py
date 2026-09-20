@@ -21,8 +21,6 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api,
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from util.bazel.runfiles import get_required_path
-from util.kubernetes import CustomObjectsClient
 from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, create_app
@@ -37,6 +35,8 @@ from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from util.bazel.runfiles import get_required_path
+from util.kubernetes import CustomObjectsClient
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml

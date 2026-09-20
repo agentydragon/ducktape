@@ -13,9 +13,6 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
-from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
 from agentplane.egress.database_migrate import RUNNER
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
@@ -41,6 +38,9 @@ from agentplane.testing.fake_apiserver import (
     sandbox,
     secret,
 )
+from util.kubernetes import CustomObjectsClient
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import postgres_container
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"

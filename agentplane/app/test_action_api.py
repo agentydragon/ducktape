@@ -24,9 +24,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from util.net import bind_free_port, pick_free_port
-from util.testing.asgi import serve_app
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from agentplane.action_service import api as service_api
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
@@ -75,6 +72,9 @@ from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, s
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.net import bind_free_port, pick_free_port
+from util.testing.asgi import serve_app
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"

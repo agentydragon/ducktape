@@ -20,8 +20,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
-from util.kubernetes import CustomObjectsClient
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
@@ -43,6 +41,8 @@ from agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
 from agentplane.app.inventory import InventoryError, SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
+from util.kubernetes import CustomObjectsClient
 
 ACTION_POLICY_API = (GROUP, VERSION)
 # Stamped on every binding the app writes, so a reader can tell it from one the operator wrote with

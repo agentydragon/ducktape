@@ -10,9 +10,6 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from agentplane.action_service.api import create_app
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.db import ActionStore, make_sessionmaker
@@ -25,6 +22,9 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.net import bind_free_port
+from util.testing.asgi import serve_app
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 
 @pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])

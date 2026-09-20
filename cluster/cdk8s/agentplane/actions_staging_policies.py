@@ -27,6 +27,8 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
+from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
+from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
@@ -34,8 +36,6 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
-from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"

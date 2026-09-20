@@ -8,12 +8,12 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue, ValidationError
 
-from github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import MatchedRepository
 from agentplane.action_service.policies.github_repository import GitHubRepository
 from agentplane.action_service.policies.kind import Matched, NotMatched
 from agentplane.action_service.policies.registry import evaluate
+from github_policy.visibility import RepositoryVisibilityService
 
 OWNER = "test-owner"
 REPOSITORY = "test-repo"

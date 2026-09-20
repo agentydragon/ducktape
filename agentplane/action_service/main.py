@@ -17,14 +17,6 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api,
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from github_policy.visibility import (
-    API_BASE_URL,
-    CACHE_TTL_SECONDS,
-    REQUEST_TIMEOUT_SECONDS,
-    RepositoryVisibilityService,
-)
-from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
-from util.kubernetes import CustomObjectsClient
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import (
     ConfiguredOperatorBearerAuthenticator,
@@ -47,6 +39,14 @@ from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.sandbox_actions.inventory import SandboxClients
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from github_policy.visibility import (
+    API_BASE_URL,
+    CACHE_TTL_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+    RepositoryVisibilityService,
+)
+from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
+from util.kubernetes import CustomObjectsClient
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml

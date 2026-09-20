@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from util.db_migrations import MigrationRunner
 from agentplane.action_service.db import Base
+from util.db_migrations import MigrationRunner
 
 RUNNER = MigrationRunner(
     metadata=Base.metadata,

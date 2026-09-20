@@ -11,8 +11,6 @@ import pytest
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from agentplane.app.database_migrate import RUNNER
@@ -36,6 +34,8 @@ from agentplane.app.trajectory import TrajectoryStore
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import postgres_container
 
 
 @pytest.fixture

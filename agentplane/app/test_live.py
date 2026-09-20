@@ -17,8 +17,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from util.agent_sandbox import SANDBOXES_PLURAL
-from util.net import pick_free_port
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -56,6 +54,8 @@ from agentplane.app.testing.kubernetes import (
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.runner import protocol_pb2
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOXES_PLURAL
+from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
 

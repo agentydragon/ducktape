@@ -13,7 +13,6 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue
 
-from github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import (
     MatchedPolicy,
@@ -31,11 +30,7 @@ from agentplane.action_service.policies.resources import (
     parse_binding,
     parse_policy_set,
 )
-from agentplane.action_service.policy_evaluation import (
-    AUTO_APPROVE_REASON,
-    PolicySetDecisionProvider,
-    resolve_bindings,
-)
+from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PolicySetDecisionProvider, resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import (
     ArgumentSchemaView,
@@ -48,6 +43,7 @@ from agentplane.action_service.policy_view import (
 from agentplane.action_service.providers import DecisionContext, ResolvedBinding
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
+from github_policy.visibility import RepositoryVisibilityService
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)

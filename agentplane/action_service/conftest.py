@@ -13,22 +13,16 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
-from github_policy.visibility import RepositoryVisibilityService
-from mcp_infra.testing.remote_server import as_remote_server
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
 from agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from agentplane.action_service.database_migrate import RUNNER
 from agentplane.action_service.db import make_engine
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.models import (
-    ExecutionLease,
-    ExecutionRequest,
-    ExecutionResult,
-    ExecutionState,
-    Executor,
-)
+from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
+from github_policy.visibility import RepositoryVisibilityService
+from mcp_infra.testing.remote_server import as_remote_server
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import postgres_container
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg

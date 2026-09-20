@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 
-from haku.recall_index.embedder import Embedder
 from agentplane.indexing.source import GitSource
 from agentplane.indexing.store import Store
+from haku.recall_index.embedder import Embedder
 
 logger = logging.getLogger(__name__)
 

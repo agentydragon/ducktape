@@ -10,11 +10,11 @@ from pygit2.enums import FileMode
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from agentplane.indexing.store import Store
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET
 from haku.recall_index.fake_embedder import FakeEmbedder
 from third_party.containers import pgvector_pg18
 from util.testing.postgres_fixtures import start_postgres_container
-from agentplane.indexing.store import Store
 
 # gazelle:include_dep @pypi//asyncpg
 

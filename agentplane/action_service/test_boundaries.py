@@ -21,11 +21,7 @@ from agentplane.action_service.auth import (
     workload_principal,
 )
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
-from agentplane.action_service.client import (
-    WORKLOAD_CREDENTIAL_PLACEHOLDER,
-    ActionServiceClient,
-    CredentialPlaceholder,
-)
+from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER, ActionServiceClient, CredentialPlaceholder
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,

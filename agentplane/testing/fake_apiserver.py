@@ -21,10 +21,10 @@ from typing import Any
 from aiohttp import web
 from more_itertools import one
 
-from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
+from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"

@@ -12,8 +12,6 @@ import httpx2
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
 from agentplane.action_service.catalog import ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -28,6 +26,8 @@ from agentplane.action_service.models import ExecutionLease, ExecutionRequest, O
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
 from agentplane.action_service.test_fixtures.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app
 from agentplane.subjects import ServiceAccountRef
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_sync
 
 REDIRECT_URI = "https://app.example.test/mcp-linkage/callback"
 

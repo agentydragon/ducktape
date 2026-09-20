@@ -31,9 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from util.net import bind_free_port, pick_free_port
-from util.testing.asgi import serve_app
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from agentplane.acceptance.dcr import register_client
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
@@ -61,6 +58,9 @@ from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, adm
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
+from util.net import bind_free_port, pick_free_port
+from util.testing.asgi import serve_app
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 CALLBACK = "https://client.example.test/callback"
 SCOPES = "openid email profile offline_access"

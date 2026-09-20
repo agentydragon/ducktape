@@ -20,8 +20,8 @@ import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
-from util.bazel.workspace import get_build_workspace_directory
 from agentplane.subjects import ServiceAccountRef
+from util.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("cluster/k8s/agentplane-crds")
 SCHEMAS_DIR = Path("cluster/schemas")

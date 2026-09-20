@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from util.bazel.runfiles import get_required_path
 from agentplane.harness_tests.codex.harness import CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
+from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture

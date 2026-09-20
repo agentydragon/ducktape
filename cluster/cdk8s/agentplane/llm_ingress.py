@@ -26,6 +26,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
@@ -36,7 +37,6 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
-from agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"

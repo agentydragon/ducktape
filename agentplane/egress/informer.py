@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 
 from kubernetes_asyncio.client import CoreV1Api
 
-from util.kubernetes import CustomObjectsClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import (
@@ -20,6 +19,7 @@ from agentplane.egress.resources import (
     Secret,
 )
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from util.kubernetes import CustomObjectsClient
 
 
 def _name(obj: EgressPolicy | EgressBinding | EgressCredential) -> str:

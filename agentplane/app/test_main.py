@@ -18,7 +18,6 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from util.net import pick_free_port
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge
@@ -33,6 +32,7 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
 from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",

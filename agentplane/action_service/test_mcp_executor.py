@@ -24,7 +24,6 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from util.bazel.runfiles import get_required_path
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -43,6 +42,7 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
 from agentplane.subjects import ServiceAccountRef
+from util.bazel.runfiles import get_required_path
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")

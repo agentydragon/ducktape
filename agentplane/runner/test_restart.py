@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.protocol import event_pb2
@@ -25,6 +24,7 @@ from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -15,7 +15,6 @@ from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -41,6 +40,7 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
+from github_policy.visibility import RepositoryVisibilityService
 
 NAMESPACE = "agentplane-test"
 SUBJECT = ServiceAccountRef(namespace=NAMESPACE, name="workload-a")

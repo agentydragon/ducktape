@@ -27,7 +27,6 @@ from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from util.net import pick_free_port
 from agentplane.egress.addon import DENIED_HEADER, PROJECTED_TOKEN_HEADER, EgressAddon
 from agentplane.egress.admin import create_admin_app, serve_admin
 from agentplane.egress.conftest import (
@@ -101,6 +100,7 @@ from agentplane.testing.fake_apiserver import (
 )
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.net import pick_free_port
 
 
 @dataclass

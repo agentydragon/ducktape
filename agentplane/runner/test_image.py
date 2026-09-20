@@ -13,8 +13,6 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from util.oci import OciImage, load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.protocol import event_pb2
@@ -22,6 +20,8 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from util.oci import OciImage, load_oci_image
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
