@@ -1143,7 +1143,6 @@ def generate_manifests(root: Path) -> None:
         ssh_mcp_kustomization,
         haku_console_kustomization,
         ha_mcp_kustomization,
-        tana_mcp_kustomization,
     )
     flux_app.synth()
 
