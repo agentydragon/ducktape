@@ -267,40 +267,6 @@ importers:
       oidc-client-ts:
         specifier: ^3.1.0
         version: 3.5.0
-      svelte:
-        specifier: ^5.56.9
-        version: 5.57.0(@typescript-eslint/types@8.70.0)
-    devDependencies:
-      esbuild:
-        specifier: '>=0.28.0'
-        version: 0.28.2
-      esbuild-plugin-tailwindcss:
-        specifier: ^2.0.3
-        version: 2.2.0
-      esbuild-svelte:
-        specifier: ^0.9.5
-        version: 0.9.5(esbuild@0.28.2)(svelte@5.57.0(@typescript-eslint/types@8.70.0))
-      openapi-typescript:
-        specifier: ^7.10.1
-        version: 7.13.0(typescript@5.9.3)
-      pixelmatch:
-        specifier: ^7.0.0
-        version: 7.2.0
-      pngjs:
-        specifier: ^7.0.0
-        version: 7.0.0
-      puppeteer:
-        specifier: ^25.0.0
-        version: 25.10.0
-      svelte-check:
-        specifier: ^4.7.6
-        version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0(@typescript-eslint/types@8.70.0))(typescript@5.9.3)
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
 
   props/frontend:
     dependencies:
