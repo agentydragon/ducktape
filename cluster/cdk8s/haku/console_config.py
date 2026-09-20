@@ -261,7 +261,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
                 "get_tag_schema",
             ],
         ),
-        _exact_tools("postscanmail_reads", "postscanmail-mcp", ["list_items", "list_automation_rules"]),
         _exact_tools(
             "home_assistant_reads",
             "home-assistant",
@@ -330,7 +329,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
             "github_reads",
             "github_identity_reads",
             "tana_safe_tools",
-            "postscanmail_reads",
             "home_assistant_reads",
             "home_assistant_desk_light_control",
             "haku_sandbox_control",
@@ -411,16 +409,6 @@ def _mcp_servers() -> dict[str, Any]:
         # auto-approval policy: grant creation requires a manually approved source ToolCall
         # (an auto-approved call cannot mint a grant).
         "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
-        # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind
-        # the shared mcp-oauth-facade OIDCProxy, reached via operator OAuth with dynamic client
-        # registration and restricted to agentydragon by the facade's Authentik group policy
-        # (tf/gitops/agent-machine-access/postscanmail-mcp.tf). Reads auto-approve
-        # (`postscanmail_reads`); every mutating/paid/destructive action queues for approval.
-        "postscanmail_mcp": _remote_oauth_server(
-            "postscanmail-mcp",
-            "https://postscanmail-mcp.allegedly.works/mcp",
-            {"kind": "dynamic", "client_name": "Haku Console"},
-        ),
         "ssh": _static_bearer_server("ssh", MCP_URL),
         # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream
         # Home Assistant token remains in the ha-mcp pod; haku-console authenticates with a
