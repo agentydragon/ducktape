@@ -235,11 +235,6 @@ spec:
       name: forgejo-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/atuin/namespace/**"
-          to: "@artifact/cluster/k8s/atuin/namespace/"
-      name: atuin-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
           to: "@artifact/cluster/k8s/github-secrets-sync/secrets/"
       name: github-secrets-sync-secrets
@@ -514,14 +509,9 @@ spec:
       name: clickhouse-grafana
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/atuin/app/**"
-          to: "@artifact/cluster/k8s/atuin/app/"
+        - from: "@repo/cluster/k8s/atuin/**"
+          to: "@artifact/cluster/k8s/atuin/"
       name: atuin
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/atuin/db/**"
-          to: "@artifact/cluster/k8s/atuin/db/"
-      name: atuin-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/atuin/user-provisioner/**"

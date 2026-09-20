@@ -140,22 +140,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: atuin-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/atuin/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: atuin-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: authentik-namespace
   namespace: ducktape-flux
 spec:
@@ -2235,31 +2219,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: atuin-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: atuin-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/atuin/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: atuin-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: authentik-db
   namespace: ducktape-flux
 spec:
@@ -2831,19 +2790,14 @@ metadata:
   name: atuin
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: cert-manager-issuer-config
       namespace: ducktape-flux
-    - name: atuin-namespace
-      namespace: ducktape-flux
-    - name: atuin-db
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-environment
+    - name: cnpg
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/atuin/app
+  path: ./cluster/k8s/atuin
   postBuild:
     substituteFrom:
       - kind: ConfigMap
