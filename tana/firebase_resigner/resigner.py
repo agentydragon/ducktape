@@ -6,7 +6,7 @@ Firebase session is dead, this sidecar:
 1. Reads the Firebase refresh token from a K8s Secret.
 2. Swaps it for a fresh Firebase ID token via securetoken.googleapis.com.
    If the response includes a rotated refresh token, writes it back to the
-   K8s Secret so the SOPS material can be reseeded later.
+   configured K8s Secret.
 3. Uses the ID token to call Tana's `fetchCustomToken` Cloud Function, which
    returns a fresh Firebase custom token bound to the user's account.
 4. POSTs `tana://auth?token=<customToken>&providerId=tanaFirebaseToken` to
@@ -27,47 +27,48 @@ from dataclasses import dataclass
 import httpx
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from tenacity import retry, retry_if_exception_type, stop_never, wait_exponential
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ResignerConfig:
+class ResignerConfig(BaseSettings):
+    model_config = SettingsConfigDict(frozen=True, populate_by_name=True)
+
     # Firebase web API key — embedded in the Tana web bundle's
     # REACT_APP_FIREBASE_API_KEY. Web API keys are public identifiers per
     # Google's docs, so this is config, not a secret.
     api_key: str
+    # The deployment supplies the Secret coordinates through its ConfigMap;
+    # there are no baked-in namespace, name, or key defaults.
+    secret_namespace: str
+    secret_name: str
+    secret_key: str
+
     # Tana hosts Firebase callables behind its own domain (the bundle's
     # REACT_APP_FIREBASE_FUNCTIONS_URL), not the default GCF subdomain. The
     # `fetchCustomToken` callable's URL is therefore
     # `<functions_base>/fetchCustomToken`.
-    fetch_custom_token_url: str = "https://app.tana.inc/functions/fetchCustomToken"
+    fetch_custom_token_url: str
 
     # In-pod URLs.
-    tana_health_url: str = "http://127.0.0.1:8262/health"
-    tana_mcp_url: str = "http://127.0.0.1:8262/mcp"
-    reseed_url: str = "http://127.0.0.1:9090/reseed"
+    tana_health_url: str
+    tana_mcp_url: str
+    reseed_url: str
 
     # Server-held Tana personal access token. When set, readiness also requires
     # that Tana's MCP server currently accepts it (see _pat_accepted): /health
     # alone reports the renderer is loaded but not that it will authenticate the
     # PAT, the failure that leaves the facade serving zero tools. None disables
     # the PAT check (falls back to /health only).
-    pat: str | None = None
-
-    # K8s secret holding the long-lived refresh token. Sidecar mounts this
-    # so it can read on startup; writes go via the K8s API so rotations
-    # land in cluster state.
-    namespace: str = "tana-mcp"
-    secret_name: str = "tana-firebase-refresh-token"
-    secret_key: str = "refresh_token"
+    pat: str | None
 
     # Loop pacing.
-    healthy_poll_seconds: float = 60.0
-    unhealthy_poll_seconds: float = 5.0
-    unhealthy_threshold: int = 3
-    request_timeout_seconds: float = 30.0
+    healthy_poll_seconds: float
+    unhealthy_poll_seconds: float
+    unhealthy_threshold: int
+    request_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -183,17 +184,17 @@ async def _is_tana_ready(http: httpx.AsyncClient, cfg: ResignerConfig) -> bool:
 
 
 async def _read_refresh_token(api: client.CoreV1Api, cfg: ResignerConfig) -> str:
-    secret = await api.read_namespaced_secret(cfg.secret_name, cfg.namespace)
+    secret = await api.read_namespaced_secret(cfg.secret_name, cfg.secret_namespace)
     if secret.data is None or cfg.secret_key not in secret.data:
-        raise RuntimeError(f"secret {cfg.namespace}/{cfg.secret_name} missing key {cfg.secret_key!r}")
+        raise RuntimeError(f"secret {cfg.secret_namespace}/{cfg.secret_name} missing key {cfg.secret_key!r}")
     return base64.b64decode(secret.data[cfg.secret_key]).decode()
 
 
 async def _write_rotated_refresh_token(api: client.CoreV1Api, cfg: ResignerConfig, new_token: str) -> None:
-    """Patch the K8s Secret in place with the rotated refresh token."""
+    """Patch the configured K8s Secret with the rotated refresh token."""
     body = {"stringData": {cfg.secret_key: new_token}}
     try:
-        await api.patch_namespaced_secret(cfg.secret_name, cfg.namespace, body)
+        await api.patch_namespaced_secret(cfg.secret_name, cfg.secret_namespace, body)
     except ApiException:
         logger.exception("failed to write rotated refresh token; continuing with the in-memory value")
 
