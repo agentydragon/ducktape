@@ -729,6 +729,8 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         gateway_kustomization,
         authentik_kustomization,
+        sso_providers_tf_kustomization,
+        reflector_kustomization,
         external_secrets_config_kustomization,
     )
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(

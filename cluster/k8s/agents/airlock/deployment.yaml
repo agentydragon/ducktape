@@ -38,6 +38,21 @@ spec:
               value: devel-20260920095221-c19679e # {"$imagepolicy": "flux-system:airlock:tag"}
             - name: CONFIG_PATH
               value: "/etc/airlock/config.yaml"
+            - name: AIRLOCK_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-oidc-config
+                  key: client-id
+            - name: AIRLOCK_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-oidc-config
+                  key: client-secret
+            - name: AIRLOCK_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-oidc-config
+                  key: session-secret
             - name: OURA_CLIENT_ID
               valueFrom:
                 secretKeyRef:

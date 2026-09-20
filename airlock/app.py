@@ -10,18 +10,16 @@ import asyncio
 import contextlib
 import logging
 import sys
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-import httpx
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastmcp.server.auth.auth import AccessToken, AuthProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import HTMLResponse
 
+from airlock.auth import build_oauth, create_auth_router, require_operator_session, session_cookie_name
 from airlock.config import Settings, build_oauth_providers
 from airlock.deployment import build_deployment_info
 from airlock.models import (
@@ -37,6 +35,9 @@ from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 
+# SessionMiddleware imports itsdangerous lazily; keep it a direct runtime dependency.
+# gazelle:include_dep @pypi//itsdangerous
+
 logger = logging.getLogger(__name__)
 
 _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
@@ -50,26 +51,9 @@ def _detect_namespace() -> str:
     return "airlock"
 
 
-def _require_authenticated(auth: AuthProvider) -> Callable[[Request], Awaitable[AccessToken]]:
-    """Build a FastAPI dependency requiring a valid Bearer JWT."""
-
-    async def dependency(request: Request) -> AccessToken:
-        scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-        if scheme.lower() != "bearer" or not token:
-            raise HTTPException(status_code=401, detail="Missing bearer token", headers={"WWW-Authenticate": "Bearer"})
-        access = await auth.verify_token(token)
-        if access is None:
-            raise HTTPException(
-                status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}
-            )
-        return access
-
-    return dependency
-
-
-def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool = True) -> FastAPI:
+def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
     """Build the FastAPI app serving the OAuth broker UI and API."""
-    require_authenticated = Depends(_require_authenticated(auth))
+    require_authenticated = Depends(require_operator_session)
     oauth_providers: dict[str, GenericOAuth2Provider] = {}
     oauth_k8s_store: K8sTokenStore | None = None
     oauth_target_ns = ""
@@ -82,14 +66,13 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
         oauth_k8s_store = await K8sTokenStore.from_incluster(managed_by=settings.oauth.managed_by)
         oauth_target_ns = settings.oauth.target_namespace or _detect_namespace()
 
-        app.include_router(create_oauth_router(oauth_providers, oauth_k8s_store, oauth_target_ns))
+        app.include_router(create_oauth_router(oauth_providers, oauth_k8s_store, oauth_target_ns, settings))
 
         if include_static:
             html = (_FRONTEND_DIST_DIR / "index.html").read_text()
             app.mount("/static/frontend", StaticFiles(directory=str(_FRONTEND_DIST_DIR)))
 
             @app.get("/")
-            @app.get("/auth/callback")
             async def index() -> HTMLResponse:
                 return HTMLResponse(html)
 
@@ -104,18 +87,22 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
                 await task
 
     app = FastAPI(title="Airlock OAuth", docs_url=None, redoc_url=None, lifespan=app_lifespan)
+    app.state.settings = settings
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.oidc_session_secret.get_secret_value(),
+        session_cookie=session_cookie_name(settings),
+        max_age=settings.session_seconds,
+        same_site="lax",
+        https_only=settings.public_base_url.startswith("https://"),
+        path="/",
+    )
+    app.state.oauth = build_oauth(settings)
+    app.include_router(create_auth_router(settings))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
-
-    @app.get("/auth/config")
-    async def auth_config() -> dict[str, str]:
-        return {
-            "authority": settings.oidc_issuer,
-            "client_id": settings.oidc_client_id,
-            "redirect_uri": f"{settings.public_base_url}/auth/callback",
-        }
 
     deployment_info = build_deployment_info()
 
@@ -152,16 +139,9 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     return app
 
 
-def _build_auth(settings: Settings) -> AuthProvider:
-    """Discover the Authentik JWKS endpoint and build a JWT verifier."""
-    discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
-    discovery = httpx.get(discovery_url, timeout=10.0).raise_for_status().json()
-    return JWTVerifier(jwks_uri=discovery["jwks_uri"])
-
-
 async def _serve() -> None:
     settings = Settings.load()
-    app = create_app(settings, auth=_build_auth(settings))
+    app = create_app(settings)
     logger.info("serving on %s:%d", settings.host, settings.port)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info"))
     await server.serve()

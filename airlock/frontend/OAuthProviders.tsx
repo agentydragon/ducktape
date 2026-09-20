@@ -17,7 +17,7 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { getApiClient } from "./api";
-import { isAuthenticationRedirectStarted } from "./auth";
+import { isAuthenticationFailurePage, isAuthenticationRedirectStarted } from "./auth";
 import type { OAuthProviderStatus } from "./types";
 
 type ScopeRow = {
@@ -95,9 +95,11 @@ function ProviderCard({ provider }: { provider: OAuthProviderStatus }): JSX.Elem
               <ProviderStatusBadge provider={provider} />
             </Group>
           </Stack>
-          <Button component="a" href={"/oauth/authorize/" + provider.name} style={{ flexShrink: 0 }}>
-            {provider.status.state === "connected" ? "Reconnect" : "Connect"}
-          </Button>
+          <form action={"/oauth/authorize/" + encodeURIComponent(provider.name)} method="post">
+            <Button type="submit" style={{ flexShrink: 0 }}>
+              {provider.status.state === "connected" ? "Reconnect" : "Connect"}
+            </Button>
+          </form>
         </Group>
 
         <Divider />
@@ -219,7 +221,7 @@ export function OAuthProviders(): JSX.Element {
         if (active) setProviders(result);
       })
       .catch((failure: unknown) => {
-        if (active && !isAuthenticationRedirectStarted()) {
+        if (active && !isAuthenticationRedirectStarted() && !isAuthenticationFailurePage()) {
           setError(failure instanceof Error ? failure.message : String(failure));
         }
       })

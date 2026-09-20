@@ -27,7 +27,7 @@ configMapGenerator:
       - blueprints/google-workspace-mcp-sso-retire.yaml
       - blueprints/plaid-link-sso.yaml
       - blueprints/embedded-outpost.yaml
-      - blueprints/airlock-sso.yaml
+      - blueprints/airlock-sso-retire.yaml
       - blueprints/sdr-sso.yaml
       - blueprints/adsb-sso.yaml
       - blueprints/claude-service-account.yaml
