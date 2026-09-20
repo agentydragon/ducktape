@@ -1001,6 +1001,11 @@ spec:
       name: talos-cloud-controller-manager
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/tana-firebase-refresh-token/**"
+          to: "@artifact/cluster/k8s/tana-firebase-refresh-token/"
+      name: tana-firebase-refresh-token
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/tofu-state/namespace/**"
           to: "@artifact/cluster/k8s/tofu-state/namespace/"
       name: tofu-state-namespace

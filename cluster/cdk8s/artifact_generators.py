@@ -246,6 +246,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("study-casino-app", ("cluster/k8s/study-casino/app",)),
     ("study-casino-db", ("cluster/k8s/study-casino/db",)),
     ("talos-cloud-controller-manager", ("cluster/k8s/talos-cloud-controller-manager",)),
+    ("tana-firebase-refresh-token", ("cluster/k8s/tana-firebase-refresh-token",)),
     ("tofu-state-namespace", ("cluster/k8s/tofu-state/namespace",)),
     ("user-agentydragon", ("cluster/k8s/user-agentydragon",)),
     ("vector-talos-logs", ("cluster/k8s/vector-talos-logs",)),
