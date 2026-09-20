@@ -182,7 +182,6 @@ def generate_manifests(root: Path) -> None:
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(flux_chart)
     kvm_device_plugin_flux_kustomizations.kvm_device_plugin(flux_chart)
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
-    langfuse_namespace_kustomization = langfuse_flux_kustomizations.langfuse_namespace(flux_chart)
     litellm_namespace_kustomization = litellm_flux_kustomizations.litellm_namespace(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
     matrix_namespace_kustomization = matrix_flux_kustomizations.matrix_namespace(flux_chart)
@@ -254,9 +253,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_cache_kustomization = forgejo_flux_kustomizations.forgejo_cache(
         flux_chart, forgejo_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
     )
-    langfuse_cache_kustomization = langfuse_flux_kustomizations.langfuse_cache(
-        flux_chart, langfuse_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
-    )
     paperless_cache_kustomization = parked_flux_kustomizations.paperless_cache(
         flux_chart, paperless_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
     )
@@ -310,9 +306,6 @@ def generate_manifests(root: Path) -> None:
     )
     gatus_db_kustomization = gatus_flux_kustomizations.gatus_db(
         flux_chart, gatus_namespace_kustomization, cnpg_kustomization
-    )
-    langfuse_db_kustomization = langfuse_flux_kustomizations.langfuse_db(
-        flux_chart, langfuse_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
     litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
         flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
@@ -486,12 +479,6 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_cluster_kustomization,
         authentik_namespace_kustomization,
     )
-    langfuse_seaweed_kustomization = langfuse_flux_kustomizations.langfuse_seaweed(
-        flux_chart, langfuse_namespace_kustomization, seaweedfs_cluster_kustomization
-    )
-    langfuse_secrets_kustomization = langfuse_flux_kustomizations.langfuse_secrets(
-        flux_chart, langfuse_namespace_kustomization, seaweedfs_cluster_kustomization
-    )
     loki_kustomization = monitoring_flux_kustomizations.loki(
         flux_chart, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
     )
@@ -511,7 +498,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_secrets_kustomization, seaweedfs_cluster_kustomization
     )
     seaweedfs_flux_kustomizations.seaweedfs_forgejo_bucket(flux_chart, seaweedfs_cluster_kustomization)
-    seaweedfs_flux_kustomizations.seaweedfs_langfuse_bucket(flux_chart, seaweedfs_cluster_kustomization)
     seaweedfs_flux_kustomizations.seaweedfs_loom_gym_bucket(flux_chart, seaweedfs_cluster_kustomization)
     seaweedfs_flux_kustomizations.seaweedfs_monitoring(
         flux_chart, seaweedfs_cluster_kustomization, monitoring_crds_kustomization
@@ -579,15 +565,7 @@ def generate_manifests(root: Path) -> None:
         gateway_kustomization,
     )
     langfuse_flux_kustomizations.langfuse(
-        flux_chart,
-        langfuse_namespace_kustomization,
-        langfuse_secrets_kustomization,
-        langfuse_cache_kustomization,
-        langfuse_db_kustomization,
-        clickhouse_kustomization,
-        langfuse_seaweed_kustomization,
-        gateway_kustomization,
-        claude_rbac_kustomization,
+        flux_chart, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
     )
     vector_talos_logs_flux_kustomizations.vector_talos_logs(flux_chart, loki_kustomization)
     monitoring_flux_kustomizations.alloy(flux_chart, mimir_kustomization, grafana_helmrepository_kustomization)
@@ -885,7 +863,6 @@ def generate_manifests(root: Path) -> None:
         litellm_db_kustomization,
         gateway_kustomization,
         cert_manager_environment_kustomization,
-        langfuse_secrets_kustomization,
         reflector_kustomization,
         tana_mcp_kustomization,
         monitoring_crds_kustomization,

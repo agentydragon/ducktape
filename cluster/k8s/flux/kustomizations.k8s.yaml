@@ -462,22 +462,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: langfuse-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/langfuse/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-namespace
-    namespace: ducktape-flux
-  suspend: false
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: litellm-namespace
   namespace: ducktape-flux
 spec:
@@ -1592,31 +1576,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: langfuse-cache
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: langfuse-namespace
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/langfuse/cache
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-cache
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     ducktape.org/parked: "true"
   name: paperless-cache
@@ -2258,32 +2217,6 @@ spec:
     kind: ExternalArtifact
     name: gatus-db
     namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: langfuse-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: langfuse-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/langfuse/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-db
-    namespace: ducktape-flux
-  suspend: false
   timeout: 5m
   wait: true
 ---
@@ -3498,66 +3431,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: langfuse-seaweed
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: langfuse-namespace
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: seaweed.seaweedfs.com/v1
-      kind: Bucket
-      name: langfuse
-      namespace: langfuse
-    - apiVersion: seaweed.seaweedfs.com/v1
-      kind: S3Credentials
-      name: langfuse
-      namespace: langfuse
-  interval: 10m
-  path: ./cluster/k8s/langfuse/seaweed
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-seaweed
-    namespace: ducktape-flux
-  suspend: false
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: langfuse-secrets
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: langfuse-namespace
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/langfuse/secrets
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: langfuse-secrets
-    namespace: ducktape-flux
-  suspend: false
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: loki
   namespace: ducktape-flux
 spec:
@@ -3783,32 +3656,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: seaweedfs-forgejo-bucket
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: seaweedfs-langfuse-bucket
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: seaweed.seaweedfs.com/v1
-      kind: S3Identity
-      name: langfuse
-      namespace: seaweedfs
-  interval: 10m
-  path: ./cluster/k8s/seaweedfs/langfuse-bucket
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-langfuse-bucket
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -4251,22 +4098,17 @@ metadata:
   name: langfuse
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: langfuse-namespace
+    - name: cnpg
       namespace: ducktape-flux
-    - name: langfuse-secrets
+    - name: valkey
       namespace: ducktape-flux
-    - name: langfuse-cache
-      namespace: ducktape-flux
-    - name: langfuse-db
-      namespace: ducktape-flux
-    - name: clickhouse
-      namespace: ducktape-flux
-    - name: langfuse-seaweed
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: claude-rbac
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -4274,15 +4116,16 @@ spec:
       name: langfuse
       namespace: langfuse
   interval: 10m
-  path: ./cluster/k8s/langfuse/app
+  path: ./cluster/k8s/langfuse
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: langfuse-app
+    name: langfuse
     namespace: ducktape-flux
   suspend: false
   timeout: 20m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -5900,8 +5743,6 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: langfuse-secrets
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux

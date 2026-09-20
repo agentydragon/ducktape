@@ -426,7 +426,6 @@ def litellm(
     litellm_db: Kustomization,
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
-    langfuse_secrets: Kustomization,
     reflector: Kustomization,
     tana_mcp: Kustomization,
     monitoring_crds: Kustomization,
@@ -460,7 +459,6 @@ def litellm(
                 litellm_db,
                 gateway,
                 cert_manager_environment,
-                langfuse_secrets,
                 reflector,
                 tana_mcp,
                 # The ServiceMonitor/PodMonitor CRD (folded in from the retired
