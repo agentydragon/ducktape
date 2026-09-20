@@ -247,6 +247,13 @@ def claude_sandbox_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
+            depends_on=flux_kustomization_depends_on_many(
+                claude_rbac, external_creds, external_secrets_config, agent_shared_secrets, ollama
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -262,16 +269,8 @@ def claude_sandbox_secrets(
                     namespace="claude-sandbox",
                 ),
             ],
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                claude_rbac, external_creds, external_secrets_config, agent_shared_secrets, ollama
-            ),
         ),
     )
-
 
 def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization) -> Kustomization:
     name = "coinbase-read"
@@ -819,6 +818,7 @@ def public_coder_agent_devbox(
     forgejo_images: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
+    agent_shared_secrets: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -845,6 +845,7 @@ def public_coder_agent_devbox(
                 forgejo_images,
                 external_creds,
                 external_secrets_config,
+                agent_shared_secrets,
             ),
             wait=True,
             health_checks=[

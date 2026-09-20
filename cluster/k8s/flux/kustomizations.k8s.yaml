@@ -6650,6 +6650,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
+    - name: agent-shared-secrets
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine

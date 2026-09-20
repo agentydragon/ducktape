@@ -1065,6 +1065,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
+        agent_shared_secrets_kustomization,
     )
     staging.agentplane_staging(
         flux_chart,
