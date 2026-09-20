@@ -87,9 +87,11 @@
       };
       # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
       # output definitions with the experiment; the root flake only registers them.
-      buildbuddyRemoteRunnerNixosOutputs = import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix {
-        inherit nixpkgs self system;
-      };
+      buildbuddyRemoteRunnerNixosOutputs =
+        import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix
+          {
+            inherit nixpkgs self system;
+          };
       artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
       rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
       artifactOverrides =
@@ -424,7 +426,8 @@
         // {
           # Keep the NixOS prototype under x/; this lazy value does not make
           # unrelated packages depend on the experiment.
-          buildbuddy-remote-runner-nixos-image = buildbuddyRemoteRunnerNixosOutputs.packages.${system}.buildbuddy-remote-runner-nixos-image;
+          buildbuddy-remote-runner-nixos-image =
+            buildbuddyRemoteRunnerNixosOutputs.packages.${system}.buildbuddy-remote-runner-nixos-image;
         };
 
       homeConfigurations = {
@@ -568,7 +571,8 @@
         };
 
         # Experimental NixOS implementation lives under the BuildBuddy Remote Runner.
-        buildbuddy-remote-runner = buildbuddyRemoteRunnerNixosOutputs.nixosConfigurations.buildbuddy-remote-runner;
+        buildbuddy-remote-runner =
+          buildbuddyRemoteRunnerNixosOutputs.nixosConfigurations.buildbuddy-remote-runner;
 
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is
