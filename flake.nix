@@ -421,7 +421,11 @@
             devToolPackages
             ;
         })
-        // nixRbeWorkerOutputs.packages.${system};
+        // {
+          # Keep worker implementation and output definitions under x/; this
+          # lazy value does not make unrelated packages depend on the experiment.
+          nix-rbe-nixos = nixRbeWorkerOutputs.packages.${system}.nix-rbe-nixos;
+        };
 
       homeConfigurations = {
         # NixOS VM
@@ -563,6 +567,9 @@
           ];
         };
 
+        # Experimental worker implementation and outputs live under x/.
+        nix-rbe-worker = nixRbeWorkerOutputs.nixosConfigurations.nix-rbe-worker;
+
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is
         # worker.py on the anthropic Python SDK now, not `ant` (the anthropic-cli
@@ -574,8 +581,7 @@
             ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
         };
-      }
-      // nixRbeWorkerOutputs.nixosConfigurations;
+      };
 
       # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.
       nixOnDroidConfigurations = {
