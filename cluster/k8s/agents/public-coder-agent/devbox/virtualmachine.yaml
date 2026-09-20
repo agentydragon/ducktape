@@ -87,7 +87,7 @@ spec:
             # ../../../flux-image-automation-forgejo/. Until the workflow's first run
             # completes, this placeholder tag doesn't exist yet and the pod sits in
             # ImagePullBackOff -- expected, and self-resolving once CI publishes.
-            image: git.allegedly.works/ducktape-ci/public-coder-devbox:devel-20260920035852-2cc823e # {"$imagepolicy": "flux-system:public-coder-devbox"}
+            image: git.allegedly.works/ducktape-ci/public-coder-devbox:devel-20260920083206-aa4a26e # {"$imagepolicy": "flux-system:public-coder-devbox"}
             imagePullPolicy: IfNotPresent
         - name: bazel-cache
           persistentVolumeClaim:

@@ -85,6 +85,13 @@
         inherit system;
         config.allowUnfree = true;
       };
+      # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
+      # output definitions with the experiment; the root flake only registers them.
+      buildbuddyRemoteRunnerNixosOutputs =
+        import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix
+          {
+            inherit nixpkgs self system;
+          };
       artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
       rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
       artifactOverrides =
@@ -399,22 +406,29 @@
           inherit pkgs;
         };
       };
-      packages.${system} = import ./nix/flake/packages.nix {
-        inherit
-          self
-          system
-          pkgs
-          ducktapePkgs
-          gafferPkgs
-          home-manager
-          pkgsUnstable
-          pkgsMaster
-          nix-openclaw
-          ruffLatest
-          localOnlyPackages
-          devToolPackages
-          ;
-      };
+      packages.${system} =
+        (import ./nix/flake/packages.nix {
+          inherit
+            self
+            system
+            pkgs
+            ducktapePkgs
+            gafferPkgs
+            home-manager
+            pkgsUnstable
+            pkgsMaster
+            nix-openclaw
+            ruffLatest
+            localOnlyPackages
+            devToolPackages
+            ;
+        })
+        // {
+          # Keep the NixOS prototype under x/; this lazy value does not make
+          # unrelated packages depend on the experiment.
+          buildbuddy-remote-runner-nixos-image =
+            buildbuddyRemoteRunnerNixosOutputs.packages.${system}.buildbuddy-remote-runner-nixos-image;
+        };
 
       homeConfigurations = {
         # NixOS VM
@@ -556,13 +570,9 @@
           ];
         };
 
-        # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
-        nix-rbe-worker = nixpkgs.lib.nixosSystem {
-          inherit system;
-          modules = [
-            ./x/nix_rbe_image/nixos.nix
-          ];
-        };
+        # Experimental NixOS implementation lives under the BuildBuddy Remote Runner.
+        buildbuddy-remote-runner =
+          buildbuddyRemoteRunnerNixosOutputs.nixosConfigurations.buildbuddy-remote-runner;
 
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is
@@ -575,7 +585,6 @@
             ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
         };
-
       };
 
       # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.

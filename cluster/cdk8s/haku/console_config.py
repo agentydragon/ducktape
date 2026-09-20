@@ -249,7 +249,7 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         ),
         _exact_tools(
             "tana_safe_tools",
-            "tana-rw",
+            "tana",
             [
                 "get_or_create_calendar_node",
                 "search_nodes",
@@ -390,7 +390,7 @@ def _mcp_servers() -> dict[str, Any]:
         ),
         # Haku Console authenticates directly with the account PAT. The credential lives only
         # in haku-console; inner Haku agents receive proxied tool schemas/results, never the PAT.
-        "tana_rw": _static_bearer_server("tana-rw", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"),
+        "tana": _static_bearer_server("tana", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"),
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
         # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
@@ -412,7 +412,7 @@ def _mcp_servers() -> dict[str, Any]:
         "ssh": _static_bearer_server("ssh", MCP_URL),
         # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream
         # Home Assistant token remains in the ha-mcp pod; haku-console authenticates with a
-        # static bearer reflected from ha-mcp/ha-mcp-bearer, exactly like tana-rw. Read tools
+        # static bearer reflected from ha-mcp/ha-mcp-bearer, exactly like tana. Read tools
         # auto-approve (`home_assistant_reads`); every state-changing tool stays operator-gated.
         # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is
         # our own in-cluster service, so there is no consent boundary OAuth would buy.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toolActionDescription } from "./actions";
-import { GMAIL_SERVER_ID, KUBECTL_SERVER_ID, TANA_RW_SERVER_ID } from "./server_ids";
+import { GMAIL_SERVER_ID, KUBECTL_SERVER_ID, TANA_SERVER_ID } from "./server_ids";
 
 describe("toolActionDescription", () => {
   it("describes a call from its arguments, for both generated and hand-authored schemas", () => {
@@ -45,7 +45,7 @@ describe("toolActionDescription", () => {
   });
 
   it("flags destructive calls, which a notification must say in words", () => {
-    expect(toolActionDescription(TANA_RW_SERVER_ID, "trash_node", { nodeId: "n1" })?.destructive).toBe(true);
+    expect(toolActionDescription(TANA_SERVER_ID, "trash_node", { nodeId: "n1" })?.destructive).toBe(true);
     expect(toolActionDescription(GMAIL_SERVER_ID, "drafts_create", {})?.destructive).toBeUndefined();
   });
 
@@ -56,6 +56,6 @@ describe("toolActionDescription", () => {
 
   it("describes argument-independent tools without consulting the arguments at all", () => {
     // These carry no schema, so a malformed payload still yields the right line.
-    expect(toolActionDescription(TANA_RW_SERVER_ID, "move_node", { nonsense: true })?.text).toBe("Tana: Move node");
+    expect(toolActionDescription(TANA_SERVER_ID, "move_node", { nonsense: true })?.text).toBe("Tana: Move node");
   });
 });

@@ -1,4 +1,4 @@
-// `tana-rw` preview screenshot entry — esbuild bundles this into the `:previews` IIFE. Holds the
+// `tana` preview screenshot entry — esbuild bundles this into the `:previews` IIFE. Holds the
 // fixtures plus the mount call, with the Tana-only fetch stub imported before the registry/widget
 // graph reaches client.ts. `satisfies RegisteredToolPreviewFixture` ties each (serverId, toolName,
 // args) to the registry's real Zod schemas, so a stale id or argument is a type error.
@@ -11,7 +11,7 @@ import type { RegisteredToolPreviewFixture } from "../index";
 const PREVIEW_FIXTURES = [
   {
     title: "Add planning review tasks to Tana",
-    serverId: "tana-rw",
+    serverId: "tana",
     toolName: "import_tana_paste",
     args: {
       parentNodeId: "inbox",
@@ -20,25 +20,25 @@ const PREVIEW_FIXTURES = [
   },
   {
     title: "Open today's calendar node",
-    serverId: "tana-rw",
+    serverId: "tana",
     toolName: "get_or_create_calendar_node",
     args: { workspaceId: "workspace", granularity: "day", date: "2026-07-11" },
   },
   {
     title: "Trash the obsolete task",
-    serverId: "tana-rw",
+    serverId: "tana",
     toolName: "trash_node",
     args: { nodeId: "task" },
   },
   {
     title: "Rename the quarterly task",
-    serverId: "tana-rw",
+    serverId: "tana",
     toolName: "edit_node",
     args: { nodeId: "task", name: { old_string: "Quarterly", new_string: "Q3", replace_all: false } },
   },
   {
     title: "Move the task into its project",
-    serverId: "tana-rw",
+    serverId: "tana",
     toolName: "move_node",
     args: {
       nodeId: "task",

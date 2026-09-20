@@ -33,6 +33,8 @@ def test_ntfy_auth_is_declarative_and_database_is_cnpg_owned() -> None:
     database = next(obj for obj in objects if obj["kind"] == "Cluster")
     assert database["spec"]["bootstrap"]["initdb"] == {"database": "ntfy", "owner": "ntfy"}
     assert database["spec"]["affinity"]["enablePodAntiAffinity"] is True
+    assert database["spec"]["affinity"]["podAntiAffinityType"] == "required"
+    assert database["spec"]["affinity"]["topologyKey"] == "kubernetes.io/hostname"
 
     deployment = next(obj for obj in objects if obj["kind"] == "Deployment")
     env = {entry["name"]: entry for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}

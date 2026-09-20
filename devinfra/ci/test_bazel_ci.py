@@ -123,7 +123,7 @@ else:
             "PR_HEAD_SHA": "pr-head",
             "PR_BASE_SHA": "base",
             "CHANGED_FILE": changed_file,
-            "RBE_IMAGE": "test-image",
+            "RBE_CONTAINER_IMAGE": "test-image",
             "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
             "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
         }

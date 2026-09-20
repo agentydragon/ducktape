@@ -15,7 +15,7 @@ history holds the original full design rationale. The **actionable build checkli
   `static_bearer`), allowlist the specific safe tools in `console/auto_approval.py`
   instead of standing up a second Deployment or a dedicated credential. Both Tana and
   Grocy went this way: Tana's standalone `tana-mcp-ro` facade was retired in favor of
-  allowlisting `tana-rw`'s read tools in the console, and Grocy's dedicated read-only
+  allowlisting `tana`'s read tools in the console, and Grocy's dedicated read-only
   `haku` Authentik identity (`grocy-mcp-haku-sf`) was retired in favor of the console's
   existing `grocy-sf` entry — which also newly lets every runtime reach approval-gated
   Grocy _writes_, something the read-only credential structurally could never do; (2)

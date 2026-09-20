@@ -10,7 +10,7 @@ Usage in MODULE.bazel:
     use_repo(image_pins, "image_pins", "freecad_test", "freecad_test_linux_amd64")
 
 In BUILD files:
-    load("@image_pins//:pins.bzl", "RBE_WORKER_IMAGE", "RBE_WORKER_DIGEST")
+    load("@image_pins//:pins.bzl", "RBE_CONTAINER_IMAGE", "RBE_CONTAINER_DIGEST")
 """
 
 load("@rules_oci//oci:pull.bzl", "oci_pull")

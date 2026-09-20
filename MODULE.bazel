@@ -734,7 +734,7 @@ uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
 uv.configure(version = "0.12.5")
 
 # BuildBuddy platform definitions — our //:rbe_linux_x64 inherits from these
-# since our RBE worker image is based on BuildBuddy's rbe-ubuntu24-04.
+# since our RBE container image is based on BuildBuddy's rbe-ubuntu24-04.
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")

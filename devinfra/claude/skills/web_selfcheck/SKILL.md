@@ -2,7 +2,7 @@
 name: web_selfcheck
 description: >-
   Diagnose a Claude Code session's health against the hook daemon SPEC's
-  acceptance criteria, plus setup/pin/bbr-runner/git-hook diagnostics. Use
+  acceptance criteria, plus setup/pin/buildbuddy-remote-runner/git-hook diagnostics. Use
   for "did setup go ok", "why isn't bbr working", "why do my commits fail",
   "selfcheck".
 ---

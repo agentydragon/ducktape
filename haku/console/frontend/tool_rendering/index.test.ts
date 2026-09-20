@@ -10,7 +10,7 @@ describe("toolPreview registry", () => {
       expect(
         toolPreview("gmail", "threads_modify_labels", { thread_ids: ["t1"], add: ["urgent"], remove: [] }, variant)
       ).not.toBeNull();
-      expect(toolPreview("tana-rw", "trash_node", { nodeId: "node" }, variant)).not.toBeNull();
+      expect(toolPreview("tana", "trash_node", { nodeId: "node" }, variant)).not.toBeNull();
     }
   });
 

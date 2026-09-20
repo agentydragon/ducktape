@@ -1,4 +1,4 @@
-// Focused previews for the remote, operator-authenticated `tana-rw` MCP server. The
+// Focused previews for the remote, operator-authenticated `tana` MCP server. The
 // desktop-backed server only receives opaque node ids, so the browser resolves names by calling
 // read_node through the console's same-origin Operator MCP session.
 

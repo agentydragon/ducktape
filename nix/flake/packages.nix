@@ -32,7 +32,7 @@ ducktapePkgs
     name = "ducktape-devtools";
     paths = devToolPackages ++ localOnlyPackages;
   };
-  # Lean devtools for RBE worker image (no rustfmt, ansible).
+  # Lean devtools for the BuildBuddy Remote Runner image (no rustfmt, ansible).
   rbetools = pkgs.symlinkJoin {
     name = "ducktape-rbetools";
     paths = devToolPackages;
@@ -71,10 +71,10 @@ ducktapePkgs
   # Run:   docker run --rm -it ducktape-nixos-bazel /init
   # Exec:  docker exec -it <container> bash -l
   bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
-  # Nix-based RBE worker image (plain Docker, no NixOS/systemd).
-  # Build: nix build .#nix-rbe-image
+  # Experimental Nix-based RBE container image (plain Docker, no NixOS/systemd).
+  # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
-  nix-rbe-image = import ../../x/nix_rbe_image { inherit pkgs; };
+  nix-rbe-container-image = import ../../devinfra/rbe_container_image/x/nix { inherit pkgs; };
   # Haku sandbox image (plain Docker, no NixOS/systemd) — the Nix
   # replacement for cluster/k8s/haku/workspaces/image/Dockerfile. Builds
   # in CI but is NOT yet what the SandboxTemplate pulls; cutover is gated
@@ -115,10 +115,6 @@ ducktapePkgs
   haku-openclaw-spike-image = import ../../haku/openclaw_spike {
     inherit nix-openclaw pkgs ruffLatest;
   };
-  # NixOS-based RBE worker (systemd, envfs, nix-ld).
-  # Build: nix build .#nix-rbe-nixos
-  # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
-  nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
   # Full-NixOS container image for the Haku Managed Agents self-hosted
   # worker (Runtime B, haku/runtime/managed_agent/self_hosted).
   # Build: nix build .#haku-managed-agent-image
