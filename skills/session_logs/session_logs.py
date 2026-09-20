@@ -48,11 +48,14 @@ class ParseStats:
 def iter_entries(path: Path, stats: ParseStats | None = None) -> Iterator[dict[str, Any]]:
     """Yield valid JSON objects while skipping malformed JSONL records.
 
-    Harness transcripts occasionally contain a partially written tool-call
-    record or an unescaped control character in a string.  jq rejects the
-    entire file in that situation.  Python's decoder can accept control
-    characters with ``strict=False``; genuinely truncated records are still
-    skipped one physical line at a time so later user messages remain visible.
+    Observed Codex examples include a ``response_item`` whose
+    ``custom_tool_call`` ``payload.input`` string is cut off, and an
+    ``event_msg`` with ``payload.type == "token_count"`` cut off while writing
+    a payload field name.  The next JSONL record parsed successfully in both
+    cases, so keep scanning after parse errors.  Python's decoder accepts
+    unescaped control characters with ``strict=False``; malformed or truncated
+    records are still skipped one physical line at a time so later user
+    messages remain visible.
     """
 
     scan = stats or ParseStats()
