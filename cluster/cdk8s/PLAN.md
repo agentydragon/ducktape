@@ -9,6 +9,56 @@ State on 2026-09-20: all 250 Flux `Kustomization`s are generated from one chart
 (#7391); by directory, 3 are fully generated, 23 mix generated and hand-written files,
 260 are hand-written; about 36% of manifest lines under `cluster/k8s` are cdk8s output.
 
+## Why, and what done means
+
+Hand-written YAML typed the same fact (a label, a port, a Secret name, a model, a
+node's address) in several places, and the only thing keeping them agreeing was a test
+that parsed the rendered manifests afterwards. Those tests are change-detectors: an
+intentional edit changes the test in lockstep, so they cannot tell right from wrong, they
+cost an edit per PR, and the incidents that mattered got past them. Most changes are
+authored by agents and reviewed by one person, so "a human has to notice" is the cost
+that dominates. The program moves every such agreement from checked afterwards, by us,
+in an ad-hoc parser, to true by construction or rejected at synth, by the tool.
+
+Done means:
+
+1. **One source per fact.** Rosters (nodes, models, images, credentials, allowlists)
+   live once and everything renders from them; each binary's `Settings` is its
+   deployment contract; a workload's labels, ports and names are exported by the module
+   that owns them and read by everything that refers to them.
+2. **Invariants by construction, then by synth-time validation, then nothing.** Fleet
+   rules run as validators over the construct tree; the Flux graph is a Python DAG in
+   which a cycle or a dangling dependency cannot be written; a reference is a parameter,
+   so a renamed thing fails at import or synth. Parsing generated output after the fact
+   is not a category.
+3. **`cluster/validation` burned down.** Every test that reads rendered manifests to
+   compare two places is replaced by construction from one value (no test), a test
+   over objects synthesized in memory at construct or chart level, or a type that makes
+   the wrong state unrepresentable. What remains is decided as tests fall, not
+   pre-listed; `crd_layering` is expected to become a test over the Flux graph's
+   constructs, and the whole-graph checks are expected to follow.
+4. **Operations stay possible.** Moving objects between Kustomizations, folding
+   directories, restoring from backup, suspending during an incident: all remain plain
+   edits under the documented procedure (<AGENTS.md> § Restructuring, § Boundaries).
+   Making the unsafe shape unrepresentable is not a goal; if it ever is, it is a
+   proposal to review first.
+5. **No new concepts.** Only Kubernetes, cdk8s, Flux and Kustomize objects and plain
+   values; a marker, record or declaration those do not have is a design the operator
+   approves before it exists (<AGENTS.md> § Boundaries).
+6. **The Python reads as the YAML did.** 1:1 first, forward-only, no registries or
+   callbacks, so an exemplar can be bulk-applied by agents and a reviewer sees a node's
+   inputs in its signature.
+7. **Visible progress with a floor.** `cluster/k8s` shrinks to the hand-written
+   remainder, and what stays hand-written by decision is recorded here.
+
+Constraints on every wave: zero behaviour change per conversion, proven by semantic
+identity of rendered objects; Flux's ownership semantics (SSA adoption, `MirrorPrune`,
+artifact sourcing) are the physics, so a restructuring that ignores them deletes things
+and only the live cluster can tell; stateful data is never destroyed, caches may be;
+some providers live outside the manifest tree (Terraform-minted secrets, reflector
+copies, image automation writing tags) and get no marker to model them unless one is
+approved; operator review is the bottleneck, so PRs are small and rebases are cheap.
+
 ## The rule every wave runs under
 
 Derive only from nodes already in Python. A stage that would build a value from a
@@ -126,15 +176,22 @@ is the expected answer; anything that wants the chart back is the signal to stop
 Not before Wave 4 has most providers as constructs; before that they would be
 declarations again.
 
-- **Tree-wide reference resolution.** Every Secret/ConfigMap a Pod reads resolves to an
-  object in the tree with the right namespace, whose Kustomization is the reader's own
-  or in its `dependsOn` closure. Providers declare at the source: SOPS files by their
-  plaintext `name`/`namespace`, reflector targets from the source Secret's annotation,
-  Terraform-minted secrets on the `gitops_terraform` CR construct. Replaces the rosters
-  Wave 1 removed, with no consumer-side declaration.
-- **Whole-graph validation tests moving to synth**, where the graph makes them
-  unrepresentable rather than merely checked (`test_dependencies`, `test_health_checks`,
-  `test_generator_namespace`).
+- **Tree-wide reference resolution, over what the tree contains.** Every
+  Secret/ConfigMap a Pod reads resolves to an object in the tree with the right
+  namespace, whose Kustomization is the reader's own or in its `dependsOn` closure.
+  Providers the tree already represents: generated objects, SOPS files by their
+  plaintext `name`/`namespace`, reflector targets from the annotation on the source
+  Secret. Secrets minted by Terraform have no object in the tree; the rule leaves those
+  references unchecked rather than modelling them. Closing that gap would need a
+  declaration on the `Terraform` CR construct, which is a new concept: a proposal to
+  review, not a step here. Replaces the rosters Wave 1 removed with no consumer-side
+  declaration.
+- **Whole-graph validation tests moving to synth**, each where the graph makes its
+  property unrepresentable or checkable over constructs rather than parsed output:
+  `test_crd_layering` (a Kustomization applying an operator's kinds depends on that
+  operator's Kustomization; what roster it still needs is decided then),
+  `test_dependencies`, `test_health_checks`, `test_generator_namespace`. Others may
+  follow; the remaining list is what is left, not a target.
 
 ## Candidates I am not sure about
 
@@ -210,4 +267,5 @@ name)` takes strings at 25 sites. The TODO entry proposes passing the workload
 
 `cluster/k8s` holds only the floor recorded after Wave 2, every Kustomization node's
 inputs are values or constructs, no `cluster/validation` test spans a generated ↔
-hand-written seam, and this file is deleted.
+hand-written seam, every procedure in <AGENTS.md> § Restructuring and § Boundaries is
+still a plain edit, and this file is deleted.
