@@ -67,7 +67,8 @@ repos:
   - repo: local
     hooks:
       # Language-agnostic ordering for explicitly marked blocks. The binary is
-      # in devToolsCommon so this also runs in CI and Claude Code web sessions.
+      # in `preCommitPackages`, exposed as `.#precommit` for CI and included in
+      # `devToolPackages` for Claude Code web.
       - id: keep-sorted
         name: keep-sorted
         entry: keep-sorted

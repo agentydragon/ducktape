@@ -258,16 +258,17 @@ route ineffective. Reclaim space by deleting — usually stale agent worktrees u
 `web_setup.sh` supports two install modes, selected by the `DUCKTAPE_WEB_SETUP_MODE`
 env var (or a `--mode=<...>` arg):
 
-| Mode                          | How devtools + skills are installed                                                                                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profile` (default)           | `nix profile install .#devtools`, then per-skill symlinks into `~/.claude/skills/`.                                                                                                |
-| `home-manager` (experimental) | `home-manager switch --impure --flake .#claude-web`. Home Manager installs the same devtools and deploys skills through the shared HM skills module (<../../nix/home/skills.nix>). |
+| Mode                          | How devtools + skills are installed                                                                                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile` (default)           | `nix profile install .#devtools` installs `devToolPackages` plus `localOnlyPackages`; skills are linked into `~/.claude/skills/`.                                                                   |
+| `home-manager` (experimental) | `home-manager switch --impure --flake .#claude-web` installs `devToolPackages` (omitting `localOnlyPackages`) and deploys skills through the shared HM skills module (<../../nix/home/skills.nix>). |
 
 The `home-manager` mode activates `homeConfigurations.claude-web` (defined in `flake.nix`,
 config at <../../nix/home/hosts/claude-web.nix>) — a standalone, minimal profile that
-reuses the shared `devToolPackages` list from
-[`nix/flake/devtools.nix`](../../nix/flake/devtools.nix) (so the two modes can't drift) and adds
-direnv + nix-direnv plus the shared skills module. It deliberately does **not** import the
+reuses the shared `devToolPackages` core from
+[`nix/flake/devtools.nix`](../../nix/flake/devtools.nix); unlike the `.#devtools` profile,
+it omits `localOnlyPackages`. It also adds direnv + nix-direnv and the shared skills module.
+It deliberately does **not** import the
 full home-manager host config, so — unlike the NixOS hosts — it deploys no Claude Code
 settings, plugins, or MCP servers.
 
