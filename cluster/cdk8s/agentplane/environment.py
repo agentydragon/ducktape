@@ -76,6 +76,17 @@ class AppProps:
 
 
 @dataclass(frozen=True)
+class BearerMcpMount:
+    """One static-bearer MCP backend's reflected Secret, mounted at
+    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+
+    name: str
+    secret_name: str
+    secret_key: str
+    file_name: str = "bearer-token"
+
+
+@dataclass(frozen=True)
 class ActionsProps:
     hostname: str
     # agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
@@ -88,7 +99,7 @@ class ActionsProps:
     # None/False omits the corresponding env var, volume, and mount.
     web_push_secret_name: str | None = None
     github_mcp_client_secret_name: str | None = None
-    ssh_mcp_bearer: bool = False
+    bearer_mcp_mounts: Sequence[BearerMcpMount] = ()
     # CiliumNetworkPolicy egress rules appended after the shared DNS/claude.ai/
     # kube-apiserver/postgres rules: this environment's OIDC provider, MCP servers, ...
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
