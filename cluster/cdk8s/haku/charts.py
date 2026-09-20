@@ -1,6 +1,6 @@
-"""The console's whole Flux Kustomization as one chart -- database, schema migration, the
-console itself and its Kubernetes API proxy -- shared by generate_manifests (writes it to
-disk) and the tests (synthesize it in memory via `cdk8s.Testing`).
+"""The console resource chart -- database, schema migration, the console itself and its
+Kubernetes API proxy -- shared by manifest generation and tests (synthesized in memory
+via `cdk8s.Testing`).
 
 The database and migration used to be Kustomizations of their own, ordered ahead of the
 console by `dependsOn`. One Kustomization has no such ordering, so the two Jobs in here
@@ -18,6 +18,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
+    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -28,7 +29,6 @@ from cluster.cdk8s.flux import (
     ConfigMapArgs,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    health_checks,
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption, write_yaml
@@ -71,9 +71,28 @@ def console_chart(app: App) -> Chart:
     return chart
 
 
+def write_console_manifests(root: Path) -> Chart:
+    """Synthesize the console resource chart and its directory Kustomize config."""
+    out_dir = root / PATH
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = console_chart(app)
+    app.synth()
+    write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            namespace=NAMESPACE,
+            resources=[f"{NAME}.k8s.yaml", *EXTRA_RESOURCES],
+            components=["./image-pins"],
+            config_map_generator=CONFIG_MAP_GENERATOR,
+        ),
+    )
+    return chart
+
+
 def haku_console(
     flux_chart: Chart,
-    root: Path,
+    health_checks: list[KustomizationSpecHealthChecks],
     haku_workspaces: Kustomization,
     haku_console_namespace: Kustomization,
     cnpg: Kustomization,
@@ -88,16 +107,8 @@ def haku_console(
     ssh_mcp: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    """The console's one Kustomization directory: database, migration, console and API
-    proxy in a single chart, its Flux Kustomization (health checks from the chart's own
-    objects), and the root Kustomization listing the generated file beside the
-    hand-written siblings."""
-    out_dir = root / PATH
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = console_chart(app)
-    app.synth()
-    kustomization = flux_kustomization(
+    """Build the Flux graph node from health-check values and predecessor nodes."""
+    return flux_kustomization(
         flux_chart,
         NAME,
         spec=KustomizationSpec(
@@ -116,7 +127,7 @@ def haku_console(
             decryption=sops_decryption(EXTRA_RESOURCES),
             # The two Jobs gate every dependent Kustomization: nothing downstream
             # reconciles until the schema is migrated and the indexer GRANTs applied.
-            health_checks=health_checks(chart, ("Cluster", "Job")),
+            health_checks=health_checks,
             health_check_exprs=[
                 KustomizationSpecHealthCheckExprs(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
@@ -148,13 +159,3 @@ def haku_console(
             ),
         ),
     )
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE,
-            resources=[f"{NAME}.k8s.yaml", *EXTRA_RESOURCES],
-            components=["./image-pins"],
-            config_map_generator=CONFIG_MAP_GENERATOR,
-        ),
-    )
-    return kustomization

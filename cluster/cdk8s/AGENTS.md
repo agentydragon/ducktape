@@ -101,10 +101,7 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   that crosses in its signature and can be tested with hand-supplied values, without
   importing the workload modules. A second fact that needs to cross is a second
   parameter, and that is the review signal. Chart before Kustomization before
-  dependents; a Kustomization never builds the chart it describes. Both current
-  instances predate this rule: `agentplane_staging` (`agentplane/staging.py`) takes the
-  chart, and `haku_console` (`haku/charts.py`) builds it inside the node; both are the
-  shape to fix, not the shape to copy.
+  dependents; a Kustomization never builds the chart it describes.
 - **Each object is built from what it reads at runtime, never from what reads it.** A
   Kustomization is built from its artifact, its path and its predecessors; an artifact
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
