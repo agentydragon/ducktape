@@ -14,7 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
@@ -32,22 +32,12 @@ class ApprovedConsumer:
 
 
 @dataclass(frozen=True)
-class ApprovedWriter:
-    """One explicitly approved ServiceAccount allowed to update a mutable source Secret."""
-
-    namespace: str
-    service_account_name: str
-    binding_name: str
-
-
-@dataclass(frozen=True)
 class Credential:
     """Non-secret metadata needed to render a credential's source-side grant."""
 
     secret_file: str | None
     secret_name: str
     consumers: tuple[ApprovedConsumer, ...] = ()
-    writers: tuple[ApprovedWriter, ...] = ()
     namespace: str = NAMESPACE
 
 
@@ -141,7 +131,6 @@ CREDENTIALS = (
             ApprovedConsumer("litellm", "tana-firebase-refresh-token-litellm-reader"),
             ApprovedConsumer("tana-mcp", "tana-firebase-refresh-token-tana-mcp-reader"),
         ),
-        writers=(ApprovedWriter("tana-mcp", "tana-firebase-resigner", "tana-firebase-refresh-token-resigner"),),
     ),
     Credential(
         secret_file="tana-pat.sops.yaml",
@@ -155,20 +144,16 @@ CREDENTIALS = (
 
 
 def kustomize_resources() -> list[str]:
-    """Return generated RBAC, the mutable-token bridge, and canonical SOPS files."""
+    """Return generated source-side RBAC and canonical SOPS files."""
     return [
         "external-creds.k8s.yaml",
-        "tana-firebase-refresh-token-eso.yaml",
         *(credential.secret_file for credential in CREDENTIALS if credential.secret_file is not None),
     ]
 
 
 def chart(app: App) -> Chart:
-    """Build exact-name credential reader/writer Roles and RoleBindings in one chart."""
+    """Build exact-name, get-only credential reader Roles and RoleBindings in one chart."""
     chart = Chart(app, "external-creds", disable_resource_name_hashes=True)
-    ServiceAccount(
-        chart, "external-creds-reader", metadata=metadata(_READER_SERVICE_ACCOUNT, NAMESPACE), automount_token=False
-    )
     for credential in CREDENTIALS:
         if credential.consumers:
             role_name = f"{credential.secret_name}-reader"
@@ -201,43 +186,10 @@ def chart(app: App) -> Chart:
                         namespace_name=consumer.namespace,
                     )
                 )
-        if credential.writers:
-            role_name = f"{credential.secret_name}-writer"
-            Role(
-                chart,
-                f"role-{credential.secret_name}-writer",
-                metadata=metadata(role_name, credential.namespace),
-                rules=[
-                    RolePolicyRule(
-                        resources=[
-                            Secret.from_secret_name(
-                                chart, f"secret-{credential.secret_name}-writer", credential.secret_name
-                            )
-                        ],
-                        verbs=["get", "patch"],
-                    )
-                ],
-            )
-            for index, writer in enumerate(credential.writers):
-                RoleBinding(
-                    chart,
-                    f"binding-{credential.secret_name}-writer-{index}",
-                    metadata=metadata(writer.binding_name, credential.namespace),
-                    role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-writer-{index}", role_name),
-                ).add_subjects(
-                    ServiceAccount.from_service_account_name(
-                        chart,
-                        f"service-account-ref-{credential.secret_name}-writer-{index}",
-                        writer.service_account_name,
-                        namespace_name=writer.namespace,
-                    )
-                )
     return chart
 
 
-def external_creds(
-    flux_chart: Chart, root: Path, claude_rbac: Kustomization, external_secrets_config: Kustomization
-) -> Kustomization:
+def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) -> Kustomization:
     """Generate credential grants and Kustomize wiring; source manifests stay hand-written."""
     resources = kustomize_resources()
     write_charts(root, OUTPUT_DIR, chart)
@@ -255,8 +207,7 @@ def external_creds(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
             ),
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_config),
+            depends_on=[flux_kustomization_depends_on(claude_rbac)],
             timeout="5m",
         ),
     )

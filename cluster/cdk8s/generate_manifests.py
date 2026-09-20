@@ -292,8 +292,9 @@ def generate_manifests(root: Path) -> None:
     agent_shared_secrets_kustomization = agents_flux_kustomizations.agent_shared_secrets(
         flux_chart, claude_rbac_kustomization
     )
-    external_creds_kustomization = external_creds.external_creds(
-        flux_chart, root, claude_rbac_kustomization, external_secrets_config_kustomization
+    external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
+    tana_firebase_refresh_token_kustomization = agents_flux_kustomizations.tana_firebase_refresh_token(
+        flux_chart, external_creds_kustomization, external_secrets_config_kustomization
     )
     agents_flux_kustomizations.coinbase_read(
         flux_chart, external_creds_kustomization, external_secrets_config_kustomization
@@ -433,7 +434,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, external_secrets_config_kustomization
     )
     litellm_secrets_kustomization = litellm_flux_kustomizations.litellm_secrets(
-        flux_chart, external_creds_kustomization, litellm_namespace_kustomization, external_secrets_config_kustomization
+        flux_chart,
+        external_creds_kustomization,
+        tana_firebase_refresh_token_kustomization,
+        litellm_namespace_kustomization,
+        external_secrets_config_kustomization,
     )
     ntfy_kustomization = ntfy.ntfy(
         flux_chart,
@@ -769,6 +774,7 @@ def generate_manifests(root: Path) -> None:
     tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
         flux_chart,
         external_creds_kustomization,
+        tana_firebase_refresh_token_kustomization,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
         gateway_kustomization,

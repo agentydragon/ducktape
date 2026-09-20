@@ -1,10 +1,3 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-creds-reader
-  namespace: ducktape-flux
-automountServiceAccountToken: false
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -558,37 +551,6 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: external-creds-reader
-    namespace: tana-mcp
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: tana-firebase-refresh-token-writer
-  namespace: ducktape-flux
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - tana-firebase-refresh-token
-    resources:
-      - secrets
-    verbs:
-      - get
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: tana-firebase-refresh-token-resigner
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: tana-firebase-refresh-token-writer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: tana-firebase-resigner
     namespace: tana-mcp
 ---
 apiVersion: rbac.authorization.k8s.io/v1

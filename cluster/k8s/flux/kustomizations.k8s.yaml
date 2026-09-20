@@ -2127,14 +2127,38 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/external-creds
   prune: true
   sourceRef:
     kind: ExternalArtifact
     name: external-creds
+    namespace: ducktape-flux
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tana-firebase-refresh-token
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: tana-firebase-refresh-token
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/tana-firebase-refresh-token
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: tana-firebase-refresh-token
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -3205,6 +3229,8 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-creds
+      namespace: ducktape-flux
+    - name: tana-firebase-refresh-token
       namespace: ducktape-flux
     - name: litellm-namespace
       namespace: ducktape-flux
@@ -5460,6 +5486,8 @@ metadata:
 spec:
   dependsOn:
     - name: external-creds
+      namespace: ducktape-flux
+    - name: tana-firebase-refresh-token
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux

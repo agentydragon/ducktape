@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tana-firebase-refresh-token-writer
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tana-firebase-refresh-token"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-firebase-refresh-token-resigner
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-firebase-refresh-token-writer
+subjects:
+  - kind: ServiceAccount
+    name: tana-firebase-resigner
+    namespace: tana-mcp

@@ -106,6 +106,7 @@ def litellm_namespace(chart: Chart) -> Kustomization:
 def litellm_secrets(
     chart: Chart,
     external_creds: Kustomization,
+    tana_firebase_refresh_token: Kustomization,
     litellm_namespace: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
@@ -126,6 +127,8 @@ def litellm_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(external_creds, litellm_namespace, external_secrets_config),
+            depends_on=flux_kustomization_depends_on_many(
+                external_creds, tana_firebase_refresh_token, litellm_namespace, external_secrets_config
+            ),
         ),
     )

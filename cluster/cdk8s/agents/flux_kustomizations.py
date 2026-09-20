@@ -1018,6 +1018,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
 def tana_mcp(
     chart: Chart,
     external_creds: Kustomization,
+    tana_firebase_refresh_token: Kustomization,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
@@ -1050,6 +1051,7 @@ def tana_mcp(
             ],
             depends_on=flux_kustomization_depends_on_many(
                 external_creds,
+                tana_firebase_refresh_token,
                 external_secrets_config,
                 forgejo_images,
                 gateway,
@@ -1059,5 +1061,33 @@ def tana_mcp(
                 # ServiceMonitor + PrometheusRule
                 monitoring_crds,
             ),
+        ),
+    )
+
+
+def tana_firebase_refresh_token(
+    chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization
+) -> Kustomization:
+    """Bootstrap the mutable central refresh token and grant the resigner its narrow writer role."""
+    name = "tana-firebase-refresh-token"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
+            ),
+            path="./cluster/k8s/tana-firebase-refresh-token",
+            prune=True,
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1", kind="ExternalSecret", name=name, namespace="ducktape-flux"
+                )
+            ],
+            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
         ),
     )

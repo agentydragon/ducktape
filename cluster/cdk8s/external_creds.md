@@ -28,13 +28,16 @@ contract.
   identity exists.
 
 Tana's rotating Firebase refresh token is the dynamic-source exception. A SOPS
-bootstrap Secret and an `OnChange` ExternalSecret in `external-creds` seed one
-ESO-owned runtime Secret in `ducktape-flux`. The Tana resigner has a separate
-exact-name `get`/`patch` grant for that runtime Secret. It writes only the
-central Secret; consumer-owned ExternalSecrets poll it and update independent
-copies in `tana-mcp` and `litellm`. This keeps distribution in ESO and out of
-the resigner. Because the bridge is part of `external-creds`, that Flux
-Kustomization depends on `external-secrets-config`.
+bootstrap Secret in `external-creds` seeds one ESO-owned runtime Secret in
+`ducktape-flux`. The separate `tana-firebase-refresh-token` Kustomization owns
+the `OnChange` bridge ExternalSecret, the referent reader ServiceAccount, and
+the resigner's exact-name `get`/`patch` grant for that runtime Secret. It
+depends on both `external-creds` and `external-secrets-config`. The resigner
+writes only the central Secret; consumer-owned ExternalSecrets poll it and
+update independent copies in `tana-mcp` and `litellm`. This keeps distribution
+in ESO and out of the resigner. Resigner settings, including the API key and
+central Secret coordinates, come from its ConfigMap and are required by the
+binary rather than compiled-in defaults.
 To intentionally reseed after token revocation, update the SOPS seed and bump
 the bridge's `external-secrets.io/force-sync` annotation in Git.
 
