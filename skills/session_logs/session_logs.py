@@ -378,6 +378,16 @@ def analyze_transcript(path: Path, harness: str) -> tuple[dict[str, str | int], 
     )
 
 
+def followups_replay_guidance(compactions: int, malformed_records: int) -> str:
+    """Recommend whether followups needs transcript output to recover context."""
+
+    if malformed_records:
+        return "uncertain; malformed records may hide compaction markers, so do not use the no-compaction shortcut"
+    if compactions:
+        return f"{compactions} marker(s) found; replay unless already recovered in this context after the latest marker"
+    return "skip; no compaction markers were found and no records were malformed"
+
+
 def main_find() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("harness", nargs="?", choices=HARNESS_NAMES)
@@ -415,6 +425,9 @@ def main_analyze() -> int:
     print(f"Tool calls: {summary['tool_uses']}")
     print(f"Compactions: {summary['compactions']}")
     print(f"Malformed records skipped: {stats.malformed_records}")
+    print(
+        f"Followups replay guidance: {followups_replay_guidance(int(summary['compactions']), stats.malformed_records)}"
+    )
     print(f"Transcript: {path}")
     report_parse_issues(stats)
     return 0
