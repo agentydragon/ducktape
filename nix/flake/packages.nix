@@ -16,7 +16,7 @@
 ducktapePkgs
 // gafferPkgs
 // {
-  # Minimal CI package: the BuildBuddy CLIs + sops (no claude-hooks wheel needed).
+  # Minimal CI package: the BuildBuddy CLIs + sops (no Claude statusline wheel needed).
   citools = pkgs.symlinkJoin {
     name = "ducktape-citools";
     paths = [

@@ -1,4 +1,4 @@
-# claude_hooks TODO
+# Claude hook and statusline TODO
 
 ## Session start simplification leftovers
 
@@ -7,9 +7,6 @@ survived the deleted plan:
 
 - Consider making `ci_env.sh` a fuller CI setup step (registry logins, release
   PAT handling) after auditing in-repo consumers of those env vars.
-- Consider splitting the statusline hook into its own package if the duplicate
-  home-manager + devshell installations become annoying enough to justify the
-  closure churn.
 - Consider caching `env_script_exports` alongside the profile instead of
   threading it through `app.state` -> `handle_session_start()` -> session env
   file. The current path works.
@@ -99,7 +96,7 @@ automatic compatibility requirement.
 The statusline's subscription quota display (`7d:8%`) duplicates a GNOME
 extension that already shows the same data. Options:
 
-- **Config option** via XDG config file (`~/.config/claude-hooks/statusline.toml`
+- **Config option** via XDG config file (`~/.config/claude-statusline/statusline.toml`
   or similar) to toggle individual sections (quota, daemon health, cost, etc.)
 - **tmux statusline widget** — the statusline output is already plain text;
   a tmux `status-right` integration would be useful on remote/SSH sessions where
@@ -133,11 +130,14 @@ What was removed: `post_tool_use.py`, `precommit_runner.py`, the
 matching tests. Restoring would also restore the `pre-commit` runtime dep
 on the wheel + Nix package.
 
-## Nix Installation Timeout
+## Nix Installation Timeout (historical)
 
 **Problem**: Installing nix on Claude Code web times out because downloading nixpkgs takes >2 minutes (session start hook timeout).
 
-**Current Workaround**: The `claude_hooks` package is installed via `uv tool install` from a pre-built wheel (published to GitHub releases), avoiding Python dependency installation during session start. Terraform tools (opentofu, tflint) are needed on PATH for `antonbabenko/pre-commit-terraform` hooks (`terraform_validate`, `terraform_tflint`). Nix is installed separately for `nix eval` and flake operations. Nix formatting uses a static nixfmt binary (no Nix dependency).
+The old workaround installed a Python `claude_hooks` wheel with `uv tool install`.
+That package was retired: the `claude-hook` dispatcher and `claude-statusline`
+are now provided by the Nix `.#devtools` output. The remaining setup concern is
+installing Nix itself on Claude Code web within the session-start time limit.
 
 **Potential Solutions:**
 

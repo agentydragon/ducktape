@@ -94,8 +94,10 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
   reinstalls devtools before SessionStart fires, but never invokes `claude-hook`.
 - **Session-local files** (socket, shim dir, session bazelrc): always keyed by
   `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
-- **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
-  across all session IDs, safe for concurrent daemons.
+- **Session-global files** (for example, the bazelisk binary at
+  `~/.cache/claude-hooks/bazelisk`): shared across all session IDs and safe for
+  concurrent daemons. This existing XDG state directory stays stable across the
+  `claude-hook` and `claude-statusline` package renames.
 
 ## Configuration
 

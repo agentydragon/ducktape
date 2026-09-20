@@ -4,8 +4,8 @@
 
 The Python statusline package dependencies are declared in **two places** that must stay in sync:
 
-1. **Wheel `requires`**: `//:claude_hooks_wheel` in `BUILD.bazel`
-2. **Nix `propagatedBuildInputs`**: `claude-hooks` in `nix/packages/default.nix` — currently exposed through the `claude-statusline` wrapper while `claude-hook` itself is Rust-only
+1. **Wheel `requires`**: `//devinfra/claude/statusline:claude_statusline_wheel` in `devinfra/claude/statusline/BUILD.bazel`
+2. **Nix `propagatedBuildInputs`**: `claude-statusline` in `nix/packages/default.nix`; `claude-hook` is the Rust dispatcher
 
 When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` when `claude-statusline` starts in whichever environment has the stale list. Both files have `SYNC:` comments pointing to each other.
 
@@ -84,13 +84,14 @@ tail -100 "/tmp/claude-hd/$LIVE/daemon.err.log"
 # Check session bazelrc
 cat "$HOME/.claude/session-env/$LIVE/bazelrc"
 
-# Check installed claude-hooks vs the pin — git= shows the commit the wheel was built from
+# Check the installed Rust dispatcher. --version reports the crate version, not the release pin.
 claude-hook --version
-jq -r '.pins["claude-hooks"].url' nix/artifact-pins.json
+# CI artifact pin IDs behind the Nix outputs .#claude-hook and .#claude-statusline:
+jq -r '.pins["claude-hook"].url, .pins["claude-statusline"].url' nix/artifact-pins.json
 ```
 
-If the version shows `git=dev` (unstamped) or an old commit, the installed
-wheel has drifted behind the pin — re-run
-`bash devinfra/claude/web_setup.sh` to pull forward. See
+If the installed profile is stale, re-run `bash devinfra/claude/web_setup.sh`
+to refresh its `.#devtools` closure, which includes both `claude-hook` and
+`claude-statusline`. See
 <docs/web-setup-debug.md> "Pin drift on persistent rootfs" for the underlying
 cause.

@@ -1,6 +1,6 @@
 """Git hook entry points for pre-commit framework.
 
-Installed as separate console scripts via the claude-hooks wheel:
+Installed as separate console scripts via the ducktape-git-hooks wheel:
 - ducktape-precommit: file validations (filenames, frozen-specimens)
 - ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits

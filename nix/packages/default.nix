@@ -134,8 +134,8 @@ let
       cp ${input} $out
     '';
 
-  # All ducktape wheels follow the same pattern: pname maps to an artifact-pin
-  # artifact, wheel filename is <pname_underscored>-0.1.0-py3-none-any.whl.
+  # Each wheel's artifact pin and Python distribution share its pname; the
+  # filename is <pname_underscored>-0.1.0-py3-none-any.whl.
   #
   # `importsCheck` is required — at minimum list the modules backing each
   # console-script entry point. buildPythonApplication imports them at build
@@ -224,11 +224,10 @@ let
       ++ [ ducktape-util ];
   };
 
-  # Combined CLI + GNOME Shell extension package. Takes the same overridden python3Packages as
-  # everything else here (not stock pkgs.python3Packages) -- claude-hooks depends on both aiquota
-  # and httpx/pydantic directly, and Nix's duplicate-package check fails the build if those two
-  # paths resolve to different derivations of the "same" version (see idna.nix's own comment: this
-  # is exactly the kind of ripple a packageOverrides addition can cause).
+  # aiquota and the Python statusline share this overridden Python package set
+  # (not stock pkgs.python3Packages). Nix's duplicate-package check fails if
+  # their dependencies resolve to different derivations of the same version;
+  # see idna.nix for an example of how packageOverrides can cause that ripple.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
     inherit artifacts lib python314Packages;
   };
@@ -340,18 +339,17 @@ rec {
     ];
   };
 
-  claude-hooks = mkWheel {
-    pname = "claude-hooks";
+  claude-statusline = mkWheel {
+    pname = "claude-statusline";
     description = "Python Claude Code statusline";
     mainProgram = "claude-statusline";
     importsCheck = [ "devinfra.claude.statusline.statusline" ];
-    # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
-    # The wheel declares pip-level deps; this list provides Nix-level equivalents.
+    # SYNC: This list must match `requires` in //devinfra/claude/statusline:claude_statusline_wheel.
+    # The wheel declares pip-level deps; this provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `aiquota` (the derivation, not a python314Packages attr) provides the aiquota
-    # module the statusline imports for quota data; it propagates its own deps
-    # (typer, atomicwrites, ...) so they don't need listing here.
+    # `aiquota` provides the module the statusline imports for quota data; it
+    # propagates its own deps (typer, atomicwrites, ...) transitively.
     propagatedBuildInputs = [
       aiquota
     ]
@@ -363,19 +361,12 @@ rec {
     ]);
   };
 
-  # Expose only the Python statusline command. Active Claude hook dispatch is the
-  # Rust binary below, so this avoids putting the legacy Python `claude-hook` on PATH.
-  claude-statusline = pkgs.runCommand "claude-statusline" { } ''
-    mkdir -p $out/bin
-    ln -s ${claude-hooks}/bin/claude-statusline $out/bin/claude-statusline
-  '';
-
   # Rust claude-hook binary — static, no runtime deps.
   # Provides the active `claude-hook` binary used for hook dispatch and shims.
-  claude-hook-rs = pkgs.stdenvNoCC.mkDerivation {
-    pname = "claude-hook-rs";
+  claude-hook = pkgs.stdenvNoCC.mkDerivation {
+    pname = "claude-hook";
     version = "latest";
-    src = artifacts.claude-hook-rs;
+    src = artifacts.claude-hook;
     dontUnpack = true;
     installPhase = ''
       install -Dm755 $src $out/bin/claude-hook
