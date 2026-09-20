@@ -126,16 +126,7 @@ ENV = Environment(
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
     include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config={
-        **testing_config.config(),
-        "action_federation": {
-            # See staging.py's action_federation: pydantic dumps `mode` (declared on the
-            # direct/exchange subclass) after the parent class's fields, so it's pulled
-            # to the front to keep the generated YAML's key order unchanged.
-            "mode": _ACTION_FEDERATION.mode,
-            **_ACTION_FEDERATION.model_dump(mode="json", exclude_unset=True, exclude={"mode"}),
-        },
-    },
+    app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca"),

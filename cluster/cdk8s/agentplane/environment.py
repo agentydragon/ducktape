@@ -13,6 +13,8 @@ from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
+from agentplane.app.main import AppSettingsConfig
+
 # What every environment's Flux Kustomization waits on.
 DEPENDS_ON = (
     "agentplane-crds",
@@ -117,8 +119,8 @@ class Environment:
     # Whether the operator Role may manage ActionPolicySet/Binding objects.
     include_action_policy_rule: bool
     replicas: ReplicaProfile
-    # agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
-    app_config: dict
+    # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
+    app_config: AppSettingsConfig
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

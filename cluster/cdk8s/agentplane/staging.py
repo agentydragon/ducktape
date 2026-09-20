@@ -201,20 +201,7 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config={
-        **staging_config.config(),
-        "action_federation": {
-            # Pydantic dumps fields in declaration order (parent class, then the
-            # exchange/direct subclass's own `mode`/`token_endpoint`); pulled to the
-            # front to keep the generated YAML's key order unchanged.
-            "mode": _ACTION_FEDERATION.mode,
-            "service_url": _ACTION_FEDERATION.service_url,
-            "token_endpoint": _ACTION_FEDERATION.token_endpoint,
-            **_ACTION_FEDERATION.model_dump(
-                mode="json", exclude_unset=True, exclude={"mode", "service_url", "token_endpoint"}
-            ),
-        },
-    },
+    app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca"),

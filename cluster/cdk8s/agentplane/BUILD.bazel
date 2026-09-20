@@ -240,7 +240,11 @@ py_library(
 py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
-    deps = ["//agentplane/app:presets"],
+    deps = [
+        "//agentplane/app:action_federation",
+        "//agentplane/app:main",
+        "//agentplane/app:presets",
+    ],
 )
 
 py_library(
@@ -248,6 +252,7 @@ py_library(
     srcs = ["testing_config.py"],
     deps = [
         ":app_settings",
+        "//agentplane/app:action_federation",
         "//cluster/cdk8s/litellm:keys",
     ],
 )
@@ -261,6 +266,7 @@ py_library(
     ],
     deps = [
         ":app_settings",
+        "//agentplane/app:action_federation",
         "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s/litellm:keys",
     ],
@@ -270,6 +276,7 @@ py_library(
     name = "environment",
     srcs = ["environment.py"],
     deps = [
+        "//agentplane/app:main",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
