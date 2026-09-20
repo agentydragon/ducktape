@@ -357,6 +357,7 @@
       };
       inherit (devTools)
         localOnlyPackages
+        buildBuddyRunnerTools
         preCommitPackages
         systemLibs
         devToolPackages
@@ -421,6 +422,7 @@
             nix-openclaw
             ruffLatest
             localOnlyPackages
+            buildBuddyRunnerTools
             preCommitPackages
             devToolPackages
             ;

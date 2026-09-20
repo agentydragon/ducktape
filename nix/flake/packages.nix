@@ -10,6 +10,7 @@
   nix-openclaw,
   ruffLatest,
   localOnlyPackages,
+  buildBuddyRunnerTools,
   preCommitPackages,
   devToolPackages,
 }:
@@ -38,10 +39,11 @@ ducktapePkgs
     name = "ducktape-devtools";
     paths = devToolPackages ++ localOnlyPackages;
   };
-  # Lean devtools for the BuildBuddy Remote Runner image (no rustfmt, ansible).
+  # BuildBuddy runner VM tools: Bazel via Bazelisk, bazel-diff, and bb for
+  # best-effort CI diagnostics. Pre-commit runs in a separate GitHub workflow.
   rbetools = pkgs.symlinkJoin {
     name = "ducktape-rbetools";
-    paths = devToolPackages;
+    paths = buildBuddyRunnerTools;
   };
   # Haku's agent closure: the single shared `.#devtools` plus agent
   # CLIs: fastmcp (`call`/`list --auth <bearer>`) for haku-console and
