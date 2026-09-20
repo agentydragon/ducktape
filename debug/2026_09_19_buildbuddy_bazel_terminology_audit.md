@@ -20,15 +20,16 @@ Sources: [BuildBuddy Remote Runners](https://www.buildbuddy.io/docs/remote-runne
 
 ## Follow-up candidates
 
-### A. [P1] Describe the image pin as an RBE container image
+### A. [DOC] Replace "RBE worker image" when the text means the action container
 
 Evidence:
 
 - `devinfra/ci/skills/cihealth/SKILL.md:92-93` calls the action-cache input the
   “RBE worker digest” and “RBE worker image.”
+- `docs/buildbuddy_selfhost.md:59` calls custom action containers “RBE worker
+  images.”
 - `devinfra/ci/docs/publish_planning.md:158` says “RBE worker image” when explaining
   why the image build does not depend on its own published artifact.
-- `docs/buildbuddy_selfhost.md:59` calls custom action containers “RBE worker images.”
 - `devinfra/pr_visuals/README.md:96` and
   `devinfra/ci/plans/bazel_diff_base_hash_caching.md:173` call a pin change an
   “rbe-worker” / “RBE image” bump.
@@ -108,9 +109,11 @@ repo.
   repositories paired with their current digests until each renamed publishing
   workflow publishes and re-homes its pin. These are intentional transition values.
 - `debug/2026_08_rbe_small_test_timeouts.md`,
-  `devinfra/rbe_container_image/docs/firecracker_docker_init_timeout.md`, and
-  `devinfra/ci/debug/ci_latency_evidence.json` record historical image tags or
-  workflow names. Keep those observations verbatim.
+  `devinfra/rbe_container_image/docs/firecracker_docker_init_timeout.md`,
+  `devinfra/claude/testing/INVESTIGATION_ci_bad_length.md` (which quotes its
+  historical trigger commit title), and `devinfra/ci/debug/ci_latency_evidence.json`
+  record historical image tags, commit titles, or workflow names. Keep those
+  observations verbatim.
 - Uses of “RBE worker” for the executor machine or its Docker/display capabilities,
   such as `AGENTS.md:63`, describe a different role and should not be globally
   replaced.
