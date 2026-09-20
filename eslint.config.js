@@ -31,8 +31,13 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // js_library targets (the Vite build is a WIP stub), so the lint aspect never
 // runs on it. Listing it here would be dead config implying coverage that does
 // not exist — re-add once it's Bazelized (per-file ts_library).
-const reactProjects = ["aiquota/frontend/**", "finance/augur/frontend/**", "haku/console/frontend/**"];
-const svelteProjects = ["props/frontend/src/**", "airlock/frontend/**"];
+const reactProjects = [
+  "aiquota/frontend/**",
+  "airlock/frontend/**",
+  "finance/augur/frontend/**",
+  "haku/console/frontend/**",
+];
+const svelteProjects = ["props/frontend/src/**"];
 const projectGlobs = [...reactProjects, ...svelteProjects];
 
 // All projects' .ts/.tsx get the shared TS rules. .svelte (+ .svelte.ts) come
