@@ -60,6 +60,7 @@ CONFIG_MAP_GENERATOR = (
     ConfigMapArgs(name=console.INDEXER_SQL_CONFIG_MAP, namespace=console.NAMESPACE, files=["indexer-role.sql"]),
 )
 
+
 def console_chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Db(chart, "db")

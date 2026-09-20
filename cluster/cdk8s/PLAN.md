@@ -38,6 +38,7 @@ Independent of each other; fan out.
 - **Kustomization nodes take values, not charts.** `agentplane_staging` takes
   `health_checks=...` instead of `resource_chart: Chart`; `haku_console` splits into
   `console_chart(app)` plus a node taking values (AGENTS.md § The Flux graph).
+
 **Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
 
 - Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
