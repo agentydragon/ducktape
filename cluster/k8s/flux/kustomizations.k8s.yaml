@@ -978,24 +978,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: study-casino-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/study-casino/namespace
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: study-casino-namespace
-    namespace: ducktape-flux
-  timeout: 1m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: talos-cloud-controller-manager
   namespace: ducktape-flux
 spec:
@@ -2564,37 +2546,6 @@ spec:
     name: seaweedfs-filer-db
     namespace: ducktape-flux
   timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: study-casino-db
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: study-casino-namespace
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/study-casino/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: study-casino-db
-    namespace: ducktape-flux
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -6021,18 +5972,15 @@ metadata:
   name: study-casino
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: external-secrets-config
+    - name: cnpg
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: study-casino-namespace
-      namespace: ducktape-flux
-    - name: study-casino-db
-      namespace: ducktape-flux
-    - name: claude-rbac
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -6040,15 +5988,15 @@ spec:
       name: study-casino
       namespace: study-casino
   interval: 10m
-  path: ./cluster/k8s/study-casino/app
+  path: ./cluster/k8s/study-casino
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: study-casino-app
+    name: study-casino
     namespace: ducktape-flux
   suspend: false
-  timeout: 5m
+  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
