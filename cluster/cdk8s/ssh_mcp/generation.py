@@ -45,15 +45,7 @@ def ssh_mcp(
 
     app = App(outdir=str(out_dir))
     chart = backend.chart(app, config=ssh_config, mesh=mesh)
-    add_fleet_rules(
-        chart,
-        provided_secrets={
-            "ssh-mcp-keys": "keys.sops.yaml",
-            "ssh-mcp-keys-public-coder-devbox": "keys-public-coder-devbox.sops.yaml",
-            "ssh-mcp-keys-atlas": "keys-atlas.sops.yaml",
-        },
-        providers=frozenset({"ssh-mcp", "external-secrets-config", "forgejo-images", *_KEY_FILES}),
-    )
+    add_fleet_rules(chart)
     app.synth()
 
     kustomization = flux_kustomization(

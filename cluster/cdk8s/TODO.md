@@ -26,8 +26,6 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
   `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
   into a `settings.py` the constructs import returns them to `small`.
-- **Fleet rules on the litellm and ha-mcp charts.** `fleet_rules.add_fleet_rules`
-  runs on the agentplane chart only; the other two need `provided_secrets` rosters.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
@@ -44,6 +42,54 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   image, have one construct take a workload container and return the fenced pod spec,
   so the five hold together by construction instead of by being copied. Not worth
   extracting while `agentplane-runner` is the only caller.
+
+## After cdk8s-based manifest builds stabilize
+
+- **Consider restoring cross-chart Pod Secret/ConfigMap dependency validation.** Once the
+  new cdk8s-based cluster manifest builds are stable, revive it if a build or generation
+  component can see the needed graphs together: chart objects and controller-created
+  outputs, sibling Kustomize resources, and the Flux `dependsOn` graph. A per-chart
+  synth cannot establish relationships across those boundaries. The removed checks were:
+  - Require each Pod Secret/ConfigMap reference not produced in its chart to name a
+    declared external provider.
+  - Require that provider to appear in the consumer's Flux dependency or sibling-resource
+    inventory.
+  - Reject declared providers no Pod reads. These were source-graph consistency checks;
+    they did not query the cluster or prove a live resource existed.
+
+  Specific coverage removed:
+  - Agentplane staging: `agentplane-oidc` and `agentplane-mcp-oauth` from
+    `sso-providers-tf`, `litellm-key-agentplane-staging` from `litellm-keys-tf`,
+    `ssh-mcp-bearer` from `ssh-mcp`, `haku-console-github-mcp-client-credentials` from
+    `haku-console`, and `agentplane-staging-web-push-vapid` from its SOPS sibling.
+    Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
+  - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
+    `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
+    `clickhouse-aiquota-credentials` from `reflector`; ConfigMaps generated from
+    `config.toml` and `schema.sql`.
+  - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
+    `schema.sql` ConfigMap.
+  - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
+    `haku-console-public-coder-agent`, `haku-console-agent-api`,
+    `tana-agentydragon-gmail-com-account-pat`, `ha-mcp-bearer`, `ssh-mcp-bearer`,
+    `aiquota-api-bearer-haku-console`, `haku-routine-launch-token`,
+    `haku-console-web-push-vapid`, `haku-console-google-client-credentials`,
+    `haku-console-google-calendar-client-credentials`, and
+    `haku-console-github-mcp-client-credentials`; ConfigMaps from `static-metadata.yaml`,
+    `image-metadata.yaml`, and `indexer-role.sql`.
+  - ha-mcp: `home-assistant-break-glass`, the SOPS `ha-mcp-bearer`, and the
+    Job-created `ha-mcp-home-assistant-token`.
+  - ssh-mcp: `ssh-mcp-keys`, `ssh-mcp-keys-public-coder-devbox`, and `ssh-mcp-keys-atlas`.
+  - LiteLLM: `litellm-master-key`, `litellm-salt-key`, `litellm-anthropic-key`,
+    `litellm-groq-key`, `litellm-gemini-key`, `litellm-mistral-key`,
+    `litellm-cliproxy-key`, `litellm-db-app`, `langfuse-secrets`, and
+    `tana-firebase-refresh-token`.
+  - `ntfy`, `etcd-monitoring`, and Forgejo image automation had empty provided-resource
+    rosters, so any new out-of-chart Pod reference failed validation.
+  - Unit cases covered valid `oidc` → `sso-tf` and `image-tag` → `image-tag.yaml`
+    declarations, unprovided `nobody-makes-this` Secret and `nor-this` ConfigMap,
+    `token` mapped to absent provider `token-maker`, and unused `stale` Secret and
+    `stale-map` ConfigMap entries.
 
 ## Ready to convert — small, focused, and the pattern to copy already exists in this repo
 

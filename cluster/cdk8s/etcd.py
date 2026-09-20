@@ -116,7 +116,7 @@ def etcd_monitoring(
     app = App(outdir=str(out_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     TalosEtcdMetrics(chart, "etcd", mesh)
-    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    add_fleet_rules(chart)
     app.synth()
 
     kustomization = flux_kustomization(

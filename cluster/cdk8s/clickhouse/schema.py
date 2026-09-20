@@ -90,15 +90,7 @@ def clickhouse_schema(flux_chart: Chart, root: Path, clickhouse: Kustomization) 
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     rendered_chart = chart(app)
-    add_fleet_rules(
-        rendered_chart,
-        provided_secrets={"clickhouse-admin-credentials": "clickhouse"},
-        # schema.sql (hand-written, listed below) always provides its own ConfigMap: the
-        # generated kustomization.yaml's config_map_generator entry renders it from
-        # exactly that file.
-        provided_config_maps={SCHEMA_CONFIG_MAP.name: "schema.sql"},
-        providers=frozenset({"clickhouse", "schema.sql"}),
-    )
+    add_fleet_rules(rendered_chart)
     app.synth()
 
     kustomization = flux_kustomization(

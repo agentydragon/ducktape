@@ -380,11 +380,7 @@ class Ntfy(Construct):
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Ntfy(chart, NAME)
-    fleet_rules.add_fleet_rules(
-        chart,
-        providers=frozenset({"cnpg", "external-secrets-config", "gateway", "monitoring-crds"}),
-        provided_secrets={},
-    )
+    fleet_rules.add_fleet_rules(chart)
     return chart
 
 
