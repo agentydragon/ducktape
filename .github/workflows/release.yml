@@ -25,7 +25,7 @@ name: Release
 on:
   workflow_call:
     inputs:
-      rbe_image:
+      rbe_container_image:
         description: "Override RBE container image (optional)"
         required: false
         type: string
@@ -118,7 +118,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: test ${{ matrix.tests }}
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
 
       - uses: ./.github/actions/release-artifact
         with:
@@ -128,4 +128,4 @@ jobs:
           bazel_flags: ${{ matrix.bazel_flags }}
           release_metadata: ${{ matrix.release_metadata }}
           metadata_platform: ${{ matrix.metadata_platform }}
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}

@@ -1,7 +1,7 @@
-# BuildBuddy RBE worker image: the execution platform for every remote action.
+# BuildBuddy RBE container image used for remote action execution.
 #
-# Its digest is an exec property of //:rbe_linux_x64, so it is part of every
-# action's cache key AND of the key for BuildBuddy's Firecracker snapshot pool.
+# The container-image exec property on //:rbe_linux_x64 carries the full image
+# reference, including its digest; changing the pin changes action and snapshot keys.
 # Moving it orphans the remote action cache and dumps every warm snapshot: a
 # measured repin costs the next hour of PR CI ~12x the executed actions for the
 # same affected-target set. So this image carries only what Bazel cannot supply
@@ -10,7 +10,7 @@
 #
 # Anything Bazel already provides through a toolchain or runfiles does NOT
 # belong here, and neither does developer or agent tooling. Those live in
-# devinfra/bbr_runner/Dockerfile, whose digest is in no action's cache key.
+# devinfra/buildbuddy_remote_runner/Dockerfile, whose digest is in no action's cache key.
 #
 # Based on BuildBuddy's rbe-ubuntu24-04 image which provides: build-essential,
 # python3, git, curl, file, zip, Docker CE, iptables-legacy (required for
@@ -25,9 +25,9 @@
 # renders every generic family, monospace included, as the same undifferentiated
 # fallback glyph, which is misleading in a screenshot).
 #
-# The Nix equivalents of these system libraries are in
-# nix/packages/system-libs.nix (shared by devShell and nix RBE image).
-# Keep the two lists in sync when adding/removing libraries.
+# The Nix devShell's corresponding system libraries are in
+# nix/packages/system-libs.nix. The experimental Nix-based RBE container image
+# has a separate package list at devinfra/buildbuddy_nix_image_packages.nix.
 FROM gcr.io/flame-public/rbe-ubuntu24-04:latest
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
@@ -101,8 +101,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # Docker 28's raw table rules for published ports (-p) fail. The wrapper sets
 # DOCKER_INSECURE_NO_IPTABLES_RAW=1 to skip raw table ops. goinit overwrites
 # daemon.json, so a wrapper is the only injection point.
-# See: devinfra/rbe_image/docs/firecracker_docker_init_timeout.md
-COPY devinfra/rbe_image/dockerd_wrapper.sh /usr/bin/dockerd_wrapper.sh
+# See: devinfra/rbe_container_image/docs/firecracker_docker_init_timeout.md
+COPY devinfra/rbe_container_image/dockerd_wrapper.sh /usr/bin/dockerd_wrapper.sh
 RUN mv /usr/bin/dockerd /usr/bin/dockerd.real \
     && mv /usr/bin/dockerd_wrapper.sh /usr/bin/dockerd \
     && chmod +x /usr/bin/dockerd

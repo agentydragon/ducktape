@@ -1,21 +1,21 @@
-# `bb remote` runner image: where devinfra/ci/bazel_ci.py runs.
+# BuildBuddy Remote Runner image: where devinfra/ci/bazel_ci.py runs.
 #
 # The runner is the Bazel *client* -- it runs bazel-diff over the affected set
 # and drives the invocation. It needs the repo's developer tooling; a Bazel
 # action does not, and gets its tools from runfiles instead.
 #
-# Deviation from devinfra/rbe_image/Dockerfile, which this extends: that image's
-# digest is in every action's cache key, so it must almost never move. This
-# one's digest appears only in devinfra/bbr.json, which no action hashes, so it
-# is free to churn with every artifact-pin bump.
+# This extends the RBE container image in devinfra/rbe_container_image/Dockerfile: its
+# digest is in every action's cache key, so it must almost never move. The
+# runner image is selected by devinfra/bbr.json and is outside every action's
+# cache key, so it can churn with artifact-pin bumps.
 #
 # BASE_REF is the whole base reference, passed by
-# .github/workflows/container-images.yml as the rbe-worker image at
-# devinfra/image_pins.json's rbe_worker digest. Building against the pin rather
+# .github/workflows/container-images.yml from
+# devinfra/image_pins.json's rbe_container digest. Building against the pin rather
 # than `:latest` keeps the runner on the same OS the actions execute on, and
-# makes a worker repin cascade into a runner rebuild instead of silently
+# makes an RBE container repin cascade into a remote runner rebuild instead of silently
 # diverging. It is the whole reference and not just the digest so the image can
-# also be built against a locally built worker, which is how it gets exercised
+# also be built against a locally built RBE container image, which is how it gets exercised
 # without pulling the private GHCR package.
 ARG BASE_REF
 FROM ${BASE_REF}
@@ -32,7 +32,7 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 # a local build.
 
 # Copy only the repo files needed to evaluate and build `.#rbetools`. Keep
-# this list in sync with the bbr-runner path filters in
+# this list in sync with the buildbuddy-remote-runner path filters in
 # .github/workflows/container-images.yml. Pull requests build this image
 # without publishing it, so missing evaluation inputs fail before merge.
 COPY flake.nix flake.lock /tmp/flake/

@@ -1,9 +1,9 @@
 {
-  "rbe_worker": {
+  "rbe_container": {
     "image": "ghcr.io/agentydragon/rbe-worker",
     "digest": "sha256:876b92329660f88a9282dc5ddc419a7b2ea3d629fc31212712a96a00eb7020b6"
   },
-  "bbr_runner": {
+  "buildbuddy_remote_runner": {
     "image": "ghcr.io/agentydragon/bbr-runner",
     "digest": "sha256:0d50252ed8af061568c5320fdc8d2287fe7445522dead83c484c91af396bb1e4"
   },

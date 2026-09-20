@@ -94,16 +94,17 @@ by a PR that makes the controller own the state.
 
 All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE); no `buildbuddy.yaml`.
 `.github/workflows/ci.yml` orchestrates bazel-ci → release/push-images/props-images;
-pre-commit, ansible-lint, nix-attic-push, container-images, rbe-worker-image, and
+pre-commit, ansible-lint, nix-attic-push, container-images, rbe-container-image, and
 openclaw-image trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
 
-**Never widen `rbe-worker-image.yml`'s trigger, and put nothing in
-<devinfra/rbe_image/Dockerfile> that Bazel could supply from the repo it is building.** That
-image's digest is an exec property of `//:rbe_linux_x64`, so it is inside every action's cache key
-and inside the key for BuildBuddy's warm Firecracker snapshot pool; moving it orphans the action
-cache and dumps every snapshot. Developer and agent tooling belongs in
-<devinfra/bbr_runner/Dockerfile>, whose digest no action hashes.
+**Never widen `rbe-container-image.yml`'s trigger, and put nothing in
+<devinfra/rbe_container_image/Dockerfile> that Bazel could supply from the repo it is building.** The
+`container-image` exec property on `//:rbe_linux_x64` carries the full image reference, including its digest.
+Changing the pin changes every action's cache key and BuildBuddy's warm Firecracker
+snapshot key; a repin orphans the action cache and dumps every snapshot. Developer and
+agent tooling belongs in
+<devinfra/buildbuddy_remote_runner/Dockerfile>, whose digest no action hashes.
 
 ## Issue Tracking
 
@@ -311,7 +312,7 @@ if __name__ == "__main__":
 `@pytest.mark.asyncio` decorators.
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles
-or the RBE worker image.
+or the RBE container image.
 
 **Docker tests**: use the `py_test` macro from `//devinfra/python:defs.bzl` (not raw
 `@rules_python`) with `requires_docker = True` — it handles `env_inherit`, tags, and

@@ -13,11 +13,11 @@ let
   # gettext + locale data. Blocked on slow rebuild (gitMinimal override
   # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
   # See devinfra/claude/docs/devtools-closure-size.md for details.
-  # Packages NOT needed on RBE workers (large, only for local/infra use).
-  # Excluded from rbeToolPackages to keep the RBE image small.
+  # Packages not needed by the BuildBuddy Remote Runner toolset (large, local/infra-only).
+  # Excluded from rbetools to keep the BuildBuddy Remote Runner image small.
   localOnlyPackages = [
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
-    # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not needed on RBE.
+    # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
     pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
     pkgs.ansible # 650MB
@@ -38,7 +38,7 @@ let
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
     pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
   ];
-  # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
+  # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
   # Common dev tools used alongside Claude hook dispatch and the Python statusline.
   devToolsCommon = [
