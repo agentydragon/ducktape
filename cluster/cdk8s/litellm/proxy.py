@@ -63,7 +63,12 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
@@ -477,20 +482,20 @@ def litellm(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
             ),
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(litellm_secrets),
-                flux_kustomization_depends_on(litellm_db),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(langfuse_secrets),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(tana_mcp),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                litellm_secrets,
+                litellm_db,
+                gateway,
+                cert_manager_environment,
+                langfuse_secrets,
+                reflector,
+                tana_mcp,
                 # The ServiceMonitor/PodMonitor CRD (folded in from the retired
                 # litellm-servicemonitor Kustomization, #7103).
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
     write_yaml(

@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def github_branch_protection(
@@ -41,12 +41,12 @@ def github_branch_protection(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # tofu-controller runs the Terraform CR.
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                tofu_controller,
+                tofu_state_db,
                 # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
-                flux_kustomization_depends_on(github_secrets_sync_secrets),
-            ],
+                github_secrets_sync_secrets,
+            ),
         ),
     )

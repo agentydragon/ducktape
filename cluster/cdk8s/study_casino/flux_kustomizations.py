@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def study_casino(
@@ -47,14 +47,9 @@ def study_casino(
                     api_version="apps/v1", kind="Deployment", name="study-casino", namespace="study-casino"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(study_casino_namespace),
-                flux_kustomization_depends_on(study_casino_db),
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config, forgejo_images, gateway, study_casino_namespace, study_casino_db, claude_rbac
+            ),
         ),
     )
 
@@ -80,12 +75,9 @@ def study_casino_db(
             path="./cluster/k8s/study-casino/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(study_casino_namespace),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(reflector),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, study_casino_namespace, local_path_provisioner, reflector
+            ),
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),

@@ -12,7 +12,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def flux_webhook(
@@ -38,11 +38,6 @@ def flux_webhook(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(flux_webhook_token),
-                flux_kustomization_depends_on(ntfy),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(gateway),
-            ],
+            depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
         ),
     )

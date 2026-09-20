@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def gateway(
@@ -33,11 +33,7 @@ def gateway(
             path="./cluster/k8s/gateway",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager),
-                flux_kustomization_depends_on(kyverno),
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
             post_build=KustomizationSpecPostBuild(
                 substitute_from=[
                     KustomizationSpecPostBuildSubstituteFrom(

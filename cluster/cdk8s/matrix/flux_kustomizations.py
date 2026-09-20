@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def matrix(
@@ -51,18 +51,18 @@ def matrix(
                     namespace="matrix",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(matrix_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                matrix_namespace,
                 # externalPostgresql reads the CNPG-generated matrix-db-app secret
-                flux_kustomization_depends_on(matrix_db),
+                matrix_db,
                 # writes matrix-oidc-config into the authentik namespace
-                flux_kustomization_depends_on(sso_providers_tf),
+                sso_providers_tf,
                 # mirrors matrix-oidc-config into the matrix namespace
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(gateway),
+                reflector,
+                gateway,
                 # local-path-proxmox media store PVC
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+                local_path_provisioner,
+            ),
         ),
     )
 
@@ -84,11 +84,7 @@ def matrix_db(
             path="./cluster/k8s/matrix/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(matrix_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(matrix_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -138,11 +134,11 @@ def matrix_user_provisioner(
                     namespace="matrix",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
                 # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
-                flux_kustomization_depends_on(matrix),
-            ],
+                matrix,
+            ),
         ),
     )

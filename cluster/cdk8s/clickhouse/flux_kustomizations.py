@@ -14,7 +14,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomization:
@@ -120,10 +125,10 @@ def clickhouse_operator(
                     namespace="clickhouse",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(clickhouse_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                clickhouse_namespace,
                 # the chart's serviceMonitor.enabled
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )

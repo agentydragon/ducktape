@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def litellm_db(
@@ -33,11 +33,7 @@ def litellm_db(
             path="./cluster/k8s/litellm/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(litellm_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(litellm_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -80,12 +76,12 @@ def litellm_keys_tf(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # The app must serve (with its DB) before keys can mint.
-                flux_kustomization_depends_on(litellm),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-            ],
+                litellm,
+                tofu_controller,
+                tofu_state_db,
+            ),
         ),
     )
 
@@ -130,10 +126,6 @@ def litellm_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(litellm_namespace),
-                flux_kustomization_depends_on(external_secrets_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_creds, litellm_namespace, external_secrets_config),
         ),
     )

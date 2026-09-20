@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomization) -> Kustomization:
@@ -34,6 +34,6 @@ def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomizati
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="headlamp", namespace="headlamp"
                 ),
             ],
-            depends_on=[flux_kustomization_depends_on(gateway), flux_kustomization_depends_on(sso_providers_tf)],
+            depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf),
         ),
     )

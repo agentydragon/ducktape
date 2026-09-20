@@ -36,7 +36,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.generation import _health_checks
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 
 _NAMESPACE = "agentplane-testing"
@@ -190,20 +190,20 @@ def agentplane_testing(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
             ),
-            depends_on=[
-                flux_kustomization_depends_on(agentplane_crds),
-                flux_kustomization_depends_on(agent_sandbox_controller),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(cert_manager_trust),
-                flux_kustomization_depends_on(claude_rbac),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(litellm_keys_tf),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(reflector),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                agentplane_crds,
+                agent_sandbox_controller,
+                cert_manager_environment,
+                cert_manager_trust,
+                claude_rbac,
+                cnpg,
+                external_creds,
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                litellm_keys_tf,
+                local_path_provisioner,
+                reflector,
+            ),
         ),
     )

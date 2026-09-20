@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def github_secrets_sync(
@@ -46,16 +46,16 @@ def github_secrets_sync(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-                flux_kustomization_depends_on(github_secrets_sync_secrets),
+            depends_on=flux_kustomization_depends_on_many(
+                tofu_controller,
+                tofu_state_db,
+                github_secrets_sync_secrets,
                 # The Terraform module reads the canonical ducktape-ci registry credential
                 # from forgejo-images before publishing it to gaffer-private's GitHub Actions
                 # secrets.
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(seaweedfs_pr_visuals_bucket),
-            ],
+                forgejo_images,
+                seaweedfs_pr_visuals_bucket,
+            ),
         ),
     )
 
@@ -78,10 +78,7 @@ def github_secrets_sync_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="2m",
-            depends_on=[
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="external-secrets.io/v1",

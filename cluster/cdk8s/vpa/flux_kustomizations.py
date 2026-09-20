@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def vpa(chart: Chart, kyverno: Kustomization, metrics_server: Kustomization) -> Kustomization:
@@ -33,6 +33,6 @@ def vpa(chart: Chart, kyverno: Kustomization, metrics_server: Kustomization) -> 
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="vpa", namespace="kube-system"
                 )
             ],
-            depends_on=[flux_kustomization_depends_on(kyverno), flux_kustomization_depends_on(metrics_server)],
+            depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server),
         ),
     )

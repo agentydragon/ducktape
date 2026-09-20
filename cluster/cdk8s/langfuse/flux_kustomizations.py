@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def langfuse(
@@ -46,16 +46,16 @@ def langfuse(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="langfuse", namespace="langfuse"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(langfuse_namespace),
-                flux_kustomization_depends_on(langfuse_secrets),
-                flux_kustomization_depends_on(langfuse_cache),
-                flux_kustomization_depends_on(langfuse_db),
-                flux_kustomization_depends_on(clickhouse),
-                flux_kustomization_depends_on(langfuse_seaweed),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                langfuse_namespace,
+                langfuse_secrets,
+                langfuse_cache,
+                langfuse_db,
+                clickhouse,
+                langfuse_seaweed,
+                gateway,
+                claude_rbac,
+            ),
         ),
     )
 
@@ -77,11 +77,7 @@ def langfuse_cache(
             path="./cluster/k8s/langfuse/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(langfuse_namespace),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, valkey, local_path_provisioner),
         ),
     )
 
@@ -104,11 +100,7 @@ def langfuse_db(
             path="./cluster/k8s/langfuse/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(langfuse_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -156,10 +148,7 @@ def langfuse_seaweed(
                     api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="langfuse", namespace="langfuse"
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(langfuse_namespace),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, seaweedfs_cluster),
         ),
     )
 
@@ -185,9 +174,6 @@ def langfuse_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(langfuse_namespace),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+            depends_on=flux_kustomization_depends_on_many(langfuse_namespace, seaweedfs_cluster),
         ),
     )

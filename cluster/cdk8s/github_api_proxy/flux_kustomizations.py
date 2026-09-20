@@ -15,7 +15,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def github_api_proxy(
@@ -46,16 +46,16 @@ def github_api_proxy(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(github_api_proxy_identity),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(seaweedfs_csi),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                github_api_proxy_identity,
+                forgejo_images,
+                seaweedfs_csi,
                 # PodMonitor + PrometheusRule
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(reloader),
-            ],
+                monitoring_crds,
+                gateway,
+                reloader,
+            ),
         ),
     )
 
@@ -77,10 +77,7 @@ def github_api_proxy_identity(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cert_manager_environment, cert_manager_issuer_config),
             post_build=KustomizationSpecPostBuild(
                 substitute_from=[
                     KustomizationSpecPostBuildSubstituteFrom(

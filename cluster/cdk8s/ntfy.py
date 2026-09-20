@@ -90,7 +90,7 @@ from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     flux_kustomization,
-    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
     health_checks,
     kustomize_kustomization,
 )
@@ -435,12 +435,7 @@ def ntfy(
                     "ServiceMonitor",
                 ),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
         ),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))

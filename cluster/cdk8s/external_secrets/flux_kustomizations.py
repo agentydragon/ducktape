@@ -10,7 +10,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def external_secrets_config(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
@@ -81,12 +86,12 @@ def external_secrets_operator(
             ),
             timeout="5m0s",
             wait=True,
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # CRDs must be in kustomize-controller cache first
-                flux_kustomization_depends_on(external_secrets_crds),
+                external_secrets_crds,
                 # ESO uses Issuer resources
-                flux_kustomization_depends_on(cert_manager),
-            ],
+                cert_manager,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",

@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def grocy_sf(
@@ -36,14 +36,9 @@ def grocy_sf(
             path="./cluster/k8s/grocy/sf/app",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(authentik),
-                flux_kustomization_depends_on(volsync),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            ),
         ),
     )
 
@@ -78,17 +73,17 @@ def grocy_mcp_sf(
                     api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-sf"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(grocy_sf),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                grocy_sf,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -112,7 +107,7 @@ def grocy_sf_user_perms(chart: Chart, forgejo_images: Kustomization, grocy_sf: K
             # in policy.yaml has actually been applied — so a fresh cluster converges to the
             # committed user→permission policy.
             wait=True,
-            depends_on=[flux_kustomization_depends_on(forgejo_images), flux_kustomization_depends_on(grocy_sf)],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_sf),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-sf"
@@ -145,14 +140,9 @@ def grocy_vallejo(
             path="./cluster/k8s/grocy/vallejo/app",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(authentik),
-                flux_kustomization_depends_on(volsync),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            ),
         ),
     )
 
@@ -187,17 +177,17 @@ def grocy_mcp_vallejo(
                     api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-vallejo"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(grocy_vallejo),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                grocy_vallejo,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -223,7 +213,7 @@ def grocy_vallejo_user_perms(
             # policy in policy.yaml has actually been applied — so a fresh cluster converges
             # to the committed user→permission policy.
             wait=True,
-            depends_on=[flux_kustomization_depends_on(forgejo_images), flux_kustomization_depends_on(grocy_vallejo)],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_vallejo),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-vallejo"

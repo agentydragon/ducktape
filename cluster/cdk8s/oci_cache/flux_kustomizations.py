@@ -14,7 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def oci_cache(
@@ -45,13 +45,13 @@ def oci_cache(
                     api_version="apps/v1", kind="Deployment", name="zot", namespace="oci-cache"
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Namespace, app, and ServiceMonitor are managed together here.
-                flux_kustomization_depends_on(valkey),
+                valkey,
                 # S3 backend: tenant-local Bucket and operator-generated credentials.
-                flux_kustomization_depends_on(seaweedfs_registry_cache_bucket),
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                seaweedfs_registry_cache_bucket,
+                monitoring_crds,
+            ),
         ),
         description="Zot OCI pull-through cache and its namespace-local monitoring.",
     )

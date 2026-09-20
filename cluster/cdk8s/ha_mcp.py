@@ -73,7 +73,12 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -488,13 +493,13 @@ def ha_mcp(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(home_assistant),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                home_assistant,
                 # the ServiceMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
     write_yaml(

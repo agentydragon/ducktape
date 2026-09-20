@@ -78,6 +78,11 @@ def flux_kustomization_depends_on(dependency: Kustomization) -> KustomizationSpe
     return KustomizationSpecDependsOn(name=dependency.name, namespace=dependency.metadata.namespace)
 
 
+def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[KustomizationSpecDependsOn]:
+    """Represent several previously constructed Flux Kustomizations as dependsOn entries."""
+    return [flux_kustomization_depends_on(dependency) for dependency in dependencies]
+
+
 class ConfigMapArgs(BaseModel):
     """One `configMapGenerator` entry: a ConfigMap kustomize renders from hand-written files
     beside the `kustomization.yaml`, with its content-hash name suffix and reference rewriting.

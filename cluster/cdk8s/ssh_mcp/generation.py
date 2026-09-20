@@ -15,7 +15,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.ssh_mcp import backend, config, sshpiper
 from cluster.scripts.nebula_mesh import Mesh
@@ -68,8 +73,7 @@ def ssh_mcp(
             ),
             depends_on=[
                 KustomizationSpecDependsOn(name="ssh-mcp-namespace"),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+                *flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
             ],
         ),
     )

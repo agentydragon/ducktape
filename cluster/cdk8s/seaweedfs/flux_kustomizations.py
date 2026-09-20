@@ -13,7 +13,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def seaweedfs_cluster(
@@ -35,13 +40,13 @@ def seaweedfs_cluster(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_operator),
-                flux_kustomization_depends_on(seaweedfs_secrets),
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_operator,
+                seaweedfs_secrets,
                 # Filer is configured with postgres2 backend.
-                flux_kustomization_depends_on(seaweedfs_filer_db),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+                seaweedfs_filer_db,
+                local_path_provisioner,
+            ),
             wait=False,
             timeout="5m",
         ),
@@ -69,7 +74,7 @@ def seaweedfs_filer_db(chart: Chart, seaweedfs_namespace: Kustomization, cnpg: K
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[flux_kustomization_depends_on(seaweedfs_namespace), flux_kustomization_depends_on(cnpg)],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
         ),
     )
 
@@ -121,10 +126,7 @@ def seaweedfs_external_credentials(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_secrets),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
             wait=True,
             timeout="5m",
         ),
@@ -228,11 +230,11 @@ def seaweedfs_monitoring(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_cluster),
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_cluster,
                 # PrometheusRule
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -358,14 +360,14 @@ def seaweedfs_public_s3(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_external_credentials),
-                flux_kustomization_depends_on(seaweedfs_drivefs_artifacts_bucket),
-                flux_kustomization_depends_on(vm_images_publisher),
-                flux_kustomization_depends_on(seaweedfs_secrets),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-                flux_kustomization_depends_on(gateway),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_external_credentials,
+                seaweedfs_drivefs_artifacts_bucket,
+                vm_images_publisher,
+                seaweedfs_secrets,
+                seaweedfs_cluster,
+                gateway,
+            ),
             wait=True,
             timeout="5m",
             decryption=KustomizationSpecDecryption(
@@ -479,10 +481,10 @@ def seaweedfs_secrets(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_namespace,
                 # ExternalSecret + SecretStore CRDs + ESO controller
-                flux_kustomization_depends_on(external_secrets_operator),
-            ],
+                external_secrets_operator,
+            ),
         ),
     )

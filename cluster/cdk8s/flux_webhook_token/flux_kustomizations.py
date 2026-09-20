@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def flux_webhook_token(
@@ -41,10 +41,6 @@ def flux_webhook_token(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-                flux_kustomization_depends_on(github_secrets_sync_secrets),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, github_secrets_sync_secrets),
         ),
     )

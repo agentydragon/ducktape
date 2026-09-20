@@ -9,7 +9,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def clickhouse_grafana(chart: Chart, clickhouse: Kustomization, grafana_instance: Kustomization) -> Kustomization:
@@ -27,6 +27,6 @@ def clickhouse_grafana(chart: Chart, clickhouse: Kustomization, grafana_instance
             ),
             timeout="5m",
             wait=True,
-            depends_on=[flux_kustomization_depends_on(clickhouse), flux_kustomization_depends_on(grafana_instance)],
+            depends_on=flux_kustomization_depends_on_many(clickhouse, grafana_instance),
         ),
     )

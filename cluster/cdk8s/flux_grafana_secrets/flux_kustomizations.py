@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def flux_grafana_secrets(
@@ -37,9 +37,6 @@ def flux_grafana_secrets(
                 )
             ],
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(grafana_instance),
-                flux_kustomization_depends_on(grafana_operator),
-            ],
+            depends_on=flux_kustomization_depends_on_many(grafana_instance, grafana_operator),
         ),
     )

@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def tofu_controller(chart: Chart, cert_manager: Kustomization, kyverno: Kustomization) -> Kustomization:
@@ -28,7 +28,7 @@ def tofu_controller(chart: Chart, cert_manager: Kustomization, kyverno: Kustomiz
             ),
             timeout="10m0s",
             wait=True,
-            depends_on=[flux_kustomization_depends_on(cert_manager), flux_kustomization_depends_on(kyverno)],
+            depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",

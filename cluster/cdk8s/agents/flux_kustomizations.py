@@ -14,7 +14,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def claude_rbac(chart: Chart, kyverno_policies: Kustomization) -> Kustomization:
@@ -97,16 +102,16 @@ def agent_workspaces_app(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
                 # CRDs + controller
-                flux_kustomization_depends_on(agent_sandbox_controller),
+                agent_sandbox_controller,
                 # mints + reflects the Codex workspace key
-                flux_kustomization_depends_on(litellm_keys_tf),
+                litellm_keys_tf,
                 # cleanup-controller ClusterRole the janitor needs
-                flux_kustomization_depends_on(kyverno_policies),
-            ],
+                kyverno_policies,
+            ),
         ),
         description=(
             "Disposable agent workspace template + warm pool in agent-workspaces. "
@@ -146,12 +151,7 @@ def airlock(
                     api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-                flux_kustomization_depends_on(external_secrets_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, gateway, authentik, external_secrets_config),
         ),
     )
 
@@ -170,14 +170,14 @@ def alloy_otlp_bearer(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # ClusterSecretStore + CRDs
-                flux_kustomization_depends_on(external_secrets_config),
+                external_secrets_config,
                 # claude-sandbox namespace
-                flux_kustomization_depends_on(claude_rbac),
+                claude_rbac,
                 # haku-sandbox namespace
-                flux_kustomization_depends_on(haku_rbac),
-            ],
+                haku_rbac,
+            ),
             timeout="2m",
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
@@ -206,12 +206,9 @@ def authentik_jwt_rotation(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, external_creds, external_secrets_config, agent_machine_access_tf
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="external-secrets.io/v1",
@@ -244,11 +241,7 @@ def claude_sandbox_secrets(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(claude_rbac),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(ollama),
-            ],
+            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_config, ollama),
         ),
     )
 
@@ -270,12 +263,12 @@ def coinbase_read(chart: Chart, reflector: Kustomization, haku_namespace: Kustom
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Reflector mirrors the Secret into haku-sandbox; haku-namespace creates
                 # haku-sandbox (the reflection target).
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(haku_namespace),
-            ],
+                reflector,
+                haku_namespace,
+            ),
         ),
     )
 
@@ -299,14 +292,14 @@ def forgejo_token_rotation(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
                 # owns the agents-infra namespace
-                flux_kustomization_depends_on(authentik_jwt_rotation),
-                flux_kustomization_depends_on(forgejo_claude),
-                flux_kustomization_depends_on(haku_state),
-                flux_kustomization_depends_on(forgejo_agentydragon_repos),
-            ],
+                authentik_jwt_rotation,
+                forgejo_claude,
+                haku_state,
+                forgejo_agentydragon_repos,
+            ),
             timeout="2m",
         ),
     )
@@ -353,18 +346,18 @@ def haku_egress_proxy(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(haku_egress_proxy_namespace),
-                flux_kustomization_depends_on(haku_openclaw_spike_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                haku_egress_proxy_namespace,
+                haku_openclaw_spike_namespace,
                 # proxy-held Forgejo and Haku Console credentials
-                flux_kustomization_depends_on(haku_state),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(cert_manager_trust),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+                haku_state,
+                cert_manager_environment,
+                cert_manager_trust,
+                reflector,
+                external_secrets_config,
+                external_creds,
+                forgejo_images,
+            ),
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
@@ -400,16 +393,16 @@ def haku_openclaw_spike_app(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(haku_openclaw_spike_namespace),
-                flux_kustomization_depends_on(haku_egress_proxy),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                haku_openclaw_spike_namespace,
+                haku_egress_proxy,
                 # forgejo-images-creds-eso.yaml extracts the source Secret from the
                 # forgejo-images namespace, so it must exist first.
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(flux_image_automation_forgejo),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+                forgejo_images,
+                flux_image_automation_forgejo,
+                seaweedfs_cluster,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1",
@@ -462,16 +455,16 @@ def haku_openclaw_spike_backup(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
                 # The Bucket and S3Credentials remain app-owned, but their readiness is
                 # retried by the ExternalSecret rather than coupling this Kustomization to
                 # the app Deployment health check.
-                flux_kustomization_depends_on(haku_openclaw_spike_namespace),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(volsync),
-            ],
+                haku_openclaw_spike_namespace,
+                seaweedfs_cluster,
+                external_secrets_config,
+                volsync,
+            ),
         ),
         description=(
             "Restic/VolSync backup of the Haku OpenClaw spike state to its "
@@ -525,11 +518,11 @@ def kubectl_passthrough_mcp(
                     namespace="kubectl-passthrough-mcp",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(gateway),
+            depends_on=flux_kustomization_depends_on_many(
+                gateway,
                 # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
-                flux_kustomization_depends_on(agent_machine_access_tf),
-            ],
+                agent_machine_access_tf,
+            ),
         ),
     )
 
@@ -548,10 +541,7 @@ def loki_read_proxy(
             path="./cluster/k8s/agents/loki-read-proxy",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -593,11 +583,7 @@ def agent_machine_access_tf(
                 )
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-                flux_kustomization_depends_on(authentik),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, authentik),
         ),
     )
 
@@ -638,12 +624,9 @@ def agents_mitmproxy(
                 kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
             ),
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(agents_mitmproxy_namespace),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(cert_manager_trust),
-                flux_kustomization_depends_on(reflector),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                agents_mitmproxy_namespace, cert_manager_environment, cert_manager_trust, reflector
+            ),
         ),
     )
 
@@ -689,18 +672,18 @@ def plaid_mcp(
                     api_version="apps/v1", kind="Deployment", name="plaid-db-mcp", namespace="plaid-mcp"
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                gateway,
+                cnpg,
+                local_path_provisioner,
+                external_secrets_config,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # ServiceMonitor
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -734,14 +717,14 @@ def public_coder_agent_app(
             ),
             timeout="5m",
             retry_interval="1m",
-            depends_on=[
-                flux_kustomization_depends_on(public_coder_agent_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                public_coder_agent_namespace,
                 # The proxy layer owns the trust Bundle this pod mounts, so it must land first.
-                flux_kustomization_depends_on(public_coder_agent_proxy),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(litellm_keys_tf),
-            ],
+                public_coder_agent_proxy,
+                external_secrets_config,
+                external_creds,
+                litellm_keys_tf,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
@@ -799,11 +782,9 @@ def public_coder_agent_backup(
                     namespace="public-coder-agent",
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_public_coder_agent_backups_bucket),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(volsync),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
+            ),
         ),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
@@ -836,13 +817,13 @@ def public_coder_agent_devbox(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(public_coder_agent_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                public_coder_agent_namespace,
                 # Owns the public-coder-agent-proxy-ca-cert ConfigMap this VM mounts as a guest disk.
-                flux_kustomization_depends_on(public_coder_agent_proxy),
-                flux_kustomization_depends_on(kubevirt),
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+                public_coder_agent_proxy,
+                kubevirt,
+                forgejo_images,
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -905,15 +886,15 @@ def public_coder_agent_proxy(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(public_coder_agent_namespace),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(cert_manager_trust),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                public_coder_agent_namespace,
+                cert_manager_environment,
+                cert_manager_trust,
+                reflector,
+                forgejo_images,
                 # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
-                flux_kustomization_depends_on(agent_machine_access_tf),
+                agent_machine_access_tf,
                 # The standing access-profile RBAC and execution ceiling (formerly a separate
                 # public-coder-agent-k8s-reader Kustomization) now live in public-coder-agent-app,
                 # which itself depends on this proxy -- depending on it here would cycle. RBAC
@@ -924,13 +905,13 @@ def public_coder_agent_proxy(
                 # at Console: the proxy can become Ready before its clients, while a cycle would prevent a
                 # fresh cluster from ever reaching the claim-creation boundary.
                 # The proxy reads the reflected Matrix bot password from its namespace.
-                flux_kustomization_depends_on(matrix),
+                matrix,
                 # aiquota creates the sole bearer, then reflects its constrained mirror to
                 # this namespace for the proxy-only substitution rule.
-                flux_kustomization_depends_on(aiquota),
+                aiquota,
                 # Mints the public-coder LiteLLM key reflected into this namespace for runner-proxy-only use.
-                flux_kustomization_depends_on(litellm_keys_tf),
-            ],
+                litellm_keys_tf,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1",
@@ -975,11 +956,11 @@ def public_coder_agent_sshpiper(
             # KubeVirt VirtualMachine health check that regularly spends its full 30m timeout, and gating
             # on it meant the bastion did not deploy at all while the VM was unhealthy. A piper that runs
             # and fails a connection is both a better failure mode and a diagnosable one.
-            depends_on=[
-                flux_kustomization_depends_on(public_coder_agent_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                public_coder_agent_namespace,
                 # Pipes are unschedulable until the CRD exists, and the plugin's watch fails without it.
-                flux_kustomization_depends_on(sshpiper_crds),
-            ],
+                sshpiper_crds,
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -1011,7 +992,7 @@ def agent_shared_rbac(chart: Chart, claude_rbac: Kustomization, kyverno_policies
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="2m",
-            depends_on=[flux_kustomization_depends_on(claude_rbac), flux_kustomization_depends_on(kyverno_policies)],
+            depends_on=flux_kustomization_depends_on_many(claude_rbac, kyverno_policies),
         ),
         description=(
             "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
@@ -1079,15 +1060,15 @@ def tana_mcp(
                     api_version="apps/v1", kind="Deployment", name="tana-mcp-facade", namespace="tana-mcp"
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # ServiceMonitor + PrometheusRule
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )

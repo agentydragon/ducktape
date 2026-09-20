@@ -12,7 +12,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def cli_proxy_api(
@@ -40,12 +40,8 @@ def cli_proxy_api(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(sso_providers_tf),
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config, gateway, cert_manager_environment, sso_providers_tf, forgejo_images
+            ),
         ),
     )

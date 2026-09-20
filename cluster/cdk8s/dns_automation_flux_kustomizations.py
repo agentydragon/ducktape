@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def dns_automation(chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization) -> Kustomization:
@@ -41,6 +41,6 @@ def dns_automation(chart: Chart, tofu_controller: Kustomization, tofu_state_db: 
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[flux_kustomization_depends_on(tofu_controller), flux_kustomization_depends_on(tofu_state_db)],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
         ),
     )

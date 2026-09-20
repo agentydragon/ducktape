@@ -74,7 +74,7 @@ from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
-    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
@@ -393,21 +393,21 @@ def aiquota(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
                 # Provides the shared namespace and the CLIProxyAPI management Secret.
-                flux_kustomization_depends_on(cli_proxy_api),
+                cli_proxy_api,
                 # Materializes the narrow mirrored copies of the API bearer for its
                 # consumers; the source Secret stays SOPS-managed here.
-                flux_kustomization_depends_on(external_secrets_operator),
+                external_secrets_operator,
                 # Creates the aiquota database the migrate init container populates.
-                flux_kustomization_depends_on(clickhouse_schema),
+                clickhouse_schema,
                 # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-                flux_kustomization_depends_on(agent_machine_access_tf),
+                agent_machine_access_tf,
                 # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-                flux_kustomization_depends_on(reflector),
-            ],
+                reflector,
+            ),
         ),
     )
     write_yaml(

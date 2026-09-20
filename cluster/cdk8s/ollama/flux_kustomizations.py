@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def ollama(
@@ -43,14 +43,14 @@ def ollama(
                     namespace="ollama",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(nvidia_runtimeclass),
+            depends_on=flux_kustomization_depends_on_many(
+                gateway,
+                cert_manager_environment,
+                nvidia_runtimeclass,
                 # langfuse ESO remains
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+                external_secrets_config,
+                reflector,
+                claude_rbac,
+            ),
         ),
     )

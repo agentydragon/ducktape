@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def nix_cache(
@@ -55,14 +55,8 @@ def nix_cache(
                     namespace="nix-cache",
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, external_creds, external_secrets_config, forgejo_images, gateway, cert_manager, seaweedfs_cluster
+            ),
         ),
     )

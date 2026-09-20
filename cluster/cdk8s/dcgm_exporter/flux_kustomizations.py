@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def dcgm_exporter(chart: Chart, nvidia_device_plugin: Kustomization, monitoring_crds: Kustomization) -> Kustomization:
@@ -27,13 +27,13 @@ def dcgm_exporter(chart: Chart, nvidia_device_plugin: Kustomization, monitoring_
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="2m",
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # RuntimeClass "nvidia" + the containerd nvidia runtime.
-                flux_kustomization_depends_on(nvidia_device_plugin),
+                nvidia_device_plugin,
                 # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
                 # PodMonitor
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(

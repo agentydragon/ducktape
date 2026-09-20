@@ -12,7 +12,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def atuin(
@@ -44,13 +44,9 @@ def atuin(
                     )
                 ]
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-                flux_kustomization_depends_on(atuin_namespace),
-                flux_kustomization_depends_on(atuin_db),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_environment),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cert_manager_issuer_config, atuin_namespace, atuin_db, gateway, cert_manager_environment
+            ),
         ),
     )
 
@@ -72,11 +68,7 @@ def atuin_db(
             path="./cluster/k8s/atuin/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(atuin_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(atuin_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -110,6 +102,6 @@ def atuin_user_provisioner(chart: Chart, atuin: Kustomization, user_agentydragon
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[flux_kustomization_depends_on(atuin), flux_kustomization_depends_on(user_agentydragon)],
+            depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
         ),
     )

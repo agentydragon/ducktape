@@ -11,7 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agentplane_index(
@@ -64,13 +64,9 @@ def agentplane_index(
                     ),
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(ollama),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, external_secrets_config, forgejo_images, local_path_provisioner, ollama
+            ),
         ),
         description=(
             "Complete Agentplane repository-index service: namespace, ESO "

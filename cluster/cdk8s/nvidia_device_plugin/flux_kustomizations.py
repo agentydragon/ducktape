@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def nvidia_device_plugin(
@@ -38,9 +38,6 @@ def nvidia_device_plugin(
                     namespace="nvidia-device-plugin",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(nvidia_runtimeclass),
-                flux_kustomization_depends_on(node_feature_discovery),
-            ],
+            depends_on=flux_kustomization_depends_on_many(nvidia_runtimeclass, node_feature_discovery),
         ),
     )

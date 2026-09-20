@@ -9,7 +9,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def flux_image_automation_forgejo(
@@ -20,10 +20,7 @@ def flux_image_automation_forgejo(
         chart,
         name,
         spec=KustomizationSpec(
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(flux_image_automation_ghcr),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
             interval="10m",
             path="./cluster/k8s/flux-image-automation-forgejo",
             prune=True,

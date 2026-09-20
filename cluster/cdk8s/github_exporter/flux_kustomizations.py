@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def github_exporter(
@@ -62,15 +62,15 @@ def github_exporter(
                     namespace="monitoring",
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(monitoring_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                monitoring_namespace,
                 # ServiceMonitor
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(grafana_instance),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(external_creds),
-            ],
+                monitoring_crds,
+                grafana_instance,
+                external_secrets_config,
+                external_creds,
+            ),
         ),
         description="GitHub API rate-limit metrics for the human and agent accounts.",
     )

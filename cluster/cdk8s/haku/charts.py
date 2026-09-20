@@ -27,7 +27,7 @@ from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
-    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
     health_checks,
     kustomize_kustomization,
 )
@@ -188,21 +188,21 @@ def haku_console(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(haku_workspaces),
-                flux_kustomization_depends_on(haku_console_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(haku_state),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(ssh_mcp),
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                haku_workspaces,
+                haku_console_namespace,
+                cnpg,
+                local_path_provisioner,
+                forgejo_images,
+                haku_state,
+                gateway,
+                agent_machine_access_tf,
+                reflector,
+                external_creds,
+                external_secrets_config,
+                ssh_mcp,
+                monitoring_crds,
+            ),
         ),
     )
     write_yaml(

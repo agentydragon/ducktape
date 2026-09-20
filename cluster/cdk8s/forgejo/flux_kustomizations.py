@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def forgejo_agentydragon_repos(
@@ -43,12 +43,12 @@ def forgejo_agentydragon_repos(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-            ],
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+            ),
         ),
     )
 
@@ -76,7 +76,7 @@ def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_stat
                     namespace="flux-system",
                 )
             ],
-            depends_on=[flux_kustomization_depends_on(tofu_controller), flux_kustomization_depends_on(tofu_state_db)],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
         ),
     )
 
@@ -124,26 +124,26 @@ def forgejo(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_namespace),
-                flux_kustomization_depends_on(forgejo_db),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_namespace,
+                forgejo_db,
                 # shared valkey for cache + queue (HA prerequisite)
-                flux_kustomization_depends_on(forgejo_cache),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager),
+                forgejo_cache,
+                gateway,
+                cert_manager,
                 # SeaweedFS CRDs, operator, and backend
-                flux_kustomization_depends_on(seaweedfs_cluster),
+                seaweedfs_cluster,
                 # Mirrors forgejo-oauth-client-secret into the namespace
-                flux_kustomization_depends_on(reflector),
+                reflector,
                 # Writes forgejo-oauth-client-secret to authentik namespace
-                flux_kustomization_depends_on(sso_providers_tf),
+                sso_providers_tf,
                 # Authentik must be running for OIDC
-                flux_kustomization_depends_on(authentik),
+                authentik,
                 # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
                 # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -179,14 +179,14 @@ def budget_ledger(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # the git-creds Secret lands in the budget namespace
-                flux_kustomization_depends_on(budget_namespace),
-            ],
+                budget_namespace,
+            ),
         ),
     )
 
@@ -225,11 +225,7 @@ def forgejo_cache(
             path="./cluster/k8s/forgejo/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_namespace),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, valkey, local_path_provisioner),
         ),
     )
 
@@ -266,14 +262,14 @@ def forgejo_claude(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # the credentials Secret lands in claude-sandbox
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+                claude_rbac,
+            ),
         ),
     )
 
@@ -309,14 +305,14 @@ def cpap_data(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # the git-creds Secrets land in the cpap-sync namespace
-                flux_kustomization_depends_on(cpap_sync),
-            ],
+                cpap_sync,
+            ),
         ),
     )
 
@@ -342,7 +338,7 @@ def forgejo_db(chart: Chart, forgejo_namespace: Kustomization, cnpg: Kustomizati
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[flux_kustomization_depends_on(forgejo_namespace), flux_kustomization_depends_on(cnpg)],
+            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, cnpg),
         ),
     )
 
@@ -381,18 +377,18 @@ def haku_state(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # The git-creds Secret is reflected into agentplane-index; wait for the
                 # aggregate to create that target Namespace before applying Terraform.
-                flux_kustomization_depends_on(agentplane_index),
-                flux_kustomization_depends_on(haku_namespace),
-                flux_kustomization_depends_on(haku_console_namespace),
-                flux_kustomization_depends_on(haku_egress_proxy_namespace),
-            ],
+                agentplane_index,
+                haku_namespace,
+                haku_console_namespace,
+                haku_egress_proxy_namespace,
+            ),
         ),
     )
 

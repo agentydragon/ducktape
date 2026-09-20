@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def forgejo_images(
@@ -49,13 +49,13 @@ def forgejo_images(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-            ],
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
+            ),
         ),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "

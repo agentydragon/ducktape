@@ -9,7 +9,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agentplane_egress_credentials_namespace(chart: Chart) -> Kustomization:
@@ -50,13 +50,13 @@ def agentplane_egress_credentials(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(agentplane_egress_credentials_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                agentplane_egress_credentials_namespace,
                 # the source-side grant on the agentydragon-agent PAT
-                flux_kustomization_depends_on(external_creds),
+                external_creds,
                 # the ClusterSecretStore the PAT is read through
-                flux_kustomization_depends_on(external_secrets_config),
-            ],
+                external_secrets_config,
+            ),
         ),
         description=(
             "The credentials the Agentplane egress proxy substitutes (the "

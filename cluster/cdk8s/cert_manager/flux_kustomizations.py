@@ -16,7 +16,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def cert_manager(
@@ -58,13 +58,13 @@ def cert_manager(
                     )
                 ]
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager_issuer_config),
+            depends_on=flux_kustomization_depends_on_many(
+                cert_manager_issuer_config,
                 # Produces the namespace-local ConfigMap that postBuild reads.
-                flux_kustomization_depends_on(reflector),
+                reflector,
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -100,11 +100,7 @@ def cert_manager_environment(
                     )
                 ]
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager),
-                flux_kustomization_depends_on(cert_manager_trust),
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, cert_manager_issuer_config),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-prod", namespace=""
@@ -160,10 +156,10 @@ def cert_manager_trust(chart: Chart, cert_manager: Kustomization, kyverno: Kusto
                     namespace="cert-manager",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(cert_manager),
+            depends_on=flux_kustomization_depends_on_many(
+                cert_manager,
                 # Kyverno VWC must be operational before creating resources
-                flux_kustomization_depends_on(kyverno),
-            ],
+                kyverno,
+            ),
         ),
     )

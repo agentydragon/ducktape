@@ -10,7 +10,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def kubevirt(chart: Chart, kubevirt_operator: Kustomization) -> Kustomization:
@@ -85,10 +90,7 @@ def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kusto
             ),
             wait=True,
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(cdi_operator),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="cdi-apiserver", namespace="cdi"

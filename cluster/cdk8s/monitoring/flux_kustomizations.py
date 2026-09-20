@@ -12,7 +12,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def alloy_otlp_bearer_token_tf(
@@ -40,13 +45,13 @@ def alloy_otlp_bearer_token_tf(
                 )
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+            depends_on=flux_kustomization_depends_on_many(
+                tofu_controller,
+                tofu_state_db,
                 # authentik-jwt-rotation owns the agents-infra namespace this secret's
                 # rotator runs in, and rotates the alloy-otlp bearer token committed here.
-                flux_kustomization_depends_on(authentik_jwt_rotation),
-            ],
+                authentik_jwt_rotation,
+            ),
         ),
     )
 
@@ -71,7 +76,7 @@ def alloy(chart: Chart, mimir: Kustomization, grafana_helmrepository: Kustomizat
                 )
             ],
             timeout="5m",
-            depends_on=[flux_kustomization_depends_on(mimir), flux_kustomization_depends_on(grafana_helmrepository)],
+            depends_on=flux_kustomization_depends_on_many(mimir, grafana_helmrepository),
         ),
     )
 
@@ -154,7 +159,7 @@ def grafana_db(chart: Chart, monitoring_namespace: Kustomization, cnpg: Kustomiz
                     api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
                 )
             ],
-            depends_on=[flux_kustomization_depends_on(monitoring_namespace), flux_kustomization_depends_on(cnpg)],
+            depends_on=flux_kustomization_depends_on_many(monitoring_namespace, cnpg),
         ),
     )
 
@@ -201,11 +206,7 @@ def grafana_instance(
                 )
             ],
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(grafana_operator),
-                flux_kustomization_depends_on(grafana_db),
-                flux_kustomization_depends_on(sso_providers_tf),
-            ],
+            depends_on=flux_kustomization_depends_on_many(grafana_operator, grafana_db, sso_providers_tf),
         ),
     )
 
@@ -266,10 +267,7 @@ def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster:
                 ),
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(grafana_helmrepository),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+            depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
         ),
     )
 
@@ -313,14 +311,14 @@ def mimir(
                 ),
             ],
             timeout="10m",
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # the chart's metaMonitoring.serviceMonitor
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(grafana_helmrepository),
+                monitoring_crds,
+                grafana_helmrepository,
                 # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
                 # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+                seaweedfs_cluster,
+            ),
         ),
     )
 
@@ -411,14 +409,14 @@ def monitoring_stack(
                 )
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(monitoring_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                monitoring_namespace,
                 # The chart's Prometheus/Alertmanager CRs are rejected at admission until
                 # the CRDs exist, and the chart no longer installs them itself.
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(ntfy),
-                flux_kustomization_depends_on(external_secrets_config),
-            ],
+                monitoring_crds,
+                ntfy,
+                external_secrets_config,
+            ),
         ),
     )
 
@@ -459,11 +457,11 @@ def tempo(
                 ),
             ],
             timeout="5m",
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # the chart's serviceMonitor.enabled
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(grafana_helmrepository),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-            ],
+                monitoring_crds,
+                grafana_helmrepository,
+                seaweedfs_cluster,
+            ),
         ),
     )

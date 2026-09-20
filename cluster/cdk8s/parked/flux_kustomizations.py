@@ -14,7 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agent_box(
@@ -46,13 +46,9 @@ def agent_box(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(kubevirt),
-                flux_kustomization_depends_on(cdi),
-                flux_kustomization_depends_on(external_secrets_operator),
-                flux_kustomization_depends_on(seaweedfs_public_s3),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-box"),
@@ -97,10 +93,7 @@ def archivebox(chart: Chart, seaweedfs_csi: Kustomization, local_path_provisione
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_csi),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_csi, local_path_provisioner),
             health_checks=[
                 KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="archivebox"),
                 KustomizationSpecHealthChecks(
@@ -147,14 +140,14 @@ def augur_evidence(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # Forgejo API must be up (provider target)
-                flux_kustomization_depends_on(forgejo),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+                forgejo,
+                tofu_controller,
+                tofu_state_db,
                 # the git-creds Secrets land in the budget namespace
-                flux_kustomization_depends_on(budget_namespace),
-            ],
+                budget_namespace,
+            ),
         ),
     )
 
@@ -184,10 +177,7 @@ def authelia(chart: Chart, gateway: Kustomization, cert_manager_environment: Kus
                 )
             ],
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(cert_manager_environment),
-            ],
+            depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment),
         ),
     )
 
@@ -221,14 +211,14 @@ def browsertrix(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="browsertrix-app", namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(browsertrix_namespace),
-                flux_kustomization_depends_on(seaweedfs_browsertrix_bucket),
-                flux_kustomization_depends_on(seaweedfs_secrets),
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(seaweedfs_csi),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                browsertrix_namespace,
+                seaweedfs_browsertrix_bucket,
+                seaweedfs_secrets,
+                reflector,
+                local_path_provisioner,
+                seaweedfs_csi,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",
@@ -264,10 +254,7 @@ def seaweedfs_browsertrix_bucket(
                 name="browsertrix-bucket",
                 namespace="ducktape-flux",
             ),
-            depends_on=[
-                flux_kustomization_depends_on(seaweedfs_cluster),
-                flux_kustomization_depends_on(seaweedfs_secrets),
-            ],
+            depends_on=flux_kustomization_depends_on_many(seaweedfs_cluster, seaweedfs_secrets),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="browsertrix", namespace="seaweedfs"
@@ -337,12 +324,12 @@ def budget(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # provisions budget-ledger-git-creds in the budget ns
-                flux_kustomization_depends_on(budget_ledger),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-            ],
+                budget_ledger,
+                gateway,
+                authentik,
+            ),
         ),
     )
 
@@ -419,15 +406,15 @@ def haku_cloud_agent(
                     namespace="flux-system",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_creds),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
+            depends_on=flux_kustomization_depends_on_many(
+                external_creds,
+                external_secrets_config,
+                tofu_controller,
+                tofu_state_db,
                 # The agent reaches the cluster through this MCP; its first deployment run
                 # needs it serving.
-                flux_kustomization_depends_on(kubectl_machine_mcp),
-            ],
+                kubectl_machine_mcp,
+            ),
         ),
     )
 
@@ -454,13 +441,13 @@ def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac
                     api_version="apps/v1", kind="Deployment", name="docker-ci", namespace="docker-ci"
                 )
             ],
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
                 # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
                 # claude-sandbox namespace the client Certificate lives in.
-                flux_kustomization_depends_on(cert_manager_environment),
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+                cert_manager_environment,
+                claude_rbac,
+            ),
         ),
     )
 
@@ -510,11 +497,7 @@ def firecrawl(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(firecrawl_namespace),
-                flux_kustomization_depends_on(firecrawl_db),
-                flux_kustomization_depends_on(gateway),
-            ],
+            depends_on=flux_kustomization_depends_on_many(firecrawl_namespace, firecrawl_db, gateway),
         ),
     )
 
@@ -538,11 +521,7 @@ def firecrawl_db(
             path="./cluster/k8s/parked/firecrawl/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(firecrawl_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(firecrawl_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -596,14 +575,9 @@ def gecko(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(gecko_namespace),
-                flux_kustomization_depends_on(kubevirt),
-                flux_kustomization_depends_on(cdi),
-                flux_kustomization_depends_on(external_secrets_operator),
-                flux_kustomization_depends_on(seaweedfs_public_s3),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            ),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -666,12 +640,12 @@ def google_workspace_mcp(
             path="./cluster/k8s/parked/google-workspace-mcp",
             prune=True,
             wait=True,
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # google-client-credentials (Reflector mirrors it here)
-                flux_kustomization_depends_on(airlock),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(reflector),
-            ],
+                airlock,
+                local_path_provisioner,
+                reflector,
+            ),
         ),
     )
 
@@ -704,14 +678,14 @@ def haku_dispatch(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(external_secrets_operator),
-                flux_kustomization_depends_on(litellm),
-                flux_kustomization_depends_on(litellm_keys_tf),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg,
+                local_path_provisioner,
+                external_secrets_config,
+                external_secrets_operator,
+                litellm,
+                litellm_keys_tf,
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="workers-litellm", namespace="haku-dispatch"
@@ -755,17 +729,17 @@ def inventree(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(inventree_namespace),
-                flux_kustomization_depends_on(inventree_db),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                inventree_namespace,
+                inventree_db,
                 # writes inventree-sso-providers into the authentik namespace
-                flux_kustomization_depends_on(sso_providers_tf),
+                sso_providers_tf,
                 # mirrors inventree-sso-providers into the inventree namespace
-                flux_kustomization_depends_on(reflector),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-            ],
+                reflector,
+                gateway,
+                authentik,
+            ),
         ),
     )
 
@@ -789,11 +763,7 @@ def inventree_db(
             path="./cluster/k8s/parked/inventree/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(inventree_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(inventree_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -845,14 +815,14 @@ def inventree_token_provisioner(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
                 # InvenTree HelmRelease is fully deployed
-                flux_kustomization_depends_on(inventree),
+                inventree,
                 # claude-sandbox namespace exists
-                flux_kustomization_depends_on(claude_rbac),
-            ],
+                claude_rbac,
+            ),
         ),
     )
 
@@ -882,12 +852,12 @@ def kubectl_machine_mcp(chart: Chart, gateway: Kustomization, agent_machine_acce
                     namespace="kubectl-machine-mcp",
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(gateway),
+            depends_on=flux_kustomization_depends_on_many(
+                gateway,
                 # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
                 # discovery + JWKS this server validates against) is created by this TF.
-                flux_kustomization_depends_on(agent_machine_access_tf),
-            ],
+                agent_machine_access_tf,
+            ),
         ),
     )
 
@@ -927,19 +897,19 @@ def haku_managed_agent(
                     api_version="apps/v1", kind="Deployment", name="haku-managed-agent", namespace="haku-sandbox"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
                 # provides ankiweb-credentials in claude-sandbox
-                flux_kustomization_depends_on(agent_shared_secrets),
+                agent_shared_secrets,
                 # provides the claude-sandbox SecretStore
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(haku_namespace),
-                flux_kustomization_depends_on(haku_rbac),
+                external_secrets_config,
+                haku_namespace,
+                haku_rbac,
                 # provides the haku-forgejo-git secret in haku-sandbox
-                flux_kustomization_depends_on(haku_state),
+                haku_state,
                 # injects the egress proxy + CA the worker imports
-                flux_kustomization_depends_on(haku_egress_proxy),
-            ],
+                haku_egress_proxy,
+            ),
         ),
     )
 
@@ -979,16 +949,16 @@ def manifold_mcp(
                     api_version="apps/v1", kind="Deployment", name="manifold-mcp", namespace="manifold-mcp"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # the ServiceMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -1021,13 +991,9 @@ def openhands(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(openhands_namespace),
-                flux_kustomization_depends_on(openhands_sandboxes),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-                flux_kustomization_depends_on(external_secrets_operator),
-            ],
+            depends_on=flux_kustomization_depends_on_many(
+                openhands_namespace, openhands_sandboxes, gateway, authentik, external_secrets_operator
+            ),
         ),
     )
 
@@ -1092,12 +1058,12 @@ def osm_mcp(chart: Chart, external_secrets_config: Kustomization, forgejo_images
                     api_version="apps/v1", kind="Deployment", name="osm-mcp", namespace="osm-mcp"
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
                 # forgejo-images-creds-eso.yaml extracts the source Secret from the
                 # forgejo-images namespace, so it must exist first.
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+                forgejo_images,
+            ),
         ),
     )
 
@@ -1128,12 +1094,7 @@ def paperless(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(paperless_namespace),
-                flux_kustomization_depends_on(paperless_cache),
-                flux_kustomization_depends_on(paperless_db),
-                flux_kustomization_depends_on(gateway),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, paperless_cache, paperless_db, gateway),
         ),
     )
 
@@ -1157,11 +1118,7 @@ def paperless_cache(
             path="./cluster/k8s/parked/paperless/cache",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(paperless_namespace),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, valkey, local_path_provisioner),
         ),
     )
 
@@ -1185,11 +1142,7 @@ def paperless_db(
             path="./cluster/k8s/parked/paperless/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(paperless_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(paperless_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -1247,16 +1200,16 @@ def postscanmail_mcp(
                     api_version="apps/v1", kind="Deployment", name="postscanmail-mcp", namespace="postscanmail-mcp"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(valkey),
-                flux_kustomization_depends_on(agent_machine_access_tf),
-                flux_kustomization_depends_on(reflector),
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                gateway,
+                valkey,
+                agent_machine_access_tf,
+                reflector,
                 # the ServiceMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -1285,12 +1238,7 @@ def sdr(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=[
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
         ),
     )
 
@@ -1319,12 +1267,7 @@ def tandoor(
             path="./cluster/k8s/parked/tandoor/app",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(tandoor_namespace),
-                flux_kustomization_depends_on(tandoor_db),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(authentik),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tandoor_namespace, tandoor_db, gateway, authentik),
         ),
     )
 
@@ -1349,11 +1292,7 @@ def tandoor_db(
             path="./cluster/k8s/parked/tandoor/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(tandoor_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tandoor_namespace, cnpg, local_path_provisioner),
         ),
     )
 

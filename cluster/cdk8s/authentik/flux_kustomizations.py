@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def authentik(
@@ -54,17 +54,17 @@ def authentik(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(authentik_namespace),
+            depends_on=flux_kustomization_depends_on_many(
+                authentik_namespace,
                 # Wait for CNPG cluster ready and authentik-db-app secret to exist
-                flux_kustomization_depends_on(authentik_db),
+                authentik_db,
                 # Wait for cert-manager for TLS certificates
-                flux_kustomization_depends_on(cert_manager),
+                cert_manager,
                 # Wait for Gateway API for external access
-                flux_kustomization_depends_on(gateway),
+                gateway,
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -116,12 +116,7 @@ def authentik_db_backups(
                     namespace="authentik",
                 ),
             ],
-            depends_on=[
-                flux_kustomization_depends_on(authentik_db),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-                flux_kustomization_depends_on(authentik_namespace),
-            ],
+            depends_on=flux_kustomization_depends_on_many(authentik_db, cnpg, seaweedfs_cluster, authentik_namespace),
         ),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )
@@ -144,11 +139,7 @@ def authentik_db(
             path="./cluster/k8s/authentik/db",
             prune=True,
             wait=True,
-            depends_on=[
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(authentik_namespace),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(cnpg, authentik_namespace, local_path_provisioner),
         ),
     )
 
@@ -182,7 +173,7 @@ def authentik_proxy_routes(chart: Chart, gateway: Kustomization, authentik: Kust
             ),
             path="./cluster/k8s/authentik/proxy-routes",
             prune=True,
-            depends_on=[flux_kustomization_depends_on(gateway), flux_kustomization_depends_on(authentik)],
+            depends_on=flux_kustomization_depends_on_many(gateway, authentik),
         ),
     )
 
@@ -211,10 +202,6 @@ def sso_providers_tf(
                 )
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-                flux_kustomization_depends_on(authentik),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, authentik),
         ),
     )

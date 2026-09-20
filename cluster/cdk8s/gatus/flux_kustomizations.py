@@ -10,7 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def gatus(
@@ -41,15 +41,15 @@ def gatus(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="gatus", namespace="gatus"
                 )
             ],
-            depends_on=[
-                flux_kustomization_depends_on(gatus_namespace),
-                flux_kustomization_depends_on(gatus_db),
-                flux_kustomization_depends_on(gatus_sso_tf),
-                flux_kustomization_depends_on(litellm_secrets),
-                flux_kustomization_depends_on(gateway),
+            depends_on=flux_kustomization_depends_on_many(
+                gatus_namespace,
+                gatus_db,
+                gatus_sso_tf,
+                litellm_secrets,
+                gateway,
                 # the ServiceMonitor/PodMonitor CRD
-                flux_kustomization_depends_on(monitoring_crds),
-            ],
+                monitoring_crds,
+            ),
         ),
     )
 
@@ -74,7 +74,7 @@ def gatus_db(chart: Chart, gatus_namespace: Kustomization, cnpg: Kustomization) 
                     api_version="postgresql.cnpg.io/v1", kind="Cluster", name="gatus-db", namespace="gatus"
                 )
             ],
-            depends_on=[flux_kustomization_depends_on(gatus_namespace), flux_kustomization_depends_on(cnpg)],
+            depends_on=flux_kustomization_depends_on_many(gatus_namespace, cnpg),
         ),
     )
 
@@ -123,10 +123,6 @@ def gatus_sso_tf(
                 )
             ],
             timeout="10m",
-            depends_on=[
-                flux_kustomization_depends_on(tofu_controller),
-                flux_kustomization_depends_on(tofu_state_db),
-                flux_kustomization_depends_on(authentik),
-            ],
+            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, authentik),
         ),
     )

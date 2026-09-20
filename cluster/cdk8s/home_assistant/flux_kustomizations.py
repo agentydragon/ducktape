@@ -13,7 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def home_assistant(
@@ -65,17 +65,17 @@ def home_assistant(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(local_path_provisioner),
-                flux_kustomization_depends_on(seaweedfs_cluster),
-                flux_kustomization_depends_on(volsync),
-                flux_kustomization_depends_on(external_secrets_config),
-                flux_kustomization_depends_on(forgejo_images),
+            depends_on=flux_kustomization_depends_on_many(
+                local_path_provisioner,
+                seaweedfs_cluster,
+                volsync,
+                external_secrets_config,
+                forgejo_images,
                 # ServiceMonitor + PrometheusRule
-                flux_kustomization_depends_on(monitoring_crds),
-                flux_kustomization_depends_on(gateway),
-                flux_kustomization_depends_on(sso_providers_tf),
-            ],
+                monitoring_crds,
+                gateway,
+                sso_providers_tf,
+            ),
         ),
         description=(
             "Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket."

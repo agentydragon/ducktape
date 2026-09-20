@@ -15,7 +15,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 
 
 def haku_console_namespace(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
@@ -120,21 +125,21 @@ def haku_mailbox(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                flux_kustomization_depends_on(forgejo_images),
-                flux_kustomization_depends_on(haku_mailbox_namespace),
-                flux_kustomization_depends_on(haku_mailbox_db),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images,
+                haku_mailbox_namespace,
+                haku_mailbox_db,
                 # Certificate CRD + controller
-                flux_kustomization_depends_on(cert_manager),
+                cert_manager,
                 # Authentik provider + Haku mailbox identity
-                flux_kustomization_depends_on(agent_machine_access_tf),
+                agent_machine_access_tf,
                 # HTTPRoute parent for the JMAP/management API
-                flux_kustomization_depends_on(gateway),
+                gateway,
                 # ClusterSecretStore + CRDs (token mirror)
-                flux_kustomization_depends_on(external_secrets_config),
+                external_secrets_config,
                 # ${LETSENCRYPT_ISSUER}
-                flux_kustomization_depends_on(cert_manager_issuer_config),
-            ],
+                cert_manager_issuer_config,
+            ),
             post_build=KustomizationSpecPostBuild(
                 substitute_from=[
                     KustomizationSpecPostBuildSubstituteFrom(
@@ -163,11 +168,7 @@ def haku_mailbox_db(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[
-                flux_kustomization_depends_on(haku_mailbox_namespace),
-                flux_kustomization_depends_on(cnpg),
-                flux_kustomization_depends_on(local_path_provisioner),
-            ],
+            depends_on=flux_kustomization_depends_on_many(haku_mailbox_namespace, cnpg, local_path_provisioner),
         ),
     )
 
@@ -280,20 +281,20 @@ def haku_workspaces(
                 name="haku-workspaces-app",
                 namespace="ducktape-flux",
             ),
-            depends_on=[
+            depends_on=flux_kustomization_depends_on_many(
                 # shared CRDs + controller
-                flux_kustomization_depends_on(agent_sandbox_controller),
+                agent_sandbox_controller,
                 # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-                flux_kustomization_depends_on(haku_rbac),
+                haku_rbac,
                 # the fence haku-sandbox is opted into
-                flux_kustomization_depends_on(haku_egress_proxy),
+                haku_egress_proxy,
                 # cleanup-controller ClusterRole the janitor needs
-                flux_kustomization_depends_on(kyverno_policies),
+                kyverno_policies,
                 # ClusterSecretStore + CRDs for the ESO
-                flux_kustomization_depends_on(external_secrets_config),
+                external_secrets_config,
                 # mints the source forgejo-images-creds the ESO reflects
-                flux_kustomization_depends_on(forgejo_images),
-            ],
+                forgejo_images,
+            ),
         ),
         description="General Haku workspaces in haku-sandbox.",
     )
