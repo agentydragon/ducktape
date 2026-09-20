@@ -4,11 +4,14 @@ These routes handle browser-based OAuth redirects that cannot go through MCP.
 """
 
 import logging
+import time
 from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from airlock.auth import OperatorSession, OperatorSessionDependency
+from airlock.config import Settings
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, generate_pkce_pair
 
@@ -19,10 +22,15 @@ logger = logging.getLogger(__name__)
 class _PendingState:
     provider_name: str
     code_verifier: str | None
+    operator_subject: str
+    expires_at: float
+
+
+_PENDING_STATE_TTL_SECONDS = 600
 
 
 def create_oauth_router(
-    providers: dict[str, GenericOAuth2Provider], k8s_store: K8sTokenStore, target_namespace: str
+    providers: dict[str, GenericOAuth2Provider], k8s_store: K8sTokenStore, target_namespace: str, settings: Settings
 ) -> APIRouter:
     """Create a FastAPI router for OAuth authorization/callback flows."""
     router = APIRouter(prefix="/oauth", tags=["oauth"])
@@ -31,24 +39,35 @@ def create_oauth_router(
     # which is acceptable for human-initiated OAuth (seconds-long lifetime).
     pending_states: dict[str, _PendingState] = {}
 
-    @router.get("/authorize/{provider_name}", response_model=None)
-    async def authorize(provider_name: str) -> RedirectResponse:
+    @router.post("/authorize/{provider_name}", response_model=None)
+    async def authorize(provider_name: str, request: Request, operator: OperatorSessionDependency) -> RedirectResponse:
+        if request.headers.get("origin") != settings.public_base_url:
+            raise HTTPException(403, "Authorization requires a same-origin request")
         provider = providers.get(provider_name)
         if provider is None:
             raise HTTPException(404, f"Unknown provider: {provider_name}")
+        now = time.time()
+        for expired_state in [state for state, pending in pending_states.items() if pending.expires_at <= now]:
+            pending_states.pop(expired_state, None)
         state = provider.generate_state()
         code_verifier: str | None = None
         code_challenge: str | None = None
         if provider.config.use_pkce:
             code_verifier, code_challenge = generate_pkce_pair()
-        pending_states[state] = _PendingState(provider_name=provider_name, code_verifier=code_verifier)
+        pending_states[state] = _PendingState(
+            provider_name=provider_name,
+            code_verifier=code_verifier,
+            operator_subject=operator.subject,
+            expires_at=now + _PENDING_STATE_TTL_SECONDS,
+        )
         url = provider.build_authorize_url(state, code_challenge=code_challenge)
-        return RedirectResponse(url)
+        return RedirectResponse(url, status_code=303)
 
-    async def _complete(request: Request) -> RedirectResponse:
+    async def _complete(request: Request, operator: OperatorSession) -> RedirectResponse:
         code = request.query_params.get("code")
         state_param = request.query_params.get("state")
         error = request.query_params.get("error")
+        pending = pending_states.pop(state_param, None) if state_param else None
 
         if error:
             raise HTTPException(400, f"OAuth error: {error}")
@@ -58,9 +77,10 @@ def create_oauth_router(
         # The provider is resolved from `state` (set at /authorize), never from the URL,
         # so any registered redirect URI works: the shared /oauth/callback, a legacy
         # /oauth/callback/<name>, or a provider piggybacking on another's registered URI.
-        pending = pending_states.pop(state_param, None)
-        if pending is None:
+        if pending is None or pending.expires_at <= time.time():
             raise HTTPException(400, "Invalid or expired state parameter")
+        if pending.operator_subject != operator.subject:
+            raise HTTPException(400, "OAuth flow belongs to a different operator session")
 
         provider = providers[pending.provider_name]
         token = await provider.exchange_code(code, code_verifier=pending.code_verifier)
@@ -72,9 +92,9 @@ def create_oauth_router(
         return RedirectResponse("/#/oauth")
 
     @router.get("/callback", response_model=None)
-    async def callback(request: Request) -> RedirectResponse:
+    async def callback(request: Request, operator: OperatorSessionDependency) -> RedirectResponse:
         """Shared OAuth callback; the provider is resolved from `state`."""
-        return await _complete(request)
+        return await _complete(request, operator)
 
     # CLEANUP(added 2026-06-29): legacy per-provider callback path. The {provider_name}
     # segment is cosmetic — it only lets already-registered /oauth/callback/<name> URIs
@@ -83,9 +103,11 @@ def create_oauth_router(
     # migrated to the shared /oauth/callback (see config.yaml TODOs) and their old URIs
     # are deregistered from their OAuth apps.
     @router.get("/callback/{provider_name}", response_model=None)
-    async def callback_legacy(provider_name: str, request: Request) -> RedirectResponse:
+    async def callback_legacy(
+        provider_name: str, request: Request, operator: OperatorSessionDependency
+    ) -> RedirectResponse:
         # `provider_name` is just the registered-URI path segment (kept so FastAPI matches
         # the route); the actual provider is resolved from `state` in `_complete`.
-        return await _complete(request)
+        return await _complete(request, operator)
 
     return router

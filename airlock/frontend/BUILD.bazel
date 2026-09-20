@@ -28,7 +28,6 @@ ts_library(
     name = "auth",
     srcs = ["auth.ts"],
     tsconfig = TSCONFIG,
-    deps = [":node_modules/oidc-client-ts"],
 )
 
 ts_library(
@@ -47,6 +46,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":auth",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
@@ -63,6 +63,7 @@ ts_library(
     deps = [
         ":OAuthProviders",
         ":api",
+        ":auth",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
@@ -81,7 +82,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":App",
-        ":auth",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
@@ -141,18 +141,6 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "auth_test",
-    testonly = True,
-    srcs = ["auth.test.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":auth",
-        "//:node_modules/vitest",
-    ],
-)
-
 vitest_bin.vitest_test(
     name = "vitest_test",
     args = ["run"],
@@ -160,7 +148,6 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.mjs",
         ":api_test",
-        ":auth_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],

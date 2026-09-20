@@ -39,6 +39,21 @@ py_library(
 )
 
 py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    visibility = ["//airlock:__subpackages__"],
+    deps = [
+        ":config",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//joserfc",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "deployment",
     srcs = ["deployment.py"],
     deps = [
@@ -53,6 +68,7 @@ py_library(
     data = ["//airlock/frontend:bundle"],
     visibility = ["//visibility:public"],
     deps = [
+        ":auth",
         ":config",
         ":deployment",
         ":models",
@@ -61,8 +77,7 @@ py_library(
         "//airlock/oauth:refresh",
         "//airlock/oauth:routes",
         "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//itsdangerous",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],
@@ -111,14 +126,15 @@ py_test(
     srcs = ["test_app_integration.py"],
     deps = [
         ":app",
+        ":auth",
         ":config",
         "//:conftest",
         "//airlock/oauth:k8s_client",
         "//airlock/oauth:provider",
         "//util:net",
         "//util/testing:asgi",
-        "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//itsdangerous",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

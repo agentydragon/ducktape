@@ -220,11 +220,7 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@24.13.4)(happy-dom@20.14.5)(jsdom@30.0.1)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  airlock/frontend:
-    dependencies:
-      oidc-client-ts:
-        specifier: ^3.1.0
-        version: 3.5.0
+  airlock/frontend: {}
 
   props/frontend:
     dependencies:
@@ -3235,10 +3231,6 @@ packages:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
     engines: {node: '>=4.0'}
 
-  jwt-decode@4.0.0:
-    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
-    engines: {node: '>=18'}
-
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
@@ -3601,10 +3593,6 @@ packages:
 
   ohash@2.0.12:
     resolution: {integrity: sha512-65S/5gk9YSsaRjcyf7Nfa6h/d3E8/1gslpXfI4W7Dxn/oap8IKRuNT5VXkLQ1YFKIEg4apRY4Pj6aiwFzrDdmw==}
-
-  oidc-client-ts@3.5.0:
-    resolution: {integrity: sha512-l2q8l9CTCTOlbX+AnK4p3M+4CEpKpyQhle6blQkdFhm0IsBqsxm15bYaSa11G7pWdsYr6epdsRZxJpCyCRbT8A==}
-    engines: {node: '>=18'}
 
   on-finished@2.4.1:
     resolution: {integrity: sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==}
@@ -7770,8 +7758,6 @@ snapshots:
       object.assign: 4.1.7
       object.values: 1.2.1
 
-  jwt-decode@4.0.0: {}
-
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
@@ -8063,10 +8049,6 @@ snapshots:
   obug@2.2.1: {}
 
   ohash@2.0.12: {}
-
-  oidc-client-ts@3.5.0:
-    dependencies:
-      jwt-decode: 4.0.0
 
   on-finished@2.4.1:
     dependencies:

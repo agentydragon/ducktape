@@ -5,7 +5,7 @@
  */
 
 const PHONE = { width: 375, height: 812 };
-const OAUTH_READY = ['a[href^="/oauth/authorize/"]', "footer"];
+const OAUTH_READY = ['form[action^="/oauth/authorize/"] button', "footer"];
 
 export const SCENARIOS = {
   OAuthPage: { element: "#app", readySelectors: OAUTH_READY },

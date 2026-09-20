@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,9 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 import pytest_bazel
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from itsdangerous import TimestampSigner
 
 from airlock.app import create_app
+from airlock.auth import session_cookie_name
 from airlock.config import Settings
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import (
@@ -24,17 +28,6 @@ from airlock.oauth.provider import (
 )
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
-
-
-@pytest.fixture
-def rsa_key_pair() -> RSAKeyPair:
-    return RSAKeyPair.generate()
-
-
-@pytest.fixture
-def operator_headers(rsa_key_pair: RSAKeyPair) -> dict[str, str]:
-    token = rsa_key_pair.create_token(subject="operator", scopes=["openid"])
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -52,22 +45,37 @@ def _settings(port: int, *, oauth: OAuthConfig | None = None) -> Settings:
         public_base_url=f"http://127.0.0.1:{port}",
         oidc_issuer="https://unused.example.com",
         oidc_client_id="airlock-test",
+        oidc_client_secret="airlock-test-secret",
+        oidc_session_secret="airlock-test-session-secret",
         oauth=oauth or OAuthConfig(providers=[]),
         port=port,
     )
 
 
-async def test_oauth_api_works_after_startup(
-    rsa_key_pair: RSAKeyPair, operator_headers: dict[str, str], mock_k8s_store: MagicMock
-) -> None:
+def _operator_cookies(settings: Settings) -> dict[str, str]:
+    session = {
+        "user": {
+            "issuer": settings.oidc_issuer,
+            "subject": "operator",
+            "username": "operator",
+            "expires_at": time.time() + 3600,
+        }
+    }
+    payload = base64.b64encode(json.dumps(session).encode("utf-8"))
+    signer = TimestampSigner(settings.oidc_session_secret.get_secret_value(), salt="starlette.sessions")
+    return {session_cookie_name(settings): signer.sign(payload).decode("ascii")}
+
+
+async def test_oauth_api_works_after_startup(mock_k8s_store: MagicMock) -> None:
     sock = bind_free_port()
     port = sock.getsockname()[1]
-    app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
+    settings = _settings(port)
+    app = create_app(settings, include_static=False)
 
     async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
         assert (await http.get("/healthz")).json() == {"ok": True}
-        assert (await http.get("/auth/config")).json()["client_id"] == "airlock-test"
-        response = await http.get("/api/oauth/providers", headers=operator_headers)
+        http.cookies.update(_operator_cookies(settings))
+        response = await http.get("/api/oauth/providers")
 
     assert response.status_code == 200
     assert response.json() == []
@@ -75,10 +83,7 @@ async def test_oauth_api_works_after_startup(
 
 
 async def test_oauth_providers_reports_expired_token_status(
-    rsa_key_pair: RSAKeyPair,
-    monkeypatch: pytest.MonkeyPatch,
-    mock_k8s_store: MagicMock,
-    operator_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch, mock_k8s_store: MagicMock
 ) -> None:
     monkeypatch.setenv("TEST_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("TEST_CLIENT_SECRET", "test-client-secret")
@@ -123,11 +128,11 @@ async def test_oauth_providers_reports_expired_token_status(
     sock = bind_free_port()
     port = sock.getsockname()[1]
     with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
-        app = create_app(
-            _settings(port, oauth=oauth), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False
-        )
+        settings = _settings(port, oauth=oauth)
+        app = create_app(settings, include_static=False)
         async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-            response = await http.get("/api/oauth/providers", headers=operator_headers)
+            http.cookies.update(_operator_cookies(settings))
+            response = await http.get("/api/oauth/providers")
 
     assert response.status_code == 200
     [provider] = response.json()
@@ -140,37 +145,32 @@ async def test_oauth_providers_reports_expired_token_status(
     mock_k8s_store.read_token.assert_called_once_with("test-refresh", "airlock-test")
 
 
-async def test_api_requires_valid_bearer_token(rsa_key_pair: RSAKeyPair, mock_k8s_store: MagicMock) -> None:
+async def test_api_requires_valid_session(mock_k8s_store: MagicMock) -> None:
     sock = bind_free_port()
     port = sock.getsockname()[1]
-    app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
-    valid_token = rsa_key_pair.create_token(subject="operator", scopes=["openid"])
+    settings = _settings(port)
+    app = create_app(settings, include_static=False)
 
     async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
         assert (await http.get("/api/oauth/providers")).status_code == 401
         assert (
             await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
         ).status_code == 401
-        assert (
-            await http.get("/api/oauth/providers", headers={"Authorization": f"Bearer {valid_token}"})
-        ).status_code == 200
+        http.cookies.update(_operator_cookies(settings))
+        assert (await http.get("/api/oauth/providers")).status_code == 200
 
 
-async def test_mcp_and_tool_approval_routes_are_absent(
-    rsa_key_pair: RSAKeyPair, operator_headers: dict[str, str], mock_k8s_store: MagicMock
-) -> None:
+async def test_mcp_and_tool_approval_routes_are_absent(mock_k8s_store: MagicMock) -> None:
     sock = bind_free_port()
     port = sock.getsockname()[1]
-    app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
+    app = create_app(_settings(port), include_static=False)
 
     async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.post("/mcp", headers=operator_headers)).status_code == 404
-        assert (await http.get("/api/actions", headers=operator_headers)).status_code == 404
-        assert (await http.get("/api/backends", headers=operator_headers)).status_code == 404
-        assert (await http.get("/api/events", headers=operator_headers)).status_code == 404
-        assert (
-            await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve", headers=operator_headers)
-        ).status_code == 404
+        assert (await http.post("/mcp")).status_code == 404
+        assert (await http.get("/api/actions")).status_code == 404
+        assert (await http.get("/api/backends")).status_code == 404
+        assert (await http.get("/api/events")).status_code == 404
+        assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
 
 
 if __name__ == "__main__":
