@@ -558,7 +558,7 @@ data:
       - id: tana_safe_tools
         type: exact_tools
         tools:
-          tana-rw:
+          tana:
             - get_or_create_calendar_node
             - search_nodes
             - read_node
@@ -742,8 +742,8 @@ data:
               client_registration:
                 kind: dynamic
                 client_name: Haku Console
-        tana_rw:
-          id: tana-rw
+        tana:
+          id: tana
           backend:
             kind: remote_mcp
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
@@ -885,7 +885,7 @@ spec:
               value: "60000"
             - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
-            - name: HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN
+            - name: HAKU_CONSOLE__MCP__SERVERS__TANA__BACKEND__AUTH__TOKEN
               valueFrom:
                 secretKeyRef:
                   key: token

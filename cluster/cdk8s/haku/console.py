@@ -290,7 +290,7 @@ class Console(Construct):
                     "token",
                     "mcp",
                     "servers",
-                    "tana_rw",
+                    "tana",
                     "backend",
                     "auth",
                     "token",

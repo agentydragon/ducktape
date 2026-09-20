@@ -61,7 +61,7 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    MCP_BEARER_GROUPS["Deferred migration<br/>ActionGroups for tana-rw and home-assistant<br/>static-bearer remotes, the shape ssh already uses"]:::future
+    MCP_BEARER_GROUPS["Deferred migration<br/>ActionGroups for tana and home-assistant<br/>static-bearer remotes, the shape ssh already uses"]:::future
     MCP_OAUTH_GROUPS["Deferred migration<br/>ActionGroups for grocy-sf and postscanmail-mcp<br/>OAuth remotes; grocy registers dynamically"]:::future
     MCP_GOOGLE_GROUPS["Deferred migration<br/>ActionGroups for gmail and google_calendar<br/>execute as the acting operator's Google account"]:::future
     MCP_CONSOLE_INTERNAL["Deferred design<br/>counterparts for the sandbox and grants servers<br/>console-internal; no Action Service surface yet"]:::future
@@ -457,7 +457,7 @@ replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`
 remains, each with what it needs; an entry leaves when its set can be written.
 
 - **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
-  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana-rw`), `postscanmail_reads`
+  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana`), `postscanmail_reads`
   (`postscanmail-mcp`), `home_assistant_reads` (`home-assistant`), and the console's own
   in-process `sandbox` (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`,
   `grants_whoami`, `grants_own_revoke`). Each is a plain `exact_actions` set once the backend is an
@@ -931,7 +931,7 @@ remove the fence in front of Haku's sandbox and CI.
 
 ### `MCP_BEARER_GROUPS` — ActionGroups for the static-bearer remotes
 
-**Deferred migration:** `tana-rw` (`tana-mcp.tana-mcp.svc.cluster.local:8263`) and `home-assistant`
+**Deferred migration:** `tana` (`tana-mcp.tana-mcp.svc.cluster.local:8263`) and `home-assistant`
 (`ha-mcp.ha-mcp.svc.cluster.local:8765`), both `remote_mcp` with a `static_bearer`. That is exactly
 the shape the `ssh` ActionGroup already uses, so each needs an ActionGroup entry, its bearer Secret
 and network-policy egress, and nothing new in the executor. The cheapest clock of the four, and the
