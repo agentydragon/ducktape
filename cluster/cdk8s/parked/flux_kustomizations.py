@@ -152,36 +152,6 @@ def augur_evidence(
     )
 
 
-def authelia(chart: Chart, gateway: Kustomization, cert_manager_environment: Kustomization) -> Kustomization:
-    name = "authelia"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            path="./cluster/k8s/parked/authelia",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="authelia", namespace="authelia"
-                )
-            ],
-            timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment),
-        ),
-    )
-
-
 def browsertrix(
     chart: Chart,
     browsertrix_namespace: Kustomization,
@@ -872,55 +842,6 @@ def haku_managed_agent(
     )
 
 
-def manifold_mcp(
-    chart: Chart,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    name = "manifold-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/manifold-mcp",
-            prune=True,
-            wait=True,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="manifold-mcp", namespace="manifold-mcp"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                gateway,
-                valkey,
-                agent_machine_access_tf,
-                reflector,
-                # the ServiceMonitor CRD
-                monitoring_crds,
-            ),
-        ),
-    )
-
-
 def openhands(
     chart: Chart,
     openhands_namespace: Kustomization,
@@ -1085,55 +1006,6 @@ def paperless_namespace(chart: Chart) -> Kustomization:
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-        ),
-    )
-
-
-def postscanmail_mcp(
-    chart: Chart,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    name = "postscanmail-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/postscanmail-mcp",
-            prune=True,
-            wait=True,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="postscanmail-mcp", namespace="postscanmail-mcp"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                gateway,
-                valkey,
-                agent_machine_access_tf,
-                reflector,
-                # the ServiceMonitor CRD
-                monitoring_crds,
             ),
         ),
     )
