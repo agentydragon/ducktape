@@ -185,8 +185,8 @@
       "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
     },
     "skill-session_logs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-35918765c3f3/session_logs.skill",
-      "sha256": "NZGHZcPzBggPnwJ+mVnjhTFHFPaDZOs8R2/uQ8ClBI8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-670be672dca3/session_logs.skill",
+      "sha256": "Zwvmctyj1zEbZaxFmSsGXc2vWioL6+IkJTbnpLkTK6g="
     },
     "skill-superforecaster": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-superforecaster-6619e2155fb3/superforecaster.skill",
