@@ -31,7 +31,7 @@ indent_style = space
 indent_size = 2
 
 # JavaScript/TypeScript
-[*.{js,ts,jsx,tsx,svelte}]
+[*.{js,ts,jsx,tsx}]
 indent_style = space
 indent_size = 2
 
