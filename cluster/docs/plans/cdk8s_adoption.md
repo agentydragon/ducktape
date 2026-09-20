@@ -1,6 +1,10 @@
 # Plan: cdk8s adoption for cluster manifests
 
-**Status**: phase 1 landed. `cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app`
+**Status**: superseded. The Flux Kustomization layer has since been converted and
+centralized in `cluster/k8s/flux/kustomizations.k8s.yaml`; see <../cdk8s.md> for the
+current layout. The plan below records the original staged adoption proposal.
+
+`cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app`
 are fully cdk8s-generated and committed. This change also converts
 `cluster/k8s/external-creds`. How the current system works (conventions, mechanisms,
 constraints) is documented in <../cdk8s.md>, not here — this file holds only what's

@@ -1,25 +1,19 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
-js_library(
-    name = "auth",
-    srcs = ["auth.ts"],
-    deps = [":node_modules"],
-)
+TSCONFIG = ":tsconfig"
 
-js_library(
-    name = "api",
-    srcs = ["api.ts"],
-    deps = [
-        ":auth",
-        ":types",
-    ],
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
 )
 
 js_json_schema(
@@ -29,140 +23,146 @@ js_json_schema(
     visibility = ["//visibility:public"],
 )
 
-js_library(
-    name = "OAuthProviders",
-    srcs = ["OAuthProviders.svelte"],
+ts_library(
+    name = "auth",
+    srcs = ["auth.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":node_modules/oidc-client-ts"],
+)
+
+ts_library(
+    name = "api",
+    srcs = ["api.ts"],
+    tsconfig = TSCONFIG,
     deps = [
-        ":api",
+        ":auth",
         ":types",
     ],
 )
 
-js_library(
+ts_library(
+    name = "OAuthProviders",
+    srcs = ["OAuthProviders.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+ts_library(
     name = "App",
-    srcs = ["App.svelte"],
+    srcs = ["App.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":OAuthProviders",
         ":api",
         ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
-js_library(
-    name = "app",
+ts_library(
+    name = "main",
     srcs = [
-        "app.css",
-        "main.ts",
+        "css.d.ts",
+        "main.tsx",
     ],
+    tsconfig = TSCONFIG,
     deps = [
         ":App",
         ":auth",
-        ":node_modules/svelte",
-    ],
-)
-
-js_library(
-    name = "esbuild_config",
-    srcs = ["esbuild_config.mjs"],
-    deps = [
-        ":node_modules/esbuild-plugin-tailwindcss",
-        ":node_modules/esbuild-svelte",
-        ":node_modules/svelte",
-        ":node_modules/tailwindcss",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
 spa_bundle(
     name = "bundle",
-    config = ":esbuild_config",
-    entry_point = "main.ts",
+    entry_point = "main.js",
+    jsx = "automatic",
     visibility = ["//airlock:__pkg__"],
-    deps = [":app"],
+    deps = [":main"],
 )
 
 js_library(
-    name = "scenarios",
-    srcs = ["tests/harness/scenarios.mjs"],
-)
-
-js_library(
-    name = "harness_lib",
+    name = "visual_scenarios",
+    testonly = True,
     srcs = [
-        "tests/harness/HarnessIndex.svelte",
-        "tests/harness/harness.ts",
-        "tests/harness/index.html",
+        "visual/scenarios.mjs",
     ],
-    tags = ["no-lint"],
+)
+
+ts_library(
+    name = "visual_harness_lib",
+    testonly = True,
+    srcs = [
+        "css.d.ts",
+        "visual/harness.tsx",
+        "visual/scenarios.d.mts",
+    ],
+    tsconfig = TSCONFIG,
     deps = [
-        ":app",
-        ":scenarios",
+        ":App",
+        ":types",
+        ":visual_scenarios",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
-js_binary(
-    name = "build_harness",
-    data = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-        ":node_modules",
-    ],
-    entry_point = "tests/harness/esbuild.config.mjs",
-)
-
-js_run_binary(
-    name = "harness_bundle",
-    srcs = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-    ],
-    outs = [
-        "tests/harness/dist/harness.css",
-        "tests/harness/dist/harness.js",
-    ],
-    args = ["tests/harness/dist"],
-    chdir = package_name(),
-    tool = ":build_harness",
+esbuild(
+    name = "visual_harness_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "visual/harness.js",
+    format = "iife",
+    minify = False,
+    output = "visual/dist/harness.js",
+    output_css = "visual/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":visual_harness_lib"],
 )
 
 filegroup(
-    name = "harness_js",
-    srcs = ["tests/harness/dist/harness.js"],
+    name = "visual_harness_js",
+    testonly = True,
+    srcs = ["visual/dist/harness.js"],
 )
 
 filegroup(
-    name = "visual_test_assets",
-    srcs = ["tests/harness/index.html"],
+    name = "visual_harness_css",
+    testonly = True,
+    srcs = ["visual/dist/harness.css"],
 )
 
-# Every scenario in tests/harness/scenarios.mjs, swept on one browser. The four per-scenario
-# targets this replaces each paid their own Chromium launch to render a single shot of the same
-# page at a different theme or width.
 visual_test(
     name = "visual",
     size = "small",
     assets = [
-        ":harness_bundle",
-        ":visual_test_assets",
+        "visual/index.html",
+        ":visual_harness_css",
     ],
-    entry_point = "tests/visual_test_runner.mjs",
-    harness = ":harness_js",
-    scenarios = ":scenarios",
-)
-
-# Type-check the Svelte app, as props/frontend already does. Without it the
-# esbuild bundle strips types without checking them, so nothing here was verified at all.
-svelte_check_bin.svelte_check_test(
-    name = "svelte_check_test",
-    args = [
-        "--tsconfig",
-        "tsconfig.json",
-    ],
-    chdir = package_name(),
-    data = [
-        "svelte.config.js",
-        "tsconfig.json",
-        ":app",
-        ":node_modules",
-    ],
-    tags = ["lint"],
+    entry_point = "visual/runner.mjs",
+    harness = ":visual_harness_js",
+    scenarios = ":visual_scenarios",
 )

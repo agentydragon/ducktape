@@ -1,7 +1,7 @@
 # airlock
 
 OAuth credential broker for services that need a human to complete an upstream
-authorization flow. The Svelte UI shows provider status and starts connect or
+authorization flow. The React and Mantine UI shows provider status and starts connect or
 reconnect flows; the server stores refresh and access tokens in Kubernetes
 Secrets and refreshes access tokens in the background.
 
@@ -15,7 +15,7 @@ flow; see <../haku/console/README.md>.
 Operator browser
   │  Authentik login (Authorization Code + PKCE)
   ▼
-Airlock FastAPI + Svelte UI             port 8765
+Airlock FastAPI + React/Mantine UI       port 8765
   ├── /auth/config                      SPA OIDC configuration
   ├── /api/oauth/providers              provider/token status
   ├── /oauth/authorize/<provider>       upstream authorization redirect
@@ -51,7 +51,7 @@ and secrets are supplied as `<PROVIDER_NAME>_CLIENT_ID` and
 | `oauth/routes.py`     | Browser authorization and callback routes                       |
 | `oauth/k8s_client.py` | Kubernetes Secret token storage                                 |
 | `oauth/refresh.py`    | Background refresh and orphaned-secret cleanup                  |
-| `frontend/`           | Svelte provider-status and connect/reconnect UI                 |
+| `frontend/`           | React and Mantine provider-status and connect/reconnect UI      |
 
 ## Configuration
 

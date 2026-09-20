@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # cdk8s-generated Flux Kustomization graph.
+  - kustomizations.k8s.yaml
+
+  # Bootstrap and Flux source resources remain hand-written.
+  - flux-system/
+  - ducktape-flux/
+  - sources/snapshot-controller.yaml
+  - sources/sshpiper-crds.yaml
+  - sources/external-secrets.yaml
+  - sources/monitoring.yaml

@@ -2,7 +2,6 @@
 
 exports_files(
     [
-        "flux-kustomization.yaml",
         "kustomization.yaml",
         "ha-mcp.k8s.yaml",
     ],

@@ -1,6 +1,6 @@
 /** Authenticated REST client for the Airlock OAuth credential broker. */
-import { getAccessToken } from "./auth.ts";
-import type { DeploymentInfo, OAuthProviderStatus } from "./types.ts";
+import { getAccessToken } from "./auth";
+import type { DeploymentInfo, OAuthProviderStatus } from "./types";
 
 async function apiFetch<T>(path: string): Promise<T> {
   const token = await getAccessToken();

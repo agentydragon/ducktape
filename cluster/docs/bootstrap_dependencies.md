@@ -138,7 +138,7 @@ that Secret before it can decrypt any GitOps-managed credentials.
 ## L5: Flux GitOps
 
 Created by `tofu apply` Phase 3. OpenTofu applies the committed bootstrap
-manifests from `cluster/k8s/flux-system/` and waits for the root Flux
+manifests from `cluster/k8s/flux/flux-system/` and waits for the root Flux
 `GitRepository` and `Kustomization` to become Ready.
 
 | Dependency                                | Why                                    |
@@ -147,7 +147,7 @@ manifests from `cluster/k8s/flux-system/` and waits for the root Flux
 | L4: nodes Ready, networking functional    | Flux pods must schedule                |
 
 **If Flux is broken but cluster is healthy**: inspect and update the committed
-manifests under `cluster/k8s/flux-system/`, then run `tofu apply` to re-apply
+manifests under `cluster/k8s/flux/flux-system/`, then run `tofu apply` to re-apply
 the bootstrap manifests.
 
 ### Git source authentication boundary

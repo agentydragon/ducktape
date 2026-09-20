@@ -38,7 +38,9 @@ spec:
     !/cluster/k8s
     /cluster/k8s/*
     !/cluster/k8s/talos-cloud-controller-manager
-    !/cluster/k8s/flux-system
+    !/cluster/k8s/flux
+    /cluster/k8s/flux/*
+    !/cluster/k8s/flux/flux-system
     # module "wyrm2_image": `tofu init` installs every module block in the
     # config, whether or not -target keeps it in the plan graph.
     !/terraform

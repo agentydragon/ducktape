@@ -109,7 +109,7 @@ def _reader(
     return _deployment(name, containers=[container], pod=pod)
 
 
-def test_references_resolve_to_chart_objects_or_declared_providers() -> None:
+def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
     objects = [
         {
             "apiVersion": "external-secrets.io/v1",
@@ -132,23 +132,14 @@ def test_references_resolve_to_chart_objects_or_declared_providers() -> None:
         },
         _reader("chart-provided", env_secret="es-target", volume_secret="ca-secret", config_map="ca-bundle"),
         _reader("cnpg", env_secret="postgres-app"),
-        _reader("declared", env_secret="oidc", config_map="image-tag"),
-        _reader("undeclared", env_secret="nobody-makes-this", config_map="nor-this"),
-        _reader("wrong-dependency", volume_secret="token"),
+        # External and unmatched references are outside this chart's validation scope.
+        _reader("external", env_secret="oidc", config_map="image-tag"),
+        _reader("unmatched", env_secret="missing-secret", config_map="missing-map"),
+        {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}},
+        _reader("wrong-kind", volume_secret="wrong-kind"),
     ]
-    provided = {"oidc": "sso-tf", "token": "token-maker", "stale": "sso-tf"}
-    config_maps = {"image-tag": "image-tag.yaml", "stale-map": "sso-tf"}
-    assert resolved_references(
-        objects,
-        provided_secrets=provided,
-        providers=frozenset({"sso-tf", "image-tag.yaml"}),
-        provided_config_maps=config_maps,
-    ) == [
-        "Deployment/undeclared reads Secret 'nobody-makes-this', which nothing in the chart creates and no dependency is listed as providing",
-        "Deployment/undeclared reads ConfigMap 'nor-this', which nothing in the chart creates and no dependency is listed as providing",
-        "Deployment/wrong-dependency reads Secret 'token' provided by 'token-maker', which is not a dependency",
-        "provided_secrets lists 'stale', which no Pod template reads",
-        "provided_config_maps lists 'stale-map', which no Pod template reads",
+    assert resolved_references(objects) == [
+        "Deployment/wrong-kind reads Secret 'wrong-kind', but the chart creates a ConfigMap with that name"
     ]
 
 
@@ -157,7 +148,7 @@ def test_rules_fail_synth_naming_the_object() -> None:
     ApiObject(
         chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
     ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))
-    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    add_fleet_rules(chart)
     with pytest.raises(
         Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
     ):

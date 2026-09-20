@@ -4,5 +4,6 @@ metadata:
   name: ssh-mcp
   labels:
     name: ssh-mcp
+    goldilocks.fairwinds.com/enabled: "false"
   annotations:
     description: Standalone SSH MCP backend; private keys stay in this namespace.

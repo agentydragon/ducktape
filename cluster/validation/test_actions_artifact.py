@@ -15,7 +15,7 @@ from util.bazel.runfiles import get_required_path
 def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
     """Every generated artifact has exactly one live consumer, the directory it packages, and
     packaging that directory the way the generator does leaves `kustomize build` unchanged."""
-    root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
+    root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent.resolve()
     kustomize = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
 
     generators = [
@@ -33,18 +33,23 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
 
     # A parked directory keeps its consumer declaration while nothing generates for it.
     consumers: dict[str, list[tuple[Path, dict]]] = {}
-    for path in root.rglob("flux-kustomization.yaml"):
-        if "parked" in path.relative_to(root).parts:
+    flux_chart = root / "flux/kustomizations.k8s.yaml"
+    for document in yaml.safe_load_all(flux_chart.read_text()):
+        if not isinstance(document, dict) or document.get("kind") != "Kustomization":
             continue
-        for document in yaml.safe_load_all(path.read_text()):
-            source = document["spec"].get("sourceRef", {})
-            if source.get("kind") == "ExternalArtifact":
-                consumers.setdefault(source["name"], []).append((path, document))
+        source = document["spec"].get("sourceRef", {})
+        if source.get("kind") != "ExternalArtifact":
+            continue
+        relative = document["spec"]["path"].removeprefix("./")
+        consumer_dir = (root.parent.parent / relative).resolve()
+        if "parked" in consumer_dir.relative_to(root).parts:
+            continue
+        consumers.setdefault(source["name"], []).append((consumer_dir, document))
     assert set(consumers) == set(generated_artifacts)
 
     for artifact_name, (generator, artifact) in generated_artifacts.items():
-        consumer_path, consumer = one(consumers[artifact_name])
-        relative = f"cluster/k8s/{consumer_path.parent.relative_to(root)}"
+        consumer_dir, consumer = one(consumers[artifact_name])
+        relative = f"cluster/k8s/{consumer_dir.relative_to(root)}"
         aliases = {source["alias"] for source in generator["spec"]["sources"]}
         assert consumer["spec"]["sourceRef"] == {
             "kind": "ExternalArtifact",
@@ -58,11 +63,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         primary_operation = one(
             operation for operation in artifact["copy"] if operation["to"] == f"@artifact/{relative}/"
         )
-        assert primary_operation == {
-            "from": f"@{alias}/{relative}/**",
-            "to": f"@artifact/{relative}/",
-            "exclude": ["flux-kustomization.yaml"],
-        }
+        assert primary_operation == {"from": f"@{alias}/{relative}/**", "to": f"@artifact/{relative}/"}
         packaged_root = tmp_path / artifact_name
         packaged = packaged_root / relative
         for operation in artifact["copy"]:
@@ -73,9 +74,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
                 operation_source, operation_target, ignore=shutil.ignore_patterns(*operation.get("exclude", []))
             )
         assert not (packaged / "flux-kustomization.yaml").exists()
-        original = subprocess.run(
-            [kustomize, "build", str(consumer_path.parent)], check=True, capture_output=True, text=True
-        )
+        original = subprocess.run([kustomize, "build", str(consumer_dir)], check=True, capture_output=True, text=True)
         rebuilt = subprocess.run([kustomize, "build", str(packaged)], check=True, capture_output=True, text=True)
         assert list(yaml.safe_load_all(rebuilt.stdout)) == list(yaml.safe_load_all(original.stdout))
 

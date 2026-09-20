@@ -24,8 +24,9 @@ one of two data-classification labels:
   Terraform controller objects, Helm/source/Kustomization values, Prometheus rules, pod logs,
   exec-like subresources, and all writes. The Namespace label is the required GitOps data
   classification for the non-secret controller configuration this makes readable. The existing
-  `flux-system` Namespace is opted in by the `flux-system/kustomization.yaml` patch, so its
-  image automation objects are covered without a cluster-wide grant.
+  `flux-system` Namespace is opted in by the patch at
+  `cluster/k8s/flux/flux-system/kustomization.yaml`, so its image automation objects are
+  covered without a cluster-wide grant.
 - `rbac.ducktape.io/agent-readable-logs: "true"` binds that metadata baseline plus the additive
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 

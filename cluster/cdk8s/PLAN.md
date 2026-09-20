@@ -1,0 +1,268 @@
+# cluster/cdk8s plan
+
+Burn-down for finishing the cdk8s conversion of `cluster/k8s`. Entries leave when their
+work lands; the file goes when the last one does. Conventions the work runs under are in
+<AGENTS.md> (§ The Flux graph), not here; the pool of not-yet-reachable SSOT candidates is
+<TODO.md>.
+
+State on 2026-09-20: all 250 Flux `Kustomization`s are generated from one chart
+(#7391); by directory, 3 are fully generated, 23 mix generated and hand-written files,
+260 are hand-written; about 36% of manifest lines under `cluster/k8s` are cdk8s output.
+
+## Why, and what done means
+
+Hand-written YAML typed the same fact (a label, a port, a Secret name, a model, a
+node's address) in several places, and the only thing keeping them agreeing was a test
+that parsed the rendered manifests afterwards. Those tests are change-detectors: an
+intentional edit changes the test in lockstep, so they cannot tell right from wrong, they
+cost an edit per PR, and the incidents that mattered got past them. Most changes are
+authored by agents and reviewed by one person, so "a human has to notice" is the cost
+that dominates. The program moves every such agreement from checked afterwards, by us,
+in an ad-hoc parser, to true by construction or rejected at synth, by the tool.
+
+Done means:
+
+1. **One source per fact.** Rosters (nodes, models, images, credentials, allowlists)
+   live once and everything renders from them; each binary's `Settings` is its
+   deployment contract; a workload's labels, ports and names are exported by the module
+   that owns them and read by everything that refers to them.
+2. **Invariants by construction, then by synth-time validation, then nothing.** Fleet
+   rules run as validators over the construct tree; the Flux graph is a Python DAG in
+   which a cycle or a dangling dependency cannot be written; a reference is a parameter,
+   so a renamed thing fails at import or synth. Parsing generated output after the fact
+   is not a category.
+3. **`cluster/validation` burned down.** Every test that reads rendered manifests to
+   compare two places is replaced by construction from one value (no test), a test
+   over objects synthesized in memory at construct or chart level, or a type that makes
+   the wrong state unrepresentable. What remains is decided as tests fall, not
+   pre-listed; `crd_layering` is expected to become a test over the Flux graph's
+   constructs, and the whole-graph checks are expected to follow.
+4. **Operations stay possible.** Moving objects between Kustomizations, folding
+   directories, restoring from backup, suspending during an incident: all remain plain
+   edits under the documented procedure (<AGENTS.md> § Restructuring, § Boundaries).
+   Making the unsafe shape unrepresentable is not a goal; if it ever is, it is a
+   proposal to review first.
+5. **No new concepts.** Only Kubernetes, cdk8s, Flux and Kustomize objects and plain
+   values; a marker, record or declaration those do not have is a design the operator
+   approves before it exists (<AGENTS.md> § Boundaries).
+6. **The Python reads as the YAML did.** 1:1 first, forward-only, no registries or
+   callbacks, so an exemplar can be bulk-applied by agents and a reviewer sees a node's
+   inputs in its signature.
+7. **Visible progress with a floor.** `cluster/k8s` shrinks to the hand-written
+   remainder, and what stays hand-written by decision is recorded here.
+
+Constraints on every wave: zero behaviour change per conversion, proven by semantic
+identity of rendered objects; Flux's ownership semantics (SSA adoption, `MirrorPrune`,
+artifact sourcing) are the physics, so a restructuring that ignores them deletes things
+and only the live cluster can tell; stateful data is never destroyed, caches may be;
+some providers live outside the manifest tree (Terraform-minted secrets, reflector
+copies, image automation writing tags) and get no marker to model them unless one is
+approved; operator review is the bottleneck, so PRs are small and rebases are cheap.
+
+## The rule every wave runs under
+
+Derive only from nodes already in Python. A stage that would build a value from a
+hand-written file, or declare at a consumer what a provider should say, waits until its
+neighbourhood is in. "1:1 first, abstract when the neighbourhood is in": literals may be
+duplicated while the other side is still YAML; a shared type, registry, loader or
+derived roster is not written until every node it would touch is a construct.
+
+## Wave 1: derive what the Flux chart makes derivable
+
+Independent of each other; fan out.
+
+- **One-file root.** Emit the Flux chart as one `.k8s.yaml` and point the bootstrap
+  root (`flux-system/gotk-sync.yaml`, `path: ./cluster/k8s`) at its directory. Deletes
+  the 250 per-directory `flux-kustomization.yaml`, the `spec.path` special cases in the
+  writer, and the artifact copy's `exclude_consumer`. `Testing.chart()` in
+  `generate_manifests.py` becomes a real `App`/`Chart`. Whatever the root
+  `kustomization.yaml` lists beyond Kustomizations stays hand-written beside it. Exit:
+  every Kustomization object semantically identical to before;
+  `cluster/validation` whole-graph tests unchanged and green.
+- **Artifacts from the chart.** Each Kustomization node builds its artifact value first
+  and reads `sourceRef` off it; the `ArtifactGenerator` is assembled from the list
+  last. Deletes `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the
+  triple-written names; retires `cluster/validation/test_actions_artifact.py`. The SOPS
+  `decryption` block becomes one value. Exit: `kustomize build` of each packaged
+  directory unchanged, checked once in the PR.
+- **Kustomization nodes take values, not charts.** `agentplane_staging` takes
+  `health_checks=...` instead of `resource_chart: Chart`; `haku_console` splits into
+  `console_chart(app)` plus a node taking values (AGENTS.md § The Flux graph).
+
+**Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
+
+- Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
+  whether that is acceptable as is, wants keyword-only parameters, or reveals that
+  some dependencies are not the node's own (a dependency inherited from a chart's
+  needs, say). A record type for "dependencies" is not one of the options.
+- Repetition. Re-measure lines per node after the artifact step. The remaining
+  repetition should be operational fields (`interval`, `prune`, `wait`, ...) and
+  literal `healthChecks` for hand-written directories; if anything else repeats,
+  name it before adding a helper.
+- Whether `cluster/validation/test_dependencies.py`'s cycle check is now
+  unwritable in Python (every `dependsOn` a parameter) and can retire, or still
+  guards the two literal edges.
+
+## Wave 2: split the trees
+
+One PR, after Wave 1's first two entries, because each half is broken alone.
+
+- cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
+  hand-written files only. Each artifact gets a second copy op from the generated
+  tree into the same `@artifact/cluster/k8s/<path>/`, so no Kustomization changes.
+  `.gitattributes` collapses to one glob. A test helper overlays the two trees the way
+  the artifact does, for `test_flux_build` and `test_cluster_integration`. Exit:
+  artifact contents byte-identical per Kustomization before and after the move.
+
+**Pause after Wave 2.** With `cluster/k8s` showing only what is still hand-written:
+
+- Re-read the remainder by directory. Decide what stays hand-written permanently
+  (HelmRelease-plus-values directories, vendored `flux-system`, `parked/`) so the
+  burn-down has a floor, and record that floor here.
+- Local ergonomics: is `kustomize build` through the overlay helper acceptable, or does
+  the mixed-directory workflow need a small `bb run` target?
+- Whether generated output should stay committed. The alternative is a CI-pushed
+  `OCIRepository` as the second artifact source, with CI in the deploy path and PR
+  review losing the rendered diff. Default: stay committed; revisit only with a
+  concrete cost.
+
+## Wave 3: skip Kustomize where nothing is kustomized
+
+- Verify kustomize-controller's generated-`kustomization.yaml` rule on one directory
+  (which files it includes, how it treats subdirectories such as `image-pins/`), then
+  remove `kustomization.yaml` from every directory with no `components`,
+  `configMapGenerator` or ordering-sensitive hand-written siblings. The PR's report
+  names every directory that still needs one and why.
+
+**Pause after Wave 3.** Image pinning. The 7 `image-pins/` Components exist because
+Flux image automation commits tags into a file the generator would otherwise own.
+Options: keep the Component and a `kustomization.yaml` in those directories
+indefinitely; or tags move into Python with CI regenerating after the bot commits.
+Decide from the count Wave 3 reports, not before.
+
+## Wave 4: close the graph
+
+Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, then
+node taking values, then dependents).
+
+- **Namespace Kustomizations.** Every `*-namespace` directory (a Namespace, at most an
+  ExternalSecret). The `ssh-mcp-namespace` graph node is now constructed directly in
+  `ssh_mcp/generation.py` and passed to its dependent; other namespace resources remain
+  separate conversions.
+- **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
+  `agents/haku-egress-proxy` (one `IronProxy` construct for its two iron deployments and
+  `public-coder-agent/proxy`), `agents/haku-openclaw-spike/app`,
+  `agents/public-coder-agent/app`.
+- **The public-coder-agent constellation** (`proxy`, `devbox`, `sshpiper`, `backup`)
+  with `agent-rbac-base`; retires `test_haku_public_coder_contract.py` and
+  `test_public_coder_clickhouse_reader_contract.py`.
+- **The `haku/` tree** (`mailbox`, `workspaces`, `haku-ci`, `rbac`, `forgejo-tea`,
+  `ui-image-webhook`) with `haku/runtime/agent/config.py`'s Settings as the sandbox
+  template's contract; retires the haku sandbox, mailbox and KEDA contract tests.
+- **`agentplane-index` and `aiquota-api`** rendered from their Settings.
+- Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
+
+**Pause during Wave 4, after the namespaces and two workload directories.** The
+resource-chart join has only `health_checks` crossing today. If a second fact has had
+to cross (a Secret name a Kustomization must wait for, a ConfigMap generator input),
+look at what it is before it becomes a pattern by accident: a second value parameter
+is the expected answer; anything that wants the chart back is the signal to stop.
+
+## Wave 5: rules that need the whole tree
+
+Not before Wave 4 has most providers as constructs; before that they would be
+declarations again.
+
+- **Tree-wide reference resolution, over what the tree contains.** Every
+  Secret/ConfigMap a Pod reads resolves to an object in the tree with the right
+  namespace, whose Kustomization is the reader's own or in its `dependsOn` closure.
+  Providers the tree already represents: generated objects, SOPS files by their
+  plaintext `name`/`namespace`, reflector targets from the annotation on the source
+  Secret. Secrets minted by Terraform have no object in the tree; the rule leaves those
+  references unchecked rather than modelling them. Closing that gap would need a
+  declaration on the `Terraform` CR construct, which is a new concept: a proposal to
+  review, not a step here. Replaces the rosters Wave 1 removed with no consumer-side
+  declaration.
+- **Whole-graph validation tests moving to synth**, each where the graph makes its
+  property unrepresentable or checkable over constructs rather than parsed output:
+  `test_crd_layering` (a Kustomization applying an operator's kinds depends on that
+  operator's Kustomization; what roster it still needs is decided then),
+  `test_dependencies`, `test_health_checks`, `test_generator_namespace`. Others may
+  follow; the remaining list is what is left, not a target.
+
+## Candidates I am not sure about
+
+Cleanups and patterns that look right from where the tree is today, not committed to
+by any wave. Each names what would settle it. None is a reason to widen a wave's PR.
+
+- **Flatten the 72 single-file subpackages.** #7391 put each slice's Flux nodes in
+  `cluster/cdk8s/<area>/flux_kustomizations.py` with its own `BUILD.bazel`; 72 of the 79
+  subpackages hold one module. STYLE.md flattens a directory with fewer than three
+  files. Likely target: `cluster/cdk8s/flux_kustomizations/<area>.py` until the
+  directory's workloads convert, at which point the nodes move into the component's
+  package. Unsure whether the move is worth doing before Wave 4 moves most of them
+  anyway; decide at the Wave 1 pause from how many areas Wave 4 will touch.
+- **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
+  order by hand, which is the design. If it becomes hard to read, the shape to try is
+  one function per area that builds its subgraph from explicit predecessor parameters
+  and returns the nodes others need, called from the entry point in order; not a
+  registry, not per-module imports of other areas' nodes. Unsure it is needed; the
+  file has not yet caused a wrong edit.
+- **`generation.write_charts(*builders)`** still takes builder callables at 8 call
+  sites (`lambda app: chart(app, mesh)` in `dns_automation`). Confident it should
+  become `app = directory_app(root, path); chart(app, mesh); app.synth()`; only the
+  timing is open, since Wave 2 changes where every output goes. Fold into Wave 2.
+- **A dumb writer.** After Wave 2, every module's `write_manifests(root)` repeats
+  `mkdir`, `App(outdir=...)`, `synth`, `write_yaml`. The forward shape is each module
+  returning what it built (a mapping of output path to chart or manifest) and one loop
+  at the end writing them. Leaning yes; it is values flowing forward, not a registry.
+  Settle it when Wave 2's move touches every writer.
+- **Peer labels as exported values, not constructs.** `cilium.endpoint_labels(namespace,
+name)` takes strings at 25 sites. The TODO entry proposes passing the workload
+  construct; the same reasoning that kept `Chart` out of Kustomization nodes argues for
+  the owning module exporting its selector labels as a value (`egress.LABELS`) and a
+  network rule taking that. Leaning values. A renamed workload then fails at import,
+  not synth, which is earlier.
+- **One `App` for everything.** Not needed by anything above: cross-directory reads of
+  a construct's `.name` or labels work across Apps, and values-not-constructs makes
+  most of them unnecessary. It would be needed only for `chart.add_dependency` across
+  directories or one validation pass over the whole tree (`Chart.to_json()` validates
+  the whole App). Chart ids (`helmrelease`, `priorityclass`, `config`) would have to
+  become unique. Do not do this until a concrete cross-directory reference needs it.
+- **`Chart(namespace=...)` instead of `metadata(name, namespace)`** at 125 sites. cdk8s
+  applies a chart namespace to every object without one, cluster-scoped objects
+  included, so it needs the ClusterRoles, Bindings and trust-manager Bundles in their
+  own chart first. Unsure the split pays for the 125 lines; measure per chart.
+- **Hardened workloads by construction.** Fleet rules check seccomp, requests and
+  pinned egress after the fact while each construct sets them by hand. A
+  `hardened_deployment(...)` factory (or a cdk8s+ `Deployment` subclass) would make the
+  rule a backstop that rarely fires. Unsure between factory and subclass, and whether
+  the per-construct variation (init containers, sidecars) fits either. Try it on one
+  Wave 4 conversion, not across the tree.
+- **`ServiceMonitor` and `ExternalSecret` helpers.** 8 and 11 construction sites; only
+  `forgejo_images` has a helper. The PDB helper was worth it; these may not be the same
+  shape (ExternalSecret varies by store and data mapping). Measure the sites before
+  writing either.
+- **`health_checks(chart, kinds)` kinds tuples.** Each node lists which kinds gate
+  readiness (`("Cluster", "Job")`, agentplane's `_HEALTH_CHECK_KINDS` with a
+  `Bundle` → `ConfigMap` special case). Unsure whether the kinds are a per-node choice
+  (keep listing them) or a property of the object kind (derive: every Deployment, Job,
+  Cluster in the chart gates). Look at the lists after Wave 4 has a dozen.
+- **Two props styles.** agentplane uses an `Environment` props object (two
+  environments); haku uses module constants (one). Both fit their case; converge only
+  if a second haku environment appears.
+- **A light `settings.py` per agentplane service** (from TODO.md): synth imports each
+  service's `main`, pulling mitmproxy and fastapi in, which is why three synth tests sit
+  at `size = "medium"`. Confident it is worth doing; unsure whether the split belongs to
+  the service packages or to how the contract helpers import. Not cdk8s work as such.
+- **`litellm/config.py`'s per-model `name`/`upstream` lambdas.** Mapping strategies
+  applied immediately, not deferred construction, so not the callable anti-pattern; a
+  data form exists (compute the `(exposed, upstream)` pairs first). Low value; leave
+  unless the file is being edited for another reason.
+
+## Done
+
+`cluster/k8s` holds only the floor recorded after Wave 2, every Kustomization node's
+inputs are values or constructs, no `cluster/validation` test spans a generated ↔
+hand-written seam, every procedure in <AGENTS.md> § Restructuring and § Boundaries is
+still a plain edit, and this file is deleted.

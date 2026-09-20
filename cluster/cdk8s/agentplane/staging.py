@@ -208,19 +208,6 @@ ENV = Environment(
     ),
     depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console", "ha-mcp", "tana-mcp"),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
-    provided_secrets={
-        "agentplane-oidc": "sso-providers-tf",
-        "agentplane-mcp-oauth": "sso-providers-tf",
-        _LITELLM_KEY_SECRET: "litellm-keys-tf",
-        BEARER_SECRET_NAME: "ssh-mcp",
-        # Reflected from the haku namespace by reflector.
-        _GITHUB_MCP_CLIENT_SECRET: "haku-console",
-        _WEB_PUSH_SECRET: _WEB_PUSH_SECRET_FILE,
-        # Reflected from ha-mcp/tana-mcp's own namespaces by reflector, the same Secrets
-        # haku-console's home_assistant/tana_rw servers already read.
-        _HA_MCP_BEARER_SECRET: "ha-mcp",
-        _TANA_MCP_BEARER_SECRET: "tana-mcp",
-    },
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
         count=2,
@@ -309,6 +296,8 @@ def agentplane_staging(
     sso_providers_tf: Kustomization,
     ssh_mcp: Kustomization,
     haku_console: Kustomization,
+    ha_mcp: Kustomization,
+    tana_mcp: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -350,6 +339,8 @@ def agentplane_staging(
                 sso_providers_tf,
                 ssh_mcp,
                 haku_console,
+                ha_mcp,
+                tana_mcp,
             ),
         ),
     )

@@ -4,17 +4,16 @@
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "bundler",
-    "allowJs": true,
-    "checkJs": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "sourceMap": true,
-    "strict": true,
-    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true
+    "isolatedDeclarations": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "types": []
   },
-  "include": ["*.ts", "*.svelte", "tests/**/*.ts"]
+  "include": ["*.ts", "*.tsx", "visual/**/*.ts", "visual/**/*.tsx"]
 }

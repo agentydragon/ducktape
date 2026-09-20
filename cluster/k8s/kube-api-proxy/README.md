@@ -29,12 +29,12 @@ Client → kubeapi.allegedly.works:443 (Gateway, public TLS certificate)
 
 ## Resources
 
-| File                      | Purpose                                      |
-| ------------------------- | -------------------------------------------- |
-| `httproute.yaml`          | Routes the public hostname to nginx          |
-| `service.yaml`            | nginx configuration, Deployment, and Service |
-| `kustomization.yaml`      | Resource list                                |
-| `flux-kustomization.yaml` | Reconciliation and health checks             |
+| File                     | Purpose                                      |
+| ------------------------ | -------------------------------------------- |
+| `httproute.yaml`         | Routes the public hostname to nginx          |
+| `service.yaml`           | nginx configuration, Deployment, and Service |
+| `kustomization.yaml`     | Resource list                                |
+| central Flux chart entry | Reconciliation and health checks             |
 
 ## kubectl exec / WebSocket
 

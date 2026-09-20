@@ -906,7 +906,7 @@ filegroup(
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
 )
 
-# Flux CRD pins follow the controller versions in cluster/k8s/flux-system/gotk-components.yaml.
+# Flux CRD pins follow the controller versions in cluster/k8s/flux/flux-system/gotk-components.yaml.
 http_file(
     name = "flux_kustomization_crd",
     downloaded_file_path = "kustomize.toolkit.fluxcd.io_kustomizations.yaml",
@@ -951,7 +951,7 @@ http_file(
 )
 
 # Match kube-prometheus-stack's operator version tracked by
-# cluster/k8s/monitoring/crds/gitrepository.yaml.
+# cluster/k8s/flux/sources/monitoring.yaml.
 http_file(
     name = "prometheus_operator_servicemonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
@@ -969,7 +969,7 @@ http_file(
 )
 
 # Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
-# cluster/k8s/external-secrets/crds/gitrepository.yaml.
+# cluster/k8s/flux/sources/external-secrets.yaml.
 http_file(
     name = "external_secrets_crds_bundle",
     downloaded_file_path = "external-secrets-crds-bundle.yaml",
