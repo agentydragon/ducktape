@@ -880,24 +880,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: tandoor-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/parked/tandoor/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: tandoor-namespace
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: reflector
   namespace: ducktape-flux
 spec:
@@ -2556,33 +2538,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: tandoor-db
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tandoor-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/tandoor/db
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: tandoor-db
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-filer-db
   namespace: ducktape-flux
 spec:
@@ -3492,35 +3447,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: openhands-app
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: tandoor
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tandoor-namespace
-      namespace: ducktape-flux
-    - name: tandoor-db
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/tandoor/app
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: tandoor-app
     namespace: ducktape-flux
   suspend: true
   timeout: 5m
