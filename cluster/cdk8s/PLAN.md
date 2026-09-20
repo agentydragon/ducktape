@@ -88,9 +88,13 @@ Independent of each other; fan out.
   repetition should be operational fields (`interval`, `prune`, `wait`, ...) and
   literal `healthChecks` for hand-written directories; if anything else repeats,
   name it before adding a helper.
-- Whether `cluster/validation/test_dependencies.py`'s cycle check is now
-  unwritable in Python (every `dependsOn` a parameter) and can retire, or still
-  guards the two literal edges.
+- Cycle check. `test_cluster_integration.test_no_dependency_errors` exercises the check over
+  the emitted local Flux graph; the cycle-specific tests in `test_dependencies.py` exercise
+  it on synthetic graphs. In-chart `dependsOn` entries now come from earlier Kustomization
+  objects, including `ssh-mcp -> ssh-mcp-namespace`. The remaining literal edge,
+  `artifact-generators -> flux-system`, targets the bootstrap Kustomization outside this
+  chart. Revisit whether the output-level check still adds value once construction order
+  makes an in-chart cycle impossible.
 
 ## Wave 2: split the trees
 
