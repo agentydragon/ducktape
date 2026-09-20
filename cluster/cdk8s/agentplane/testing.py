@@ -11,6 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
+    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -35,7 +36,6 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.generation import _health_checks
 from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 
@@ -151,7 +151,7 @@ def chart(app: App) -> Chart:
 
 def agentplane_testing(
     flux_chart: Chart,
-    resource_chart: Chart,
+    health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
     cert_manager_environment: Kustomization,
@@ -179,7 +179,7 @@ def agentplane_testing(
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            health_checks=_health_checks(resource_chart, ENV.namespace),
+            health_checks=health_checks,
             health_check_exprs=[
                 KustomizationSpecHealthCheckExprs(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY

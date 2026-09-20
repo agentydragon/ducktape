@@ -9,14 +9,15 @@ from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.flux import health_checks, kustomize_kustomization
+from cluster.cdk8s.flux import health_checks as flux_health_checks, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 
 _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
 
 
-def _health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
-    checks = health_checks(chart, _HEALTH_CHECK_KINDS)
+def environment_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
+    """Derive Flux health-check values from an Agentplane environment chart."""
+    checks = flux_health_checks(chart, _HEALTH_CHECK_KINDS)
     # trust-manager names a Bundle's target ConfigMap after the Bundle.
     return [
         *checks,

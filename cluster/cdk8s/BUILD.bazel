@@ -406,6 +406,7 @@ py_library(
         ":egress_fences",
         ":etcd",
         ":external_creds",
+        ":flux",
         ":forgejo_image_automation",
         ":ha_mcp",
         ":haku_openclaw_spike_config",

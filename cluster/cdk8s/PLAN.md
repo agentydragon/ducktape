@@ -85,9 +85,6 @@ Independent of each other; fan out.
   triple-written names; retires `cluster/validation/test_actions_artifact.py`. The SOPS
   `decryption` block becomes one value. Exit: `kustomize build` of each packaged
   directory unchanged, checked once in the PR.
-- **Kustomization nodes take values, not charts.** `agentplane_staging` takes
-  `health_checks=...` instead of `resource_chart: Chart`; `haku_console` splits into
-  `console_chart(app)` plus a node taking values (AGENTS.md § The Flux graph).
 
 **Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
 

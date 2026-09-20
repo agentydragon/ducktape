@@ -43,6 +43,7 @@ from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustom
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
 from cluster.cdk8s.evidence import flux_kustomizations as evidence_flux_kustomizations
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
+from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
 from cluster.cdk8s.flux_image_automation_forgejo import (
     flux_kustomizations as flux_image_automation_forgejo_flux_kustomizations,
@@ -130,6 +131,14 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
         root, testing.ENV, testing.chart
     )
+    agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
+        agentplane_staging_resource_chart, staging.ENV.namespace
+    )
+    agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
+        agentplane_testing_resource_chart, testing.ENV.namespace
+    )
+    haku_console_resource_chart = haku_charts.write_console_manifests(root)
+    haku_console_health_checks = flux_health_checks(haku_console_resource_chart, ("Cluster", "Job"))
     haku_openclaw_spike_config.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
@@ -1046,7 +1055,7 @@ def generate_manifests(root: Path) -> None:
     )
     testing.agentplane_testing(
         flux_chart,
-        agentplane_testing_resource_chart,
+        agentplane_testing_health_checks,
         agentplane_crds_kustomization,
         agent_sandbox_controller_kustomization,
         cert_manager_environment_kustomization,
@@ -1093,7 +1102,7 @@ def generate_manifests(root: Path) -> None:
     )
     haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
-        root,
+        haku_console_health_checks,
         haku_workspaces_kustomization,
         haku_console_namespace_kustomization,
         cnpg_kustomization,
@@ -1125,7 +1134,7 @@ def generate_manifests(root: Path) -> None:
     )
     staging.agentplane_staging(
         flux_chart,
-        agentplane_staging_resource_chart,
+        agentplane_staging_health_checks,
         agentplane_crds_kustomization,
         agent_sandbox_controller_kustomization,
         cert_manager_environment_kustomization,
