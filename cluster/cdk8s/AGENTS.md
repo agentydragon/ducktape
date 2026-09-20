@@ -3,6 +3,27 @@
 Design and conversion mechanics: <../docs/cdk8s.md>. Which directories are generated and
 how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
+## Boundaries
+
+- **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
+  values.** Nothing here introduces a concept those do not have: no marker annotation,
+  no "provides" declaration, no record type standing in for an object, no registry, no
+  convention a reader must learn on top of the objects' own fields. When a change seems
+  to need one, stop and ask; the operator approves the design before it is built. The
+  same applies to a rule or check that would only work with such a marker.
+- **Construction runs forward** (§ The Flux graph): inputs are values or constructs
+  built earlier, and every fact a node depends on is in its signature.
+- **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
+  and anything a person authored survive every conversion and restructuring; caches may
+  be dropped. A Kustomization that owns PVCs carries `deletionPolicy: Orphan`, and an
+  ownership change goes through § Restructuring. The repository-level rule that deployed
+  state is disposable covers schemas and wire formats, not volumes.
+- **Escape hatches stay.** Every Flux and Kustomize field remains expressible, so an
+  incident `suspend`, the two-step ownership move, a VolSync restore, or a one-off
+  hand-written sibling file is a plain edit and not a fight with the generator. A shape
+  is made unrepresentable only where the operator asked for that; by default the safe
+  procedure is documented and possible, not enforced.
+
 ## Shape of a generator
 
 Model with constructs, deploy with one props object per environment.
