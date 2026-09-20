@@ -287,6 +287,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_credentials_kustomization = agents_flux_kustomizations.public_coder_agent_credentials(
         flux_chart,
         public_coder_agent_namespace_kustomization,
+        agent_shared_secrets_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )

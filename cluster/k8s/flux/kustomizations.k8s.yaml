@@ -2024,6 +2024,8 @@ spec:
   dependsOn:
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
+    - name: agent-shared-secrets
+      namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config

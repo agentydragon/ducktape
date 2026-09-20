@@ -898,6 +898,7 @@ def public_coder_agent_namespace(chart: Chart) -> Kustomization:
 def public_coder_agent_credentials(
     chart: Chart,
     public_coder_agent_namespace: Kustomization,
+    agent_shared_secrets: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
@@ -916,7 +917,7 @@ def public_coder_agent_credentials(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=flux_kustomization_depends_on_many(
-                public_coder_agent_namespace, external_creds, external_secrets_config
+                public_coder_agent_namespace, agent_shared_secrets, external_creds, external_secrets_config
             ),
             health_checks=[
                 KustomizationSpecHealthChecks(
