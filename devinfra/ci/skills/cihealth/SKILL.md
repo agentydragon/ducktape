@@ -9,298 +9,214 @@ description: >-
 
 # CI Health Check
 
-Comprehensive CI/CD pipeline health audit for the `agentydragon/ducktape`
-repository. Gather data in parallel, then produce a single structured report.
-Autonomously fix trivial issues (e.g. prettier formatting failures); propose
-diagnosis plans for anything that needs deeper investigation.
+Audit the current CI/CD configuration for agentydragon/ducktape. Discover
+workflow names, schedules, release outputs, and image ownership from the repo
+and GitHub at run time. Do not copy old workflow inventories, timestamps, pin
+values, or image counts into the report.
+
+Autonomously fix trivial issues (for example, formatting failures); propose a
+diagnosis plan for anything that needs deeper investigation.
 
 ## Setup — GitHub Authentication
 
-`gh` reads `GITHUB_TOKEN`. In a Claude Code web session, the read-only token
-is already available in the environment as
-`DUCKTAPE_CI_READ_GITHUB_TOKEN` (exported by `devinfra/secrets/web_env.sh`
-via the session start hook), so export
-`GITHUB_TOKEN="$DUCKTAPE_CI_READ_GITHUB_TOKEN"` before running `gh`
-commands. Outside that context, decrypt
-`secrets/github-ci-read-pat.yaml` with the SOPS age key and export it as
-`GITHUB_TOKEN`; see `devinfra/secrets/web_env.sh` for the exact pattern.
+gh reads GITHUB_TOKEN. In a Claude Code web session, the read-only token is
+available as DUCKTAPE_CI_READ_GITHUB_TOKEN (exported by
+devinfra/secrets/web_env.sh via the session start hook):
 
-If auth is unavailable, continue with the public API (rate-limited) and note
-it in the report.
+```bash
+export GITHUB_TOKEN="$DUCKTAPE_CI_READ_GITHUB_TOKEN"
+```
+
+Outside that context, decrypt secrets/github-ci-read-pat.yaml with the SOPS
+age key and export it as GITHUB_TOKEN; see devinfra/secrets/web_env.sh for
+the exact pattern. If auth is unavailable, continue with the public API and
+note the limitation in the report.
 
 ## Phase 1 — Discover CI Organisation
 
-**Don't hardcode checks.** Read what the repo actually defines:
+Read what the repository currently defines:
 
 ```bash
-# List all workflows
-ls /home/user/ducktape/.github/workflows/
-
-# Read devinfra/ci/artifacts.py to understand what gets released
-cat /home/user/ducktape/devinfra/ci/artifacts.py 2>/dev/null | head -80
-
-# Read nix/artifact-pins.json to see what's pinned
-cat /home/user/ducktape/nix/artifact-pins.json
-
-# Read devinfra/image_pins.json for Dockerfile-based image pinning
-cat /home/user/ducktape/devinfra/image_pins.json 2>/dev/null
-
-# Count commits on devel since last pin update for each artifact
-git -C /home/user/ducktape log --oneline origin/devel | head -1  # current HEAD
+ls .github/workflows/
+sed -n '1,100p' devinfra/ci/artifacts.py
+cat nix/artifact-pins.json
+cat devinfra/image_pins.json 2>/dev/null
+git log --oneline origin/devel | head -1
 ```
 
-From the discovery, build a mental model of:
+From the workflow YAML and repository configuration, identify:
 
-- Which workflows run on push to devel (per-commit checks)
-- Which workflows run on a schedule (repinning, attic push)
-- Which workflows are triggered manually only
-- What artifacts are released and pinned back into the repo
+- workflows triggered by pushes or pull requests
+- scheduled and manually triggered workflows, including their configured cadence
+- build, release, and pin-sync dependencies
+- released artifacts, pinned images, and the workflows that own them
 
-## Phase 2 — Gather Data (Run in Parallel)
+## Phase 2 — Gather Data
 
-Run all data-gathering commands in parallel.
+### 2a. Per-commit workflow status on devel
 
-### 2a. Per-commit Workflow Status on devel
-
-For each push-triggered workflow, fetch the last 5 runs on devel:
+Read the trigger definitions, then query recent runs for every workflow with a
+push or pull-request trigger. This loop discovers file names from the checkout:
 
 ```bash
 REPO=agentydragon/ducktape
 
-# Per-commit workflows to check:
-for wf in pre-commit ci bazel-ci ansible-lint nix-attic-push \
-           push-images props-images container-images \
-           openclaw-image tana-mcp-image; do
-  echo "=== $wf ==="
-  gh run list --repo $REPO --workflow "${wf}.yml" \
+for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$workflow" ] || continue
+  if ! rg -q '^\s+(push|pull_request):|^on:.*(push|pull_request)' "$workflow"; then
+    continue
+  fi
+  name=$(basename "$workflow")
+  gh run list --repo "$REPO" --workflow "$name" \
     --branch devel --limit 5 \
-    --json headBranch,status,conclusion,displayTitle,createdAt,databaseId \
-    --jq '.[] | [.conclusion, .createdAt[:16], .displayTitle[:60]] | @tsv' \
-    2>/dev/null || echo "(no runs or workflow not found)"
+    --json headBranch,status,conclusion,displayTitle,createdAt,databaseId
 done
 ```
 
-For any workflow whose **most recent run** is not `success`:
+For any workflow whose most recent run is not successful, read its failure log
+and identify the exact failed job, step, and error:
 
-- Read the failure log: `gh run view <id> --repo $REPO --log-failed 2>&1 | tail -100`
-- Identify exactly what failed (hook name, step name, error message, diff)
+```bash
+gh run view <run-id> --repo "$REPO" --log-failed 2>&1 | tail -150
+```
 
-### 2b. Release Artifact Staleness
+### 2b. Release artifact staleness
 
-For each entry in `nix/artifact-pins.json`, the URL encodes the pinned commit:
-ducktape-produced pins follow the pattern
-`.../releases/download/<artifact>-<sha7>/<filename>`. Extract that sha7,
-count how many commits `origin/devel` is ahead of it, and report the age of
-the pinned commit.
+For each entry in nix/artifact-pins.json, inspect its URL and hash. Repo-built
+artifacts commonly encode a source commit in the release tag; compare that
+commit with origin/devel and report the distance and age. Third-party pins may
+use semantic versions instead.
 
-External pins (e.g. `bb` from buildbuddy-io) have semantic version tags
-instead — just report the version.
+For image pins, read devinfra/image_pins.json and each publishing workflow's
+path filters. Image digests should move when their owned source paths change.
+The RBE worker digest is part of every Bazel action cache key, so it should
+remain stable unless the RBE worker image itself changes.
 
-Also read `devinfra/image_pins.json` for Dockerfile-based image digests
-(bbr-runner, freecad-test from `container-images.yml`; rbe-worker from
-`rbe-worker-image.yml`). These move only when the relevant Dockerfiles change,
-so staleness is expected unless those paths were recently touched — and for
-`rbe_worker` staleness is the goal, not a fault: its digest is in every Bazel
-action's cache key, so report a _frequently_ moving rbe_worker pin, never a
-still one.
+### 2c. Scheduled workflow health
 
-### 2c. Scheduled Workflow Health
-
-Check that scheduled jobs are running and succeeding:
+Discover scheduled workflows from .github/workflows/, read each schedule, and
+compare it with the latest run history:
 
 ```bash
 REPO=agentydragon/ducktape
 
-# sync-pins runs every 30 minutes — should have a recent success
-echo "=== sync-pins (every 30 min) ==="
-gh run list --repo $REPO --workflow sync-pins.yml \
-  --limit 5 \
-  --json status,conclusion,createdAt,databaseId \
-  --jq '.[] | [.conclusion, .createdAt[:16]] | @tsv' 2>/dev/null
-
-# nix-attic-push runs on push
-echo "=== nix-attic-push (on push) ==="
-gh run list --repo $REPO --workflow nix-attic-push.yml \
-  --branch devel --limit 3 \
-  --json status,conclusion,createdAt,displayTitle \
-  --jq '.[] | [.conclusion, .createdAt[:16], .displayTitle[:50]] | @tsv' 2>/dev/null
-
+for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$workflow" ] || continue
+  if ! rg -q '^\s+schedule:' "$workflow"; then
+    continue
+  fi
+  name=$(basename "$workflow")
+  gh run list --repo "$REPO" --workflow "$name" --limit 5 \
+    --json status,conclusion,createdAt,databaseId
+done
 ```
 
-**sync-pins health criteria:**
+Compare each successful run with the configured cadence and a reasonable grace
+period for that workflow's purpose. Read failure logs for unsuccessful runs.
 
-- Should have a `success` run within the last 45 minutes
-- If last success is >60 min ago: warn; if >2 hours: flag as stuck
-- If recent runs are failing: read failure log and diagnose
+### 2d. Release pipeline status
 
-### 2d. Release Pipeline Status
-
-Check that the release job ran and released all expected artifacts after the
-most recent devel push:
+Read the workflow YAML to find which jobs build and publish each artifact. Query
+the latest relevant runs and compare the resulting GitHub releases with
+devinfra/ci/artifacts.py. Flag a missing or old release only when its publish
+step should have completed successfully.
 
 ```bash
 REPO=agentydragon/ducktape
-
-echo "=== ci.yml (main pipeline) ==="
-gh run list --repo $REPO --workflow ci.yml \
-  --branch devel --limit 5 \
-  --json status,conclusion,createdAt,displayTitle,databaseId \
-  --jq '.[] | [.conclusion, .createdAt[:16], .displayTitle[:60]] | @tsv' 2>/dev/null
-
-# Latest release artifacts on GitHub
-echo "=== Latest GitHub releases ==="
-gh release list --repo $REPO --limit 20 2>/dev/null \
-  | head -30
+gh run list --repo "$REPO" --branch devel --limit 50 \
+  --json workflowName,status,conclusion,createdAt,displayTitle,databaseId
+gh release list --repo "$REPO" --limit 50
 ```
 
-Cross-reference: after the most recent successful `ci.yml` run, there should be
-GitHub releases for every artifact listed in `devinfra/ci/artifacts.py`. If any
-are absent or older than the CI run, the release job may have failed silently.
+### 2e. Container image currency
 
-### 2e. Container Image Currency
+Use devinfra/image_pins.json to enumerate pinned images. Read each owning
+workflow's path filters and recent runs; decide whether relevant source changes
+should have triggered a new publish.
 
-```bash
-REPO=agentydragon/ducktape
+### 2f. Other repository-defined checks
 
-echo "=== container-images (rbe-worker, freecad-test) ==="
-gh run list --repo $REPO --workflow container-images.yml \
-  --branch devel --limit 5 \
-  --json conclusion,createdAt,displayTitle \
-  --jq '.[] | [.conclusion, .createdAt[:16], .displayTitle[:50]] | @tsv' 2>/dev/null
+Inspect .github/workflows/ for workflows not covered above and spot-check
+their recent runs. Look for open PRs that touch artifact pins or release/sync
+configuration, since they may explain a pin that has not advanced.
 
-echo "=== push-images (14 OCI images) ==="
-gh run list --repo $REPO --workflow push-images.yml \
-  --branch devel --limit 3 \
-  --json conclusion,createdAt,displayTitle \
-  --jq '.[] | [.conclusion, .createdAt[:16]] | @tsv' 2>/dev/null
+## Phase 3 — Diagnose failures
 
-echo "=== openclaw-image ==="
-gh run list --repo $REPO --workflow openclaw-image.yml \
-  --branch devel --limit 3 \
-  --json conclusion,createdAt \
-  --jq '.[] | [.conclusion, .createdAt[:16]] | @tsv' 2>/dev/null
+Classify each failure:
 
-echo "=== tana-mcp-image ==="
-gh run list --repo $REPO --workflow tana-mcp-image.yml \
-  --branch devel --limit 3 \
-  --json conclusion,createdAt \
-  --jq '.[] | [.conclusion, .createdAt[:16]] | @tsv' 2>/dev/null
-```
+- **Trivial / auto-fixable**: formatting, whitespace, import ordering, or minor
+  linting. Implement a fix commit and open a PR.
+- **Test failure**: read the test output and determine whether the cause is a
+  focused fix or needs deeper investigation.
+- **Infrastructure failure**: runner cannot reach a dependency, a required
+  secret is missing, a cache is full, or an external API is down. Report the
+  evidence and a specific diagnosis plan.
+- **Pin/release stuck**: trace the configured build, publish, and repin workflow
+  dependencies to locate the break.
 
-### 2f. Anything Else the Repo Defines
-
-After running the above, glance at `.github/workflows/` for any workflows not
-covered above. Spot-check their last run status.
-
-Also check for signs of CI health issues beyond GitHub Actions:
-
-```bash
-# Are there uncommitted pin updates stuck in a PR?
-gh pr list --repo agentydragon/ducktape --limit 10 \
-  --json title,state,createdAt,headRefName \
-  --jq '.[] | [.state, .createdAt[:10], .headRefName[:40], .title[:50]] | @tsv' \
-  2>/dev/null | grep -iE 'pin|sync|chore.*sync' | head -10
-```
-
-## Phase 3 — Diagnose Failures
-
-For every failure found in Phase 2:
-
-1. **Read the failure log** (already done for per-commit checks above). If not
-   yet read, do it now: `gh run view <id> --repo ... --log-failed 2>&1 | tail -150`
-
-2. **Classify the failure**:
-   - **Trivial / auto-fixable**: prettier formatting, trailing whitespace,
-     import ordering, minor linting — create a fix commit and open a PR
-   - **Test failure**: a specific test broke — read the test output, identify
-     the cause, decide if it's a one-line fix or needs deeper investigation
-   - **Infrastructure failure**: runner can't reach a dependency, SOPS key
-     missing, cache full, external API down — propose diagnosis steps
-   - **Pin/release stuck**: artifact not being released or pinned — trace the
-     release pipeline (ci.yml → release.yml → sync-pins.yml) to find the break
-
-3. **For trivial fixes**: implement them directly, commit, push a branch, and
-   open a PR targeting `devel`. Report the PR URL in the health report.
-
-4. **For non-trivial issues**: write a diagnosis plan with specific commands
-   the user can run to confirm the root cause, followed by proposed fixes.
+For non-trivial issues, give the user specific commands to confirm the root
+cause and describe the proposed fix.
 
 ## Phase 4 — Report
 
-Produce a single markdown report. Healthy items get one line. Issues get details.
+Produce one concise markdown report. Healthy items get one line; issues get
+details. The schema below is illustrative: every angle-bracket value is a
+placeholder to replace with current data, and no row is a claim about current
+CI state.
 
 ```markdown
-# CI Health Report — <date> <time UTC>
+# CI Health Report — <report time in UTC>
 
 ## Summary
 
-<one-liner: all green / N issues found>
+<overall status and issue count>
 
-## Per-Commit Checks (devel)
+## Per-commit checks
 
-| Workflow         | Status | Last run         | Note                     |
-| ---------------- | ------ | ---------------- | ------------------------ |
-| pre-commit       | ✅     | 2026-04-13 06:19 |                          |
-| bazel-ci         | ✅     | 2026-04-13 06:19 |                          |
-| release          | ✅     | 2026-04-13 06:19 | all 6 artifacts released |
-| push-images      | ✅     | 2026-04-13 06:15 |                          |
-| ansible-lint     | ✅     | 2026-04-12 14:03 |                          |
-| nix-attic-push   | ⚠️     | 2026-04-12 10:00 | 28h ago, timed out       |
-| container-images | ✅     | 2026-04-11 08:00 | no Dockerfile changes    |
-| <other>          | ...    | ...              | ...                      |
+| Workflow name from config | Status   | Latest run time from GitHub | Note   |
+| ------------------------- | -------- | --------------------------- | ------ |
+| <workflow>                | <status> | <timestamp or not run>      | <note> |
 
-## Scheduled Jobs
+## Scheduled jobs
 
-| Job       | Schedule     | Last success     | Status |
-| --------- | ------------ | ---------------- | ------ |
-| sync-pins | every 30 min | 2026-04-13 06:32 | ✅     |
+| Workflow name | Schedule from config | Latest successful run | Status   |
+| ------------- | -------------------- | --------------------- | -------- |
+| <workflow>    | <schedule>           | <timestamp or none>   | <status> |
 
-## Artifact Pin Staleness
+## Artifact pins
 
-| Artifact      | Behind devel | Pinned commit | Age        |
-| ------------- | ------------ | ------------- | ---------- |
-| claude-hooks  | 0 commits    | 35b400e       | up-to-date |
-| skills        | 2 commits    | 2de0bf8       | 1 hour ago |
-| ducktape      | 0 commits    | 071dad5       | up-to-date |
-| bbapi         | 0 commits    | 1710bc6       | up-to-date |
-| bb (external) | n/a          | 5.0.339       | external   |
+| Pin name from JSON | Pinned version or commit | Distance from source | Assessment |
+| ------------------ | ------------------------ | -------------------- | ---------- |
+| <pin>              | <version or commit>      | <distance or n/a>    | <status>   |
 
-## Dockerfile Image Pins
+## Image pins
 
-| Image        | Pin age | Status |
-| ------------ | ------- | ------ |
-| rbe-worker   | current | ✅     |
-| freecad-test | current | ✅     |
+| Image name from config | Pinned digest | Relevant source changes | Assessment |
+| ---------------------- | ------------- | ----------------------- | ---------- |
+| <image>                | <digest>      | <changes or none>       | <status>   |
 
-## Issues Found
+## Issues found
 
-### <severity>: <title>
+### <severity>: <issue>
 
-**Workflow**: <name>
-**Run**: <id> at <time>
-**Error**: <brief description>
-**Root cause**: <if determinable>
-**Fix**: <action taken (link to PR) or proposed steps>
+**Workflow:** <workflow name from config>
+**Run:** <GitHub run link and timestamp>
+**Error:** <brief description>
+**Root cause:** <if determinable>
+**Fix:** <PR link or proposed steps>
 ```
 
-## Important Patterns to Detect
+## Important patterns to detect
 
-- **sync-pins not running**: if last `sync-pins.yml` success is >1h ago,
-  something is wrong with the scheduler or the workflow itself is failing
-- **Release blocked**: if `ci.yml` succeeded but `release.yml` sub-job failed,
-  artifacts won't update and pins will grow stale
-- **Artifact drift with healthy pipeline**: pins can legitimately lag by
-  several commits while a CI run is still in progress (commits often land
-  while the release job is building). To assess whether drift is a problem,
-  trace the pipeline: did `ci.yml` complete successfully for the commits since
-  the pin? Did the `release` sub-job succeed for that specific artifact's test
-  matrix entry? Did `sync-pins.yml` run after that release completed? If all
-  three happened and the pin still hasn't moved, something is stuck upstream
-- **Prettier / formatting churn**: if pre-commit fails on the same file
-  repeatedly across different commits, the file likely has an ongoing formatting
-  conflict (contributor not running `pre-commit` locally)
-- **Container image stuck**: if `container-images.yml` last ran weeks ago and
-  the Dockerfiles haven't changed, this is expected — only flag if the image
-  should have updated based on path changes in recent commits
-- **nix-attic-push timeout**: the job has a 120-minute timeout; timeouts are
-  not uncommon for large Nix builds but should be retried
+- **Scheduled workflow missing**: compare its latest success with the current
+  schedule and expected grace period.
+- **Release blocked**: a successful build with a failed dependent publish job
+  leaves artifacts and pins unchanged.
+- **Artifact drift with healthy pipeline**: pins can lag while relevant runs are
+  active. Trace the build, publish, and repin steps before calling it stuck.
+- **Formatting churn**: repeated failures on the same file may indicate an
+  unresolved formatter conflict.
+- **Image pin staleness**: an old digest is expected when its owned source paths
+  have not changed; flag it when a relevant change should have published.
+- **Build timeout**: compare the run with its configured timeout and the work
+  performed. Retry only when logs indicate a transient failure.
