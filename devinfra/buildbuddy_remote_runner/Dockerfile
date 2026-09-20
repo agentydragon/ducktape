@@ -21,14 +21,13 @@ ARG BASE_REF
 FROM ${BASE_REF}
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
-# --- Nix + devtools ---
-# Install Nix (single-user, no daemon) and the flake devtools package.
-# This gives the runner the same tools as the local devshell (pre-commit,
-# bazelisk, ruff, buildifier, bb, bbapi, gh, kubectl, etc.) without
-# maintaining a separate apt/pip install list.
+# --- Nix + Bazel runner tools ---
+# Install Nix (single-user, no daemon) and the focused runner package. This VM
+# drives Bazel CI with Bazelisk and bazel-diff, and uploads best-effort runner
+# diagnostics with bb. Pre-commit runs in a separate GitHub Actions workflow.
 #
-# The devtools closure is fetched from the anonymous Attic public cache, with
-# cache.nixos.org as a fallback. Only the symlinkJoin derivation itself needs
+# The runner-tools closure is fetched from the anonymous Attic public cache,
+# with cache.nixos.org as a fallback. Only the symlinkJoin derivation needs
 # a local build.
 
 # Copy only the repo files needed to evaluate and build `.#rbetools`. Keep

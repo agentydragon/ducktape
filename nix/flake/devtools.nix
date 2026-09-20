@@ -6,35 +6,38 @@
 }:
 
 let
-  # Nix-provided tools needed by the system hooks and repo-local hooks in
-  # .pre-commit-config.yaml. Hook environments from pre-commit-managed repos
-  # continue to be installed and cached by pre-commit itself.
-  preCommitCommonPackages = {
-    inherit (ducktapePkgs) bb bbr prettier;
-    gitHooks = ducktapePkgs.ducktape-git-hooks;
-    preCommit = pkgs.pre-commit;
-    inherit (pkgs)
-      bazelisk
-      nixfmt
-      statix
-      shfmt
-      buildifier
-      gofumpt
-      kubeconform
-      tflint
-      checkov
-      ;
-    ruff = ruffLatest;
-    keepSorted = pkgs.keep-sorted;
-    markdownlintCli2 = pkgs.markdownlint-cli2;
+  # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
+  # RBE container image. These are the only Nix tools its scripts need.
+  buildBuddyRunnerPackages = {
+    inherit (ducktapePkgs) bb;
+    inherit (pkgs) bazelisk;
+    bazelDiff = ducktapePkgs.bazel-diff;
   };
-  # Rustfmt and Ansible are pre-commit requirements, but stay out of the lean
-  # BuildBuddy Remote Runner toolset because of their large closures.
-  preCommitRbeExcludedPackages = [
+  buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
+
+  # Nix-provided tools used by .pre-commit-config.yaml. Hook environments from
+  # pre-commit-managed repos continue to be installed and cached by pre-commit.
+  preCommitPackages = [
+    buildBuddyRunnerPackages.bb
+    ducktapePkgs.bbr
+    ducktapePkgs.ducktape-git-hooks
+    pkgs.pre-commit
+    buildBuddyRunnerPackages.bazelisk
+    pkgs.nixfmt
+    pkgs.statix
+    ruffLatest
+    pkgs.shfmt
+    pkgs.buildifier
+    pkgs.keep-sorted
+    pkgs.gofumpt
+    pkgs.markdownlint-cli2
+    ducktapePkgs.prettier
+    pkgs.kubeconform
+    pkgs.tflint
+    pkgs.checkov
     pkgs.rustfmt
     pkgs.ansible
   ];
-  preCommitPackages = builtins.attrValues preCommitCommonPackages ++ preCommitRbeExcludedPackages;
 
   # Dev tools shared between the devShell (local `nix develop` / direnv)
   # and Claude Code web (`nix profile install .#devtools`).
@@ -43,14 +46,12 @@ let
   # gettext + locale data. Blocked on slow rebuild (gitMinimal override
   # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
   # See devinfra/claude/docs/devtools-closure-size.md for details.
-  # Packages not needed by the BuildBuddy Remote Runner toolset (large, local/infra-only).
-  # Excluded from rbetools to keep the BuildBuddy Remote Runner image small.
+  # Packages only needed by local development or cluster operations.
   localOnlyPackages = [
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
     # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
   ]
-  ++ preCommitRbeExcludedPackages
   ++ [
     # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
     # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
@@ -71,27 +72,15 @@ let
   ];
   # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
-  # Dev tools shared between the devShell, Claude profiles, and RBE runner.
+  # Non-hook developer tools shared by the devShell and Claude profiles.
+  # Pre-commit's packages are composed once below; the BuildBuddy runner has its
+  # own smaller package set above.
   devToolsCommon = [
-    preCommitCommonPackages.bb
     ducktapePkgs.bbapi
-    preCommitCommonPackages.bbr
-    preCommitCommonPackages.gitHooks
     # Repo-configured Gazelle; `gazelle` / `gazelle -mode=diff` from a
     # checkout regenerate Python BUILD files without Bazel.
     ducktapePkgs.gazelle
     ducktapePkgs.skills
-    preCommitCommonPackages.preCommit
-    preCommitCommonPackages.bazelisk
-    preCommitCommonPackages.nixfmt
-    preCommitCommonPackages.statix
-    preCommitCommonPackages.ruff
-    preCommitCommonPackages.shfmt
-    preCommitCommonPackages.buildifier
-    preCommitCommonPackages.keepSorted
-    preCommitCommonPackages.gofumpt
-    preCommitCommonPackages.markdownlintCli2
-    preCommitCommonPackages.prettier
     pkgs.openssl
     # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
     # include a guaranteed Python runtime with pyyaml for that path.
@@ -103,23 +92,24 @@ let
     pkgs.fluxcd
     pkgs.kustomize
     pkgs.kubernetes-helm
-    preCommitCommonPackages.kubeconform
     pkgs.opentofu
-    preCommitCommonPackages.tflint
-    preCommitCommonPackages.checkov
     pkgs.sops
     pkgs.ssh-to-age
-    ducktapePkgs.bazel-diff
+    buildBuddyRunnerPackages.bazelDiff
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
   # remains Python and is exposed separately as `claude-statusline`.
-  devToolPackages = devToolsCommon ++ [
-    ducktapePkgs.claude-hook
-    ducktapePkgs.claude-statusline
-  ];
+  devToolPackages =
+    preCommitPackages
+    ++ devToolsCommon
+    ++ [
+      ducktapePkgs.claude-hook
+      ducktapePkgs.claude-statusline
+    ];
 in
 {
   inherit
+    buildBuddyRunnerTools
     localOnlyPackages
     preCommitPackages
     systemLibs
