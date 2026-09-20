@@ -12,11 +12,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("oidc-client-ts", () => ({
-  UserManager: vi.fn((settings: unknown) => {
+  UserManager: vi.fn(function (settings: unknown) {
     mocks.constructManager(settings);
     return mocks.manager;
   }),
-  WebStorageStateStore: vi.fn((options: unknown) => {
+  WebStorageStateStore: vi.fn(function (options: unknown) {
     mocks.constructStore(options);
     return {};
   }),
