@@ -1,6 +1,6 @@
 # Agentplane staging — OIDC login for the integration app (agentplane-staging.allegedly.works)
 #
-# The app is the relying party (authlib + a signed session cookie; see x/agentplane/app/oidc.py).
+# The app is the relying party (authlib + a signed session cookie; see agentplane/app/oidc.py).
 # The application slug is the per-provider issuer path, which the app pins the id token's `iss`
 # against, so `agentplane` cannot be renamed without changing the app's configured issuer.
 

@@ -31,7 +31,7 @@ cluster/k8s/**/*.k8s.yaml
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
-# kubeconform schemas dumped from the Agentplane CRDs by `bb run //x/agentplane/crds:generate_bin`
+# kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`
 cluster/schemas/**
 
 # Root kustomization.yaml - prettier mangles the resources list

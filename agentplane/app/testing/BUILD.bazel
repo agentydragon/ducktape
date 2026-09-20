@@ -1,0 +1,62 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app:__pkg__"],
+)
+
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = [
+        "//agentplane/app:egress",
+        "//agentplane/app:inventory",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "egress_proxy",
+    srcs = ["egress_proxy.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
+    name = "replication_process",
+    srcs = ["replication_process.py"],
+    deps = [
+        ":kubernetes",
+        ":replication_source",
+        "//agentplane/app:action_policy",
+        "//agentplane/app:api",
+        "//agentplane/app:bridge",
+        "//agentplane/app:decisions",
+        "//agentplane/app:egress",
+        "//agentplane/app:identity",
+        "//agentplane/app:inventory",
+        "//agentplane/app:live",
+        "//agentplane/app:presets",
+        "//agentplane/app:trajectory",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "replication_source",
+    srcs = ["replication_source.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

@@ -1,0 +1,46 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_testonly = True)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "adapter",
+    srcs = ["adapter.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@tanstack/db",
+        "//agentplane/protocol:event_log_pb",
+    ],
+)
+
+ts_library(
+    name = "adapter_test",
+    srcs = ["adapter.test.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":adapter",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@tanstack/db",
+        "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "vitest.config.mts",
+        ":adapter_test",
+        "//:node_modules/vitest",
+    ],
+)

@@ -1,4 +1,4 @@
-"""Shared x/agentplane/app/main.py `Settings` shape assembled by both
+"""Shared agentplane/app/main.py `Settings` shape assembled by both
 staging_config.py and testing_config.py, which own the per-namespace model
 routes and policies passed in here.
 """
@@ -65,7 +65,7 @@ def settings(
         # endpoint a sandbox has no agent, so it is not a choice (see this namespace's
         # egress/ directory).
         "default_policies": [BASIC_POLICY],
-        # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked
+        # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.
         "egress_admin_url": f"http://agentplane-egress-admin.{namespace}.svc:8081",

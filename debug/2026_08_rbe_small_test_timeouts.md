@@ -159,20 +159,20 @@ The condition this note set for the repo-wide fix — "if this keeps recurring o
 is met. Two packages that share nothing with augur, and nothing with each other, flake the
 same way. All figures are `bbr test --nocache_test_results --runs_per_test=10`.
 
-| target                                | TIMEOUTs | note                    |
-| ------------------------------------- | -------: | ----------------------- |
-| `//x/agentplane/egress:test_proxy`    |     4/10 | 5/10 when run alone     |
-| `//x/agentplane/egress:test_sidecar`  |     4/10 |                         |
-| `//x/agentplane/egress:test_policy`   |     3/10 | no I/O at all           |
-| `//x/agentplane/egress:test_admin`    |     3/10 |                         |
-| `//x/agentplane/egress:test_identity` |     3/10 |                         |
-| `//x/agentplane/egress:test_upstream` |     2/10 |                         |
-| `//util:test_sqlalchemy_types`        |     2/10 | control, unrelated tree |
-| `//util:test_image_tag`               |     1/10 | control, unrelated tree |
-| `//util/bazel:test_workspace`         |     1/10 | control, unrelated tree |
+| target                              | TIMEOUTs | note                    |
+| ----------------------------------- | -------: | ----------------------- |
+| `//agentplane/egress:test_proxy`    |     4/10 | 5/10 when run alone     |
+| `//agentplane/egress:test_sidecar`  |     4/10 |                         |
+| `//agentplane/egress:test_policy`   |     3/10 | no I/O at all           |
+| `//agentplane/egress:test_admin`    |     3/10 |                         |
+| `//agentplane/egress:test_identity` |     3/10 |                         |
+| `//agentplane/egress:test_upstream` |     2/10 |                         |
+| `//util:test_sqlalchemy_types`      |     2/10 | control, unrelated tree |
+| `//util:test_image_tag`             |     1/10 | control, unrelated tree |
+| `//util/bazel:test_workspace`       |     1/10 | control, unrelated tree |
 
 The controls are what make this general: they were run precisely to falsify "the egress
-package is special", and they flake too. `//x/agentplane/egress:test_policy` rules out the
+package is special", and they flake too. `//agentplane/egress:test_policy` rules out the
 other tempting story — it is pure synchronous logic, no `async def`, no aiohttp, no fake API
 server, nothing that can block — and it still dies at 64.3s.
 
@@ -190,12 +190,12 @@ pytest for 11 tests, a green `test_informer` 0.35s. Call it three seconds of Pyt
 
 The cost is the execution platform. BuildBuddy's own per-execution timings, same invocation:
 
-| phase                                | `//util:test_image_tag` | `//x/agentplane/egress:test_policy` |
-| ------------------------------------ | ----------------------: | ----------------------------------: |
-| queued -> worker                     |                   0.06s |                               0.09s |
-| worker -> input fetch (VM/container) |               **4.43s** |                         **252.83s** |
-| input fetch                          |                   0.85s |                               9.62s |
-| execution                            |              **40.69s** |           60.96s, killed at the cap |
+| phase                                | `//util:test_image_tag` | `//agentplane/egress:test_policy` |
+| ------------------------------------ | ----------------------: | --------------------------------: |
+| queued -> worker                     |                   0.06s |                             0.09s |
+| worker -> input fetch (VM/container) |               **4.43s** |                       **252.83s** |
+| input fetch                          |                   0.85s |                             9.62s |
+| execution                            |              **40.69s** |         60.96s, killed at the cap |
 
 `test_image_tag` is a trivial test: ~3s of Python inside a 40s execution, behind 4s of VM preparation.
 `test_policy` waited over four minutes for an executor to prepare a filesystem. So `size = "small"`
@@ -237,7 +237,7 @@ each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target b
 runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
 
 **Sized where it hits, and the default stays `small` (Rai).** The seven
-`//x/agentplane/egress` targets carry `size = "medium"` because they are the ones observed failing:
+`//agentplane/egress` targets carry `size = "medium"` because they are the ones observed failing:
 one on CI, the rest at 2-4 in 10 locally. The `devinfra/python/defs.bzl` default is unchanged, so a
 test that has not hit this keeps the 60s budget and keeps meaning something by it. Raising the
 default was drafted and rejected: it would have re-sized every Python test in the repo for a
@@ -266,7 +266,7 @@ answers the August open question: the pinned image was never the mechanism.
 - **The egress package's import closure.** Its `conftest.py` pulls `kubernetes_asyncio` into
   every target including pure-logic ones, which looked like a fine culprit until the `util`
   controls — which import none of it — flaked as well.
-- **A genuine wedge, in one case only.** `//x/agentplane/egress:test_informer` really did hang
+- **A genuine wedge, in one case only.** `//agentplane/egress:test_informer` really did hang
   on a 60s watch race (#5469), unrelated to any of the above; its file now runs in 0.35s. It is
   named here because it sat inside this same symptom and will otherwise look like more evidence
   for a story it does not belong to.

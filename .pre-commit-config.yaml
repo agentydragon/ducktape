@@ -241,7 +241,7 @@ repos:
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.; cluster/schemas/ holds the ones for this repo's
       # own CRDs (each file is its CRD's openAPIV3Schema, dumped by
-      # `bb run //x/agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
+      # `bb run //agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
       # schemas (powerdns-operator, kagent) are skipped rather than failing.
       # TODO: Run the datree CRD extractor against the live cluster to get
       # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,

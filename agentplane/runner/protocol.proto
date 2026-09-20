@@ -1,0 +1,131 @@
+// Runner transport over the common durable Command/Event log language.
+//
+// A runner session owns one native conversation and a state-volume Event source. Attach selects
+// that source, returns a runner-specific snapshot, then follows it. Command, EventEntry, and Follow
+// are source-neutral messages from agentplane/protocol: the integration app uses the same messages
+// for its retained Thread archive.
+
+syntax = "proto3";
+
+package ducktape.agentplane.runner.v1;
+
+import "agentplane/protocol/command.proto";
+import "agentplane/protocol/event_log.proto";
+
+service Runner {
+  rpc Attach(stream ClientMessage) returns (stream ServerMessage);
+  // Execute integration-app configured initialization for this Sandbox. The runner records the
+  // selected script at one fixed state path. An exact retry is a no-op; any other script is refused.
+  rpc Initialize(InitializeRequest) returns (stream InitializationEvent);
+  // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
+  // client that keeps no record of its own finds them again.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+}
+
+message InitializeRequest {
+  string script = 1;
+  // Events with a greater sequence are replayed before live output. Zero replays the whole log.
+  uint64 after_sequence = 2;
+}
+
+enum InitializationStream {
+  INITIALIZATION_STREAM_UNSPECIFIED = 0;
+  INITIALIZATION_STREAM_STDOUT = 1;
+  INITIALIZATION_STREAM_STDERR = 2;
+}
+
+message InitializationOutput {
+  InitializationStream stream = 1;
+  bytes data = 2;
+}
+
+message InitializeResult {
+  bool executed = 1;
+  int32 exit_code = 2;
+}
+
+message InitializationEvent {
+  // Sandbox-scoped, dense, and persisted across runner restarts for cursor-based replay.
+  uint64 sequence = 1;
+  // Failed executions may be retried, but only with the exact script originally selected.
+  uint32 attempt = 2;
+  oneof observation {
+    InitializationOutput output = 3;
+    InitializeResult result = 4;
+  }
+}
+
+enum Harness {
+  HARNESS_UNSPECIFIED = 0;
+  HARNESS_CLAUDE = 1;
+  HARNESS_CODEX = 2;
+}
+
+message SessionSpec {
+  Harness harness = 1;
+  string cwd = 2;
+  string model = 3;
+  string reasoning_effort = 4;
+  // Standing instructions are fixed for the session's life: a spec supplied on re-attach must
+  // equal the stored one. Empty is a session without any.
+  string instructions = 5;
+}
+
+message Open {
+  // Client-chosen. An unknown id creates the session from spec; a known id attaches to the existing
+  // session, and spec, when present, must equal the stored one.
+  string session_id = 1;
+  SessionSpec spec = 2;
+  ducktape.agentplane.protocol.v1.Follow follow = 3;
+}
+
+// Ends the stream; the harness keeps running.
+message Detach {}
+
+message ClientMessage {
+  oneof message {
+    Open open = 1;
+    ducktape.agentplane.protocol.v1.Command command = 2;
+    Detach detach = 3;
+  }
+}
+
+enum HarnessState {
+  HARNESS_STATE_UNSPECIFIED = 0;
+  HARNESS_STATE_RUNNING = 1;
+  HARNESS_STATE_STOPPED = 2;
+}
+
+message Attached {
+  string session_id = 1;
+  SessionSpec spec = 2;
+  // The last source-local cursor in the session log at attach time; greater cursors are live.
+  uint64 last_cursor = 3;
+  HarnessState harness_state = 4;
+  // Empty when no turn is active.
+  string active_turn_id = 5;
+}
+
+message ListSessionsRequest {}
+
+message SessionSummary {
+  string session_id = 1;
+  SessionSpec spec = 2;
+  uint64 last_cursor = 3;
+  HarnessState harness_state = 4;
+  // Empty when no turn is active.
+  string active_turn_id = 5;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
+}
+
+message ServerMessage {
+  oneof message {
+    Attached attached = 1;
+    ducktape.agentplane.protocol.v1.EventEntry event_entry = 2;
+    // The stream ends after an error, such as a malformed command or a spec mismatch.
+    string error = 3;
+  }
+}

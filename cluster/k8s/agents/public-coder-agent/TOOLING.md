@@ -290,7 +290,7 @@ ssh devbox
 checkout=/home/coder/agentplane-acceptance-$(date -u +%Y%m%d%H%M%S)
 git clone https://github.com/agentydragon/ducktape.git "$checkout"
 cd "$checkout"
-bazelisk test //x/agentplane/acceptance:test_mcp --test_output=streamed --test_arg=-s
+bazelisk test //agentplane/acceptance:test_mcp --test_output=streamed --test_arg=-s
 ```
 
 The default acceptance target is `agentplane-testing` with `AGENTPLANE_ACCEPTANCE_IDP=dex` and its

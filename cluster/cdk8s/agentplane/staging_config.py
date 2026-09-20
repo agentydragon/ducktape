@@ -1,5 +1,5 @@
 """Generates agentplane-staging's `agentplane-app-config` ConfigMap's `config.yaml`
-content -- x/agentplane/app/main.py's `Settings`, mounted by the Deployment. See
+content -- agentplane/app/main.py's `Settings`, mounted by the Deployment. See
 model_rosters.py for the model-name scheme.
 """
 

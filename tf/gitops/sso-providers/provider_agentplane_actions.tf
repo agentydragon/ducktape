@@ -1,4 +1,4 @@
-# Action-only JWT-bearer target. See x/agentplane/docs/operator_federation.md for
+# Action-only JWT-bearer target. See agentplane/docs/operator_federation.md for
 # the pinned Authentik/provider source proving the shared subject mode and grant.
 # Native provider federation preserves the AccessToken's database user; the
 # target provider policy is the authorization boundary.

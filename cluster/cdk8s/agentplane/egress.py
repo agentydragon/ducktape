@@ -65,6 +65,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
+from agentplane.egress.database_migrate import MigrationSettings
+from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.app_settings import (
@@ -85,8 +87,6 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
-from x.agentplane.egress.database_migrate import MigrationSettings
-from x.agentplane.egress.main import CONFIG_FILE_ENV, Settings
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "agentplane-egress"

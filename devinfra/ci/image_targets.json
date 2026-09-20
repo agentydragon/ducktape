@@ -1,8 +1,8 @@
 {
   "images": {
     "agentplane-index": {
-      "target": "//x/agentplane/indexing:image",
-      "test": "//x/agentplane/indexing/...",
+      "target": "//agentplane/indexing:image",
+      "test": "//agentplane/indexing/...",
       "registry": "forgejo"
     },
     "airlock": {
@@ -215,28 +215,28 @@
       "registry": "forgejo"
     },
     "agentplane-runner": {
-      "target": "//x/agentplane/runner:image",
-      "test": "//x/agentplane/runner/...",
+      "target": "//agentplane/runner:image",
+      "test": "//agentplane/runner/...",
       "registry": "forgejo"
     },
     "agentplane-app": {
-      "target": "//x/agentplane/app:image",
-      "test": "//x/agentplane/app/...",
+      "target": "//agentplane/app:image",
+      "test": "//agentplane/app/...",
       "registry": "forgejo"
     },
     "agentplane-app-migrate": {
-      "target": "//x/agentplane/app:migration_image",
-      "test": "//x/agentplane/app/...",
+      "target": "//agentplane/app:migration_image",
+      "test": "//agentplane/app/...",
       "registry": "forgejo"
     },
     "agentplane-action-service": {
-      "target": "//x/agentplane/action_service:image",
-      "test": "//x/agentplane/action_service/...",
+      "target": "//agentplane/action_service:image",
+      "test": "//agentplane/action_service/...",
       "registry": "forgejo"
     },
     "agentplane-action-service-migrate": {
-      "target": "//x/agentplane/action_service:migration_image",
-      "test": "//x/agentplane/action_service/...",
+      "target": "//agentplane/action_service:migration_image",
+      "test": "//agentplane/action_service/...",
       "registry": "forgejo"
     },
     "ssh-mcp": {
@@ -245,28 +245,28 @@
       "registry": "forgejo"
     },
     "agentplane-egress": {
-      "target": "//x/agentplane/egress:image",
-      "test": "//x/agentplane/egress/...",
+      "target": "//agentplane/egress:image",
+      "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
     "agentplane-egress-migrate": {
-      "target": "//x/agentplane/egress:migration_image",
-      "test": "//x/agentplane/egress/...",
+      "target": "//agentplane/egress:migration_image",
+      "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
     "agentplane-egress-sidecar": {
-      "target": "//x/agentplane/egress:sidecar_image",
-      "test": "//x/agentplane/egress/...",
+      "target": "//agentplane/egress:sidecar_image",
+      "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
     "agentplane-llm-ingress": {
-      "target": "//x/agentplane/llm_ingress:image",
-      "test": "//x/agentplane/llm_ingress/...",
+      "target": "//agentplane/llm_ingress:image",
+      "test": "//agentplane/llm_ingress/...",
       "registry": "forgejo"
     },
     "agentplane-oauth-fixture": {
-      "target": "//x/agentplane/action_service/test_fixtures:oauth_mcp_server_image",
-      "test": "//x/agentplane/action_service/test_fixtures/...",
+      "target": "//agentplane/action_service/test_fixtures:oauth_mcp_server_image",
+      "test": "//agentplane/action_service/test_fixtures/...",
       "registry": "forgejo"
     }
   }

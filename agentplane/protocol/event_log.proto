@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package ducktape.agentplane.protocol.v1;
+
+import "agentplane/protocol/event.proto";
+
+message Follow {
+  // Entries strictly after this source-local cursor are replayed before live entries. Zero starts
+  // from the beginning. A cursor beyond the current log is an error.
+  uint64 after_cursor = 1;
+}
+
+message EventOrigin {
+  // Globally unique, durable identity of the source which originally appended this Event.
+  string source_id = 1;
+  // Dense source-local sequence assigned by that original source.
+  uint64 sequence = 2;
+}
+
+message EventEntry {
+  // Position in the source serving this follow. An importer assigns a new cursor without changing
+  // origin or Event.
+  uint64 cursor = 1;
+  EventOrigin origin = 2;
+  Event event = 3;
+}
