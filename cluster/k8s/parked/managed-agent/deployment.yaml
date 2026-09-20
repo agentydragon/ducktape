@@ -42,7 +42,7 @@ spec:
         fsGroup: 100
       containers:
         - name: worker
-          image: git.allegedly.works/ducktape-ci/haku-managed-agent:devel-20260920035049-2cc823e # {"$imagepolicy": "flux-system:haku-managed-agent"}
+          image: git.allegedly.works/ducktape-ci/haku-managed-agent:devel-20260920082347-aa4a26e # {"$imagepolicy": "flux-system:haku-managed-agent"}
           imagePullPolicy: Always
           command: ["/sw/bin/haku-managed-agent-run"] # run the worker closure directly (no systemd)
           securityContext:
