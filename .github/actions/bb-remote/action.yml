@@ -156,7 +156,7 @@ runs:
         done <<< "$INPUT_ENV_OVERRIDES"
 
         # Resolve the two image pins: the BuildBuddy Remote Runner VM boots
-        # `buildbuddy_remote_runner` (the Bazel client and repo devtools), while remote Bazel actions
+        # `buildbuddy_remote_runner` (the Bazel client and runner tools), while remote Bazel actions
         # use `rbe_container` as their RBE container image.
         # --container_image is a `bb remote` flag (runner VM): must come before the Bazel subcommand.
         # --remote_default_exec_properties is a Bazel command flag (RBE executor): must come after the subcommand.
