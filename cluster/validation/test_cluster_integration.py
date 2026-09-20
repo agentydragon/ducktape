@@ -32,7 +32,6 @@ from cluster.validation.checks import (
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
-from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
@@ -93,20 +92,6 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
 
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_controller_health_checks(cluster, k8s_dir)
-    assert not errors, "\n".join(errors)
-
-
-def test_no_crd_layering_violations(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Active kustomizations must not mix HelmReleases with external-operator CRD instances."""
-    active_dirs = {spec.local_dir(k8s_dir) for spec in cluster.active_flux_kustomizations.values()}
-    errors: list[str] = []
-    for result in cluster.build_results:
-        if result.kustomization_path.parent.resolve() not in active_dirs:
-            continue
-        try:
-            check_crd_layering(result)
-        except CrdLayeringViolationError as e:
-            errors.append(str(e))
     assert not errors, "\n".join(errors)
 
 
