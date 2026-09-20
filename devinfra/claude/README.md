@@ -258,10 +258,10 @@ route ineffective. Reclaim space by deleting — usually stale agent worktrees u
 `web_setup.sh` supports two install modes, selected by the `DUCKTAPE_WEB_SETUP_MODE`
 env var (or a `--mode=<...>` arg):
 
-| Mode                          | How devtools + skills are installed                                                                                                                                                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profile` (default)           | `nix profile install .#devtools` installs `devToolPackages` plus `localOnlyPackages`; skills are linked into `~/.claude/skills/`.                                                                                                      |
-| `home-manager` (experimental) | `home-manager switch --impure --flake .#claude-web` installs `devToolPackages` (omitting `localOnlyPackages`) and deploys skills through the shared HM skills module (<../../nix/home/skills.nix>).                                  |
+| Mode                          | How devtools + skills are installed                                                                                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile` (default)           | `nix profile install .#devtools` installs `devToolPackages` plus `localOnlyPackages`; skills are linked into `~/.claude/skills/`.                                                                   |
+| `home-manager` (experimental) | `home-manager switch --impure --flake .#claude-web` installs `devToolPackages` (omitting `localOnlyPackages`) and deploys skills through the shared HM skills module (<../../nix/home/skills.nix>). |
 
 The `home-manager` mode activates `homeConfigurations.claude-web` (defined in `flake.nix`,
 config at <../../nix/home/hosts/claude-web.nix>) — a standalone, minimal profile that
