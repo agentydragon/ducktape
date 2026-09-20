@@ -25,7 +25,7 @@ import {
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
   KUBECTL_SERVER_ID,
-  TANA_RW_SERVER_ID,
+  TANA_SERVER_ID,
 } from "./server_ids";
 import { tanaActions } from "./tana/actions";
 
@@ -36,7 +36,7 @@ const ACTIONS: Record<string, Record<string, ActionEntry>> = {
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
   [KUBECTL_SERVER_ID]: kubectlActions,
   [GRANTS_SERVER_ID]: grantsActions,
-  [TANA_RW_SERVER_ID]: tanaActions,
+  [TANA_SERVER_ID]: tanaActions,
 };
 
 /** The tool's action description, or `null` when it has no entry or its args don't parse — a

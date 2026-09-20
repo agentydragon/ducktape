@@ -35,7 +35,7 @@ import {
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
   KUBECTL_SERVER_ID,
-  TANA_RW_SERVER_ID,
+  TANA_SERVER_ID,
 } from "./server_ids";
 import { tanaPreviews } from "./tana/requests";
 import type { PreviewVariant } from "./vocabulary";
@@ -50,7 +50,7 @@ type PreviewRegistryShape = {
   [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
   [KUBECTL_SERVER_ID]: typeof kubectlPreviews;
   [GRANTS_SERVER_ID]: typeof grantsPreviews;
-  [TANA_RW_SERVER_ID]: typeof tanaPreviews;
+  [TANA_SERVER_ID]: typeof tanaPreviews;
 };
 
 const REGISTRY: PreviewRegistryShape = {
@@ -60,7 +60,7 @@ const REGISTRY: PreviewRegistryShape = {
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
   [GRANTS_SERVER_ID]: grantsPreviews,
-  [TANA_RW_SERVER_ID]: tanaPreviews,
+  [TANA_SERVER_ID]: tanaPreviews,
 } satisfies Record<string, Record<string, ToolPreview>>;
 
 type PreviewRegistry = typeof REGISTRY;

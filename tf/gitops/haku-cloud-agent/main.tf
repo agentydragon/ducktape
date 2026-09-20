@@ -60,9 +60,9 @@ resource "claude-managed-agents_agent" "haku_cloud" {
 
     You also have access to haku-console's MCP catalog via the `haku-console`
     MCP server — most relevantly READ-ONLY Tana and Grocy tools
-    (`tana_rw_search_nodes`, `tana_rw_read_node`, `grocy_sf_stock_get`,
+    (`tana_search_nodes`, `tana_read_node`, `grocy_sf_stock_get`,
     `grocy_sf_products_list`, …), which auto-approve under the console's reviewed
-    policy. Write tools on those servers (grocy_sf stock mutations, tana_rw node
+    policy. Write tools on those servers (grocy_sf stock mutations, tana node
     edits, and any other non-auto-approved console tool) route through the
     console's operator-approval queue instead of executing directly — never
     expect them to complete without a human clicking approve.
@@ -81,7 +81,7 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     # grants reach to whatever else console exposes — Gmail/Calendar reads, osm, and every
     # approval-gated tool — gated by the console's own auto-approval/approval-queue
     # policy, not by anything here). Supersedes the standalone `tana-mcp-ro` facade
-    # (Tana reads are now `tana-rw` tools allowlisted in the console's auto-approval
+    # (Tana reads are now `tana` tools allowlisted in the console's auto-approval
     # policy) and Haku's dedicated read-only grocy-sf credential (`grocy-mcp-haku-sf`):
     # console's existing grocy-sf catalog entry already exposed the same read tools,
     # plus approval-gated writes the direct credential could never reach.

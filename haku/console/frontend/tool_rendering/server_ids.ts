@@ -11,4 +11,4 @@ export const GRANTS_SERVER_ID = "grants";
 export const GROCY_SERVER_ID = "grocy-sf";
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
-export const TANA_RW_SERVER_ID = "tana-rw";
+export const TANA_SERVER_ID = "tana";

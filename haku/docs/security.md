@@ -129,7 +129,7 @@ that path treats trusted console code as the Operator and creates no approval/au
 There is no narrower RBAC backstop underneath either path.
 Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
 
-### `tana-rw` server entry
+### `tana` server entry
 
 `auth: remote_server_oauth`. Tana reads (`search_nodes`, `read_node`, `get_children`, …)
 plus the idempotent `get_or_create_calendar_node` auto-approve for authenticated Agents
