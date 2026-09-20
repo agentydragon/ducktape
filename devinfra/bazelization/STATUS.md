@@ -59,15 +59,15 @@ bazel run //devinfra/lint:buildifier       # Format BUILD files
 
 ### Linter Configuration
 
-| Tool         | Config                         | Bazel Command                                   |
-| ------------ | ------------------------------ | ----------------------------------------------- |
-| Ruff         | `ruff.toml`                    | `bazel build //...` (default)                   |
-| mypy         | `mypy.ini`                     | `bazel build //...` (default)                   |
-| ESLint       | `eslint.config.js`             | `bazel build //...` (default)                   |
-| Prettier     | `props/frontend/.prettierrc`   | `bazel test //props/frontend:prettier_test`     |
-| svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
-| buildifier   | `devinfra/lint/BUILD.bazel`    | `bazel run //devinfra/lint:buildifier`          |
-| nixfmt       | N/A                            | Pre-commit hook only                            |
+| Tool       | Config                         | Bazel Command                               |
+| ---------- | ------------------------------ | ------------------------------------------- |
+| Ruff       | `ruff.toml`                    | `bazel build //...` (default)               |
+| mypy       | `mypy.ini`                     | `bazel build //...` (default)               |
+| ESLint     | `eslint.config.js`             | `bazel build //...` (default)               |
+| Prettier   | `props/frontend/.prettierrc`   | `bazel test //props/frontend:prettier_test` |
+| TypeScript | `props/frontend/tsconfig.json` | `bbr build //props/frontend:bundle`         |
+| buildifier | `devinfra/lint/BUILD.bazel`    | `bazel run //devinfra/lint:buildifier`      |
+| nixfmt     | N/A                            | Pre-commit hook only                        |
 
 Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses upstream `rules_mypy` v0.41.0 with its `mypy_cli` macro, `follow_imports = silent`, global `ignore_missing_imports = False`, and targeted per-module overrides.
 

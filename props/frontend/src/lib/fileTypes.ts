@@ -1,4 +1,5 @@
-import { File, FileText, FileCode, FileJson, Settings, type Icon } from "lucide-svelte";
+import { File, FileText, FileCode, FileJson, Settings } from "./icons";
+import type { Icon } from "./icon_types";
 
 /**
  * Mapping from file extension to programming language for syntax highlighting.
@@ -44,9 +45,9 @@ export function detectLanguage(filePath: string): string {
 }
 
 /**
- * Get appropriate Lucide icon component for a file based on its extension.
+ * Get the appropriate React icon component for a file based on its extension.
  */
-export function getFileIcon(filename: string): typeof Icon {
+export function getFileIcon(filename: string): Icon {
   const ext = filename.split(".").pop()?.toLowerCase();
 
   if (ext === "json" || ext === "yaml" || ext === "yml") {

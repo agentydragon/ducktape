@@ -18,18 +18,18 @@
 ## Current State
 
 - Independent JS frontends include:
-  - **props/frontend**: SvelteKit (file-based routing, SSR disabled, static adapter)
+  - **props/frontend**: React + Mantine SPA, bundled with esbuild
   - **airlock/frontend**: React + Mantine bundled with esbuild
   - **study_casino/frontend**: React
   - **rspcache/admin_ui**: React + Mantine
 - pnpm workspace with per-project package.json files
 - aspect_rules_js for Bazel integration
 - Vite or esbuild via the Bazel rules, depending on the frontend
-- Storybook + Playwright for visual regression tests (props/frontend only)
+- A React component harness with Puppeteer visual regression tests (props/frontend)
 
 ## Decisions Made
 
-- **SvelteKit replacement OK** if it simplifies Bazel integration
+- **SvelteKit replacement accepted**; Props now uses React + Mantine with esbuild
 - **Local pnpm dev can break** - Bazel is the source of truth
 
 ## Known Problems

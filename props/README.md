@@ -30,7 +30,7 @@ props/
 │       ├── ground_truth.py   # Snapshot/issue browsing API
 │       ├── llm.py            # LLM proxy (OpenAI-compatible)
 │       └── registry.py       # OCI registry proxy
-├── frontend/                 # Svelte dashboard UI
+├── frontend/                 # React + Mantine dashboard UI
 ├── agents/                   # Agent implementations
 │   ├── critic/               # Critic agent (finds issues in code)
 │   ├── grader/               # Grader agent (matches issues to ground truth)

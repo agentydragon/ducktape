@@ -2,12 +2,12 @@
 
 ## Bazel Build
 
-Type checking via `svelte_check_test`. ESLint via workspace lint aspect.
+Each `ts_library` type-checks its source. `bbr build //props/frontend:bundle` checks the app dependency graph. ESLint runs via the workspace lint aspect.
 
 **Adding a new component/page/lib file**:
 
-1. Create the `.svelte` or `.ts` file
-2. Add a `js_library` target in the sub-package `BUILD.bazel`
+1. Create a React component or page in a `.tsx` file, or a non-UI module in a `.ts` file
+2. Add a `ts_library` target in the sub-package `BUILD.bazel`
 3. Declare `deps` on exactly the files it imports
 4. Add it as a `dep` of targets that import it
 
