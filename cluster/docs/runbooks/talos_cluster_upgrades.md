@@ -78,13 +78,19 @@ even when all pods are Ready.
 
 ## 2. Prepare only the target's Terraform machine configuration
 
-Set `talos_version` to the intended release and use the same version for every
-active machine role. Remove any temporary per-node version override once the
-fleet-wide version is being adopted. Keep unrelated pins (including
-`proxmox_talos_version`) unchanged. Keep
-`talos_machine_secrets_version` pinned to the version contract that generated
-the durable cluster secrets; an OS upgrade does not require rotating those
-secrets.
+`talos_version` is the version used by the provider to generate machine
+configuration; it is not the running OS upgrade target. Keep it at the current
+configuration contract during a serial OS roll, and set the selected node's
+desired OS release in `talos_installer_version_overrides`. This selects the
+target `machine.install.image`; `talosctl upgrade` performs the actual OS
+upgrade. The target plan can still contain preexisting machine-configuration
+drift, so apply only if the complete config diff passes the image-only gate.
+Do not bump the shared configuration-generator version as part of a node roll:
+it can also change generated extension configuration (for example, Nebula peer
+data), which must be reviewed separately. Keep unrelated pins (including
+`proxmox_talos_version`) unchanged. Keep `talos_machine_secrets_version`
+pinned to the version contract that generated the durable cluster secrets; an
+OS upgrade does not require rotating those secrets.
 
 For an OVH node, the target is
 `talos_machine_configuration_apply.kimsufi["<node>"]`; this map includes both
@@ -134,7 +140,7 @@ is resolvable:
 
 ```bash
 docker manifest inspect \
-  factory.talos.dev/installer/<fleet-schematic-id>:<talos-version>
+  factory.talos.dev/metal-installer/<fleet-schematic-id>:<talos-version>
 ```
 
 Do not infer registry availability from Terraform state alone: the
@@ -211,7 +217,7 @@ talosctl \
   --endpoints <node-nebula-ip> \
   --nodes <node-nebula-ip> \
   upgrade \
-  --image factory.talos.dev/installer/<fleet-schematic-id>:<talos-version> \
+  --image factory.talos.dev/metal-installer/<fleet-schematic-id>:<talos-version> \
   --drain=false \
   --wait
 ```

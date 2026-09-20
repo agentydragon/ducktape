@@ -12,7 +12,13 @@ variable "cluster_domain" {
 }
 
 variable "talos_version" {
-  description = "Talos version for the cluster"
+  description = "Talos version used by the provider to generate machine configuration"
+  type        = string
+  default     = "v1.12.3"
+}
+
+variable "talos_machine_secrets_version" {
+  description = "Talos version contract used to generate the durable cluster machine secrets"
   type        = string
   default     = "v1.12.3"
 }
