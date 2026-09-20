@@ -525,10 +525,22 @@ py_library(
 )
 
 py_library(
+    name = "artifacts",
+    srcs = ["artifacts.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+    ],
+)
+
+py_library(
     name = "artifact_generators",
     srcs = ["artifact_generators.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":artifacts",
         ":flux",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",

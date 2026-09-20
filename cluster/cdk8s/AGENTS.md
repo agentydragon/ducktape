@@ -102,6 +102,15 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   importing the workload modules. A second fact that needs to cross is a second
   parameter, and that is the review signal. Chart before Kustomization before
   dependents; a Kustomization never builds the chart it describes.
+- **Artifact factories live with their component.** For converted artifact wiring
+  (`cert_manager/flux_kustomizations.py`), the entry point calls the component's factory
+  before its Kustomization node. The factory returns the native
+  `ArtifactGeneratorSpecArtifacts`; the node takes it as an explicit `artifact` parameter
+  and still returns only a `Kustomization`. The entry point passes the same artifact
+  values to the ArtifactGenerator writer last, grouped by their upstream source.
+  `artifacts.directory_artifact` packages the component directory and any shared bases;
+  `artifacts.artifact_source_ref` derives the consumer's reference. Keep the directory
+  value shared by the factory and the node's `spec.path`.
 - **Each object is built from what it reads at runtime, never from what reads it.** A
   Kustomization is built from its artifact, its path and its predecessors; an artifact
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a

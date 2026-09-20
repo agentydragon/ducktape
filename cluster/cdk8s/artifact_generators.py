@@ -1,10 +1,12 @@
 """Typed cdk8s synthesis for source-watcher ArtifactGenerator resources.
 
-The artifact inventory is explicit here. The validation suite checks that each
+Unconverted components keep their artifact inventory here; converted components
+pass their artifact specifications to the writer. The validation suite checks that each
 entry has exactly one active Flux consumer and that its copy operations preserve
 the consumer's rendered Kustomize resources.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Yaml
@@ -19,11 +21,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGenerator,
     ArtifactGeneratorSpec,
     ArtifactGeneratorSpecArtifacts,
-    ArtifactGeneratorSpecArtifactsCopy,
     ArtifactGeneratorSpecSources,
     ArtifactGeneratorSpecSourcesKind,
 )
 
+from cluster.cdk8s.artifacts import directory_artifact
 from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
 
 _ARTIFACT_GENERATORS_DIR = "cluster/k8s/artifact-generators"
@@ -46,16 +48,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agent-machine-access-tf", ("cluster/k8s/agents/machine-access-tf",)),
     ("authentik", ("cluster/k8s/authentik/app",)),
     ("sso-providers-tf", ("cluster/k8s/authentik/sso-providers-tf",)),
-    ("cert-manager", ("cluster/k8s/cert-manager/app",)),
-    (
-        "cert-manager-environment",
-        (
-            "cluster/k8s/cert-manager/environment",
-            "cluster/k8s/cert-manager/config",
-            "cluster/k8s/cert-manager/cluster-ca",
-        ),
-    ),
-    ("cert-manager-issuer-config", ("cluster/k8s/cert-manager/issuer-config",)),
     ("cnpg", ("cluster/k8s/cnpg",)),
     ("external-secrets-config", ("cluster/k8s/external-secrets/config",)),
     ("external-secrets-operator", ("cluster/k8s/external-secrets/operator",)),
@@ -256,39 +248,35 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _FLUX_SYSTEM_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (("external-creds", ("cluster/k8s/external-creds",)),)
 
 
-def _copy_operation(source_path: str) -> ArtifactGeneratorSpecArtifactsCopy:
-    return ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source_path}/**", to=f"@artifact/{source_path}/")
-
-
 def _artifacts(definitions: tuple[tuple[str, tuple[str, ...]], ...]) -> list[ArtifactGeneratorSpecArtifacts]:
-    return [
-        ArtifactGeneratorSpecArtifacts(
-            name=name, origin_revision="@repo", copy=[_copy_operation(path) for path in source_paths]
-        )
-        for name, source_paths in definitions
-    ]
+    return [directory_artifact(name, *source_paths) for name, source_paths in definitions]
 
 
-def artifact_generators(flux_chart: Chart, root: Path) -> Kustomization:
-    """Synthesize the ArtifactGenerator CRs and return their Flux consumer."""
+def write_manifests(root: Path, *, ducktape_artifacts: Sequence[ArtifactGeneratorSpecArtifacts]) -> None:
     out_dir = root / _ARTIFACT_GENERATORS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     app = App(outdir=str(out_dir))
     chart = Chart(app, "artifact-generators", disable_resource_name_hashes=True)
-    for name, definitions, source in (
-        ("ducktape-artifacts", _DUCKTAPE_ARTIFACTS, _DUCKTAPE_SOURCE),
-        ("flux-system-artifacts", _FLUX_SYSTEM_ARTIFACTS, _FLUX_SYSTEM_SOURCE),
+    for name, artifacts, source in (
+        ("ducktape-artifacts", [*_artifacts(_DUCKTAPE_ARTIFACTS), *ducktape_artifacts], _DUCKTAPE_SOURCE),
+        ("flux-system-artifacts", _artifacts(_FLUX_SYSTEM_ARTIFACTS), _FLUX_SYSTEM_SOURCE),
     ):
         ArtifactGenerator(
             chart,
             name,
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            spec=ArtifactGeneratorSpec(artifacts=_artifacts(definitions), sources=[source]),
+            spec=ArtifactGeneratorSpec(artifacts=artifacts, sources=[source]),
         )
     app.synth()
 
-    kustomization = flux_kustomization(
+    (out_dir / "kustomization.yaml").write_text(
+        Yaml.format_objects([kustomize_kustomization(resources=["artifact-generators.k8s.yaml"])])
+    )
+
+
+def artifact_generators(flux_chart: Chart) -> Kustomization:
+    return flux_kustomization(
         flux_chart,
         "artifact-generators",
         spec=KustomizationSpec(
@@ -303,7 +291,3 @@ def artifact_generators(flux_chart: Chart, root: Path) -> Kustomization:
             depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace="flux-system")],
         ),
     )
-    (out_dir / "kustomization.yaml").write_text(
-        Yaml.format_objects([kustomize_kustomization(resources=["artifact-generators.k8s.yaml"])])
-    )
-    return kustomization

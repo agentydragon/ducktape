@@ -19,8 +19,10 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
    them: `image-pins/` (below) and any `.sops.yaml`. Their Flux Kustomization objects
    are created in topo order by `generate_manifests.py` and emitted together in the
    central Flux chart.
-   `artifact-generators` imports the deployed source-watcher CRD and keeps its artifact
-   inventory explicit in `cdk8s/artifact_generators.py`; `test_actions_artifact` checks
+   `artifact-generators` imports the deployed source-watcher CRD. Converted artifact
+   factories live with their component (`cdk8s/cert_manager/flux_kustomizations.py`);
+   the remaining inventory is explicit in `cdk8s/artifact_generators.py`.
+   `test_actions_artifact` checks
    that inventory against the active Flux consumers and their rendered Kustomize output.
 2. **One or a few generated files** in an otherwise hand-written directory, each a
    `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A

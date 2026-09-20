@@ -12,25 +12,50 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifacts import artifact_source_ref, directory_artifact
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+
+_CERT_MANAGER_DIR = "cluster/k8s/cert-manager/app"
+_ENVIRONMENT_DIR = "cluster/k8s/cert-manager/environment"
+_ISSUER_CONFIG_DIR = "cluster/k8s/cert-manager/issuer-config"
+
+
+def cert_manager_artifact() -> ArtifactGeneratorSpecArtifacts:
+    return directory_artifact("cert-manager", _CERT_MANAGER_DIR)
+
+
+def cert_manager_environment_artifact() -> ArtifactGeneratorSpecArtifacts:
+    return directory_artifact(
+        "cert-manager-environment",
+        _ENVIRONMENT_DIR,
+        "cluster/k8s/cert-manager/config",
+        "cluster/k8s/cert-manager/cluster-ca",
+    )
+
+
+def cert_manager_issuer_config_artifact() -> ArtifactGeneratorSpecArtifacts:
+    return directory_artifact("cert-manager-issuer-config", _ISSUER_CONFIG_DIR)
 
 
 def cert_manager(
-    chart: Chart, cert_manager_issuer_config: Kustomization, reflector: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    *,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cert_manager_issuer_config: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
-    name = "cert-manager"
     return flux_kustomization(
         chart,
-        name,
+        artifact.name,
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/app",
+            source_ref=artifact_source_ref(artifact),
+            path=f"./{_CERT_MANAGER_DIR}",
             prune=True,
             wait=True,
             # Health check ensures cert-manager pods are ready before dependents try to create Certificates
@@ -68,24 +93,23 @@ def cert_manager(
 
 def cert_manager_environment(
     chart: Chart,
+    *,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     cert_manager_issuer_config: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
-    name = "cert-manager-environment"
     return flux_kustomization(
         chart,
-        name,
+        artifact.name,
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/environment",
+            source_ref=artifact_source_ref(artifact),
+            path=f"./{_ENVIRONMENT_DIR}",
             prune=True,
             wait=True,
             post_build=KustomizationSpecPostBuild(
@@ -110,19 +134,16 @@ def cert_manager_environment(
     )
 
 
-def cert_manager_issuer_config(chart: Chart) -> Kustomization:
-    name = "cert-manager-issuer-config"
+def cert_manager_issuer_config(chart: Chart, *, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
-        name,
+        artifact.name,
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/issuer-config",
+            source_ref=artifact_source_ref(artifact),
+            path=f"./{_ISSUER_CONFIG_DIR}",
             prune=True,
             wait=True,
         ),
