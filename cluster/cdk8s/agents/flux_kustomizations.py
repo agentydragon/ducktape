@@ -227,7 +227,12 @@ def authentik_jwt_rotation(
 
 
 def claude_sandbox_secrets(
-    chart: Chart, claude_rbac: Kustomization, external_secrets_config: Kustomization, ollama: Kustomization
+    chart: Chart,
+    claude_rbac: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    agent_shared_secrets: Kustomization,
+    ollama: Kustomization,
 ) -> Kustomization:
     name = "claude-sandbox-secrets"
     return flux_kustomization(
@@ -241,11 +246,22 @@ def claude_sandbox_secrets(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="openclaw-telegram-bot-token",
+                    namespace="claude-sandbox",
+                )
+            ],
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_config, ollama),
+            depends_on=flux_kustomization_depends_on_many(
+                claude_rbac, external_creds, external_secrets_config, agent_shared_secrets, ollama
+            ),
         ),
     )
 
@@ -1005,7 +1021,10 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/agents/shared-secrets",
-            prune=True,
+            # Staged transfer: leave the existing Telegram Secret in place for
+            # the consumer ExternalSecret to adopt; restore pruning after that
+            # Kustomization reconciles and its inventory drops the old source.
+            prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),

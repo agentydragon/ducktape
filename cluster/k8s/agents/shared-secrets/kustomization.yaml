@@ -5,4 +5,3 @@ resources:
   - attic-push-token.sops.yaml
   - brave-search-api-key.sops.yaml
   - buildbuddy-api-key.sops.yaml
-  - openclaw-telegram-bot-token.sops.yaml

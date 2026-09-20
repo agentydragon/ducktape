@@ -1,0 +1,18 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: openclaw-telegram-bot-token
+  namespace: claude-sandbox
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-external-creds-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: openclaw-telegram-bot-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: openclaw-telegram-bot-token
+        property: token

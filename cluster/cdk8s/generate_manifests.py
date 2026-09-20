@@ -463,7 +463,12 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
     )
     agents_flux_kustomizations.claude_sandbox_secrets(
-        flux_chart, claude_rbac_kustomization, external_secrets_config_kustomization, ollama_kustomization
+        flux_chart,
+        claude_rbac_kustomization,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
+        agent_shared_secrets_kustomization,
+        ollama_kustomization,
     )
     agents_flux_kustomizations.haku_openclaw_spike_backup(
         flux_chart,
