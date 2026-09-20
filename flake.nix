@@ -125,17 +125,20 @@
         builtins.mapAttrs (
           name: spec:
           if overrides ? ${name} then
-            # Preserve the URL's basename so consumers that read the store
-            # path's suffix (aiquota's buildPythonApplication glob for *.whl,
-            # extension-zip unzip) work identically to the fetchurl path.
-            # renameWheel-based mkWheel callers are agnostic to this name.
+            # Preserve the local artifact's basename. Wheel installers validate
+            # the archive filename against its embedded .dist-info directory.
             builtins.path {
               path = /. + overrides.${name};
-              name = baseNameOf spec.url;
+              name = baseNameOf overrides.${name};
             }
           else
             pkgs.fetchurl {
               inherit (spec) url;
+              name =
+                let
+                  asset = baseNameOf spec.url;
+                in
+                if pkgs.lib.hasSuffix ".whl" asset || pkgs.lib.hasSuffix ".zip" asset then asset else "source";
               hash = "sha256-${spec.sha256}";
             }
         ) data.pins;

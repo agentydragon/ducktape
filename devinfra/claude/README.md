@@ -33,8 +33,8 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Connectivity Probe
 
-Not currently implemented in Rust. See <TODO.md> for the Python parity
-follow-up.
+Not currently implemented in Rust. See <TODO.md> for the remaining
+connectivity-probe follow-up.
 
 ### PATH Shims (self-contained Rust runtime)
 
@@ -94,10 +94,11 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
   reinstalls devtools before SessionStart fires, but never invokes `claude-hook`.
 - **Session-local files** (socket, shim dir, session bazelrc): always keyed by
   `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
-- **Session-global files** (for example, the bazelisk binary at
-  `~/.cache/claude-hooks/bazelisk`): shared across all session IDs and safe for
-  concurrent daemons. This existing XDG state directory stays stable across the
-  `claude-hook` and `claude-statusline` package renames.
+- **Shared statusline state** uses `~/.cache/claude-hooks` by default and
+  respects `XDG_CACHE_HOME`. This path remains stable across the `claude-hook`
+  and `claude-statusline` package renames. Bazelisk is not cached there: its
+  per-session shim lives under `<session_dir>/bin/` and resolves the real
+  executable from the Nix devtools `PATH` at invocation time.
 
 ## Configuration
 
@@ -136,47 +137,35 @@ Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 Pre-Firecracker networking and supervisor workarounds are preserved in git
 history. Current code and docs assume Firecracker sessions.
 
-## OTEL Tracing
+## Claude Code Telemetry
 
-Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
-`alloy-otlp.allegedly.works`. Authentik is the canonical source for the bearer
-JWT: the TF module creates a dedicated `alloy-otlp-client-credentials` OAuth2
-provider, and the shared `authentik-jwt-rotation` CronJob mints a source JWT hourly
-when the existing token has <24h of validity remaining. The job immediately
-exchanges that source JWT into an `alloy-otlp` proxy-scoped JWT before writing
-it to git, because Authentik proxy outposts only accept Bearers issued by the
-proxy provider they introspect against. The job commits the final token
-SOPS-encrypted to `secrets/alloy-otlp-bearer-token.yaml`; `cli_env.sh` and
-`web_env.sh` decrypt that file and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
-On first deploy there is an expected bootstrap window: until the CronJob runs
-once successfully, the file does not exist yet and env setup logs a warning
-instead of exporting the OTEL token.
+The Rust `claude-hook` daemon does not emit OTLP spans. It writes local daemon
+logs under `/tmp/claude-hd/<session_id>/`; the legacy profile `otel` field is
+ignored. The telemetry described here comes from Claude Code's native exporter.
 
-Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
+On local machines, the Home Manager Claude Code module
+<../../nix/home/claude_code/default.nix> points that exporter directly at
+`https://alloy-otlp.allegedly.works` and supplies headers with an
+`otelHeadersHelper` that reads the SOPS-managed bearer token. NixOS inline Home
+Manager hosts inherit this through <../../nix/home/home.nix>.
 
-Key files: TF module in <tf/gitops/alloy-otlp-bearer-token/> and the shared
-rotator in <cluster/k8s/agents/authentik-jwt-rotation/>. Rotation is normally
-automatic; to force a refresh, delete `secrets/alloy-otlp-bearer-token.yaml`
-from `devel` or manually run the `authentik-jwt-rotation` CronJob.
+Web and Haku sessions send to the local relay at
+`http://127.0.0.1:4318`. <otlp_forwarder.py>, started by
+<ensure_otel_forwarder.sh>, attaches the bearer from
+`DUCKTAPE_OTEL_BEARER_TOKEN` or the mirrored `alloy-otlp-bearer` Secret
+<../../cluster/k8s/agents/alloy-otlp-bearer/> and forwards telemetry to Alloy.
 
-### Claude Code native telemetry
+Authentik is the token source. The Terraform module creates a dedicated
+`alloy-otlp-client-credentials` OAuth2 provider; the shared
+`authentik-jwt-rotation` CronJob exchanges its source JWT for a proxy-scoped
+JWT and commits the result SOPS-encrypted to
+`secrets/alloy-otlp-bearer-token.yaml`. `cli_env.sh` and `web_env.sh` decrypt
+that file and export the bearer. On first deployment, the file is absent until
+the rotation job succeeds, and environment setup warns that telemetry auth is
+not available yet.
 
-Claude Code's own OTel exporter is enabled system-wide for local machines by
-the Home Manager Claude Code module: <../../nix/home/claude_code/default.nix>.
-It sets `OTEL_EXPORTER_OTLP_ENDPOINT=https://alloy-otlp.allegedly.works` and an
-`otelHeadersHelper` script that reads the rotated bearer from the sops-nix
-materialized `secrets/alloy-otlp-bearer-token.yaml` token and emits headers JSON
-for Claude Code. This is inherited by the NixOS inline Home Manager hosts such
-as `iguana` and `wyrm2` through <../../nix/home/home.nix>.
-
-Web/Haku sessions still use the localhost relay path
-(`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`): <otlp_forwarder.py>,
-started idempotently by <ensure_otel_forwarder.sh> from the web, home-manager,
-and haku profiles. The relay attaches the rotated bearer (from
-`DUCKTAPE_OTEL_BEARER_TOKEN`, else the `alloy-otlp-bearer` Secret mirrored into
-the sandbox namespaces — <cluster/k8s/agents/alloy-otlp-bearer/>) and forwards
-to `alloy-otlp.allegedly.works`. Rationale, probe evidence, and the env-var
-block to paste per hosted environment: <plans/transcript_collection.md>.
+Rationale, probe evidence, and the hosted-environment variables are in
+<plans/transcript_collection.md>.
 
 ## Web Setup
 
@@ -195,7 +184,7 @@ These must be configured as env vars in the Claude Code web UI so they are injec
 `SOPS_AGE_KEY` is the age private key for decrypting secrets. The hook daemon receives it from the Claude process environment via `startup_env_script`.
 
 **Claude Code native telemetry** (Grafana dashboards via the session OTLP
-forwarder; see the OTEL Tracing section above and
+forwarder; see the Claude Code Telemetry section above and
 <plans/transcript_collection.md> for rationale):
 
 ```text

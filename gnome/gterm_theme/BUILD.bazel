@@ -38,7 +38,7 @@ py_wheel(
     entry_points = {
         "console_scripts": ["gterm-theme = gnome.gterm_theme.main:main"],
     },
-    python_requires = ">=3.11",
+    python_requires = ">=3.14",
     requires = [
         "absl-py",
         "dbus-python",

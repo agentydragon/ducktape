@@ -19,6 +19,7 @@ py_wheel(
     },
     # Strip inventree_utils/ so wheel contains rai_plugin/plugin.py etc.
     strip_path_prefixes = ["inventree_utils/"],
+    # InvenTree stable runs Python 3.11; keep this pure-Python plugin installable there.
     tags = ["manual"],
     version = "1.0.0",
     deps = [

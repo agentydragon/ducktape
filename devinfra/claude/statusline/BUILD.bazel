@@ -43,7 +43,7 @@ py_wheel(
             "claude-statusline = devinfra.claude.statusline.statusline:main",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (claude-statusline). Nix provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
