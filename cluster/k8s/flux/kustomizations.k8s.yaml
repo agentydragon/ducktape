@@ -1494,30 +1494,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: coinbase-read
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: reflector
-      namespace: ducktape-flux
-    - name: haku-namespace
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agents/coinbase-read
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: coinbase-read
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: cert-manager
   namespace: ducktape-flux
 spec:
@@ -1980,6 +1956,30 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: external-secrets-config
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ClusterSecretStore
+      name: kubernetes-flux-system-secret-store
+  interval: 10m0s
+  path: ./cluster/k8s/external-secrets/config
+  prune: true
+  retryInterval: 30s
+  sourceRef:
+    kind: ExternalArtifact
+    name: external-secrets-config
+    namespace: ducktape-flux
+  timeout: 5m0s
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: gateway
   namespace: ducktape-flux
 spec:
@@ -2139,6 +2139,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: coinbase-read
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/agents/coinbase-read
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: coinbase-read
+    namespace: ducktape-flux
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: goldilocks
   namespace: ducktape-flux
 spec:
@@ -2192,16 +2212,16 @@ metadata:
   name: cert-manager-environment
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: cert-manager
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
     - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: cert-manager.io/v1
@@ -2651,30 +2671,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: external-secrets-config
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ClusterSecretStore
-      name: kubernetes-flux-system-secret-store
-  interval: 10m0s
-  path: ./cluster/k8s/external-secrets/config
-  prune: true
-  retryInterval: 30s
-  sourceRef:
-    kind: ExternalArtifact
-    name: external-secrets-config
-    namespace: ducktape-flux
-  timeout: 5m0s
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-secrets
   namespace: ducktape-flux
 spec:
@@ -3014,14 +3010,14 @@ metadata:
   name: dns-automation
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -6776,6 +6772,8 @@ spec:
     - name: haku-egress-proxy
       namespace: ducktape-flux
     - name: kyverno-policies
+      namespace: ducktape-flux
+    - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux

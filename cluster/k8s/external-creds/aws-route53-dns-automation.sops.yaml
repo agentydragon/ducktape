@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: aws-route53-dns-automation-credentials
+    namespace: ducktape-flux
+    annotations:
+        description: AWS IAM key for Route 53 DNS-01 challenges (allegedly.works)
+type: Opaque
+stringData:
+    AWS_ACCESS_KEY_ID: ENC[AES256_GCM,data:e3zVsIJe4j+9Szh6rf50CEPZjYE=,iv:mlsFdmMGV9xHYqYv4UcFDu7zYsReWq3VUJdoFBRQ0QY=,tag:ILsgOJxxh5s8mBahp95DkQ==,type:str]
+    AWS_REGION: ENC[AES256_GCM,data:r5NfMejlj0dn,iv:4OdubaMMe/X3/+Kxqv+UrQCzZNpude9HVa6LRP53Fh8=,tag:GXrIphQsRcKy254xDqG8Uw==,type:str]
+    AWS_SECRET_ACCESS_KEY: ENC[AES256_GCM,data:0CaFSc1N+xO3mQw2V6vVagpNd6AcOqx9dIt5XW3AlxrHKDlUgKlW+w==,iv:7/p6QuAzmQNKOF7n8/VAKoGFqjRQJqBG71hqJLtsg7c=,tag:meVjU6x1kYcmJ0JB9uHubg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSByemFvYlMzenJGakNwU1U4
+            c1BwSUp1K1RCL2tUSUd5ODFiNUZUaWVmZFRNCk13Uk5CU1oxWk9CU0dnVm9EUGln
+            ZkNQNU9HMEtQTFY0VFAvTCtWL0lwWFkKLS0tIEJkemcvcGl1a3dJOTVJQ2l0QXlG
+            UndRYU1IS0xGQ2FuR2Y1MHVMN1Q0QUEKcxAPZeBhGfa9MyVeY0TDMlqT0+9sTcYR
+            op2sehikpR775dyonCy643+krTo0Vd/lkLAxvZrDJX8Y2IMQ042mmQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDQWR3b3VUT1lhQ0JVZ3N4
+            WWREWkg1YnFRQUVxUHdnWUF1czVxUmgrWFU4CjlKUzdrb3FSdmdvdGJmL0xNSUxL
+            M3VEL21ndGcwWjdLTHpNa1p0OGdxTGcKLS0tIDhWekI4b2wzRngyMkEwZDhvZ3pL
+            dUwwTGdqUmhQZW1kaTRyeFIrcGtqQWcKMCeMKWsoR8NowK4l7yct5fxr4kwJuMpm
+            dfxldxUEGahqzUK7q6Lw7QiQf2f7MQLffkmM+JOK5fcbhBe7Z7c2Ew==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-20T08:37:42Z"
+    mac: ENC[AES256_GCM,data:eL5Pm03823o2QK4QfQ6oYGQqnOmr2IqUNHMO+YLhyUWGDLGyVHGHfU9Tfc13ycclFoZ8F5C/V3Neval+fKbZgUhLru0g/1JF+jjHXrW5VL/z27GH/yqFZe0tpnadOnHKrNu/ugZxjDlYy82ep6wfZtPCH0H4Dm+rXFv5t+nC//Y=,iv:0OrObtzl94wNCZKKXCavXmfyI/J9UsjU6YJqngirIfA=,tag:VHh/qapjhI5JPaoRHdvFLQ==,type:str]
+    version: 3.13.3

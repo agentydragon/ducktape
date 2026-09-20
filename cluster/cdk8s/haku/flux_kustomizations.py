@@ -263,6 +263,7 @@ def haku_workspaces(
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
     external_secrets_config: Kustomization,
+    external_creds: Kustomization,
     forgejo_images: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
@@ -290,7 +291,8 @@ def haku_workspaces(
                 haku_egress_proxy,
                 # cleanup-controller ClusterRole the janitor needs
                 kyverno_policies,
-                # ClusterSecretStore + CRDs for the ESO
+                # Source Secret grants + ClusterSecretStore for the ESO
+                external_creds,
                 external_secrets_config,
                 # mints the source forgejo-images-creds the ESO reflects
                 forgejo_images,

@@ -4,8 +4,7 @@ metadata:
   name: coinbase-read
   annotations:
     description: >-
-      Primary home of the read-only Coinbase CDP API key
-      (coinbase-api-credentials), reflected into haku-sandbox for the Haku
-      balances source. Decoupled from any consuming service (openclaw, which
-      previously held it, is turned down) so the credential survives service
-      suspend/teardown.
+      ESO destination for the read-only Coinbase CDP API key
+      (coinbase-read-api-credentials), distributed from the canonical external-creds
+      source and separately into haku-sandbox for Haku. Decoupled from any
+      consuming service so the credential survives service suspend/teardown.
