@@ -57,6 +57,12 @@ directory: the generated `kustomization.yaml` lists it as a sibling resource
 `decryption:` block when any such file is listed. `ExternalSecret` objects are
 generated outright; they carry only a pointer at a store key.
 
+Fleet rules resolve Pod Secret and ConfigMap references against objects in the same
+cdk8s chart, including controller-created targets such as an ExternalSecret target or
+a CNPG app Secret. References supplied by sibling Kustomize resources or other
+Kustomizations are outside that check; the owning `kustomization.yaml` lists sibling
+resources, and `depends_on` orders other Kustomizations.
+
 A `configMapGenerator` input (`clickhouse/schema/schema.sql`, `aiquota/config.toml`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
@@ -66,8 +72,7 @@ entry's `name`.
 ### `dependsOn` rationale
 
 cdk8s emits no YAML comments (below), so a dependency's reason lives as a Python
-comment next to the `depends_on` entry, or as the `provided_secrets` roster entry that
-names it.
+comment next to the `depends_on` entry.
 
 ## Mixing with hand-written Flux manifests
 
@@ -96,8 +101,8 @@ Deployment carries the placeholder tag `unset`, and a hand-written
 § `image-pins/kustomization.yaml`. A test asserts no generated file contains
 `$imagepolicy`. Where a tag is also data a Pod reads (the console reports its own and its
 static shell's image tags), it lives in a hand-written sibling ConfigMap carrying the
-marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource and named in the
-chart's `provided_config_maps`.
+marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource in the root
+Kustomization and referenced by name from the workload.
 
 Argo CD Image Updater would need the identical carve-out: its `git` write-back mode
 writes a separate file, and its default `argocd` mode stores the override on the live

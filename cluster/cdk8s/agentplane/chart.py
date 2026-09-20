@@ -37,8 +37,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
     actions.Actions(chart, "actions", env)
     add_fleet_rules(
         chart,
-        provided_secrets=env.provided_secrets,
-        providers=frozenset({*env.depends_on, *env.extra_resources}),
         # The interception proxy terminates TLS for the namespace; its allowlist is the
         # EgressPolicy objects, not SNI on its own egress rule.
         unpinned_https_egress=frozenset({egress.NAME}),

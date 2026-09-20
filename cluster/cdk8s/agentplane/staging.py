@@ -172,15 +172,6 @@ ENV = Environment(
     ),
     depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console"),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
-    provided_secrets={
-        "agentplane-oidc": "sso-providers-tf",
-        "agentplane-mcp-oauth": "sso-providers-tf",
-        _LITELLM_KEY_SECRET: "litellm-keys-tf",
-        BEARER_SECRET_NAME: "ssh-mcp",
-        # Reflected from the haku namespace by reflector.
-        _GITHUB_MCP_CLIENT_SECRET: "haku-console",
-        _WEB_PUSH_SECRET: _WEB_PUSH_SECRET_FILE,
-    },
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
         count=2,

@@ -69,10 +69,9 @@ Model with constructs, deploy with one props object per environment.
   `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
   call sites have (SNI list, listener, timeout), not variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
-  Action Service allowlist and its egress rule from one tuple in `staging.py`;
-  `Environment.provided_secrets` ties each externally provided Secret to the Flux
-  dependency that creates it. When two artifacts must agree, derive both from one value;
-  never write a test that reads both.
+  Action Service allowlist and its egress rule from one tuple in `staging.py`. When
+  two artifacts must agree, derive both from one value; never write a test that reads
+  both.
 - **New Kustomization directories default to cdk8s** when they hold more than a
   `HelmRelease` plus values.
 

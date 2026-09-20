@@ -347,31 +347,11 @@ def aiquota(
     reflector: Kustomization,
 ) -> Kustomization:
     name = NAME
-    providers = (
-        "external-secrets-config",
-        "forgejo-images",
-        "cli-proxy-api",
-        "external-secrets-operator",
-        "clickhouse-schema",
-        "agent-machine-access-tf",
-        "reflector",
-    )
-
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     rendered_chart = chart(app)
-    add_fleet_rules(
-        rendered_chart,
-        provided_secrets={
-            BEARER_SECRET_NAME: f"{BEARER_SECRET_NAME}.sops.yaml",
-            "cli-proxy-api-management": "cli-proxy-api",
-            "aiquota-oidc": "agent-machine-access-tf",
-            "clickhouse-aiquota-credentials": "reflector",
-        },
-        provided_config_maps={CONFIG_CONFIG_MAP.name: "config.toml", SCHEMA_CONFIG_MAP.name: "schema.sql"},
-        providers=frozenset({f"{BEARER_SECRET_NAME}.sops.yaml", "config.toml", "schema.sql", *providers}),
-    )
+    add_fleet_rules(rendered_chart)
     app.synth()
 
     kustomization = flux_kustomization(

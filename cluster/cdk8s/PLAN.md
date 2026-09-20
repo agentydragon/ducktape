@@ -88,10 +88,6 @@ Independent of each other; fan out.
 - **Kustomization nodes take values, not charts.** `agentplane_staging` takes
   `health_checks=...` instead of `resource_chart: Chart`; `haku_console` splits into
   `console_chart(app)` plus a node taking values (AGENTS.md § The Flux graph).
-- **Fleet rules without rosters.** Remove `provided_secrets`,
-  `provided_config_maps` and `providers` from `add_fleet_rules` and its 14 call
-  sites; keep pod hardening, pinned egress and in-chart reference resolution. The
-  `DEPENDS_ON` string tuples that only fed the rosters go with them.
 
 **Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
 

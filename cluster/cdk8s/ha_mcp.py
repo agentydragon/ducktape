@@ -444,27 +444,12 @@ def ha_mcp(
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "ha-mcp"
-    depends_on = ("external-secrets-config", "forgejo-images", "home-assistant", "monitoring-crds")
-
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     HaMcp(chart, "ha-mcp")
-    add_fleet_rules(
-        chart,
-        provided_secrets={
-            "home-assistant-break-glass": "home-assistant",
-            # bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted; without a
-            # decryption block Flux applies the ENC[...] ciphertext literally.
-            "ha-mcp-bearer": "bearer.sops.yaml",
-            # Created imperatively by this directory's own token-provisioner Job, not by
-            # any static manifest in the chart -- this directory is always a valid
-            # provider of its own such Secrets.
-            "ha-mcp-home-assistant-token": name,
-        },
-        providers=frozenset({name, "bearer.sops.yaml", *depends_on}),
-    )
+    add_fleet_rules(chart)
     app.synth()
 
     kustomization = flux_kustomization(
