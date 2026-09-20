@@ -126,19 +126,11 @@ let
       };
   };
   python314Packages = python314.pkgs;
-  # pypaInstallPhase globs *.whl, so copy the pinned artifact under its original
-  # filename. That filename must match the wheel's embedded .dist-info directory;
-  # using pname here breaks while a renamed artifact pin still points at an older
-  # release.
-  renameWheel =
-    input:
-    pkgs.runCommand (builtins.baseNameOf (toString input)) { } ''
-      cp ${input} $out
-    '';
-
-  # Each wheel's artifact pin and Python distribution share its pname. The
-  # upstream filename is kept verbatim so old pins remain installable until
-  # sync-pins advances them to the latest release.
+  # `wheelUnpackPhase` strips the single Nix store hash from the source basename.
+  # Keep `src` as the fetched artifact: wrapping it in another derivation would
+  # leave the inner store hash in the wheel filename and break installer checks.
+  # This also keeps older pinned distribution names valid until sync-pins moves
+  # them to the latest release.
   #
   # `importsCheck` is required — at minimum list the modules backing each
   # console-script entry point. buildPythonApplication imports them at build
@@ -158,7 +150,7 @@ let
       inherit pname;
       version = "latest";
       format = "wheel";
-      src = renameWheel artifacts.${pname};
+      src = artifacts.${pname};
       inherit propagatedBuildInputs buildInputs;
       nativeBuildInputs = nativeBuildInputs ++ [ pkgs.cacert ];
       # pygit2 (and anything else that calls OpenSSL at module import) needs
