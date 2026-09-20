@@ -5,6 +5,10 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "binding",
     srcs = ["binding.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 

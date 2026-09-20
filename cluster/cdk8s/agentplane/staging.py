@@ -16,6 +16,11 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
+from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from agentplane.action_service.mcp_linkage import McpOAuthServer, McpProvider
+from agentplane.action_service.operator_oidc import OperatorOidcSettings
+from agentplane.app.action_federation import ExchangeFederationSettings
+from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
@@ -55,128 +60,124 @@ _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
-_FEDERATION_TARGET = {
-    "issuer": f"{_ACTIONS_OIDC_APP}/",
-    "audience": "agentplane-actions",
-    "jwks_uri": f"{_ACTIONS_OIDC_APP}/jwks/",
-}
-_ACTION_FEDERATION = {
-    "mode": "exchange",
-    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
-    "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
-    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
-    "target": _FEDERATION_TARGET,
-    "scope": "openid",
-}
+_FEDERATION_TARGET = OperatorOidcSettings(
+    issuer=f"{_ACTIONS_OIDC_APP}/", audience="agentplane-actions", jwks_uri=f"{_ACTIONS_OIDC_APP}/jwks/"
+)
+_ACTION_FEDERATION = ExchangeFederationSettings(
+    mode="exchange",
+    service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
+    token_endpoint=f"{_AUTHENTIK}/application/o/token/",
+    login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane/jwks/",
+    target=_FEDERATION_TARGET,
+    scope="openid",
+)
 _ACTIONS_SETTINGS = {
-    "operator_oidc": _FEDERATION_TARGET,
+    "operator_oidc": _FEDERATION_TARGET.model_dump(mode="json", exclude_unset=True),
     "allowed_service_account_namespaces": [_NAMESPACE],
+    # Plain dict, not a full WebPushSettings(...): private_key_pem is a required field
+    # supplied by a mounted Secret at container runtime (settings_file's `supplied=`
+    # mechanism), not by this cdk8s-authored dict.
     "web_push": {
         "subject": "mailto:agentydragon@gmail.com",
         "public_base_url": f"https://{_HOSTNAME}",
         "allowed_push_hosts": list(_WEB_PUSH_ALLOWED_HOSTS),
     },
     "mcp_servers": {
-        "github": {
-            "server_id": "github",
-            "provider": "github",
-            "server_url": _GITHUB_MCP_URL,
-            "client_id": "configured-by-secret",
-            "client_secret_file": "/etc/agentplane-github/client_secret",
-            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
-        },
-        "kubernetes": {
-            "server_id": "kubernetes",
-            "provider": "kubernetes",
-            "server_url": _KUBERNETES_MCP_URL,
-            "client_id": "kubectl-passthrough-mcp",
-            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
-        },
+        "github": McpOAuthServer(
+            server_id="github",
+            provider=McpProvider.GITHUB,
+            server_url=_GITHUB_MCP_URL,
+            client_id="configured-by-secret",
+            client_secret_file="/etc/agentplane-github/client_secret",
+            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+        ).model_dump(mode="json", exclude_unset=True),
+        "kubernetes": McpOAuthServer(
+            server_id="kubernetes",
+            provider=McpProvider.KUBERNETES,
+            server_url=_KUBERNETES_MCP_URL,
+            client_id="kubectl-passthrough-mcp",
+            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+        ).model_dump(mode="json", exclude_unset=True),
     },
     "action_groups": {
-        "github": {
-            "title": "GitHub MCP",
-            "description": "GitHub's operator-linked MCP tools; every Action remains subject to operator approval.",
-            "executor": {
-                "kind": "mcp",
-                "description": "GitHub MCP executed with the linked operator GitHub account.",
-                "config": {
-                    "transport": "streamable-http",
-                    "url": _GITHUB_MCP_URL,
-                    "server_id": "github",
-                    "auth": "oauth",
-                },
-            },
-        },
-        "kubernetes": {
-            "title": "Kubernetes MCP",
-            "description": "Kubernetes passthrough MCP tools; every Action remains subject to operator approval.",
-            "executor": {
-                "kind": "mcp",
-                "description": "Kubernetes MCP executed with the linked operator Kubernetes identity.",
-                "config": {
+        "github": ActionGroup(
+            title="GitHub MCP",
+            description="GitHub's operator-linked MCP tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="GitHub MCP executed with the linked operator GitHub account.",
+                config={"transport": "streamable-http", "url": _GITHUB_MCP_URL, "server_id": "github", "auth": "oauth"},
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
+        "kubernetes": ActionGroup(
+            title="Kubernetes MCP",
+            description="Kubernetes passthrough MCP tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Kubernetes MCP executed with the linked operator Kubernetes identity.",
+                config={
                     "transport": "streamable-http",
                     "url": _KUBERNETES_MCP_URL,
                     "server_id": "kubernetes",
                     "auth": "oauth",
                 },
-            },
-        },
-        "sandbox": {
-            "title": "Sandbox",
-            "description": (
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
+        "sandbox": ActionGroup(
+            title="Sandbox",
+            description=(
                 "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
                 "sandbox reaches what its caller's EgressBindings allow and is admitted back to this "
                 "service as that same caller, so it confers no authority the caller did not hold."
             ),
-            "executor": {
-                "kind": "sandbox",
-                "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
-                "namespace": _NAMESPACE,
-                "environments": {
+            executor=SandboxExecutorBinding(
+                kind="sandbox",
+                description="Stamped and exec'd by this service, as the caller, in its own namespace.",
+                namespace=_NAMESPACE,
+                environments={
                     # The integration app's runner template, for now: it already carries the egress
                     # sidecar, the interception CA and the proxy environment, so the path is real
                     # end to end. Its workload container is the runner image, which is the wrong
                     # destination -- a box to run commands in wants neither the harnesses nor the
                     # state volume (agentplane/docs/sandbox_actions.md).
-                    "runner": {
-                        "template": "agentplane-runner",
-                        "container": "runner",
-                        "default_cwd": "/state",
-                        "description": "The shared runner image: python, git and the agent harnesses.",
-                    }
+                    "runner": SandboxEnvironment(
+                        template="agentplane-runner",
+                        container="runner",
+                        default_cwd="/state",
+                        description="The shared runner image: python, git and the agent harnesses.",
+                    )
                 },
-                "default_environment": "runner",
-            },
-        },
-        "ssh": {
-            "title": "SSH",
-            "description": "SSH commands on configured targets; every Action remains subject to operator approval.",
-            "executor": {
-                "kind": "mcp",
-                "description": "Standalone SSH MCP backend; Agentplane retains approval and execution authority.",
-                "config": {
+                default_environment="runner",
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
+        "ssh": ActionGroup(
+            title="SSH",
+            description="SSH commands on configured targets; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Standalone SSH MCP backend; Agentplane retains approval and execution authority.",
+                config={
                     "transport": "streamable-http",
                     "url": MCP_URL,
                     "auth": "static_bearer",
                     "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
                 },
-            },
-        },
-        "home_assistant": {
-            "title": "Home Assistant MCP",
-            "description": "Home Assistant tools; every Action remains subject to operator approval.",
-            "executor": {
-                "kind": "mcp",
-                "description": "Standalone Home Assistant MCP backend (ha-mcp), the same one haku-console uses.",
-                "config": {
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
+        "home_assistant": ActionGroup(
+            title="Home Assistant MCP",
+            description="Home Assistant tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Standalone Home Assistant MCP backend (ha-mcp), the same one haku-console uses.",
+                config={
                     "transport": "streamable-http",
                     "url": _HOME_ASSISTANT_MCP_URL,
                     "auth": "static_bearer",
                     "bearer_file": "/run/secrets/ha-mcp/bearer-token",
                 },
-            },
-        },
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
     },
 }
 
@@ -200,7 +201,20 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config={**staging_config.config(), "action_federation": _ACTION_FEDERATION},
+    app_config={
+        **staging_config.config(),
+        "action_federation": {
+            # Pydantic dumps fields in declaration order (parent class, then the
+            # exchange/direct subclass's own `mode`/`token_endpoint`); pulled to the
+            # front to keep the generated YAML's key order unchanged.
+            "mode": _ACTION_FEDERATION.mode,
+            "service_url": _ACTION_FEDERATION.service_url,
+            "token_endpoint": _ACTION_FEDERATION.token_endpoint,
+            **_ACTION_FEDERATION.model_dump(
+                mode="json", exclude_unset=True, exclude={"mode", "service_url", "token_endpoint"}
+            ),
+        },
+    },
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca"),

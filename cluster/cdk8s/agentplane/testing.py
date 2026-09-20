@@ -16,6 +16,10 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
+from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from agentplane.action_service.mcp_linkage import McpOAuthServer, McpProvider
+from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, dex, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -49,62 +53,62 @@ _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 _LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
-_FEDERATION_TARGET = {
-    "issuer": _DEX_ISSUER,
-    "audience": "agentplane-testing",
-    "jwks_uri": f"{_DEX_ISSUER}/keys",
-    "token_profile": "dex",
-}
-_ACTION_FEDERATION = {
-    "mode": "direct",
-    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
-    "login_jwks_uri": f"{_DEX_ISSUER}/keys",
-    "login_token_profile": "dex",
-    "target": _FEDERATION_TARGET,
-    "scope": "openid",
-}
+_FEDERATION_TARGET = OperatorOidcSettings(
+    issuer=_DEX_ISSUER,
+    audience="agentplane-testing",
+    jwks_uri=f"{_DEX_ISSUER}/keys",
+    token_profile=OperatorTokenProfile.DEX,
+)
+_ACTION_FEDERATION = DirectFederationSettings(
+    mode="direct",
+    service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
+    login_jwks_uri=f"{_DEX_ISSUER}/keys",
+    login_token_profile=OperatorTokenProfile.DEX,
+    target=_FEDERATION_TARGET,
+    scope="openid",
+)
 _ACTIONS_SETTINGS = {
-    "operator_oidc": _FEDERATION_TARGET,
+    "operator_oidc": _FEDERATION_TARGET.model_dump(mode="json", exclude_unset=True),
     "allowed_service_account_namespaces": [_NAMESPACE],
     "mcp_servers": {
-        "example": {
-            "server_id": "example",
-            "provider": "example",
-            "server_url": _OAUTH_FIXTURE_MCP_URL,
-            "client_id": "agentplane-testing-mcp",
-            "client_secret_file": "/etc/agentplane-mcp/client-secret",
-            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
-            "scopes": ["openid"],
-        }
+        "example": McpOAuthServer(
+            server_id="example",
+            provider=McpProvider.EXAMPLE,
+            server_url=_OAUTH_FIXTURE_MCP_URL,
+            client_id="agentplane-testing-mcp",
+            client_secret_file="/etc/agentplane-mcp/client-secret",
+            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+            scopes=["openid"],
+        ).model_dump(mode="json", exclude_unset=True)
     },
     "action_groups": {
-        "everything": {
-            "title": "Upstream Everything",
-            "description": "Credentialless MCP reference server for testing acceptance.",
-            "executor": {
-                "kind": "mcp",
-                "description": "Community-built Everything image; no user account, workload token, or mounted credentials.",
-                "config": {
+        "everything": ActionGroup(
+            title="Upstream Everything",
+            description="Credentialless MCP reference server for testing acceptance.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Community-built Everything image; no user account, workload token, or mounted credentials.",
+                config={
                     "transport": "streamable-http",
                     "url": f"http://{MCP_EVERYTHING_NAME}.{_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
                     "auth": "none",
                 },
-            },
-        },
-        "example": {
-            "title": "OAuth Example",
-            "description": "Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
-            "executor": {
-                "kind": "mcp",
-                "description": "MCP tool protected by Dex-issued JWTs; no real credentials.",
-                "config": {
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
+        "example": ActionGroup(
+            title="OAuth Example",
+            description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="MCP tool protected by Dex-issued JWTs; no real credentials.",
+                config={
                     "transport": "streamable-http",
                     "url": _OAUTH_FIXTURE_MCP_URL,
                     "server_id": "example",
                     "auth": "oauth",
                 },
-            },
-        },
+            ),
+        ).model_dump(mode="json", exclude_unset=True),
     },
 }
 
@@ -122,7 +126,16 @@ ENV = Environment(
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
     include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
+    app_config={
+        **testing_config.config(),
+        "action_federation": {
+            # See staging.py's action_federation: pydantic dumps `mode` (declared on the
+            # direct/exchange subclass) after the parent class's fields, so it's pulled
+            # to the front to keep the generated YAML's key order unchanged.
+            "mode": _ACTION_FEDERATION.mode,
+            **_ACTION_FEDERATION.model_dump(mode="json", exclude_unset=True, exclude={"mode"}),
+        },
+    },
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca"),
