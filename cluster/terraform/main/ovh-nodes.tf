@@ -98,6 +98,7 @@ locals {
   # var.talos_version during serial rolls; these overrides change only
   # machine.install.image, while talosctl performs the actual OS upgrade.
   talos_installer_version_overrides = {
+    "ovh-ns103656" = "v1.14.0"
     "ovh-ns103711" = "v1.14.0"
     "optiplex"     = "v1.14.0"
   }
