@@ -20,19 +20,16 @@ source-faithful to that evidence.
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
 - Make Tana auth deployment-safe:
-  - reflect the resigner-maintained `tana-firebase-refresh-token` Secret into
-    the LiteLLM namespace
-  - populate `TANA_FIREBASE_REFRESH_TOKEN` from that reflected Secret
-  - rely on reloader to restart LiteLLM when the reflected Secret changes
-  - avoid relying on in-process `kubectl get secret` or direct resigner code in
-    the deployed proxy path
-  - document the reflected-secret path and restart-based freshness model
+  - remove this section once the ESO distribution and central resigner write
+    path have landed and been verified live
 - Keep refresh-token ownership in the resigner:
-  - LiteLLM reads the reflected refresh-token env var but never owns it
+  - LiteLLM reads the ESO-managed refresh-token env var but never rotates or
+    persists the refresh token
   - LiteLLM may cache Firebase ID tokens, but must not persist or adopt rotated
     Firebase refresh tokens
-  - the existing resigner remains the only component that maintains the
-    canonical refresh-token secret
+  - the resigner writes rotated tokens to one central runtime Secret; periodic
+    ESO objects propagate it to each consumer, and the SOPS value is only the
+    bootstrap seed
   - avoid unless necessary: make the Tana MCP pod expose the currently valid
     renderer/session token to LiteLLM, because that couples two deployments and
     creates a new token-broker surface

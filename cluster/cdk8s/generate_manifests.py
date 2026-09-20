@@ -243,7 +243,6 @@ def generate_manifests(root: Path) -> None:
     nvidia_device_plugin_kustomization = nvidia_device_plugin_flux_kustomizations.nvidia_device_plugin(
         flux_chart, nvidia_runtimeclass_kustomization, node_feature_discovery_kustomization
     )
-    agents_flux_kustomizations.coinbase_read(flux_chart, reflector_kustomization, haku_namespace_kustomization)
     cert_manager_kustomization = cert_manager_flux_kustomizations.cert_manager(
         flux_chart, cert_manager_issuer_config_kustomization, reflector_kustomization, monitoring_crds_kustomization
     )
@@ -279,6 +278,9 @@ def generate_manifests(root: Path) -> None:
     external_secrets_operator_kustomization = external_secrets_flux_kustomizations.external_secrets_operator(
         flux_chart, external_secrets_crds_kustomization, cert_manager_kustomization
     )
+    external_secrets_config_kustomization = external_secrets_flux_kustomizations.external_secrets_config(
+        flux_chart, external_secrets_operator_kustomization
+    )
     gateway_kustomization = gateway_flux_kustomizations.gateway(
         flux_chart, cert_manager_kustomization, kyverno_kustomization, cert_manager_issuer_config_kustomization
     )
@@ -290,7 +292,12 @@ def generate_manifests(root: Path) -> None:
     agent_shared_secrets_kustomization = agents_flux_kustomizations.agent_shared_secrets(
         flux_chart, claude_rbac_kustomization
     )
-    external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
+    external_creds_kustomization = external_creds.external_creds(
+        flux_chart, root, claude_rbac_kustomization, external_secrets_config_kustomization
+    )
+    agents_flux_kustomizations.coinbase_read(
+        flux_chart, external_creds_kustomization, external_secrets_config_kustomization
+    )
     goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(flux_chart, vpa_kustomization)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(flux_chart, root, clickhouse_kustomization)
     cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
@@ -298,6 +305,8 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         cert_manager_trust_kustomization,
         cert_manager_issuer_config_kustomization,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
     )
     atuin_db_kustomization = atuin_flux_kustomizations.atuin_db(
         flux_chart, atuin_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
@@ -351,9 +360,6 @@ def generate_manifests(root: Path) -> None:
     tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(
         flux_chart, tofu_state_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
-    external_secrets_config_kustomization = external_secrets_flux_kustomizations.external_secrets_config(
-        flux_chart, external_secrets_operator_kustomization
-    )
     seaweedfs_secrets_kustomization = seaweedfs_flux_kustomizations.seaweedfs_secrets(
         flux_chart, seaweedfs_namespace_kustomization, external_secrets_operator_kustomization
     )
@@ -399,7 +405,11 @@ def generate_manifests(root: Path) -> None:
         gateway_kustomization,
     )
     dns_automation_flux_kustomizations.dns_automation(
-        flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization
+        flux_chart,
+        tofu_controller_kustomization,
+        tofu_state_db_kustomization,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
     )
     forgejo_flux_kustomizations.forgejo_agentydragon(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization
@@ -758,6 +768,7 @@ def generate_manifests(root: Path) -> None:
     )
     tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
         flux_chart,
+        external_creds_kustomization,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
         gateway_kustomization,
@@ -1048,6 +1059,7 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         kyverno_policies_kustomization,
         external_secrets_config_kustomization,
+        external_creds_kustomization,
         forgejo_images_kustomization,
     )
     parked_flux_kustomizations.haku_managed_agent(

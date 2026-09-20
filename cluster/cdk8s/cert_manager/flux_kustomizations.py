@@ -5,9 +5,6 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -74,6 +71,8 @@ def cert_manager_environment(
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     cert_manager_issuer_config: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
 ) -> Kustomization:
     name = "cert-manager-environment"
     return flux_kustomization(
@@ -89,10 +88,6 @@ def cert_manager_environment(
             path="./cluster/k8s/cert-manager/environment",
             prune=True,
             wait=True,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
             post_build=KustomizationSpecPostBuild(
                 substitute_from=[
                     KustomizationSpecPostBuildSubstituteFrom(
@@ -100,7 +95,9 @@ def cert_manager_environment(
                     )
                 ]
             ),
-            depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, cert_manager_issuer_config),
+            depends_on=flux_kustomization_depends_on_many(
+                cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
+            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-prod", namespace=""

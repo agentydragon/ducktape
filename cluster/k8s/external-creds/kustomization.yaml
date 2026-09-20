@@ -2,11 +2,17 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - external-creds.k8s.yaml
+  - tana-firebase-refresh-token-eso.yaml
   - analysis-ai.sops.yaml
   - anthropic-haku.sops.yaml
+  - aws-route53-cert-manager.sops.yaml
+  - aws-route53-dns-automation.sops.yaml
+  - coinbase-api-credentials.sops.yaml
   - gemini.sops.yaml
   - github-agentydragon-agent.sops.yaml
   - github-agentydragon-2.sops.yaml
   - github-agentydragon.sops.yaml
   - groq.sops.yaml
   - mistral.sops.yaml
+  - tana-firebase-refresh-token-seed.sops.yaml
+  - tana-pat.sops.yaml

@@ -23,9 +23,20 @@ contract.
 - The consumer owns its `external-creds-reader` ServiceAccount and
   ExternalSecret.
 - The consumer Flux Kustomization depends on both `external-creds` and
-  `external-secrets-config`. The supplier does not depend on ESO or consumer
+  `external-secrets-config`. Static suppliers do not depend on ESO or consumer
   namespaces: a RoleBinding may name a ServiceAccount before that namespace or
   identity exists.
+
+Tana's rotating Firebase refresh token is the dynamic-source exception. A SOPS
+bootstrap Secret and an `OnChange` ExternalSecret in `external-creds` seed one
+ESO-owned runtime Secret in `ducktape-flux`. The Tana resigner has a separate
+exact-name `get`/`patch` grant for that runtime Secret. It writes only the
+central Secret; consumer-owned ExternalSecrets poll it and update independent
+copies in `tana-mcp` and `litellm`. This keeps distribution in ESO and out of
+the resigner. Because the bridge is part of `external-creds`, that Flux
+Kustomization depends on `external-secrets-config`.
+To intentionally reseed after token revocation, update the SOPS seed and bump
+the bridge's `external-secrets.io/force-sync` annotation in Git.
 
 Approval stays at the source. Referencing the shared ClusterSecretStore does
 not grant access: the Kubernetes provider cannot read a canonical Secret
@@ -37,7 +48,7 @@ receive the credential.
 
 ## Adding a credential or consumer
 
-Add a credential by creating one encrypted source Secret under
+Add a static credential by creating one encrypted source Secret under
 `cluster/k8s/external-creds` and adding its non-secret metadata to `CREDENTIALS`
 in `external_creds.py`. Add a consumer by adding its explicit
 `ApprovedConsumer` entry there, then add the ServiceAccount, ExternalSecret,
@@ -55,7 +66,8 @@ in one reconciliation with pruning enabled.
 ## Scope
 
 This pattern excludes cluster-internal credentials, Kubernetes-native identity
-and PKI material, and credentials minted or rotated by a controller. OAuth and
-session credentials (for example Tana and CLIProxyAPI) remain explicit
+and PKI material, and credentials minted or rotated by a controller. Tana's
+Firebase refresh token uses the documented bootstrap/runtime bridge above;
+other OAuth and session credentials (for example CLIProxyAPI) remain explicit
 exceptions. Normal workloads use scoped LiteLLM virtual keys instead of vendor
 credentials where that is available.

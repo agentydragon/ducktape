@@ -806,7 +806,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,ha-mcp-bearer,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-google-calendar-client-credentials,haku-console-google-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token,ssh-mcp-bearer,tana-agentydragon-gmail-com-account-pat
+    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,ha-mcp-bearer,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-google-calendar-client-credentials,haku-console-google-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-tana-pat,haku-console-web-push-vapid,haku-routine-launch-token,ssh-mcp-bearer
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -889,7 +889,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: token
-                  name: tana-agentydragon-gmail-com-account-pat
+                  name: haku-console-tana-pat
                   optional: false
             - name: HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN
               valueFrom:

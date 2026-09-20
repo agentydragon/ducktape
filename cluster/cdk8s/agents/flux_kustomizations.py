@@ -246,7 +246,7 @@ def claude_sandbox_secrets(
     )
 
 
-def coinbase_read(chart: Chart, reflector: Kustomization, haku_namespace: Kustomization) -> Kustomization:
+def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization) -> Kustomization:
     name = "coinbase-read"
     return flux_kustomization(
         chart,
@@ -259,16 +259,7 @@ def coinbase_read(chart: Chart, reflector: Kustomization, haku_namespace: Kustom
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                # Reflector mirrors the Secret into haku-sandbox; haku-namespace creates
-                # haku-sandbox (the reflection target).
-                reflector,
-                haku_namespace,
-            ),
+            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
         ),
     )
 
@@ -1026,6 +1017,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
 
 def tana_mcp(
     chart: Chart,
+    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
@@ -1048,10 +1040,6 @@ def tana_mcp(
             path="./cluster/k8s/agents/tana-mcp",
             prune=True,
             wait=True,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="tana-mcp", namespace="tana-mcp"
@@ -1061,6 +1049,7 @@ def tana_mcp(
                 ),
             ],
             depends_on=flux_kustomization_depends_on_many(
+                external_creds,
                 external_secrets_config,
                 forgejo_images,
                 gateway,

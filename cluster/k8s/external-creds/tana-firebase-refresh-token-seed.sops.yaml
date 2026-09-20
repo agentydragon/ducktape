@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: tana-firebase-refresh-token-seed
+    namespace: ducktape-flux
+    annotations:
+        description: |
+            Long-lived Firebase refresh token for the agentydragon@gmail.com Tana
+            account. To re-bootstrap, see cluster/docs/plans/tana_mcp_sane_signin.md
+            (option B "Bootstrap (no browser required)").
+type: Opaque
+stringData:
+    refresh_token: ENC[AES256_GCM,data:4gPCeJqgBcX/t0gRcCEozrY6zYKYXIwendXZJ4a/4SdDezy/IWa1RVUSi3JVap0nQlQblCF+JljMHXmp23EVqQgq/p5YA91twSrPnGiA4ytLadbg/ND/5rcnL7jnQTibuQlC6usndih+7UDJV2mlW5H7tg7XRsPIrL/z9pvLN0KE/j3irZdKkXkkhFCbUdIUiDvtxH4sIP1QFwArBNhep/N/8WmPa/dOclccWM/KguelkpZDamlf,iv:yGsVfmGvVeCTzz+ldT39BiqgFqzRxzHOjn2q70Iteek=,tag:0oLtv9Bzjefr3zG3+9SIrg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB1K3ROU2E4T3NWZFhrYlBa
+            MUc5R0ZLWUVKek84SzFsMkRXWlQzYlhtcWtJCnRwRFRJZnNvM0E3V1haM2NPZGVq
+            amNoektDeDlHak02Wjh3dUl3SGMvZFkKLS0tIEdWWVR2WjVJNFVaK1kyWWdxLzNH
+            WmVTTnByZ1VEVG4wM2J1dmhodXFzb2sKc0RQRrGFXLunM7IlKWNZwUeHhTKhED/v
+            P5/giYB8kReWnUUCYXGov9ztgHkXZ3331K0mfXbVJ/tcS1h5tn48zg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTVS95K0lMcXlsS2pGcUsr
+            WmZlOUxhWU0rbTRQaUZwMzkzYUgwSU5udUY0CmhGVXpxTXVDVW13YW92RlB2NHlH
+            WEpMdXJXTDk2S3J1em5TS2d3THBudEUKLS0tIGp4QXBYYnJuSGI4WjlvVWFMOXJy
+            cDdBNFJoNjB4Smk0USsvaDFoRVM4Z1kKcVfnNT8Byk4vLKbDmFMdbcX9+2NkbGto
+            x1g8GPnjV/k534VbWf/OO2igTUV+AYF5gQ908sNKJRt5W+nW6AzhGQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-20T09:12:57Z"
+    mac: ENC[AES256_GCM,data:0oHNFWohDf8sPB2UFeqLsDRZcW8VdwIOwkcmJK0h/+CmblGy8auNTo/YzF5HoMigKWtqQhPpugeyZyN0T4coEyW3rq/CMYCfS7XND1InxObSst+efUTOmVY8OQrr3tIlix3luIWh3AyAy9o+u5OlY05ALpBGHXkIsaojcYklPXU=,iv:LTRZ9zJPTkcZVQ8yFL+1OXzV4sUpe1bxEEEqBPgc/G0=,tag:YQlEa/NON/2IFd8dW/jhYw==,type:str]
+    version: 3.13.3

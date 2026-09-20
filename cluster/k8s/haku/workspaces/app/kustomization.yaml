@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - forgejo-images-creds-eso.yaml
   - activitywatch-read-token-eso.yaml
+  - external-creds-reader.yaml
+  - coinbase-api-credentials-eso.yaml
   - sandboxtemplate-haku.yaml
   - sandboxwarmpool-haku.yaml
   - cleanuppolicy-haku-janitor.yaml

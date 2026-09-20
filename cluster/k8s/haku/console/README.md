@@ -215,6 +215,7 @@ enforcement-inventory entry.
 ## Tana backend credential
 
 `tana` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
-server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
-only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
+server. The canonical account PAT is stored in `cluster/k8s/external-creds`; ESO creates a
+separate consumer Secret in `haku-console`, injected only into this deployment. The inner Haku
+workload sees the proxied tool surface, never the PAT.
 The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.

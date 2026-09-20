@@ -1,0 +1,23 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: tana-firebase-refresh-token
+  namespace: ducktape-flux
+  annotations:
+    # Bump when intentionally reseeding from the SOPS bootstrap value.
+    external-secrets.io/force-sync: "1"
+spec:
+  # This one-shot bridge seeds the resigner's central runtime Secret. Keep the
+  # mutable target from being reset to the bootstrap value on a polling loop.
+  refreshPolicy: OnChange
+  secretStoreRef:
+    name: kubernetes-external-creds-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: tana-firebase-refresh-token
+    creationPolicy: Owner
+  data:
+    - secretKey: refresh_token
+      remoteRef:
+        key: tana-firebase-refresh-token-seed
+        property: refresh_token

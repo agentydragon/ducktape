@@ -50,6 +50,7 @@ EXTRA_RESOURCES = (
     "haku-console-google-calendar-client-credentials.sops.yaml",
     "haku-console-google-client-credentials.sops.yaml",
     "haku-console-github-mcp-client-credentials.sops.yaml",
+    "tana-pat-eso.yaml",
     "routine-launch-token.sops.yaml",
     "web-push-vapid.sops.yaml",
     "static-metadata.yaml",

@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: tana-agentydragon-gmail-com-account-pat
+    namespace: ducktape-flux
+    annotations:
+        description: Tana personal access token for the full agentydragon@gmail.com account
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:zMD+NW0jcFwytGm5POQmrYaecDN49b5wz64hizGlUcSGcO063L11lTVAM9hK2wdEKNi0jHvddLkAhqjMsLP92Mc8WgvU2P3nh3sM6zOpaNLkyetowqLwi4S49gdWnYLn+1W9Nkx7nR7s9hIIy2fXeDUGu2EZazvLmTlqqEPMh/dPKykWhHoHkLCyNrPHlp2NOJlWM3dLdT93GWt6p2rmEqaTUKS59sYkRu6LC6e12eVZjkpeA/WF7yru8+L0OfVhSPnw3N89lQAqKe7D+xdxrfzHxFxWPOvlMghkylo=,iv:dP/F1fNwDyaOiDDQOjHg6vrv3OVKLUIhI2yeUk1dv8M=,tag:pSEWWBfKkiRHvdVzIoAzhA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFbkphZ1k0NVNSZWlvb3Rr
+            UkxWcWVtTm1rSUZHUlhiYTR1NVZOWFBWL0FvCng4djBOVVVDN255eFB5TkdZS0xl
+            UW1JYW9udnB1cjcwUU4xdjFCVnRMY2sKLS0tIHdXdjVzcFFEL3FCSzFza2ZvbG1S
+            TnFFQW9hVVkxblprM2lWQTFmejFndFEKFgGjK+0aH3mABjsT/M7fTTg58OrIX6B1
+            yJGJG2BTr6PQ4Je352Pgv62FFU0k7Wly2IELySc3W2++fa1wpf7wHg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2MitQWWF1VUJQb3dVcEI3
+            akJ1RlZSeTJNTVI2UDYrZCs2RE9md0VGVUVrCkFBcm1yNFZ0a3IyRlhqK0c1WTlQ
+            YlhPY0FCcWlDcG9jNmJ2T3BjRmJiZ1kKLS0tIHMwK1ExMHgvYkROTE0rRXdDNnVR
+            ZzNrNklSZDlZdHVxQ3NUMll5VHdMT1kK7k0NwcmR2cFynQcdXZBsk8Wr6OIp9sJv
+            uV/znKpTya7kb1/tFxrfXSYt71LiPc/Yvcv5HYqUwa+zROoGtQMunQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-20T08:37:41Z"
+    mac: ENC[AES256_GCM,data:DJklTN2VJ0Fdqc4G0uLxCYAkIkFNCyHS91PgxShdIDlc/lDIXWARd/UihVsjA33J6HMYwjPoOzg08Pq0iNQe0CT8MHkRMjPJW3TRZIjDCp4ZeXPvmW3al4qDdDMtpuMkO6zIEn3a7pBsSOjkM3h1wF8yoshetGd0YQRQ54xbJz8=,iv:qH0tSjoL+K5mBMLR1NcCUbfwKcCBKkL2uqDhRB8Rf6k=,tag:dL79sWcA2h4/NHXvHPxlrQ==,type:str]
+    version: 3.13.3

@@ -182,7 +182,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
                 _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
                 _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
-                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
+                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "litellm-tana-firebase-refresh-token", "refresh_token"),
             ),
             startup_failure_threshold=36,
             resources=ContainerResources(
