@@ -3354,6 +3354,7 @@ spec:
   interval: 10m
   path: ./cluster/k8s/agents/claude-sandbox-secrets
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: claude-sandbox-secrets

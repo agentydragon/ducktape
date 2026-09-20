@@ -240,6 +240,7 @@ def claude_sandbox_secrets(
         name,
         spec=KustomizationSpec(
             interval="10m",
+            retry_interval="1m",
             path="./cluster/k8s/agents/claude-sandbox-secrets",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
