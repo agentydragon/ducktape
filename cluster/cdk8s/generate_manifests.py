@@ -163,7 +163,6 @@ def generate_manifests(root: Path) -> None:
     agents_mitmproxy_namespace_kustomization = agents_flux_kustomizations.agents_mitmproxy_namespace(flux_chart)
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
-    atuin_namespace_kustomization = atuin_flux_kustomizations.atuin_namespace(flux_chart)
     authentik_namespace_kustomization = authentik_flux_kustomizations.authentik_namespace(flux_chart)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     clickhouse_namespace_kustomization = clickhouse_flux_kustomizations.clickhouse_namespace(flux_chart)
@@ -304,9 +303,6 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
-    atuin_db_kustomization = atuin_flux_kustomizations.atuin_db(
-        flux_chart, atuin_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     authentik_db_kustomization = authentik_flux_kustomizations.authentik_db(
         flux_chart, cnpg_kustomization, authentik_namespace_kustomization, local_path_provisioner_kustomization
     )
@@ -365,12 +361,7 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.authelia(flux_chart, gateway_kustomization, cert_manager_environment_kustomization)
     parked_flux_kustomizations.docker_ci(flux_chart, cert_manager_environment_kustomization, claude_rbac_kustomization)
     atuin_kustomization = atuin_flux_kustomizations.atuin(
-        flux_chart,
-        cert_manager_issuer_config_kustomization,
-        atuin_namespace_kustomization,
-        atuin_db_kustomization,
-        gateway_kustomization,
-        cert_manager_environment_kustomization,
+        flux_chart, cert_manager_issuer_config_kustomization, cnpg_kustomization
     )
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart,
