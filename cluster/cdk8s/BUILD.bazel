@@ -542,6 +542,7 @@ py_library(
     deps = [
         ":artifacts",
         ":flux",
+        ":generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",

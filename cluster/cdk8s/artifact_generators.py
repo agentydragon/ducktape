@@ -9,7 +9,7 @@ the consumer's rendered Kustomize resources.
 from collections.abc import Sequence
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -27,6 +27,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
 
 from cluster.cdk8s.artifacts import directory_artifact
 from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.generation import write_yaml
 
 _ARTIFACT_GENERATORS_DIR = "cluster/k8s/artifact-generators"
 _DUCKTAPE_SOURCE = ArtifactGeneratorSpecSources(
@@ -270,9 +271,7 @@ def write_manifests(root: Path, *, ducktape_artifacts: Sequence[ArtifactGenerato
         )
     app.synth()
 
-    (out_dir / "kustomization.yaml").write_text(
-        Yaml.format_objects([kustomize_kustomization(resources=["artifact-generators.k8s.yaml"])])
-    )
+    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=["artifact-generators.k8s.yaml"]))
 
 
 def artifact_generators(flux_chart: Chart) -> Kustomization:

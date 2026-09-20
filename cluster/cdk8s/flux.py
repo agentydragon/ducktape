@@ -93,7 +93,7 @@ class ConfigMapArgs(BaseModel):
     files: list[str] = Field(description="File names relative to the directory; each becomes a key of that name.")
 
 
-class _KustomizeKustomization(BaseModel):
+class KustomizeKustomization(BaseModel):
     """The plain (non-CRD) `kustomize.config.k8s.io/v1beta1` `Kustomization`."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -114,7 +114,7 @@ def kustomize_kustomization(
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
-) -> dict[str, object]:
+) -> KustomizeKustomization:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
     `components` names ordinary Kustomize `Component` directories. Today's callers pass
@@ -122,10 +122,9 @@ def kustomize_kustomization(
     cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
     field; a generated Component directory would work the same way.
     """
-    manifest = _KustomizeKustomization(
+    return KustomizeKustomization(
         namespace=namespace,
         resources=resources,
         components=list(components) if components else None,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
     )
-    return manifest.model_dump(by_alias=True, exclude_none=True)
