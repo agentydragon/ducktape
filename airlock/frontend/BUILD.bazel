@@ -2,6 +2,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
@@ -125,6 +126,43 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+    ],
+)
+
+ts_library(
+    name = "api_test",
+    testonly = True,
+    srcs = ["api.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "auth_test",
+    testonly = True,
+    srcs = ["auth.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":auth",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "vitest.config.mjs",
+        ":api_test",
+        ":auth_test",
+        "//:node_modules/happy-dom",
+        "//:node_modules/vitest",
     ],
 )
 
