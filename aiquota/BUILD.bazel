@@ -311,7 +311,7 @@ py_wheel(
             "aiquota = aiquota.cli:app",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = [
         "atomicwrites>=1.4.1",
         "httpx>=0.27",

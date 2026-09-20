@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -21,6 +22,45 @@ py_binary(
     main_module = "devinfra.claude.statusline.statusline",
     visibility = ["//visibility:public"],
     deps = [":statusline"],
+)
+
+py_package(
+    name = "claude_statusline_pkg",
+    packages = [
+        "devinfra.claude",
+        "devinfra.claude.claude_api",
+        "devinfra.claude.claude_api.hooks",
+        "devinfra.claude.statusline",
+    ],
+    deps = [":statusline"],
+)
+
+py_wheel(
+    name = "claude_statusline_wheel",
+    distribution = "claude_statusline",
+    entry_points = {
+        "console_scripts": [
+            "claude-statusline = devinfra.claude.statusline.statusline:main",
+        ],
+    },
+    python_requires = ">=3.14",
+    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
+    # (claude-statusline). Nix provides these at runtime on NixOS/devShell.
+    # When adding a dependency, update BOTH places.
+    #
+    # `aiquota` is the local artifact-pinned wheel (not on PyPI); the statusline
+    # imports it for quota data. Nix provides it via the aiquota derivation in
+    # propagatedBuildInputs (which also brings typer/atomicwrites transitively).
+    requires = [
+        "aiquota",
+        "httpx",
+        "platformdirs",
+        "pydantic>=2.0",
+        "rich",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":claude_statusline_pkg"],
 )
 
 py_test(

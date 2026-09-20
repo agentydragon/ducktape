@@ -11,10 +11,14 @@ from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir
 
+# This XDG namespace stores shared hook/statusline state. Keep it stable across
+# executable and wheel renames so existing caches and logs remain available.
+SHARED_STATE_APPNAME = "claude-hooks"
+
 
 def default_cache_dir() -> Path:
-    """Resolve the claude-hooks cache directory (respects XDG_CACHE_HOME)."""
-    return Path(user_cache_dir(appname="claude-hooks"))
+    """Resolve the shared Claude tooling cache directory (respects XDG_CACHE_HOME)."""
+    return Path(user_cache_dir(appname=SHARED_STATE_APPNAME))
 
 
 def _short_session_dir(session_id: str) -> Path:
@@ -40,7 +44,7 @@ class SessionPaths:
         """Construct from an environment dict, resolving home/cache eagerly."""
         home = Path(env["HOME"]) if "HOME" in env else Path.home()
         xdg_cache_home = Path(
-            env["XDG_CACHE_HOME"] if "XDG_CACHE_HOME" in env else user_cache_dir(appname="claude-hooks")
+            env["XDG_CACHE_HOME"] if "XDG_CACHE_HOME" in env else user_cache_dir(appname=SHARED_STATE_APPNAME)
         )
         return cls(session_id=session_id, home=home, xdg_cache_home=xdg_cache_home)
 
@@ -50,15 +54,15 @@ class SessionPaths:
 
     @property
     def cache_dir(self) -> Path:
-        """Base cache directory for claude-hooks (auto-created)."""
+        """Base shared Claude tooling cache directory (auto-created)."""
         d = self.xdg_cache_home
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     @property
     def config_dir(self) -> Path:
-        """Base config directory for claude-hooks (auto-created)."""
-        return Path(user_config_dir(appname="claude-hooks", ensure_exists=True))
+        """Base shared Claude tooling config directory (auto-created)."""
+        return Path(user_config_dir(appname=SHARED_STATE_APPNAME, ensure_exists=True))
 
     @property
     def _short_dir(self) -> Path:

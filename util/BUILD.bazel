@@ -207,7 +207,7 @@ py_package(
     # broken copy — `Rlocation()` calls `CurrentRepository(frame=...)` on
     # the caller, sees the /nix/store path, and raises "does not lie under
     # the runfiles root". `util.bazel.{subprocess,workspace}` work fine
-    # outside Bazel and are needed by Nix-shipped wheels (claude-hooks,
+    # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
     # ducktape-git-hooks).
     deps = [
         ":env",
@@ -224,7 +224,7 @@ py_package(
 py_wheel(
     name = "wheel",
     distribution = "ducktape_util",
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = [
         "opentelemetry-api",
         "opentelemetry-sdk",

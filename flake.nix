@@ -85,6 +85,16 @@
         inherit system;
         config.allowUnfree = true;
       };
+      artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
+      rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
+      artifactOverrides =
+        if rawArtifactOverrides == "" then { } else builtins.fromJSON rawArtifactOverrides;
+      # Keep archive names as evaluation-time metadata. Deriving them from
+      # artifact store paths later would include Nix's hash prefix.
+      artifactFilenames = builtins.mapAttrs (
+        name: spec:
+        if artifactOverrides ? ${name} then baseNameOf artifactOverrides.${name} else baseNameOf spec.url
+      ) artifactData.pins;
 
       # Keep the developer Ruff binary aligned with the repository's pinned
       # Python and Bazel toolchains while nixpkgs catches up.
@@ -116,29 +126,26 @@
       # that is what catches "wheel forgot a package" regressions like the
       # gmail_api / ducktape_pkg drift in #2669. Requires --impure (getEnv).
       # Empty in normal use; behaviour is identical to the pre-override flake.
-      artifacts =
-        let
-          data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
-          rawOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
-          overrides = if rawOverrides == "" then { } else builtins.fromJSON rawOverrides;
-        in
-        builtins.mapAttrs (
-          name: spec:
-          if overrides ? ${name} then
-            # Preserve the URL's basename so consumers that read the store
-            # path's suffix (aiquota's buildPythonApplication glob for *.whl,
-            # extension-zip unzip) work identically to the fetchurl path.
-            # renameWheel-based mkWheel callers are agnostic to this name.
-            builtins.path {
-              path = /. + overrides.${name};
-              name = baseNameOf spec.url;
-            }
-          else
-            pkgs.fetchurl {
-              inherit (spec) url;
-              hash = "sha256-${spec.sha256}";
-            }
-        ) data.pins;
+      artifacts = builtins.mapAttrs (
+        name: spec:
+        if artifactOverrides ? ${name} then
+          # Preserve the local artifact's basename. Wheel installers validate
+          # the archive filename against its embedded .dist-info directory.
+          builtins.path {
+            path = /. + artifactOverrides.${name};
+            name = artifactFilenames.${name};
+          }
+        else
+          pkgs.fetchurl {
+            inherit (spec) url;
+            name =
+              let
+                asset = artifactFilenames.${name};
+              in
+              if pkgs.lib.hasSuffix ".whl" asset || pkgs.lib.hasSuffix ".zip" asset then asset else "source";
+            hash = "sha256-${spec.sha256}";
+          }
+      ) artifactData.pins;
 
       # Each skill ships as its own `skill-<name>` release artifact. Assemble the
       # per-skill `.skill` zips (each already rooted under `<name>/`) into one flat

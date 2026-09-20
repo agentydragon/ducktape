@@ -32,7 +32,7 @@ let
       pkgs.gnomeExtensions.pop-shell;
   inherit (ducktapePackages)
     ducktape
-    claude-hook-rs
+    claude-hook
     claude-statusline
     gterm-theme
     bbapi
@@ -392,7 +392,7 @@ in
       stylua
 
       ducktape
-      claude-hook-rs
+      claude-hook
       claude-statusline
       bbapi
       gterm-theme

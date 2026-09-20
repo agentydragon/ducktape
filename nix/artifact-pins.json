@@ -12,7 +12,7 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-f69fc48a0062/bbapi",
       "sha256": "9p/EigBiffsyUe/ujkK6qdFdAHWOY+KnaSrdYgD5pHM="
     },
-    "claude-hooks": {
+    "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-92435270e90d/claude_hooks-0.1.0-py3-none-any.whl",
       "sha256": "kkNScOkNvpkyZhiyM+5eDUAhLJwd4RjyDWtfRNGjsX0="
     },
@@ -32,7 +32,7 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
-    "claude-hook-rs": {
+    "claude-hook": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-c4b4986dd5ea/claude_hook",
       "sha256": "xLSYbdXqluTgG9i9McpNr1+GLA+Ff0x8XntVm5g37K4="
     },
