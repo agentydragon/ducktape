@@ -77,7 +77,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderStatus }): JSX.Elem
   return (
     <Paper withBorder radius="md" p="lg">
       <Stack gap="md">
-        <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <Group justify="space-between" align="flex-start">
           <Stack gap="xs" style={{ minWidth: 0 }}>
             <Group gap="sm">
               <Title order={3} size="h4">
