@@ -2180,6 +2180,28 @@ data:
             url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ssh-mcp/bearer-token
+      home_assistant:
+        title: Home Assistant MCP
+        description: Home Assistant tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Home Assistant MCP backend (ha-mcp), the same one haku-console uses.
+          config:
+            transport: streamable-http
+            url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/ha-mcp/bearer-token
+      tana_rw:
+        title: Tana MCP
+        description: Tana read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.
+          config:
+            transport: streamable-http
+            url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/tana-mcp/bearer-token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2187,7 +2209,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2323,6 +2345,12 @@ spec:
             - mountPath: /run/secrets/ssh-mcp
               name: secret-ssh-mcp-bearer
               readOnly: true
+            - mountPath: /run/secrets/ha-mcp
+              name: secret-ha-mcp-bearer
+              readOnly: true
+            - mountPath: /run/secrets/tana-mcp
+              name: secret-tana-agentydragon-gmail-com-account-pat
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2431,6 +2459,18 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: ssh-mcp-bearer
+        - name: secret-ha-mcp-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: ha-mcp-bearer
+        - name: secret-tana-agentydragon-gmail-com-account-pat
+          secret:
+            items:
+              - key: token
+                path: bearer-token
+            secretName: tana-agentydragon-gmail-com-account-pat
 ---
 apiVersion: v1
 kind: Service
@@ -2554,6 +2594,22 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ha-mcp
+            k8s:io.kubernetes.pod.namespace: ha-mcp
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: tana-mcp
+            k8s:io.kubernetes.pod.namespace: tana-mcp
+      toPorts:
+        - ports:
+            - port: "8263"
               protocol: TCP
     - toEntities:
         - remote-node

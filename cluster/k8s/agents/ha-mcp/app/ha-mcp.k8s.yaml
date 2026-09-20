@@ -398,7 +398,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   annotations:
-    description: Default-deny ingress for HA-MCP. Only haku-console reaches the facade port; the upstream server port is reachable only over pod-local loopback. No Gateway ingress -- this MCP is cluster-internal since the move to a static bearer.
+    description: Default-deny ingress for HA-MCP. Only haku-console and agentplane-staging reach the facade port; the upstream server port is reachable only over pod-local loopback. No Gateway ingress -- this MCP is cluster-internal since the move to a static bearer.
   name: ha-mcp-ingress
   namespace: ha-mcp
 spec:
@@ -409,6 +409,8 @@ spec:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-console
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
             - port: "8765"

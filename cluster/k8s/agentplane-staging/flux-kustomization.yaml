@@ -28,6 +28,8 @@ spec:
     - name: sso-providers-tf
     - name: ssh-mcp
     - name: haku-console
+    - name: ha-mcp
+    - name: tana-mcp
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
