@@ -357,6 +357,7 @@
       };
       inherit (devTools)
         localOnlyPackages
+        preCommitPackages
         systemLibs
         devToolPackages
         ;
@@ -420,6 +421,7 @@
             nix-openclaw
             ruffLatest
             localOnlyPackages
+            preCommitPackages
             devToolPackages
             ;
         })

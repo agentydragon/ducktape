@@ -6,6 +6,36 @@
 }:
 
 let
+  # Nix-provided tools needed by the system hooks and repo-local hooks in
+  # .pre-commit-config.yaml. Hook environments from pre-commit-managed repos
+  # continue to be installed and cached by pre-commit itself.
+  preCommitCommonPackages = {
+    inherit (ducktapePkgs) bb bbr prettier;
+    gitHooks = ducktapePkgs.ducktape-git-hooks;
+    preCommit = pkgs.pre-commit;
+    inherit (pkgs)
+      bazelisk
+      nixfmt
+      statix
+      shfmt
+      buildifier
+      gofumpt
+      kubeconform
+      tflint
+      checkov
+      ;
+    ruff = ruffLatest;
+    keepSorted = pkgs.keep-sorted;
+    markdownlintCli2 = pkgs.markdownlint-cli2;
+  };
+  # Rustfmt and Ansible are pre-commit requirements, but stay out of the lean
+  # BuildBuddy Remote Runner toolset because of their large closures.
+  preCommitRbeExcludedPackages = [
+    pkgs.rustfmt
+    pkgs.ansible
+  ];
+  preCommitPackages = builtins.attrValues preCommitCommonPackages ++ preCommitRbeExcludedPackages;
+
   # Dev tools shared between the devShell (local `nix develop` / direnv)
   # and Claude Code web (`nix profile install .#devtools`).
   # release.yml pushes this to attic so web installs are cache hits.
@@ -19,8 +49,9 @@ let
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
     # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
-    pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
-    pkgs.ansible # 650MB
+  ]
+  ++ preCommitRbeExcludedPackages
+  ++ [
     # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
     # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
     # persistent symbol cache across queries from the same process; the
@@ -40,28 +71,27 @@ let
   ];
   # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
-  # Common dev tools used alongside Claude hook dispatch and the Python statusline.
+  # Dev tools shared between the devShell, Claude profiles, and RBE runner.
   devToolsCommon = [
-    ducktapePkgs.bb
+    preCommitCommonPackages.bb
     ducktapePkgs.bbapi
-    ducktapePkgs.bbr
-    ducktapePkgs.ducktape-git-hooks
+    preCommitCommonPackages.bbr
+    preCommitCommonPackages.gitHooks
     # Repo-configured Gazelle; `gazelle` / `gazelle -mode=diff` from a
     # checkout regenerate Python BUILD files without Bazel.
     ducktapePkgs.gazelle
     ducktapePkgs.skills
-    # Dev tools
-    pkgs.pre-commit
-    pkgs.bazelisk
-    pkgs.nixfmt
-    pkgs.statix
-    ruffLatest
-    pkgs.shfmt
-    pkgs.buildifier
-    pkgs.keep-sorted
-    pkgs.gofumpt
-    pkgs.markdownlint-cli2
-    ducktapePkgs.prettier
+    preCommitCommonPackages.preCommit
+    preCommitCommonPackages.bazelisk
+    preCommitCommonPackages.nixfmt
+    preCommitCommonPackages.statix
+    preCommitCommonPackages.ruff
+    preCommitCommonPackages.shfmt
+    preCommitCommonPackages.buildifier
+    preCommitCommonPackages.keepSorted
+    preCommitCommonPackages.gofumpt
+    preCommitCommonPackages.markdownlintCli2
+    preCommitCommonPackages.prettier
     pkgs.openssl
     # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
     # include a guaranteed Python runtime with pyyaml for that path.
@@ -73,10 +103,10 @@ let
     pkgs.fluxcd
     pkgs.kustomize
     pkgs.kubernetes-helm
-    pkgs.kubeconform
+    preCommitCommonPackages.kubeconform
     pkgs.opentofu
-    pkgs.tflint
-    pkgs.checkov # Terraform security scanner; backs the checkov_diff pre-commit hook
+    preCommitCommonPackages.tflint
+    preCommitCommonPackages.checkov
     pkgs.sops
     pkgs.ssh-to-age
     ducktapePkgs.bazel-diff
@@ -91,6 +121,7 @@ in
 {
   inherit
     localOnlyPackages
+    preCommitPackages
     systemLibs
     devToolPackages
     ;

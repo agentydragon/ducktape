@@ -52,8 +52,8 @@ tokens:
   #    nix/packages/gaffer.nix triggers builtins.fetchClosure against
   #    cache.allegedly.works/gaffer to substitute the private drivefs/drivectl
   #    closures bundled into NixOS/home configs.
-  #  - push: public is the anonymous-readable cache for the Claude Code web/Haku
-  #    bootstrap closures (devtools/bb/bbr/bbapi/agent-haku/devShells.default) —
+  #  - push: public is anonymous-readable for Claude Code web/Haku and pre-commit CI
+  #    bootstrap closures (devtools/precommit/bb/bbr/bbapi/agent-haku/devShells.default) —
   #    the very first `nix profile install` of a fresh web session runs before any
   #    session credential exists, so it can only substitute from a cache that needs
   #    no auth. See cluster/docs/nix_cache.md "Public bootstrap cache".
