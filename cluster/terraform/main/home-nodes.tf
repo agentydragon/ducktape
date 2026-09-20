@@ -26,7 +26,7 @@ locals {
       machine = merge(local.worker_machine_base, {
         install = {
           disk  = node.install_disk
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, name, var.talos_version)}"
         }
         # haku-ci's rootless dind needs user namespaces. Scoped to OptiPlex rather
         # than all Talos workers because it is the only home worker approved for CI.
