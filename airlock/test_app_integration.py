@@ -62,7 +62,8 @@ def _operator_cookies(settings: Settings) -> dict[str, str]:
         }
     }
     payload = base64.b64encode(json.dumps(session).encode("utf-8"))
-    signer = TimestampSigner(settings.oidc_session_secret.get_secret_value(), salt="starlette.sessions")
+    # Match SessionMiddleware's default TimestampSigner configuration.
+    signer = TimestampSigner(settings.oidc_session_secret.get_secret_value())
     return {session_cookie_name(settings): signer.sign(payload).decode("ascii")}
 
 

@@ -125,6 +125,8 @@ def airlock(
     forgejo_images: Kustomization,
     gateway: Kustomization,
     authentik: Kustomization,
+    sso_providers_tf: Kustomization,
+    reflector: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
     name = "airlock"
@@ -151,7 +153,9 @@ def airlock(
                     api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock"
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(forgejo_images, gateway, authentik, external_secrets_config),
+            depends_on=flux_kustomization_depends_on_many(
+                forgejo_images, gateway, authentik, sso_providers_tf, reflector, external_secrets_config
+            ),
         ),
     )
 
