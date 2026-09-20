@@ -27,7 +27,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: airlock
-          image: git.allegedly.works/ducktape-ci/airlock:devel-20260920095221-c19679e # {"$imagepolicy": "flux-system:airlock"}
+          image: git.allegedly.works/ducktape-ci/airlock:devel-20260920222010-b7cf884 # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -35,7 +35,7 @@ spec:
               protocol: TCP
           env:
             - name: AIRLOCK_IMAGE_TAG
-              value: devel-20260920095221-c19679e # {"$imagepolicy": "flux-system:airlock:tag"}
+              value: devel-20260920222010-b7cf884 # {"$imagepolicy": "flux-system:airlock:tag"}
             - name: CONFIG_PATH
               value: "/etc/airlock/config.yaml"
             - name: AIRLOCK_OIDC_CLIENT_ID
