@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import (
     aiquota,
+    artifact_generators,
     cnpg_flux_kustomizations,
     descheduler,
     descheduler_flux_kustomizations,
@@ -32,7 +33,6 @@ from cluster.cdk8s.agentplane_egress_credentials import (
 )
 from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
-from cluster.cdk8s.artifact_generators import artifact_generators as artifact_generators_factory
 from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
 from cluster.cdk8s.authentik import flux_kustomizations as authentik_flux_kustomizations
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
@@ -162,10 +162,13 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
     agents_mitmproxy_namespace_kustomization = agents_flux_kustomizations.agents_mitmproxy_namespace(flux_chart)
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
-    artifact_generators_factory(flux_chart, root)
+    artifact_generators.artifact_generators(flux_chart)
     atuin_namespace_kustomization = atuin_flux_kustomizations.atuin_namespace(flux_chart)
     authentik_namespace_kustomization = authentik_flux_kustomizations.authentik_namespace(flux_chart)
-    cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
+    cert_manager_issuer_config_artifact = cert_manager_flux_kustomizations.cert_manager_issuer_config_artifact()
+    cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(
+        flux_chart, artifact=cert_manager_issuer_config_artifact
+    )
     clickhouse_namespace_kustomization = clickhouse_flux_kustomizations.clickhouse_namespace(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
     evidence_flux_kustomizations.evidence_market_roster(flux_chart)
@@ -242,8 +245,13 @@ def generate_manifests(root: Path) -> None:
     nvidia_device_plugin_kustomization = nvidia_device_plugin_flux_kustomizations.nvidia_device_plugin(
         flux_chart, nvidia_runtimeclass_kustomization, node_feature_discovery_kustomization
     )
+    cert_manager_artifact = cert_manager_flux_kustomizations.cert_manager_artifact()
     cert_manager_kustomization = cert_manager_flux_kustomizations.cert_manager(
-        flux_chart, cert_manager_issuer_config_kustomization, reflector_kustomization, monitoring_crds_kustomization
+        flux_chart,
+        artifact=cert_manager_artifact,
+        cert_manager_issuer_config=cert_manager_issuer_config_kustomization,
+        reflector=reflector_kustomization,
+        monitoring_crds=monitoring_crds_kustomization,
     )
     seaweedfs_operator_kustomization = seaweedfs_flux_kustomizations.seaweedfs_operator(
         flux_chart, seaweedfs_namespace_kustomization
@@ -297,13 +305,15 @@ def generate_manifests(root: Path) -> None:
     )
     goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(flux_chart, vpa_kustomization)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(flux_chart, root, clickhouse_kustomization)
+    cert_manager_environment_artifact = cert_manager_flux_kustomizations.cert_manager_environment_artifact()
     cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
         flux_chart,
-        cert_manager_kustomization,
-        cert_manager_trust_kustomization,
-        cert_manager_issuer_config_kustomization,
-        external_creds_kustomization,
-        external_secrets_config_kustomization,
+        artifact=cert_manager_environment_artifact,
+        cert_manager=cert_manager_kustomization,
+        cert_manager_trust=cert_manager_trust_kustomization,
+        cert_manager_issuer_config=cert_manager_issuer_config_kustomization,
+        external_creds=external_creds_kustomization,
+        external_secrets_config=external_secrets_config_kustomization,
     )
     atuin_db_kustomization = atuin_flux_kustomizations.atuin_db(
         flux_chart, atuin_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
@@ -1154,6 +1164,14 @@ def generate_manifests(root: Path) -> None:
         ssh_mcp_kustomization,
         haku_console_kustomization,
         ha_mcp_kustomization,
+    )
+    artifact_generators.write_manifests(
+        root,
+        ducktape_artifacts=[
+            cert_manager_artifact,
+            cert_manager_environment_artifact,
+            cert_manager_issuer_config_artifact,
+        ],
     )
     flux_app.synth()
 

@@ -46,25 +46,6 @@ spec:
       name: sso-providers-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/cert-manager/app/**"
-          to: "@artifact/cluster/k8s/cert-manager/app/"
-      name: cert-manager
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/cert-manager/environment/**"
-          to: "@artifact/cluster/k8s/cert-manager/environment/"
-        - from: "@repo/cluster/k8s/cert-manager/config/**"
-          to: "@artifact/cluster/k8s/cert-manager/config/"
-        - from: "@repo/cluster/k8s/cert-manager/cluster-ca/**"
-          to: "@artifact/cluster/k8s/cert-manager/cluster-ca/"
-      name: cert-manager-environment
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/cert-manager/issuer-config/**"
-          to: "@artifact/cluster/k8s/cert-manager/issuer-config/"
-      name: cert-manager-issuer-config
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/cnpg/**"
           to: "@artifact/cluster/k8s/cnpg/"
       name: cnpg
@@ -1029,6 +1010,25 @@ spec:
         - from: "@repo/cluster/k8s/website/**"
           to: "@artifact/cluster/k8s/website/"
       name: website
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/cert-manager/app/**"
+          to: "@artifact/cluster/k8s/cert-manager/app/"
+      name: cert-manager
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/cert-manager/environment/**"
+          to: "@artifact/cluster/k8s/cert-manager/environment/"
+        - from: "@repo/cluster/k8s/cert-manager/config/**"
+          to: "@artifact/cluster/k8s/cert-manager/config/"
+        - from: "@repo/cluster/k8s/cert-manager/cluster-ca/**"
+          to: "@artifact/cluster/k8s/cert-manager/cluster-ca/"
+      name: cert-manager-environment
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/cert-manager/issuer-config/**"
+          to: "@artifact/cluster/k8s/cert-manager/issuer-config/"
+      name: cert-manager-issuer-config
       originRevision: "@repo"
   sources:
     - alias: repo

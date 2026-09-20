@@ -71,11 +71,15 @@ derived roster is not written until every node it would touch is a construct.
 
 Independent of each other; fan out.
 
-- **Artifacts from the chart.** Each Kustomization node builds its artifact value first
-  and reads `sourceRef` off it; the `ArtifactGenerator` is assembled from the list
-  last. Deletes `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the
-  triple-written names; retires `cluster/validation/test_actions_artifact.py`. The SOPS
-  `decryption` block becomes one value. Exit: `kustomize build` of each packaged
+- **Artifacts from component factories.** Convert the remaining `_DUCKTAPE_ARTIFACTS`
+  entries using `cert_manager/flux_kustomizations.py`'s pattern: the entry point builds
+  each component's artifact value before its Kustomization node, passes it explicitly
+  to that node, then passes the same value to the ArtifactGenerator writer last. Nodes
+  derive `sourceRef` from the artifact and still return only a Kustomization. Deletes
+  `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the triple-written names;
+  retires `cluster/validation/test_actions_artifact.py` after the remaining inventory
+  is converted. Preserve the separate `flux-system` source group for external credentials.
+  The SOPS `decryption` block becomes one value. Exit: `kustomize build` of each packaged
   directory unchanged, checked once in the PR.
 
 **Pause after Wave 1.** Look at the Flux layer as one thing before building on it:

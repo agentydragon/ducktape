@@ -13,6 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryptionSecretRef,
 )
 
+from cluster.cdk8s.flux import KustomizeKustomization
 from cluster.cdk8s.metadata import metadata
 
 CNPG_DATABASE_READY = (
@@ -21,8 +22,8 @@ CNPG_DATABASE_READY = (
 )
 
 
-def write_yaml(path: Path, manifest: dict[str, object]) -> None:
-    path.write_text(Yaml.format_objects([manifest]))
+def write_yaml(path: Path, manifest: KustomizeKustomization) -> None:
+    path.write_text(Yaml.format_objects([manifest.model_dump(by_alias=True, exclude_none=True)]))
 
 
 def config_map_chart(app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]) -> Chart:
