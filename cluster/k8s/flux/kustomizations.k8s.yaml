@@ -325,22 +325,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-mailbox-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/haku/mailbox-namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-mailbox-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-namespace
   namespace: ducktape-flux
 spec:
@@ -2330,31 +2314,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: gatus-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: haku-mailbox-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: haku-mailbox-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/haku/mailbox/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-mailbox-db
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -5671,25 +5630,18 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: haku-mailbox-namespace
-      namespace: ducktape-flux
-    - name: haku-mailbox-db
+    - name: cnpg
       namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: cert-manager-issuer-config
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/mailbox/app
+  path: ./cluster/k8s/haku/mailbox
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -5698,7 +5650,7 @@ spec:
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: haku-mailbox-app
+    name: haku-mailbox
     namespace: ducktape-flux
   timeout: 5m
   wait: true

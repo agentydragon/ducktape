@@ -6,6 +6,15 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 
 ## Layout
 
+The `haku-mailbox` Flux Kustomization owns the namespace, database, and application
+through the root `kustomization.yaml`. Its artifact also includes the sibling
+`../mailbox-namespace/` base. CNPG, cert-manager, and External Secrets retain their
+operator prerequisites; `cert-manager-issuer-config` supplies the required issuer
+substitution. Registry, storage, identity, and routing services may converge after
+admission. The init container retries through normal Pod reconciliation.
+
+Ownership changes follow the [handoff procedure](../../../../../debug/flux_app_consolidation_handoff.md).
+
 | Path     | Role                                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------------------- |
 | `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                                   |
