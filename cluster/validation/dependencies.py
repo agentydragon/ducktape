@@ -20,8 +20,7 @@ class _DependencyRule:
 
 
 _DEPENDENCY_RULES: list[_DependencyRule] = [
-    # CRD-based operator ordering (ExternalSecret->external-secrets-config, ServiceMonitor->monitoring-stack, etc.)
-    # is enforced dynamically by validate_operator_dependencies() using CRD_TO_OPERATOR from crd_layering.py.
+    # CRD provider ordering is enforced by validate_operator_dependencies().
     _DependencyRule(
         prerequisite="cert-manager",
         must_come_before=["gateway", "authentik", "gitea"],
@@ -89,7 +88,17 @@ def validate_operator_dependencies(
             key = (kust_name, operator)
             if key in reported:
                 continue
-            if operator not in g or not nx.has_path(g, kust_name, operator):
+            # A HelmRelease is admitted before helm-controller installs its operator.
+            # A zero-length graph path cannot order that install before sibling CRs.
+            # Providers applying resources directly (e.g. Flux image automation) do
+            # not have this asynchronous Helm installation boundary.
+            if kust_name == operator and any(r.kind == "HelmRelease" for r in resources):
+                errors.append(
+                    f"{kust_name} installs its operator through Helm and also applies {resource.kind} resources; "
+                    f"move those instances to a separate Kustomization that depends on {operator}"
+                )
+                reported.add(key)
+            elif operator not in g or not nx.has_path(g, kust_name, operator):
                 errors.append(
                     f"{kust_name} uses {resource.kind} resources but doesn't transitively depend on {operator}"
                 )

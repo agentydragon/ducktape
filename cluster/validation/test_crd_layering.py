@@ -1,4 +1,4 @@
-"""Unit tests for CRD layering validation."""
+"""CRD layering follows provider dependencies, not the presence of any HelmRelease."""
 
 from __future__ import annotations
 
@@ -6,58 +6,87 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-import yaml
 
-from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
-from cluster.validation.k8s import parse_k8s_resources
+from cluster.validation.cluster import ParsedCluster
+from cluster.validation.dependencies import validate_operator_dependencies
+from cluster.validation.flux import DependsOn, FluxKustomizationSpec
+from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
-from util.bazel.runfiles import get_required_path
-
-_TESTDATA = get_required_path("_main/cluster/validation/testdata/crd_layering")
 
 
-def _build_result(kustomization_path: Path, build_output_file: Path) -> KustomizeBuildResult:
-    yaml_output = build_output_file.read_text()
-    return KustomizeBuildResult(
-        kustomization_path=kustomization_path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
-    )
-
-
+@pytest.mark.parametrize("transitive", [False, True], ids=["direct", "transitive"])
 @pytest.mark.parametrize(
-    ("kustomization_path", "testdata_name"),
+    ("kind", "api_version", "provider"),
     [
-        (Path("/k8s/test-app/kustomization.yaml"), "helmrelease_only"),
-        (Path("/k8s/test-app/kustomization.yaml"), "crd_only"),
-        (Path("/k8s/external-secrets-operator/kustomization.yaml"), "operator_with_crd"),
-        (Path("/k8s/cert-manager-config/base/kustomization.yaml"), "cert_manager_nested"),
-        (Path("/k8s/vault/config/base/kustomization.yaml"), "vault_nested"),
-        (Path("/k8s/test-app/overlays/production/kustomization.yaml"), "mixed_helmrelease_and_crd"),
-        (Path("/k8s/forgejo/app/kustomization.yaml"), "mixed_helmrelease_and_crd"),
-        (Path("/k8s/monitoring/loki/kustomization.yaml"), "mixed_helmrelease_and_crd"),
-        (Path("/k8s/monitoring/mimir/kustomization.yaml"), "mixed_helmrelease_and_crd"),
-        (Path("/k8s/monitoring/tempo/kustomization.yaml"), "mixed_helmrelease_and_crd"),
-    ],
-    ids=[
-        "helmrelease_only",
-        "crd_only",
-        "operator_with_crd",
-        "cert_manager_nested",
-        "vault_nested",
-        "overlay_skipped",
-        "forgejo_consolidation_exception",
-        "loki_consolidation_exception",
-        "mimir_consolidation_exception",
-        "tempo_consolidation_exception",
+        ("ExternalSecret", "external-secrets.io/v1", "external-secrets-operator"),
+        ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
+        ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
     ],
 )
-def test_valid_cases(kustomization_path: Path, testdata_name: str) -> None:
-    check_crd_layering(_build_result(kustomization_path, _TESTDATA / f"{testdata_name}.yaml"))
+def test_app_helmrelease_can_share_operator_instances(
+    tmp_path: Path, kind: str, api_version: str, provider: str, transitive: bool
+) -> None:
+    cluster = ParsedCluster(
+        flux_kustomizations={
+            "test-app": FluxKustomizationSpec(
+                path="./cluster/k8s/test-app",
+                depends_on=[DependsOn(name="test-prerequisites" if transitive else provider)],
+            ),
+            "test-prerequisites": FluxKustomizationSpec(depends_on=[DependsOn(name=provider)]),
+            provider: FluxKustomizationSpec(),
+        },
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=tmp_path / "test-app/kustomization.yaml",
+                resources=[
+                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                    K8sResource(kind=kind, apiVersion=api_version),
+                ],
+            )
+        ],
+    )
+    assert validate_operator_dependencies(cluster, tmp_path) == []
+
+    cluster.graph.remove_edge("test-app", "test-prerequisites" if transitive else provider)
+    errors = validate_operator_dependencies(cluster, tmp_path)
+    assert len(errors) == 1
+    assert f"test-app uses {kind}" in errors[0]
+    assert f"depend on {provider}" in errors[0]
 
 
-def test_detects_crd_layering_violation() -> None:
-    build_output = _TESTDATA / "mixed_helmrelease_and_crd.yaml"
-    with pytest.raises(CrdLayeringViolationError, match="ExternalSecret"):
-        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), build_output))
+@pytest.mark.parametrize("subdir", ["test-operator", "cert-manager/app", "test/overlays/staging"])
+def test_operator_cannot_satisfy_its_own_helm_install_dependency(tmp_path: Path, subdir: str) -> None:
+    cluster = ParsedCluster(
+        flux_kustomizations={"test-operator": FluxKustomizationSpec(path=f"./cluster/k8s/{subdir}")},
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=tmp_path / subdir / "kustomization.yaml",
+                resources=[
+                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                ],
+            )
+        ],
+    )
+    errors = validate_operator_dependencies(cluster, tmp_path, {"TestInstance": "test-operator"})
+    assert len(errors) == 1
+    assert "test-operator installs its operator through Helm" in errors[0]
+    assert "TestInstance" in errors[0]
+    assert "separate Kustomization" in errors[0]
+
+
+def test_directly_applied_provider_has_no_helm_install_boundary(tmp_path: Path) -> None:
+    cluster = ParsedCluster(
+        flux_kustomizations={"test-provider": FluxKustomizationSpec(path="./cluster/k8s/test-provider")},
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=tmp_path / "test-provider/kustomization.yaml",
+                resources=[K8sResource(kind="TestInstance", apiVersion="test.example/v1")],
+            )
+        ],
+    )
+    assert validate_operator_dependencies(cluster, tmp_path, {"TestInstance": "test-provider"}) == []
 
 
 if __name__ == "__main__":
