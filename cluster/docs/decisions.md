@@ -349,7 +349,8 @@ application manifests). Not currently reconciled cluster state.
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
   the k8s manifests moved.
 - **kubectl-machine-mcp**: `cluster/k8s/parked/kubectl-machine-mcp/` — decommissioned
-  alongside its only consumer, the Anthropic-hosted cloud agent below.
+  with the managed-agent consumers that used it. Its Flux Kustomization is removed
+  from the active bundle; manifests remain for manual revival.
 - **Haku cloud agent**: `cluster/k8s/parked/cloud-agent-tf/` — Anthropic-hosted Managed
   Agent; already effectively dead (the cloud objects were deleted at Anthropic), now
   formally parked. HCL root (`tf/gitops/haku-cloud-agent/`) and design docs
@@ -397,10 +398,11 @@ application manifests). Not currently reconciled cluster state.
   Reflector-mirrored into an `augur` namespace defined in the separate `gaffer-private`
   repo (not accessible from this repo) — parking stops that mirror source; whether
   `augur` still consumes the key was not verified before parking.
-- **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; third-party Go MCP server
-  (`github.com/NERVsystems/osmmcp`), ducktape's build wrapper (`third_party/osmmcp/`)
-  stays live and unparked. Already unwired from haku-console's tool config since
-  2026-07-19 (routing-profile bug), so it had no live consumer.
+- **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; its Flux Kustomization
+  is removed from the active bundle. The third-party Go MCP server
+  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
+  and unparked. Already unwired from haku-console's tool config since 2026-07-19
+  (routing-profile bug), so it had no live consumer.
 - **codex-pod, codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
   `cluster/k8s/parked/<name>/` — four successive Codex-in-a-pod experiments, previously
   under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure

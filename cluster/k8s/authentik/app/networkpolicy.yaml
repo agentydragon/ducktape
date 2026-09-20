@@ -88,8 +88,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kubectl-passthrough-mcp
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kubectl-machine-mcp
       toPorts:
         - ports:
             - port: "9000"
