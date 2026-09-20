@@ -267,7 +267,7 @@ def _database(scope: Construct) -> None:
             ),
             affinity=ClusterSpecAffinity(
                 enable_pod_anti_affinity=True,
-                pod_anti_affinity_type="preferred",
+                pod_anti_affinity_type="required",
                 node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
                 topology_key="kubernetes.io/hostname",
                 node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
