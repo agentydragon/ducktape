@@ -41,20 +41,16 @@ strip every removable feature and use generic placeholder names (`a`, `mod_x`,
 `origin/devel` before the fix isn't testing the bug — drop it or move it to a
 separate PR documenting the invariant. If a bug genuinely can't be reproduced
 synthetically, say so in the PR body and add coverage at the next-coarsest level;
-pipeline bugs seen only against a private corpus should be reproduced against
-**props/frontend's debundle pipeline** so the regression test lands in public CI.
+bugs first seen against a private corpus should be minimized to synthetic e2e
+inputs so the regression test lands in public CI.
 
-## Verification corpora
+## Verification
 
-- **Synthetic e2e fixtures** (`e2e/`) — focused, fast, one pipeline stage / bug
-  class. Most tests live here.
-- **`props/frontend/debundle/`** — realistic-shape corpus (Svelte 5, esbuild
-  splitting, real vendor packages).
+- **Synthetic e2e fixtures** (`e2e/`) are the default regression corpus. Keep
+  them focused on one pipeline stage or bug class.
 
-When a fix lands: synthetic e2e green → props/frontend debundle green →
-private-corpus smoke green. Skipping the middle layer means regressions surface
-only against the private corpus, where iteration is slower and repros can't be
-shared.
+When a bug only reproduces against a private corpus, document why and smoke-test
+that corpus after the synthetic regression test passes.
 
 ## Performance Profiling
 

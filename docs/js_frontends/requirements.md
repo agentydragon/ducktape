@@ -29,7 +29,6 @@
 
 ## Decisions Made
 
-- **SvelteKit replacement accepted**; Props now uses React + Mantine with esbuild
 - **Local pnpm dev can break** - Bazel is the source of truth
 
 ## Known Problems

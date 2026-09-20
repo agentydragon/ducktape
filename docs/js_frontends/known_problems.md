@@ -1,6 +1,6 @@
 # Known Problems with JS Frontend Bazel Integration
 
-The Props-specific Storybook/Vite and Playwright findings below describe the previous Svelte frontend. Props now uses a React + Mantine esbuild app and a Puppeteer visual harness; the Bazel workspace and module-resolution observations may still apply to other frontends.
+These notes cover Bazel and pnpm integration issues that can affect JavaScript frontends.
 
 ## 1. Playwright Module Identity Issue
 
@@ -45,17 +45,7 @@ When we flatten the pnpm workspace (single package.json at root, no workspace me
 
 **aspect_rules_js Behavior**: The `npm_translate_lock` rule reads the lockfile and creates Bazel targets. It expects workspace member package.json files if the lockfile references workspace packages.
 
-## 4. Storybook + Vite Version Constraints
-
-**Symptom**: Storybook build fails with peer dependency errors.
-
-**Root Cause**: Storybook 8.x requires vite ^4.0.0 || ^5.0.0 || ^6.0.0. Cannot use vite 7.x.
-
-**Previous Svelte workaround**: Props pinned vite to 6.3.5 and @sveltejs/vite-plugin-svelte to 5.1.0. This no longer applies to Props; the frontend now uses esbuild.
-
-**Status**: Resolved, but constrains vite upgrades until Storybook catches up.
-
-## 5. aspect_rules_js Workspace Detection
+## 4. aspect_rules_js Workspace Detection
 
 **Symptom**: Bazel fails with "expected pnpm-workspace.yaml to exist since the pnpm-lock.yaml file contains workspace packages".
 
