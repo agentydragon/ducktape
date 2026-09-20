@@ -24,6 +24,7 @@ import { critiqueIssues, fileContent, fps, gradingEdges, tps } from "./fixtures/
 import { llmRequests } from "./fixtures/llm_requests";
 import { criticRunDetail, runs } from "./fixtures/runs";
 import { fileTree, snapshotDetail } from "./fixtures/snapshot";
+import { RunModalContext } from "../../src/lib/runModalContext";
 import {
   coverageCells,
   coverageDefinitions,
@@ -208,7 +209,9 @@ if (!pageName) {
     );
     root.render(
       <MantineProvider defaultColorScheme="auto">
-        {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
+        <RunModalContext.Provider value={{ open: () => undefined }}>
+          {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
+        </RunModalContext.Provider>
       </MantineProvider>
     );
   }

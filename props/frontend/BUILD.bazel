@@ -172,6 +172,7 @@ ts_library(
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DistributionChart",
         "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/pages:SnapshotDetailPage",
     ],
 )
