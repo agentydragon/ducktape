@@ -75,5 +75,38 @@ def test_codex_tool_calls_are_counted_outside_assistant_messages(tmp_path) -> No
     assert summary["tool_uses"] == 1
 
 
+def _assert_compaction_marker_count(tmp_path, harness, marker, near_miss) -> None:
+    transcript = tmp_path / f"{harness}.jsonl"
+    transcript.write_text("\n".join(json.dumps(entry) for entry in (marker, near_miss)) + "\n")
+    summary, stats = session_logs.analyze_transcript(transcript, harness)
+    assert summary["compactions"] == 1
+    assert stats.malformed_records == 0
+
+
+def test_claude_compaction_markers_are_counted(tmp_path) -> None:
+    _assert_compaction_marker_count(
+        tmp_path, "claude", {"type": "system", "subtype": "compact_boundary"}, {"type": "system", "subtype": "other"}
+    )
+
+
+def test_codex_compaction_markers_are_counted(tmp_path) -> None:
+    _assert_compaction_marker_count(
+        tmp_path,
+        "codex",
+        {"type": "event_msg", "payload": {"type": "context_compacted"}},
+        {"type": "event_msg", "payload": {"type": "user_message"}},
+    )
+
+
+def test_followups_replay_guidance_requires_clean_scan_for_fast_path() -> None:
+    assert session_logs.followups_replay_guidance(0, 0) == (
+        "skip; no compaction markers were found and no records were malformed"
+    )
+    assert session_logs.followups_replay_guidance(2, 0) == (
+        "2 marker(s) found; replay unless already recovered in this context after the latest marker"
+    )
+    assert "do not use the no-compaction shortcut" in session_logs.followups_replay_guidance(0, 1)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
