@@ -93,15 +93,6 @@ spec:
             - port: "9000"
               protocol: TCP
 
-    # manifold-mcp: Authentik OIDC discovery + JWKS for the OAuth-gated facade
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: manifold-mcp
-      toPorts:
-        - ports:
-            - port: "9000"
-              protocol: TCP
-
     # claude-sandbox: Claude agent reads Authentik API (events, apps, users,
     # outposts, flows, policies) via AUTHENTIK_API_TOKEN loaded at session start
     - fromEndpoints:

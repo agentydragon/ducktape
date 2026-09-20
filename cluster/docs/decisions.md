@@ -340,14 +340,16 @@ See `cluster/k8s/agents/tana-mcp/facade-deployment.yaml` for a working example
 
 ## Parked application manifests
 
-These applications remain in Git for possible revival, but their Flux
-declarations are no longer included in the active root bundle (`ducktape.org/parked`
-annotation, `cluster/k8s/parked/<name>/` — see <../AGENTS.md> § Parked (non-ducktape-owned)
-application manifests). Not currently reconciled cluster state.
+These applications remain in Git for possible revival, but are not currently reconciled
+cluster state. Their Flux Kustomizations are either retained as suspended declarations
+with the `ducktape.org/parked` annotation or removed from the active root bundle, as
+noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
+<../AGENTS.md> § "Parked (non-ducktape-owned) application manifests").
 
 - **postscanmail-mcp**: `cluster/k8s/parked/postscanmail-mcp/` — decommissioned; its
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
-  the k8s manifests moved.
+  the k8s manifests moved. Its Flux Kustomization is removed from the active bundle;
+  the manifests remain for manual revival.
 - **kubectl-machine-mcp**: `cluster/k8s/parked/kubectl-machine-mcp/` — decommissioned
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
@@ -381,8 +383,9 @@ application manifests). Not currently reconciled cluster state.
   its configuration remains in Git.
 - **InvenTree**: `cluster/k8s/parked/inventree/` — decommissioned; its revival package
   remains in Git.
-- **Authelia**: `cluster/k8s/parked/authelia/` — suspended SSO alternative experiment;
-  Authentik is the active SSO provider.
+- **Authelia**: `cluster/k8s/parked/authelia/` — decommissioned SSO alternative
+  experiment; its Flux Kustomization is removed from the active bundle and manifests
+  remain for manual revival. Authentik is the active SSO provider.
 - **agent-box**: `cluster/k8s/parked/agent-box/` — inactive while the unschedulable
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
@@ -394,10 +397,11 @@ application manifests). Not currently reconciled cluster state.
   post-relocation (not unblocked by atlas/wyrm2 returning).
 - **manifold-mcp**: `cluster/k8s/parked/manifold-mcp/` — decommissioned; third-party npm
   MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
-  (`third_party/manifold_mcp_server/`) stays live and unparked. Its API-key Secret was
-  Reflector-mirrored into an `augur` namespace defined in the separate `gaffer-private`
-  repo (not accessible from this repo) — parking stops that mirror source; whether
-  `augur` still consumes the key was not verified before parking.
+  (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
+  is removed from the active bundle; manifests remain for manual revival. Its API-key
+  Secret was Reflector-mirrored into an `augur` namespace defined in the separate
+  `gaffer-private` repo (not accessible from this repo) — parking stops that mirror source;
+  whether `augur` still consumes the key was not verified before parking.
 - **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live

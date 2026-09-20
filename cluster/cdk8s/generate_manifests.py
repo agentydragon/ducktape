@@ -354,7 +354,6 @@ def generate_manifests(root: Path) -> None:
     github_api_proxy_identity_kustomization = github_api_proxy_flux_kustomizations.github_api_proxy_identity(
         flux_chart, cert_manager_environment_kustomization, cert_manager_issuer_config_kustomization
     )
-    parked_flux_kustomizations.authelia(flux_chart, gateway_kustomization, cert_manager_environment_kustomization)
     parked_flux_kustomizations.docker_ci(flux_chart, cert_manager_environment_kustomization, claude_rbac_kustomization)
     atuin_kustomization = atuin_flux_kustomizations.atuin(
         flux_chart, cert_manager_issuer_config_kustomization, cnpg_kustomization
@@ -841,26 +840,6 @@ def generate_manifests(root: Path) -> None:
         reflector_kustomization,
         gateway_kustomization,
         authentik_kustomization,
-    )
-    parked_flux_kustomizations.manifold_mcp(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        valkey_kustomization,
-        agent_machine_access_tf_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
-    )
-    parked_flux_kustomizations.postscanmail_mcp(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        valkey_kustomization,
-        agent_machine_access_tf_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
     )
     parked_flux_kustomizations.sdr(
         flux_chart,
