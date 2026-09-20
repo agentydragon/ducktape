@@ -2016,6 +2016,37 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: External-creds identity and Brave Search credential sync for the public-coder-agent proxy.
+  name: public-coder-agent-credentials
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: public-coder-agent-namespace
+      namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: brave-search-api-key
+      namespace: public-coder-agent
+  interval: 10m
+  path: ./cluster/k8s/agents/public-coder-agent/credentials
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-credentials
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: coinbase-read
   namespace: ducktape-flux
 spec:
@@ -6446,6 +6477,8 @@ spec:
       namespace: ducktape-flux
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
+    - name: public-coder-agent-credentials
+      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: cert-manager-trust
@@ -6609,6 +6642,8 @@ spec:
       namespace: ducktape-flux
     - name: public-coder-agent-proxy
       namespace: ducktape-flux
+    - name: public-coder-agent-credentials
+      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: external-creds
@@ -6622,7 +6657,7 @@ spec:
       namespace: public-coder-agent
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/app
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

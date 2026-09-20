@@ -284,6 +284,12 @@ def generate_manifests(root: Path) -> None:
         flux_chart, claude_rbac_kustomization
     )
     external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
+    public_coder_agent_credentials_kustomization = agents_flux_kustomizations.public_coder_agent_credentials(
+        flux_chart,
+        public_coder_agent_namespace_kustomization,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
+    )
     agents_flux_kustomizations.coinbase_read(
         flux_chart, external_creds_kustomization, external_secrets_config_kustomization
     )
@@ -1013,6 +1019,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         external_secrets_config_kustomization,
         public_coder_agent_namespace_kustomization,
+        public_coder_agent_credentials_kustomization,
         cert_manager_environment_kustomization,
         cert_manager_trust_kustomization,
         reflector_kustomization,
@@ -1052,6 +1059,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         public_coder_agent_namespace_kustomization,
         public_coder_agent_proxy_kustomization,
+        public_coder_agent_credentials_kustomization,
         external_secrets_config_kustomization,
         external_creds_kustomization,
         litellm_keys_tf_kustomization,

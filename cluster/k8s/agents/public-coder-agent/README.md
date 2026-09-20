@@ -46,11 +46,12 @@ own GitHub account and pushes to its own forks.
 
 | Directory    | Contents                                                                                                                                          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace/` | Namespace only                                                                                                                                    |
-| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                                                 |
-| `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies                                                                              |
-| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
-| `sshpiper/`  | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
+| `namespace/`   | Namespace only                                                                                                                                      |
+| `credentials/` | External-creds reader identity and Brave Search ExternalSecret                                                                                     |
+| `proxy/`       | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                                                  |
+| `app/`         | OpenClaw Deployment, config, state PVC, other ExternalSecrets, NetworkPolicies                                                                     |
+| `devbox/`      | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                            |
+| `sshpiper/`    | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
 
 The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
 which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
@@ -110,9 +111,10 @@ The GitHub credential stays in the proxy pod. The agent sees only
 and only on scoped GitHub hosts. Brave Search follows the same mediation model:
 the real API key exists only in the proxy Pod and is swapped into
 `X-Subscription-Token` only for `api.search.brave.com`. That key is not this
-agent's: it lives in `../shared-secrets/brave-search-api-key.sops.yaml` and is
-reflected in, since an external search subscription is worth sharing across
-agents and workstations rather than binding to whichever one used it first.
+agent's: its canonical SOPS source is
+`cluster/k8s/external-creds/brave-search-api-key.sops.yaml`, and an
+ExternalSecret syncs it into the proxy's namespace. Workstations decrypt the
+same source file directly through `ducktape.sopsEnv`.
 
 Haku Console privileged calls use the same mediated shape. Terraform generates a dedicated
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
