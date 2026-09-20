@@ -2935,11 +2935,54 @@ spec:
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
+  name: home-assistant-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        home_assistant:
+          - ha_config_get_automation
+          - ha_config_get_calendar_events
+          - ha_config_get_category
+          - ha_config_get_dashboard
+          - ha_config_get_label
+          - ha_config_get_scene
+          - ha_config_get_script
+          - ha_config_list_dashboard_resources
+          - ha_config_list_groups
+          - ha_config_list_helpers
+          - ha_get_app
+          - ha_get_automation_traces
+          - ha_get_blueprint
+          - ha_get_device
+          - ha_get_entity
+          - ha_get_entity_exposure
+          - ha_get_hacs_info
+          - ha_get_history
+          - ha_get_integration
+          - ha_get_logs
+          - ha_get_operation_status
+          - ha_get_overview
+          - ha_get_skill_guide
+          - ha_get_state
+          - ha_get_system_health
+          - ha_get_todo
+          - ha_get_zone
+          - ha_list_floors_areas
+          - ha_list_services
+          - ha_search
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
-  name: claude-ai-github-reads
+    description: Auto-approves the reviewed GitHub/Home Assistant reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+  name: claude-ai-reads
   namespace: agentplane-staging
 spec:
   subject:
@@ -2949,3 +2992,4 @@ spec:
     - github-reads
     - github-identity-reads
     - sandbox-self
+    - home-assistant-reads
