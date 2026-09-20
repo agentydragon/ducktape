@@ -170,7 +170,7 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console"),
+    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console", "airlock"),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
     provided_secrets={
         "agentplane-oidc": "sso-providers-tf",
@@ -254,6 +254,7 @@ def agentplane_staging(
     sso_providers_tf: Kustomization,
     ssh_mcp: Kustomization,
     haku_console: Kustomization,
+    airlock: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -295,6 +296,7 @@ def agentplane_staging(
                 sso_providers_tf,
                 ssh_mcp,
                 haku_console,
+                airlock,
             ),
         ),
     )

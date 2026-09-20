@@ -1140,6 +1140,7 @@ def generate_manifests(root: Path) -> None:
         sso_providers_tf_kustomization,
         ssh_mcp_kustomization,
         haku_console_kustomization,
+        airlock_kustomization,
     )
     for manifest in Testing.synth(flux_chart):
         assert isinstance(manifest, dict)
