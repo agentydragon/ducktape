@@ -272,6 +272,7 @@ def claude_sandbox_secrets(
         ),
     )
 
+
 def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization) -> Kustomization:
     name = "coinbase-read"
     return flux_kustomization(
@@ -1042,9 +1043,9 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
             interval="10m",
             path="./cluster/k8s/agents/shared-secrets",
             # CLEANUP: restore pruning once the Telegram and BuildBuddy ExternalSecrets
-            # are Ready and both staged handoffs are verified. Both target Secrets use
-            # creationPolicy: Orphan to preserve existing names without taking ownership;
-            # cleanup must account for that lifecycle before deleting the old sources.
+            # are Ready and both staged handoffs are verified. Both handoffs use
+            # ExternalSecrets with creationPolicy: Orphan to preserve existing target
+            # names without ownership; cleanup must account for that lifecycle first.
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

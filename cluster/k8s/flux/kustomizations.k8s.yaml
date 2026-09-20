@@ -5256,9 +5256,9 @@ spec:
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: claude-sandbox-secrets
+      namespace: ducktape-flux
+    - name: forgejo-images
       namespace: ducktape-flux
     - name: seaweedfs-pr-visuals-bucket
       namespace: ducktape-flux
