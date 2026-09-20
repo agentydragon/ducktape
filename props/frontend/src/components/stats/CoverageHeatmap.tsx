@@ -48,6 +48,8 @@ export default function CoverageHeatmap({ definitions, examples, cells }: Props)
     () => cells.map((cell) => ({ x: cell.example_idx, y: cell.definition_idx, v: cell.recall, best: cell.is_best })),
     [cells]
   );
+  const matrixDataRef = useRef(matrixData);
+  matrixDataRef.current = matrixData;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -60,7 +62,7 @@ export default function CoverageHeatmap({ definitions, examples, cells }: Props)
       data: {
         datasets: [
           {
-            data: matrixData as unknown as ChartDataset["data"],
+            data: matrixDataRef.current as unknown as ChartDataset["data"],
             backgroundColor(context: ScriptableContext<"matrix">) {
               const point = context.dataset.data[context.dataIndex] as unknown as MatrixPoint;
               if (!point) return "rgba(243, 244, 246, 1)";
