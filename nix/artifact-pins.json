@@ -77,8 +77,8 @@
       "sha256": "eCzQ/g/btogW4ragke8gHosEy25k1M8rLmJeY2D3Woo="
     },
     "skill-cihealth": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-a8a054131490/cihealth.skill",
-      "sha256": "qKBUExSQ8pP6V2/DKMDPRpMO9KxAeU5mN7/TH7E4VTc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-eea28084d226/cihealth.skill",
+      "sha256": "7qKAhNImdqfKEtkkjwaozgat7sMV1Q7W9nXI2ajIuYc="
     },
     "skill-web_selfcheck": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-f5e75a4080ee/web_selfcheck.skill",
