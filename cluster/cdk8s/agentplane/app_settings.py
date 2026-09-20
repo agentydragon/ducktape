@@ -5,6 +5,8 @@ routes and policies passed in here.
 
 from __future__ import annotations
 
+from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
+
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 # The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
@@ -33,33 +35,33 @@ def settings(
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
         "thread_presets": {
-            _THREAD_PRESET_PUBLIC_CODER_CODEX: {
-                "title": "Public coder / Codex",
-                "harness": "HARNESS_CODEX",
-                "model": thread_preset_codex_model,
-                "cwd": "/state/workspaces/{session_id}",
-                "reasoning_effort": "medium",
-                "instructions": (
+            _THREAD_PRESET_PUBLIC_CODER_CODEX: ThreadPreset(
+                title="Public coder / Codex",
+                harness=Harness.CODEX,
+                model=thread_preset_codex_model,
+                cwd="/state/workspaces/{session_id}",
+                reasoning_effort="medium",
+                instructions=(
                     "Work as a public-repository coding agent. Keep private cluster data "
                     "out of the workspace and outputs."
                 ),
-            }
+            ).model_dump(mode="json", exclude_unset=True)
         },
         "sandbox_presets": {
-            "public-coder": {
-                "title": "Public coder",
-                "template": "agentplane-runner",
-                "policies": [BASIC_POLICY, GITHUB_PUBLIC_POLICY],
+            "public-coder": SandboxPreset(
+                title="Public coder",
+                template="agentplane-runner",
+                policies=[BASIC_POLICY, GITHUB_PUBLIC_POLICY],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
-                "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
-                "bootstrap": (
+                thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,
+                bootstrap=(
                     "marker=/state/workspaces/.agentplane-public-coder-ready\n"
                     "mkdir -p /state/workspaces\n"
                     'if [ ! -f "$marker" ]; then\n'
                     "  printf '%s\\n' 'public-coder workspace initialized' > \"$marker\"\n"
                     "fi\n"
                 ),
-            }
+            ).model_dump(mode="json", exclude_unset=True)
         },
         # Granted to every sandbox before whatever the operator picks: without the model
         # endpoint a sandbox has no agent, so it is not a choice (see this namespace's
