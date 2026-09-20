@@ -143,9 +143,10 @@ metadata:
   name: atuin-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/k8s/atuin/namespace
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: atuin-namespace
@@ -327,9 +328,10 @@ metadata:
   name: haku-mailbox-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/k8s/haku/mailbox-namespace
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: haku-mailbox-namespace
@@ -979,6 +981,7 @@ metadata:
   name: study-casino-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/k8s/study-casino/namespace
   prune: false
@@ -2235,6 +2238,7 @@ metadata:
   name: atuin-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: atuin-namespace
       namespace: ducktape-flux
@@ -2244,7 +2248,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/atuin/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -2336,6 +2340,7 @@ metadata:
   name: haku-mailbox-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: haku-mailbox-namespace
       namespace: ducktape-flux
@@ -2345,7 +2350,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/mailbox/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -2571,6 +2576,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
@@ -2582,7 +2588,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/study-casino/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -66,7 +67,8 @@ def atuin_db(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/atuin/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(atuin_namespace, cnpg, local_path_provisioner),
         ),
@@ -81,7 +83,8 @@ def atuin_namespace(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/atuin/namespace",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
