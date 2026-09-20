@@ -1,16 +1,13 @@
 # codex-pod
 
-**Retired, unwired from Flux** (moved to `cluster/k8s/parked/`; its
-`flux-kustomization.yaml` is deleted rather than kept unreferenced, since every
-`flux-kustomization.yaml` on disk here is expected to be wired —
-`test_no_unwired_flux_kustomizations`). Its Deployment had no OVH nodeSelector, so
+**Retired, unwired from Flux** (moved to `cluster/k8s/parked/`; it has no entry in
+the central Flux Kustomization chart). Its Deployment had no OVH nodeSelector, so
 the scheduler could place it on non-OVH nodes (e.g. `wyrm2`) where the SeaweedFS CSI
 driver isn't present, and its `codex-workspace` PVC then failed to attach — the
 Deployment sat `ProgressDeadlineExceeded` rather than being fixed. `agent-sandbox`'s
 `SandboxTemplate`-based codex workspace (`cluster/k8s/agents/agent-sandbox/`) is the
 newer pattern for this workload. Manifests kept here for reference; re-wiring means
-recreating `flux-kustomization.yaml` (see git history), listing it in
-`cluster/k8s/kustomization.yaml`, and fixing the nodeSelector gap.
+adding its Flux Kustomization to the central cdk8s chart and fixing the nodeSelector gap.
 
 Codex agent pod running the Nix-built `codex-pod` image
 (`x/codex_pod_image/`, `.#codex-pod-image`). Edit the tool set in that `buildEnv`

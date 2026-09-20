@@ -147,14 +147,9 @@ monitoring_crds_kustomization = monitoring.monitoring_crds(flux_chart)
 monitoring.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
 ```
 
-Edges still written as strings, and why:
-
-- `ssh-mcp -> ssh-mcp-namespace` (`ssh_mcp/generation.py`): the target is the
-  hand-written `cluster/k8s/ssh-mcp/namespace-flux-kustomization.yaml`, not a node.
-  Becomes a parameter when that Kustomization converts.
-- `artifact-generators -> flux-system` (`artifact_generators.py`): the target is the
-  bootstrap Kustomization `gotk-sync.yaml` owns. It never becomes a node; this edge stays
-  a literal.
+The one edge still written as a string is `artifact-generators -> flux-system`
+(`artifact_generators.py`): `gotk-sync.yaml` owns the bootstrap Kustomization, which
+isn't a node in the generated Flux chart.
 
 If a typed field cannot represent a directory's YAML, an in-graph dependency cannot be
 passed as a parameter, or finishing a change appears to need another helper, class or
@@ -163,9 +158,9 @@ indirection, stop and ask before changing the design.
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates every converted directory in memory and asserts equality with the
-  committed files; a change to generated output is a diff in the PR that makes it. No
-  other test reads a committed `.k8s.yaml` or `flux-kustomization.yaml`.
+  regenerates every generated file in memory and asserts equality with the committed
+  files, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart; a change
+  to generated output is a diff in the PR that makes it.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through

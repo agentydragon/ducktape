@@ -135,7 +135,7 @@ def _image_update_automation(source_name: str) -> dict:
 def test_bootstrap_gitrepository_cannot_depend_on_sops_managed_auth(tmp_path: Path) -> None:
     """source-controller needs the bootstrap source before Flux can decrypt SOPS resources."""
     _write_yaml(
-        tmp_path / "flux-system" / "gotk-sync.yaml",
+        tmp_path / "flux" / "flux-system" / "gotk-sync.yaml",
         """
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
@@ -170,7 +170,7 @@ stringData:
 
 
 def test_image_update_automation_requires_authenticated_source(tmp_path: Path) -> None:
-    _write_yaml(tmp_path / "flux-system" / "gotk-sync.yaml", "")
+    _write_yaml(tmp_path / "flux" / "flux-system" / "gotk-sync.yaml", "")
     cluster = _cluster_with_resources(_git_repository("flux-system"), _image_update_automation("flux-system"))
 
     errors = check_flux_bootstrap_auth(cluster, tmp_path)
@@ -183,7 +183,7 @@ def test_image_update_automation_requires_authenticated_source(tmp_path: Path) -
 
 
 def test_authenticated_image_update_source_is_valid(tmp_path: Path) -> None:
-    _write_yaml(tmp_path / "flux-system" / "gotk-sync.yaml", "")
+    _write_yaml(tmp_path / "flux" / "flux-system" / "gotk-sync.yaml", "")
     cluster = _cluster_with_resources(
         _git_repository("ducktape-write", secret_name="ducktape-automation-github-app"),
         _image_update_automation("ducktape-write"),

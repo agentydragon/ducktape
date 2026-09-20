@@ -146,8 +146,9 @@ Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, the
 node taking values, then dependents).
 
 - **Namespace Kustomizations.** Every `*-namespace` directory (a Namespace, at most an
-  ExternalSecret). Turns the last string edge (`ssh-mcp -> ssh-mcp-namespace`) and every
-  namespace `healthChecks` entry into derived values.
+  ExternalSecret). The `ssh-mcp-namespace` graph node is now constructed directly in
+  `ssh_mcp/generation.py` and passed to its dependent; other namespace resources remain
+  separate conversions.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
   `agents/haku-egress-proxy` (one `IronProxy` construct for its two iron deployments and
   `public-coder-agent/proxy`), `agents/haku-openclaw-spike/app`,
