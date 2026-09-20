@@ -55,6 +55,85 @@ Model with constructs, deploy with one props object per environment.
 - **New Kustomization directories default to cdk8s** when they hold more than a
   `HelmRelease` plus values.
 
+## The Flux graph
+
+Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
+its parameters. `generate_manifests.py` is the topological order, written out by hand.
+
+- **A node is `name(chart, *predecessors: Kustomization) -> Kustomization`.** It builds
+  its `KustomizationSpec` with the literals from its directory and returns
+  `flux.flux_kustomization(chart, name, spec=...)`. `dependsOn` is
+  `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
+  off the constructs it is handed; the entry carries an explicit `namespace` for that
+  reason. The predecessor is a value the caller already built, never a string, a
+  module-level lookup, or something resolved later.
+- **The entry point calls the nodes in dependency order** and passes each result as a
+  local to the nodes that need it. A wrong order is a `NameError` at synth; a cycle
+  cannot be written. Never add a registry, a sorter, a lazy reference, a class or record
+  that "describes" a node, or a module that builds nodes on import.
+- **A resource chart joins the graph in three steps, in this order**: build the resource
+  chart (`staging.chart(app)`, `haku.charts.console_chart(app)`); then its Kustomization
+  node takes that chart _and_ its predecessor Kustomizations and derives `healthChecks`
+  from the chart's own objects (`flux.health_checks(chart, kinds)`); then dependents take
+  the returned Kustomization. The two instances: `agentplane_staging` in
+  `agentplane/staging.py` and `haku_console` in `haku/charts.py`.
+  Chart before Kustomization before dependents; a Kustomization never builds the chart
+  it describes.
+- **Each object is built from what it reads at runtime, never from what reads it.** A
+  Kustomization is built from its artifact, its path and its predecessors; an artifact
+  from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
+  Kustomization from the artifact inventory, or the inventory from the Kustomizations'
+  `sourceRef` names, is the same mistake facing opposite ways.
+- **Repetition is not a reason to abstract yet.** Two hundred nodes say
+  `interval="10m"`; keep saying it. The operational fields (`interval`,
+  `retry_interval`, `timeout`, `prune`, `wait`, `suspend`) are per-node choices a reader
+  must see on the node, and Flux's own defaults differ from ours. A literal that is the
+  same _fact_ in two places (the node's name in `metadata` and in its own `sourceRef`)
+  becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
+  entry) may become one module constant. Nothing else until every node it would touch is
+  in Python.
+- **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
+  is not their own directory listed explicitly in the writer. Keep those explicit.
+
+The worked edge, `monitoring-crds -> cilium-monitoring`:
+
+```python
+def monitoring_crds(chart: Chart) -> Kustomization:
+    name = "monitoring-crds"
+    return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
+
+
+def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+    name = "cilium-monitoring"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            ...,
+            # The ServiceMonitor CRD.
+            depends_on=flux_kustomization_depends_on_many(monitoring_crds),
+        ),
+    )
+
+
+# generate_manifests.py
+monitoring_crds_kustomization = monitoring.monitoring_crds(flux_chart)
+monitoring.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
+```
+
+Edges still written as strings, and why:
+
+- `ssh-mcp -> ssh-mcp-namespace` (`ssh_mcp/generation.py`): the target is the
+  hand-written `cluster/k8s/ssh-mcp/namespace-flux-kustomization.yaml`, not a node.
+  Becomes a parameter when that Kustomization converts.
+- `artifact-generators -> flux-system` (`artifact_generators.py`): the target is the
+  bootstrap Kustomization `gotk-sync.yaml` owns. It never becomes a node; this edge stays
+  a literal.
+
+If a typed field cannot represent a directory's YAML, an in-graph dependency cannot be
+passed as a parameter, or finishing a change appears to need another helper, class or
+indirection, stop and ask before changing the design.
+
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
