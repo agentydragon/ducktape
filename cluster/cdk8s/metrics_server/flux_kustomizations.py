@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def metrics_server() -> dict[str, object]:
+def metrics_server(chart: Chart, kyverno: Kustomization) -> Kustomization:
     name = "metrics-server"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -39,16 +37,8 @@ def metrics_server() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(
-                    name="kyverno",  # Kyverno webhook must be ready before creating workloads
-                    namespace="ducktape-flux",
-                )
+                # Kyverno webhook must be ready before creating workloads
+                flux_kustomization_depends_on(kyverno)
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/metrics-server/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, metrics_server())

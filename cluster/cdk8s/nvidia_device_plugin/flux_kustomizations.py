@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def nvidia_device_plugin() -> dict[str, object]:
+def nvidia_device_plugin(
+    chart: Chart, nvidia_runtimeclass: Kustomization, node_feature_discovery: Kustomization
+) -> Kustomization:
     name = "nvidia-device-plugin"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -39,14 +39,8 @@ def nvidia_device_plugin() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="nvidia-runtimeclass", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="node-feature-discovery", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(nvidia_runtimeclass),
+                flux_kustomization_depends_on(node_feature_discovery),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/nvidia-device-plugin/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, nvidia_device_plugin())

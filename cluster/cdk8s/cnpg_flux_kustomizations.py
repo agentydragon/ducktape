@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def cnpg() -> dict[str, object]:
+def cnpg(chart: Chart, cert_manager: Kustomization) -> Kustomization:
     name = "cnpg"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -44,12 +42,6 @@ def cnpg() -> dict[str, object]:
                     api_version="apps/v1", kind="Deployment", name="plugin-barman-cloud", namespace="cnpg-system"
                 ),
             ],
-            depends_on=[KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(cert_manager)],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/cnpg/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cnpg())

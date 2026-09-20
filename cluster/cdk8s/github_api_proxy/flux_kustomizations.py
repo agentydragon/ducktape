@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -17,13 +15,22 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def github_api_proxy() -> dict[str, object]:
+def github_api_proxy(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    github_api_proxy_identity: Kustomization,
+    forgejo_images: Kustomization,
+    seaweedfs_csi: Kustomization,
+    monitoring_crds: Kustomization,
+    gateway: Kustomization,
+    reloader: Kustomization,
+) -> Kustomization:
     name = "github-api-proxy"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -40,24 +47,25 @@ def github_api_proxy() -> dict[str, object]:
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="github-api-proxy-identity", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-csi", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # PodMonitor + PrometheusRule
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reloader", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(github_api_proxy_identity),
+                flux_kustomization_depends_on(forgejo_images),
+                flux_kustomization_depends_on(seaweedfs_csi),
+                # PodMonitor + PrometheusRule
+                flux_kustomization_depends_on(monitoring_crds),
+                flux_kustomization_depends_on(gateway),
+                flux_kustomization_depends_on(reloader),
             ],
         ),
     )
 
 
-def github_api_proxy_identity() -> dict[str, object]:
+def github_api_proxy_identity(
+    chart: Chart, cert_manager_environment: Kustomization, cert_manager_issuer_config: Kustomization
+) -> Kustomization:
     name = "github-api-proxy-identity"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -70,8 +78,8 @@ def github_api_proxy_identity() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(cert_manager_environment),
+                flux_kustomization_depends_on(cert_manager_issuer_config),
             ],
             post_build=KustomizationSpecPostBuild(
                 substitute_from=[
@@ -82,12 +90,3 @@ def github_api_proxy_identity() -> dict[str, object]:
             ),
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/github-api-proxy/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, github_api_proxy())
-    path = root / "cluster/k8s/github-api-proxy/identity/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, github_api_proxy_identity())

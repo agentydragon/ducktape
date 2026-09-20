@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: inventree-token-provisioner
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: inventree-token-provisioner
+  namespace: ducktape-flux
 spec:
   dependsOn:
     - name: external-secrets-config
@@ -12,6 +12,7 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
     - name: inventree
+      namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux
   healthChecks:

@@ -11,18 +11,31 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: haku-workspaces
+      namespace: ducktape-flux
     - name: haku-console-namespace
+      namespace: ducktape-flux
     - name: cnpg
+      namespace: ducktape-flux
     - name: local-path-provisioner
+      namespace: ducktape-flux
     - name: forgejo-images
+      namespace: ducktape-flux
     - name: haku-state
+      namespace: ducktape-flux
     - name: gateway
+      namespace: ducktape-flux
     - name: agent-machine-access-tf
+      namespace: ducktape-flux
     - name: reflector
+      namespace: ducktape-flux
     - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
+      namespace: ducktape-flux
     - name: ssh-mcp
+      namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation

@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def clickhouse_grafana() -> dict[str, object]:
+def clickhouse_grafana(chart: Chart, clickhouse: Kustomization, grafana_instance: Kustomization) -> Kustomization:
     name = "clickhouse-grafana"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -29,15 +27,6 @@ def clickhouse_grafana() -> dict[str, object]:
             ),
             timeout="5m",
             wait=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="clickhouse", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-instance", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(clickhouse), flux_kustomization_depends_on(grafana_instance)],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/grafana/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, clickhouse_grafana())

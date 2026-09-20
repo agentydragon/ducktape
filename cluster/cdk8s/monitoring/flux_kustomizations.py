@@ -1,25 +1,25 @@
 """Generated Flux Kustomizations for the monitoring slice."""
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def alloy_otlp_bearer_token_tf() -> dict[str, object]:
+def alloy_otlp_bearer_token_tf(
+    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik_jwt_rotation: Kustomization
+) -> Kustomization:
     return flux_kustomization(
+        chart,
         "alloy-otlp-bearer-token-tf",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -41,18 +41,19 @@ def alloy_otlp_bearer_token_tf() -> dict[str, object]:
             ],
             timeout="10m",
             depends_on=[
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
                 # authentik-jwt-rotation owns the agents-infra namespace this secret's
                 # rotator runs in, and rotates the alloy-otlp bearer token committed here.
-                KustomizationSpecDependsOn(name="authentik-jwt-rotation", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(authentik_jwt_rotation),
             ],
         ),
     )
 
 
-def alloy() -> dict[str, object]:
+def alloy(chart: Chart, mimir: Kustomization, grafana_helmrepository: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "alloy",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -70,16 +71,14 @@ def alloy() -> dict[str, object]:
                 )
             ],
             timeout="5m",
-            depends_on=[
-                KustomizationSpecDependsOn(name="mimir", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-helmrepository", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(mimir), flux_kustomization_depends_on(grafana_helmrepository)],
         ),
     )
 
 
-def cilium_monitoring() -> dict[str, object]:
+def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "cilium-monitoring",
         spec=KustomizationSpec(
             interval="10m",
@@ -94,7 +93,7 @@ def cilium_monitoring() -> dict[str, object]:
             ),
             depends_on=[
                 # ServiceMonitor
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux")
+                flux_kustomization_depends_on(monitoring_crds)
             ],
             wait=True,
             health_checks=[
@@ -112,8 +111,9 @@ def cilium_monitoring() -> dict[str, object]:
     )
 
 
-def monitoring_crds() -> dict[str, object]:
+def monitoring_crds(chart: Chart) -> Kustomization:
     return flux_kustomization(
+        chart,
         "monitoring-crds",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -133,8 +133,9 @@ def monitoring_crds() -> dict[str, object]:
     )
 
 
-def grafana_db() -> dict[str, object]:
+def grafana_db(chart: Chart, monitoring_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "grafana-db",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -153,16 +154,14 @@ def grafana_db() -> dict[str, object]:
                     api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="monitoring-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(monitoring_namespace), flux_kustomization_depends_on(cnpg)],
         ),
     )
 
 
-def grafana_helmrepository() -> dict[str, object]:
+def grafana_helmrepository(chart: Chart) -> Kustomization:
     return flux_kustomization(
+        chart,
         "grafana-helmrepository",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -180,8 +179,11 @@ def grafana_helmrepository() -> dict[str, object]:
     )
 
 
-def grafana_instance() -> dict[str, object]:
+def grafana_instance(
+    chart: Chart, grafana_operator: Kustomization, grafana_db: Kustomization, sso_providers_tf: Kustomization
+) -> Kustomization:
     return flux_kustomization(
+        chart,
         "grafana-instance",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -200,16 +202,17 @@ def grafana_instance() -> dict[str, object]:
             ],
             timeout="5m",
             depends_on=[
-                KustomizationSpecDependsOn(name="grafana-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="sso-providers-tf", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(grafana_operator),
+                flux_kustomization_depends_on(grafana_db),
+                flux_kustomization_depends_on(sso_providers_tf),
             ],
         ),
     )
 
 
-def grafana_operator() -> dict[str, object]:
+def grafana_operator(chart: Chart, monitoring_namespace: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "grafana-operator",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -230,13 +233,14 @@ def grafana_operator() -> dict[str, object]:
                 )
             ],
             timeout="5m",
-            depends_on=[KustomizationSpecDependsOn(name="monitoring-namespace", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
         ),
     )
 
 
-def loki() -> dict[str, object]:
+def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "loki",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -263,15 +267,21 @@ def loki() -> dict[str, object]:
             ],
             timeout="10m",
             depends_on=[
-                KustomizationSpecDependsOn(name="grafana-helmrepository", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(grafana_helmrepository),
+                flux_kustomization_depends_on(seaweedfs_cluster),
             ],
         ),
     )
 
 
-def mimir() -> dict[str, object]:
+def mimir(
+    chart: Chart,
+    monitoring_crds: Kustomization,
+    grafana_helmrepository: Kustomization,
+    seaweedfs_cluster: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
+        chart,
         "mimir",
         spec=KustomizationSpec(
             suspend=False,
@@ -305,18 +315,19 @@ def mimir() -> dict[str, object]:
             timeout="10m",
             depends_on=[
                 # the chart's metaMonitoring.serviceMonitor
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-helmrepository", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(monitoring_crds),
+                flux_kustomization_depends_on(grafana_helmrepository),
                 # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
                 # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(seaweedfs_cluster),
             ],
         ),
     )
 
 
-def monitoring_namespace() -> dict[str, object]:
+def monitoring_namespace(chart: Chart) -> Kustomization:
     return flux_kustomization(
+        chart,
         "monitoring-namespace",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -336,8 +347,9 @@ def monitoring_namespace() -> dict[str, object]:
     )
 
 
-def monitoring_rules() -> dict[str, object]:
+def monitoring_rules(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
+        chart,
         "monitoring-rules",
         spec=KustomizationSpec(
             interval="10m",
@@ -350,14 +362,21 @@ def monitoring_rules() -> dict[str, object]:
             ),
             depends_on=[
                 # PrometheusRule
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux")
+                flux_kustomization_depends_on(monitoring_crds)
             ],
         ),
     )
 
 
-def monitoring_stack() -> dict[str, object]:
+def monitoring_stack(
+    chart: Chart,
+    monitoring_namespace: Kustomization,
+    monitoring_crds: Kustomization,
+    ntfy: Kustomization,
+    external_secrets_config: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
+        chart,
         "monitoring-stack",
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -393,19 +412,25 @@ def monitoring_stack() -> dict[str, object]:
             ],
             timeout="10m",
             depends_on=[
-                KustomizationSpecDependsOn(name="monitoring-namespace", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(monitoring_namespace),
                 # The chart's Prometheus/Alertmanager CRs are rejected at admission until
                 # the CRDs exist, and the chart no longer installs them itself.
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="ntfy", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(monitoring_crds),
+                flux_kustomization_depends_on(ntfy),
+                flux_kustomization_depends_on(external_secrets_config),
             ],
         ),
     )
 
 
-def tempo() -> dict[str, object]:
+def tempo(
+    chart: Chart,
+    monitoring_crds: Kustomization,
+    grafana_helmrepository: Kustomization,
+    seaweedfs_cluster: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
+        chart,
         "tempo",
         spec=KustomizationSpec(
             suspend=False,
@@ -436,67 +461,9 @@ def tempo() -> dict[str, object]:
             timeout="5m",
             depends_on=[
                 # the chart's serviceMonitor.enabled
-                KustomizationSpecDependsOn(name="monitoring-crds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="grafana-helmrepository", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(monitoring_crds),
+                flux_kustomization_depends_on(grafana_helmrepository),
+                flux_kustomization_depends_on(seaweedfs_cluster),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    output_dir = root / "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", alloy_otlp_bearer_token_tf())
-
-    output_dir = root / "cluster/k8s/monitoring/alloy"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", alloy())
-
-    output_dir = root / "cluster/k8s/monitoring/cilium"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", cilium_monitoring())
-
-    output_dir = root / "cluster/k8s/monitoring/crds"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", monitoring_crds())
-
-    output_dir = root / "cluster/k8s/monitoring/grafana-db"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", grafana_db())
-
-    output_dir = root / "cluster/k8s/monitoring/grafana-helmrepository"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", grafana_helmrepository())
-
-    output_dir = root / "cluster/k8s/monitoring/grafana-instance"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", grafana_instance())
-
-    output_dir = root / "cluster/k8s/monitoring/grafana-operator"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", grafana_operator())
-
-    output_dir = root / "cluster/k8s/monitoring/loki"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", loki())
-
-    output_dir = root / "cluster/k8s/monitoring/mimir"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", mimir())
-
-    output_dir = root / "cluster/k8s/monitoring/namespace"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", monitoring_namespace())
-
-    output_dir = root / "cluster/k8s/monitoring/rules"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", monitoring_rules())
-
-    output_dir = root / "cluster/k8s/monitoring/stack"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", monitoring_stack())
-
-    output_dir = root / "cluster/k8s/monitoring/tempo"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml(output_dir / "flux-kustomization.yaml", tempo())

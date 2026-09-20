@@ -14,9 +14,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -27,6 +27,7 @@ from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
+    flux_kustomization_depends_on,
     health_checks,
     kustomize_kustomization,
 )
@@ -136,7 +137,23 @@ def console_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def haku_console(
+    flux_chart: Chart,
+    root: Path,
+    haku_workspaces: Kustomization,
+    haku_console_namespace: Kustomization,
+    cnpg: Kustomization,
+    local_path_provisioner: Kustomization,
+    forgejo_images: Kustomization,
+    haku_state: Kustomization,
+    gateway: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    ssh_mcp: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     """The console's one Kustomization directory: database, migration, console and API
     proxy in a single chart, its Flux Kustomization (health checks from the chart's own
     objects), and the root Kustomization listing the generated file beside the
@@ -146,34 +163,46 @@ def write_manifests(root: Path) -> None:
     app = App(outdir=str(out_dir))
     chart = console_chart(app)
     app.synth()
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            NAME,
-            spec=KustomizationSpec(
-                interval="10m",
-                retry_interval="1m",
-                timeout=TIMEOUT,
-                path=f"./{PATH}",
-                prune=True,
-                # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
-                # would take the console's approval ledger with them.
-                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-                wait=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
-                ),
-                decryption=sops_decryption(EXTRA_RESOURCES),
-                # The two Jobs gate every dependent Kustomization: nothing downstream
-                # reconciles until the schema is migrated and the indexer GRANTs applied.
-                health_checks=health_checks(chart, ("Cluster", "Job")),
-                health_check_exprs=[
-                    KustomizationSpecHealthCheckExprs(
-                        api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-                    )
-                ],
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in DEPENDS_ON],
+    kustomization = flux_kustomization(
+        flux_chart,
+        NAME,
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout=TIMEOUT,
+            path=f"./{PATH}",
+            prune=True,
+            # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
+            # would take the console's approval ledger with them.
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+            wait=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
             ),
+            decryption=sops_decryption(EXTRA_RESOURCES),
+            # The two Jobs gate every dependent Kustomization: nothing downstream
+            # reconciles until the schema is migrated and the indexer GRANTs applied.
+            health_checks=health_checks(chart, ("Cluster", "Job")),
+            health_check_exprs=[
+                KustomizationSpecHealthCheckExprs(
+                    api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
+                )
+            ],
+            depends_on=[
+                flux_kustomization_depends_on(haku_workspaces),
+                flux_kustomization_depends_on(haku_console_namespace),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(local_path_provisioner),
+                flux_kustomization_depends_on(forgejo_images),
+                flux_kustomization_depends_on(haku_state),
+                flux_kustomization_depends_on(gateway),
+                flux_kustomization_depends_on(agent_machine_access_tf),
+                flux_kustomization_depends_on(reflector),
+                flux_kustomization_depends_on(external_creds),
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(ssh_mcp),
+                flux_kustomization_depends_on(monitoring_crds),
+            ],
         ),
     )
     write_yaml(
@@ -185,3 +214,4 @@ def write_manifests(root: Path) -> None:
             config_map_generator=CONFIG_MAP_GENERATOR,
         ),
     )
+    return kustomization

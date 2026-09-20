@@ -2,26 +2,30 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def seaweedfs_cluster() -> dict[str, object]:
+def seaweedfs_cluster(
+    chart: Chart,
+    seaweedfs_operator: Kustomization,
+    seaweedfs_secrets: Kustomization,
+    seaweedfs_filer_db: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
     name = "seaweedfs-cluster"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -32,13 +36,11 @@ def seaweedfs_cluster() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-operator", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="seaweedfs-filer-db",  # Filer is configured with postgres2 backend.
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(seaweedfs_operator),
+                flux_kustomization_depends_on(seaweedfs_secrets),
+                # Filer is configured with postgres2 backend.
+                flux_kustomization_depends_on(seaweedfs_filer_db),
+                flux_kustomization_depends_on(local_path_provisioner),
             ],
             wait=False,
             timeout="5m",
@@ -46,9 +48,10 @@ def seaweedfs_cluster() -> dict[str, object]:
     )
 
 
-def seaweedfs_filer_db() -> dict[str, object]:
+def seaweedfs_filer_db(chart: Chart, seaweedfs_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
     name = "seaweedfs-filer-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -66,17 +69,15 @@ def seaweedfs_filer_db() -> dict[str, object]:
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_namespace), flux_kustomization_depends_on(cnpg)],
         ),
     )
 
 
-def seaweedfs_drivefs_artifacts_bucket() -> dict[str, object]:
+def seaweedfs_drivefs_artifacts_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-drivefs-artifacts-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -86,7 +87,7 @@ def seaweedfs_drivefs_artifacts_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             wait=True,
             timeout="5m",
             health_checks=[
@@ -101,9 +102,12 @@ def seaweedfs_drivefs_artifacts_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_external_credentials() -> dict[str, object]:
+def seaweedfs_external_credentials(
+    chart: Chart, seaweedfs_secrets: Kustomization, seaweedfs_cluster: Kustomization
+) -> Kustomization:
     name = "seaweedfs-external-credentials"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -118,8 +122,8 @@ def seaweedfs_external_credentials() -> dict[str, object]:
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(seaweedfs_secrets),
+                flux_kustomization_depends_on(seaweedfs_cluster),
             ],
             wait=True,
             timeout="5m",
@@ -128,9 +132,10 @@ def seaweedfs_external_credentials() -> dict[str, object]:
     )
 
 
-def seaweedfs_forgejo_bucket() -> dict[str, object]:
+def seaweedfs_forgejo_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-forgejo-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -140,7 +145,7 @@ def seaweedfs_forgejo_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             # The Bucket and S3Credentials moved to the Forgejo Kustomization and were
             # live-verified there. Keep this small Kustomization for the cluster-global
             # S3Identity that the namespaced S3Credentials references.
@@ -155,9 +160,10 @@ def seaweedfs_forgejo_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_langfuse_bucket() -> dict[str, object]:
+def seaweedfs_langfuse_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-langfuse-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -167,7 +173,7 @@ def seaweedfs_langfuse_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             # The Bucket and S3Credentials moved to the Langfuse Kustomization and were
             # live-verified there. Keep this small Kustomization for the cluster-global
             # S3Identity that the namespaced S3Credentials references.
@@ -182,9 +188,10 @@ def seaweedfs_langfuse_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_loom_gym_bucket() -> dict[str, object]:
+def seaweedfs_loom_gym_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-loom-gym-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -194,7 +201,7 @@ def seaweedfs_loom_gym_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             wait=True,
             timeout="5m",
             health_checks=[
@@ -206,9 +213,12 @@ def seaweedfs_loom_gym_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_monitoring() -> dict[str, object]:
+def seaweedfs_monitoring(
+    chart: Chart, seaweedfs_cluster: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "seaweedfs-monitoring"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -219,19 +229,18 @@ def seaweedfs_monitoring() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # PrometheusRule
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(seaweedfs_cluster),
+                # PrometheusRule
+                flux_kustomization_depends_on(monitoring_crds),
             ],
         ),
     )
 
 
-def seaweedfs_namespace() -> dict[str, object]:
+def seaweedfs_namespace(chart: Chart) -> Kustomization:
     name = "seaweedfs-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -245,9 +254,10 @@ def seaweedfs_namespace() -> dict[str, object]:
     )
 
 
-def seaweedfs_operator() -> dict[str, object]:
+def seaweedfs_operator(chart: Chart, seaweedfs_namespace: Kustomization) -> Kustomization:
     name = "seaweedfs-operator"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -258,7 +268,7 @@ def seaweedfs_operator() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-namespace", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_namespace)],
             wait=True,
             timeout="5m",
             health_checks=[
@@ -273,9 +283,10 @@ def seaweedfs_operator() -> dict[str, object]:
     )
 
 
-def seaweedfs_pr_visuals_bucket() -> dict[str, object]:
+def seaweedfs_pr_visuals_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-pr-visuals-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="1h",
@@ -286,7 +297,7 @@ def seaweedfs_pr_visuals_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -303,9 +314,10 @@ def seaweedfs_pr_visuals_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_public_coder_agent_backups_bucket() -> dict[str, object]:
+def seaweedfs_public_coder_agent_backups_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-public-coder-agent-backups-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -315,16 +327,25 @@ def seaweedfs_public_coder_agent_backups_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             wait=True,
             timeout="5m",
         ),
     )
 
 
-def seaweedfs_public_s3() -> dict[str, object]:
+def seaweedfs_public_s3(
+    chart: Chart,
+    seaweedfs_external_credentials: Kustomization,
+    seaweedfs_drivefs_artifacts_bucket: Kustomization,
+    vm_images_publisher: Kustomization,
+    seaweedfs_secrets: Kustomization,
+    seaweedfs_cluster: Kustomization,
+    gateway: Kustomization,
+) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -338,12 +359,12 @@ def seaweedfs_public_s3() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-external-credentials", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-drivefs-artifacts-bucket", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="vm-images-publisher", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(seaweedfs_external_credentials),
+                flux_kustomization_depends_on(seaweedfs_drivefs_artifacts_bucket),
+                flux_kustomization_depends_on(vm_images_publisher),
+                flux_kustomization_depends_on(seaweedfs_secrets),
+                flux_kustomization_depends_on(seaweedfs_cluster),
+                flux_kustomization_depends_on(gateway),
             ],
             wait=True,
             timeout="5m",
@@ -408,9 +429,10 @@ def seaweedfs_public_s3() -> dict[str, object]:
     )
 
 
-def seaweedfs_registry_cache_bucket() -> dict[str, object]:
+def seaweedfs_registry_cache_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-registry-cache-bucket"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -420,7 +442,7 @@ def seaweedfs_registry_cache_bucket() -> dict[str, object]:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
             wait=True,
             timeout="5m",
             health_checks=[
@@ -438,9 +460,12 @@ def seaweedfs_registry_cache_bucket() -> dict[str, object]:
     )
 
 
-def seaweedfs_secrets() -> dict[str, object]:
+def seaweedfs_secrets(
+    chart: Chart, seaweedfs_namespace: Kustomization, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "seaweedfs-secrets"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -455,59 +480,9 @@ def seaweedfs_secrets() -> dict[str, object]:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="seaweedfs-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="external-secrets-operator",  # ExternalSecret + SecretStore CRDs + ESO controller
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(seaweedfs_namespace),
+                # ExternalSecret + SecretStore CRDs + ESO controller
+                flux_kustomization_depends_on(external_secrets_operator),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/seaweedfs/cluster/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_cluster())
-    path = root / "cluster/k8s/seaweedfs/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_filer_db())
-    path = root / "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_drivefs_artifacts_bucket())
-    path = root / "cluster/k8s/seaweedfs/external-credentials/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_external_credentials())
-    path = root / "cluster/k8s/seaweedfs/forgejo-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_forgejo_bucket())
-    path = root / "cluster/k8s/seaweedfs/langfuse-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_langfuse_bucket())
-    path = root / "cluster/k8s/seaweedfs/loom-gym-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_loom_gym_bucket())
-    path = root / "cluster/k8s/seaweedfs/monitoring/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_monitoring())
-    path = root / "cluster/k8s/seaweedfs/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_namespace())
-    path = root / "cluster/k8s/seaweedfs/operator/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_operator())
-    path = root / "cluster/k8s/seaweedfs/pr-visuals-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_pr_visuals_bucket())
-    path = root / "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_public_coder_agent_backups_bucket())
-    path = root / "cluster/k8s/seaweedfs/public-s3/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_public_s3())
-    path = root / "cluster/k8s/seaweedfs/registry-cache-bucket/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_registry_cache_bucket())
-    path = root / "cluster/k8s/seaweedfs/secrets/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, seaweedfs_secrets())

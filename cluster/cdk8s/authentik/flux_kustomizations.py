@@ -2,26 +2,31 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def authentik() -> dict[str, object]:
+def authentik(
+    chart: Chart,
+    authentik_namespace: Kustomization,
+    authentik_db: Kustomization,
+    cert_manager: Kustomization,
+    gateway: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "authentik"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -50,31 +55,30 @@ def authentik() -> dict[str, object]:
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="authentik-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="authentik-db",  # Wait for CNPG cluster ready and authentik-db-app secret to exist
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="cert-manager",  # Wait for cert-manager for TLS certificates
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="gateway",  # Wait for Gateway API for external access
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(authentik_namespace),
+                # Wait for CNPG cluster ready and authentik-db-app secret to exist
+                flux_kustomization_depends_on(authentik_db),
+                # Wait for cert-manager for TLS certificates
+                flux_kustomization_depends_on(cert_manager),
+                # Wait for Gateway API for external access
+                flux_kustomization_depends_on(gateway),
+                # the ServiceMonitor/PodMonitor CRD
+                flux_kustomization_depends_on(monitoring_crds),
             ],
         ),
     )
 
 
-def authentik_db_backups() -> dict[str, object]:
+def authentik_db_backups(
+    chart: Chart,
+    authentik_db: Kustomization,
+    cnpg: Kustomization,
+    seaweedfs_cluster: Kustomization,
+    authentik_namespace: Kustomization,
+) -> Kustomization:
     name = "authentik-db-backups"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -113,19 +117,22 @@ def authentik_db_backups() -> dict[str, object]:
                 ),
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="authentik-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="seaweedfs-cluster", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik-namespace", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(authentik_db),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(seaweedfs_cluster),
+                flux_kustomization_depends_on(authentik_namespace),
             ],
         ),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )
 
 
-def authentik_db() -> dict[str, object]:
+def authentik_db(
+    chart: Chart, cnpg: Kustomization, authentik_namespace: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "authentik-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -138,17 +145,18 @@ def authentik_db() -> dict[str, object]:
             prune=True,
             wait=True,
             depends_on=[
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(authentik_namespace),
+                flux_kustomization_depends_on(local_path_provisioner),
             ],
         ),
     )
 
 
-def authentik_namespace() -> dict[str, object]:
+def authentik_namespace(chart: Chart) -> Kustomization:
     name = "authentik-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="1h",
@@ -162,9 +170,10 @@ def authentik_namespace() -> dict[str, object]:
     )
 
 
-def authentik_proxy_routes() -> dict[str, object]:
+def authentik_proxy_routes(chart: Chart, gateway: Kustomization, authentik: Kustomization) -> Kustomization:
     name = "authentik-proxy-routes"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -173,17 +182,17 @@ def authentik_proxy_routes() -> dict[str, object]:
             ),
             path="./cluster/k8s/authentik/proxy-routes",
             prune=True,
-            depends_on=[
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(gateway), flux_kustomization_depends_on(authentik)],
         ),
     )
 
 
-def sso_providers_tf() -> dict[str, object]:
+def sso_providers_tf(
+    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik: Kustomization
+) -> Kustomization:
     name = "sso-providers-tf"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -203,30 +212,9 @@ def sso_providers_tf() -> dict[str, object]:
             ],
             timeout="10m",
             depends_on=[
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
+                flux_kustomization_depends_on(authentik),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/authentik/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authentik())
-    path = root / "cluster/k8s/authentik/db-backups/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authentik_db_backups())
-    path = root / "cluster/k8s/authentik/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authentik_db())
-    path = root / "cluster/k8s/authentik/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authentik_namespace())
-    path = root / "cluster/k8s/authentik/proxy-routes/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, authentik_proxy_routes())
-    path = root / "cluster/k8s/authentik/sso-providers-tf/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, sso_providers_tf())

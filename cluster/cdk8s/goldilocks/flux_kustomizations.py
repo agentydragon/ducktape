@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def goldilocks() -> dict[str, object]:
+def goldilocks(chart: Chart, vpa: Kustomization) -> Kustomization:
     name = "goldilocks"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -38,12 +36,6 @@ def goldilocks() -> dict[str, object]:
                     namespace="goldilocks",
                 )
             ],
-            depends_on=[KustomizationSpecDependsOn(name="vpa")],
+            depends_on=[flux_kustomization_depends_on(vpa)],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/goldilocks/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, goldilocks())

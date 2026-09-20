@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def gatus() -> dict[str, object]:
+def gatus(
+    chart: Chart,
+    gatus_namespace: Kustomization,
+    gatus_db: Kustomization,
+    gatus_sso_tf: Kustomization,
+    litellm_secrets: Kustomization,
+    gateway: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "gatus"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -36,23 +42,22 @@ def gatus() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="gatus-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gatus-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gatus-sso-tf", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="litellm-secrets", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(gatus_namespace),
+                flux_kustomization_depends_on(gatus_db),
+                flux_kustomization_depends_on(gatus_sso_tf),
+                flux_kustomization_depends_on(litellm_secrets),
+                flux_kustomization_depends_on(gateway),
+                # the ServiceMonitor/PodMonitor CRD
+                flux_kustomization_depends_on(monitoring_crds),
             ],
         ),
     )
 
 
-def gatus_db() -> dict[str, object]:
+def gatus_db(chart: Chart, gatus_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
     name = "gatus-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -69,17 +74,15 @@ def gatus_db() -> dict[str, object]:
                     api_version="postgresql.cnpg.io/v1", kind="Cluster", name="gatus-db", namespace="gatus"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="gatus-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-            ],
+            depends_on=[flux_kustomization_depends_on(gatus_namespace), flux_kustomization_depends_on(cnpg)],
         ),
     )
 
 
-def gatus_namespace() -> dict[str, object]:
+def gatus_namespace(chart: Chart) -> Kustomization:
     name = "gatus-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -96,9 +99,12 @@ def gatus_namespace() -> dict[str, object]:
     )
 
 
-def gatus_sso_tf() -> dict[str, object]:
+def gatus_sso_tf(
+    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik: Kustomization
+) -> Kustomization:
     name = "gatus-sso-tf"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -118,24 +124,9 @@ def gatus_sso_tf() -> dict[str, object]:
             ],
             timeout="10m",
             depends_on=[
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="authentik", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
+                flux_kustomization_depends_on(authentik),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/gatus/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gatus())
-    path = root / "cluster/k8s/gatus/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gatus_db())
-    path = root / "cluster/k8s/gatus/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gatus_namespace())
-    path = root / "cluster/k8s/gatus/sso-tf/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, gatus_sso_tf())

@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def tofu_state_db() -> dict[str, object]:
+def tofu_state_db(
+    chart: Chart, tofu_state_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "tofu-state-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -49,17 +49,18 @@ def tofu_state_db() -> dict[str, object]:
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="tofu-state-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(tofu_state_namespace),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(local_path_provisioner),
             ],
         ),
     )
 
 
-def tofu_state_namespace() -> dict[str, object]:
+def tofu_state_namespace(chart: Chart) -> Kustomization:
     name = "tofu-state-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -71,12 +72,3 @@ def tofu_state_namespace() -> dict[str, object]:
             timeout="2m",
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/tofu-state/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tofu_state_db())
-    path = root / "cluster/k8s/tofu-state/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, tofu_state_namespace())

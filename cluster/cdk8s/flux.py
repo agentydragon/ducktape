@@ -19,8 +19,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, Chart, Testing
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
+from cdk8s import ApiObject, ApiObjectMetadata, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecHealthChecks,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -40,26 +45,37 @@ def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecH
     ]
 
 
-def flux_kustomization(name: str, *, spec: KustomizationSpec, description: str | None = None) -> dict[str, object]:
-    """Return a Flux `Kustomization` custom resource as a plain manifest dict.
+def flux_kustomization(
+    chart: Chart,
+    name: str,
+    *,
+    spec: KustomizationSpec,
+    description: str | None = None,
+    namespace: str = NAMESPACE,
+    annotations: dict[str, str] | None = None,
+) -> Kustomization:
+    """Add and return a Flux `Kustomization` custom resource in `chart`.
 
     `spec` is the generated typed `KustomizationSpec` (//cluster/cdk8s/crd_bindings/flux:kustomization) --
     build it directly rather than through a hand-rolled subset of its fields; this only
-    supplies the metadata/chart/synth plumbing that isn't part of the CRD's own spec.
+    supplies metadata that isn't part of the CRD's own spec.
     `description` becomes the `description` annotation (cluster/AGENTS.md).
     """
-    chart = Testing.chart()
-    Kustomization(
+    metadata_annotations = dict(annotations or {})
+    if description is not None:
+        metadata_annotations["description"] = description
+
+    return Kustomization(
         chart,
         name,
-        metadata=ApiObjectMetadata(
-            name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
-        ),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
         spec=spec,
     )
-    (manifest,) = Testing.synth(chart)
-    assert isinstance(manifest, dict)
-    return manifest
+
+
+def flux_kustomization_depends_on(dependency: Kustomization) -> KustomizationSpecDependsOn:
+    """Represent a previously constructed Flux Kustomization as a Flux dependsOn entry."""
+    return KustomizationSpecDependsOn(name=dependency.name, namespace=dependency.metadata.namespace)
 
 
 class ConfigMapArgs(BaseModel):

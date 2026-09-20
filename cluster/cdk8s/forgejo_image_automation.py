@@ -28,15 +28,9 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 
@@ -160,28 +154,4 @@ def write_manifests(root: Path) -> None:
     add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            NAME,
-            description=(
-                "Image automation for images hosted in our Forgejo registry "
-                "(authenticated scans via the reflected ducktape-ci credential)."
-            ),
-            spec=KustomizationSpec(
-                interval="10m",
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
-                ),
-                depends_on=[
-                    # The source credential, reflected into flux-system.
-                    KustomizationSpecDependsOn(name="forgejo-images", namespace=FLUX_NAMESPACE),
-                    # The all-images ImageUpdateAutomation lives there.
-                    KustomizationSpecDependsOn(name="flux-image-automation-ghcr", namespace=FLUX_NAMESPACE),
-                ],
-            ),
-        ),
-    )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

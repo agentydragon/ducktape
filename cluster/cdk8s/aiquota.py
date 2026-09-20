@@ -53,11 +53,11 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -70,7 +70,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, ConfigMapArgs, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE as FLUX_NAMESPACE,
+    ConfigMapArgs,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
@@ -329,21 +335,25 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def aiquota(
+    flux_chart: Chart,
+    root: Path,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    cli_proxy_api: Kustomization,
+    external_secrets_operator: Kustomization,
+    clickhouse_schema: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+) -> Kustomization:
     name = NAME
-    depends_on = (
+    providers = (
         "external-secrets-config",
         "forgejo-images",
-        # Provides the shared namespace and the CLIProxyAPI management Secret.
         "cli-proxy-api",
-        # Materializes the narrow mirrored copies of the API bearer for its
-        # consumers; the source Secret stays SOPS-managed here.
         "external-secrets-operator",
-        # Creates the aiquota database the migrate init container populates.
         "clickhouse-schema",
-        # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
         "agent-machine-access-tf",
-        # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
         "reflector",
     )
 
@@ -360,32 +370,44 @@ def write_manifests(root: Path) -> None:
             "clickhouse-aiquota-credentials": "reflector",
         },
         provided_config_maps={CONFIG_CONFIG_MAP.name: "config.toml", SCHEMA_CONFIG_MAP.name: "schema.sql"},
-        providers=frozenset({f"{BEARER_SECRET_NAME}.sops.yaml", "config.toml", "schema.sql", *depends_on}),
+        providers=frozenset({f"{BEARER_SECRET_NAME}.sops.yaml", "config.toml", "schema.sql", *providers}),
     )
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-                ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
             ),
+            path=f"./{OUTPUT_DIR}",
+            prune=True,
+            wait=True,
+            # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
+            depends_on=[
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(forgejo_images),
+                # Provides the shared namespace and the CLIProxyAPI management Secret.
+                flux_kustomization_depends_on(cli_proxy_api),
+                # Materializes the narrow mirrored copies of the API bearer for its
+                # consumers; the source Secret stays SOPS-managed here.
+                flux_kustomization_depends_on(external_secrets_operator),
+                # Creates the aiquota database the migrate init container populates.
+                flux_kustomization_depends_on(clickhouse_schema),
+                # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+                flux_kustomization_depends_on(agent_machine_access_tf),
+                # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+                flux_kustomization_depends_on(reflector),
+            ],
         ),
     )
     write_yaml(
@@ -399,3 +421,4 @@ def write_manifests(root: Path) -> None:
             config_map_generator=[CONFIG_CONFIG_MAP, SCHEMA_CONFIG_MAP],
         ),
     )
+    return kustomization

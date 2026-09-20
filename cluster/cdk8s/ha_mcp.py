@@ -55,11 +55,11 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -73,7 +73,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -430,14 +430,16 @@ class HaMcp(Construct):
         HaMcpApp(self, "app")
 
 
-def write_manifests(root: Path) -> None:
+def ha_mcp(
+    flux_chart: Chart,
+    root: Path,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    home_assistant: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "ha-mcp"
-    depends_on = (
-        "external-secrets-config",
-        "forgejo-images",
-        "home-assistant",
-        "monitoring-crds",  # the ServiceMonitor CRD
-    )
+    depends_on = ("external-secrets-config", "forgejo-images", "home-assistant", "monitoring-crds")
 
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -460,35 +462,39 @@ def write_manifests(root: Path) -> None:
     )
     app.synth()
 
-    write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=[
-                    KustomizationSpecHealthChecks(
-                        api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                    ),
-                    KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-                ],
-                # bearer.sops.yaml (hand-written, stays alongside this generated output --
-                # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
-                # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
             ),
+            path=f"./{OUTPUT_DIR}",
+            prune=True,
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
+                ),
+                KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
+            ],
+            # bearer.sops.yaml (hand-written, stays alongside this generated output --
+            # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
+            # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
+            depends_on=[
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(forgejo_images),
+                flux_kustomization_depends_on(home_assistant),
+                # the ServiceMonitor CRD
+                flux_kustomization_depends_on(monitoring_crds),
+            ],
         ),
     )
     write_yaml(
@@ -497,3 +503,4 @@ def write_manifests(root: Path) -> None:
         # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
         kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
     )
+    return kustomization

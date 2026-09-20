@@ -12,9 +12,11 @@ spec:
     - name: matrix-namespace
       namespace: ducktape-flux
     - name: matrix-db
+      namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
     - name: reflector
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: local-path-provisioner

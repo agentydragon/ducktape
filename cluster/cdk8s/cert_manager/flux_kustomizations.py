@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -18,13 +16,15 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def cert_manager() -> dict[str, object]:
+def cert_manager(
+    chart: Chart, cert_manager_issuer_config: Kustomization, reflector: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "cert-manager"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -59,21 +59,25 @@ def cert_manager() -> dict[str, object]:
                 ]
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(cert_manager_issuer_config),
                 # Produces the namespace-local ConfigMap that postBuild reads.
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the ServiceMonitor/PodMonitor CRD
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(reflector),
+                # the ServiceMonitor/PodMonitor CRD
+                flux_kustomization_depends_on(monitoring_crds),
             ],
         ),
     )
 
 
-def cert_manager_environment() -> dict[str, object]:
+def cert_manager_environment(
+    chart: Chart,
+    cert_manager: Kustomization,
+    cert_manager_trust: Kustomization,
+    cert_manager_issuer_config: Kustomization,
+) -> Kustomization:
     name = "cert-manager-environment"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -97,9 +101,9 @@ def cert_manager_environment() -> dict[str, object]:
                 ]
             ),
             depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-trust", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-issuer-config", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(cert_manager),
+                flux_kustomization_depends_on(cert_manager_trust),
+                flux_kustomization_depends_on(cert_manager_issuer_config),
             ],
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -113,9 +117,10 @@ def cert_manager_environment() -> dict[str, object]:
     )
 
 
-def cert_manager_issuer_config() -> dict[str, object]:
+def cert_manager_issuer_config(chart: Chart) -> Kustomization:
     name = "cert-manager-issuer-config"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -131,9 +136,10 @@ def cert_manager_issuer_config() -> dict[str, object]:
     )
 
 
-def cert_manager_trust() -> dict[str, object]:
+def cert_manager_trust(chart: Chart, cert_manager: Kustomization, kyverno: Kustomization) -> Kustomization:
     name = "cert-manager-trust"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -155,26 +161,9 @@ def cert_manager_trust() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="cert-manager", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="kyverno",  # Kyverno VWC must be operational before creating resources
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(cert_manager),
+                # Kyverno VWC must be operational before creating resources
+                flux_kustomization_depends_on(kyverno),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/cert-manager/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cert_manager())
-    path = root / "cluster/k8s/cert-manager/environment/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cert_manager_environment())
-    path = root / "cluster/k8s/cert-manager/issuer-config/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cert_manager_issuer_config())
-    path = root / "cluster/k8s/cert-manager/trust/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, cert_manager_trust())

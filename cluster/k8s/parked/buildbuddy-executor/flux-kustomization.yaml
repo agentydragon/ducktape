@@ -1,10 +1,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: buildbuddy-executor
-  namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
+  name: buildbuddy-executor
+  namespace: ducktape-flux
 spec:
   decryption:
     provider: sops

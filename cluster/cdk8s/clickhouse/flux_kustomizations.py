@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def clickhouse() -> dict[str, object]:
+def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -68,14 +66,15 @@ def clickhouse() -> dict[str, object]:
                     in_progress="status.status != 'Completed' && status.status != 'Aborted'",
                 ),
             ],
-            depends_on=[KustomizationSpecDependsOn(name="clickhouse-operator", namespace="ducktape-flux")],
+            depends_on=[flux_kustomization_depends_on(clickhouse_operator)],
         ),
     )
 
 
-def clickhouse_namespace() -> dict[str, object]:
+def clickhouse_namespace(chart: Chart) -> Kustomization:
     name = "clickhouse-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -92,9 +91,12 @@ def clickhouse_namespace() -> dict[str, object]:
     )
 
 
-def clickhouse_operator() -> dict[str, object]:
+def clickhouse_operator(
+    chart: Chart, clickhouse_namespace: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "clickhouse-operator"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -119,23 +121,9 @@ def clickhouse_operator() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="clickhouse-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="monitoring-crds",  # the chart's serviceMonitor.enabled
-                    namespace="ducktape-flux",
-                ),
+                flux_kustomization_depends_on(clickhouse_namespace),
+                # the chart's serviceMonitor.enabled
+                flux_kustomization_depends_on(monitoring_crds),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/clickhouse/cluster/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, clickhouse())
-    path = root / "cluster/k8s/clickhouse/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, clickhouse_namespace())
-    path = root / "cluster/k8s/clickhouse/operator/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, clickhouse_operator())

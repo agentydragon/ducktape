@@ -72,8 +72,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -87,7 +87,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    NAMESPACE as FLUX_NAMESPACE,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    health_checks,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -382,7 +388,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def ntfy(
+    flux_chart: Chart,
+    root: Path,
+    cnpg: Kustomization,
+    external_secrets_config: Kustomization,
+    gateway: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
 
     The SOPS source Secret remains hand-written in this flat directory; the generated
@@ -395,39 +408,40 @@ def write_manifests(root: Path) -> None:
     app.synth()
 
     resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            NAME,
-            description="Self-hosted ntfy for Android and cluster alert notifications.",
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
-                ),
-                timeout="10m",
-                decryption=sops_decryption(resources),
-                health_checks=health_checks(
-                    rendered_chart,
-                    (
-                        "Namespace",
-                        "ClusterSecretStore",
-                        "Cluster",
-                        "ExternalSecret",
-                        "Deployment",
-                        "HTTPRoute",
-                        "ServiceMonitor",
-                    ),
-                ),
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dependency)
-                    for dependency in ("cnpg", "external-secrets-config", "gateway", "monitoring-crds")
-                ],
+    kustomization = flux_kustomization(
+        flux_chart,
+        NAME,
+        description="Self-hosted ntfy for Android and cluster alert notifications.",
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            path=f"./{OUTPUT_DIR}",
+            prune=True,
+            wait=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
             ),
+            timeout="10m",
+            decryption=sops_decryption(resources),
+            health_checks=health_checks(
+                rendered_chart,
+                (
+                    "Namespace",
+                    "ClusterSecretStore",
+                    "Cluster",
+                    "ExternalSecret",
+                    "Deployment",
+                    "HTTPRoute",
+                    "ServiceMonitor",
+                ),
+            ),
+            depends_on=[
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(gateway),
+                flux_kustomization_depends_on(monitoring_crds),
+            ],
         ),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
+    return kustomization

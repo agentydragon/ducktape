@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def ollama() -> dict[str, object]:
+def ollama(
+    chart: Chart,
+    gateway: Kustomization,
+    cert_manager_environment: Kustomization,
+    nvidia_runtimeclass: Kustomization,
+    external_secrets_config: Kustomization,
+    reflector: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "ollama"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -38,21 +44,13 @@ def ollama() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cert-manager-environment", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="nvidia-runtimeclass", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="external-secrets-config",  # langfuse ESO remains
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="claude-rbac", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(gateway),
+                flux_kustomization_depends_on(cert_manager_environment),
+                flux_kustomization_depends_on(nvidia_runtimeclass),
+                # langfuse ESO remains
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(reflector),
+                flux_kustomization_depends_on(claude_rbac),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/ollama/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, ollama())

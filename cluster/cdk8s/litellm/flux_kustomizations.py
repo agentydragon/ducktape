@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def litellm_db() -> dict[str, object]:
+def litellm_db(
+    chart: Chart, litellm_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "litellm-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -34,9 +34,9 @@ def litellm_db() -> dict[str, object]:
             prune=True,
             wait=True,
             depends_on=[
-                KustomizationSpecDependsOn(name="litellm-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(litellm_namespace),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(local_path_provisioner),
             ],
         ),
     )
@@ -48,9 +48,12 @@ def litellm_db() -> dict[str, object]:
 # dependency) deadlocked the 2026-07-02 rollout — the app never applied the
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
-def litellm_keys_tf() -> dict[str, object]:
+def litellm_keys_tf(
+    chart: Chart, litellm: Kustomization, tofu_controller: Kustomization, tofu_state_db: Kustomization
+) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -79,17 +82,18 @@ def litellm_keys_tf() -> dict[str, object]:
             ],
             depends_on=[
                 # The app must serve (with its DB) before keys can mint.
-                KustomizationSpecDependsOn(name="litellm", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(litellm),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
             ],
         ),
     )
 
 
-def litellm_namespace() -> dict[str, object]:
+def litellm_namespace(chart: Chart) -> Kustomization:
     name = "litellm-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -103,9 +107,15 @@ def litellm_namespace() -> dict[str, object]:
     )
 
 
-def litellm_secrets() -> dict[str, object]:
+def litellm_secrets(
+    chart: Chart,
+    external_creds: Kustomization,
+    litellm_namespace: Kustomization,
+    external_secrets_config: Kustomization,
+) -> Kustomization:
     name = "litellm-secrets"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -121,24 +131,9 @@ def litellm_secrets() -> dict[str, object]:
             ),
             timeout="5m",
             depends_on=[
-                KustomizationSpecDependsOn(name="external-creds", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="litellm-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(external_creds),
+                flux_kustomization_depends_on(litellm_namespace),
+                flux_kustomization_depends_on(external_secrets_config),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/litellm/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, litellm_db())
-    path = root / "cluster/k8s/litellm/keys-tf/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, litellm_keys_tf())
-    path = root / "cluster/k8s/litellm/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, litellm_namespace())
-    path = root / "cluster/k8s/litellm/secrets/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, litellm_secrets())

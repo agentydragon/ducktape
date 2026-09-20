@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def study_casino() -> dict[str, object]:
+def study_casino(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    gateway: Kustomization,
+    study_casino_namespace: Kustomization,
+    study_casino_db: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "study-casino"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             suspend=False,
@@ -42,20 +48,27 @@ def study_casino() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="forgejo-images", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="gateway", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="study-casino-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="study-casino-db", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="claude-rbac", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(external_secrets_config),
+                flux_kustomization_depends_on(forgejo_images),
+                flux_kustomization_depends_on(gateway),
+                flux_kustomization_depends_on(study_casino_namespace),
+                flux_kustomization_depends_on(study_casino_db),
+                flux_kustomization_depends_on(claude_rbac),
             ],
         ),
     )
 
 
-def study_casino_db() -> dict[str, object]:
+def study_casino_db(
+    chart: Chart,
+    cnpg: Kustomization,
+    study_casino_namespace: Kustomization,
+    local_path_provisioner: Kustomization,
+    reflector: Kustomization,
+) -> Kustomization:
     name = "study-casino-db"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -68,10 +81,10 @@ def study_casino_db() -> dict[str, object]:
             prune=True,
             wait=True,
             depends_on=[
-                KustomizationSpecDependsOn(name="cnpg", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="study-casino-namespace", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="local-path-provisioner", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="reflector", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(cnpg),
+                flux_kustomization_depends_on(study_casino_namespace),
+                flux_kustomization_depends_on(local_path_provisioner),
+                flux_kustomization_depends_on(reflector),
             ],
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
@@ -81,9 +94,10 @@ def study_casino_db() -> dict[str, object]:
     )
 
 
-def study_casino_namespace() -> dict[str, object]:
+def study_casino_namespace(chart: Chart) -> Kustomization:
     name = "study-casino-namespace"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -97,15 +111,3 @@ def study_casino_namespace() -> dict[str, object]:
             wait=True,
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/study-casino/app/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, study_casino())
-    path = root / "cluster/k8s/study-casino/db/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, study_casino_db())
-    path = root / "cluster/k8s/study-casino/namespace/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, study_casino_namespace())

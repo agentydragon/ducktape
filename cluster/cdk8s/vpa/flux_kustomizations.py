@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def vpa() -> dict[str, object]:
+def vpa(chart: Chart, kyverno: Kustomization, metrics_server: Kustomization) -> Kustomization:
     name = "vpa"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -35,15 +33,6 @@ def vpa() -> dict[str, object]:
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="vpa", namespace="kube-system"
                 )
             ],
-            depends_on=[
-                KustomizationSpecDependsOn(name="kyverno", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="metrics-server"),
-            ],
+            depends_on=[flux_kustomization_depends_on(kyverno), flux_kustomization_depends_on(metrics_server)],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/vpa/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, vpa())

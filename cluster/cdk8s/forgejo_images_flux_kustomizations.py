@@ -2,26 +2,30 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def forgejo_images() -> dict[str, object]:
+def forgejo_images(
+    chart: Chart,
+    external_secrets_config: Kustomization,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+) -> Kustomization:
     name = "forgejo-images"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
@@ -46,13 +50,11 @@ def forgejo_images() -> dict[str, object]:
                 )
             ],
             depends_on=[
-                KustomizationSpecDependsOn(name="external-secrets-config", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(
-                    name="forgejo",  # Forgejo API must be up (provider target)
-                    namespace="ducktape-flux",
-                ),
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(external_secrets_config),
+                # Forgejo API must be up (provider target)
+                flux_kustomization_depends_on(forgejo),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
             ],
         ),
         description=(
@@ -62,9 +64,3 @@ def forgejo_images() -> dict[str, object]:
             "provisions the Forgejo user."
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/forgejo-images/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, forgejo_images())

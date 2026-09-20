@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import flux_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def github_branch_protection() -> dict[str, object]:
+def github_branch_protection(
+    chart: Chart,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    github_secrets_sync_secrets: Kustomization,
+) -> Kustomization:
     name = "github-branch-protection"
     return flux_kustomization(
+        chart,
         name,
         spec=KustomizationSpec(
             retry_interval="1m",
@@ -40,16 +43,10 @@ def github_branch_protection() -> dict[str, object]:
             ],
             depends_on=[
                 # tofu-controller runs the Terraform CR.
-                KustomizationSpecDependsOn(name="tofu-controller", namespace="ducktape-flux"),
-                KustomizationSpecDependsOn(name="tofu-state-db", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(tofu_controller),
+                flux_kustomization_depends_on(tofu_state_db),
                 # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
-                KustomizationSpecDependsOn(name="github-secrets-sync-secrets", namespace="ducktape-flux"),
+                flux_kustomization_depends_on(github_secrets_sync_secrets),
             ],
         ),
     )
-
-
-def write_manifests(root: Path) -> None:
-    path = root / "cluster/k8s/github-branch-protection/flux-kustomization.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_yaml(path, github_branch_protection())
