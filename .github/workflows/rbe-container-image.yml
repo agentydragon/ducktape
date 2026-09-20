@@ -1,37 +1,38 @@
-# Build and pin the RBE worker image -- the execution platform for every remote
-# action.
+# Build and pin the RBE container image used for remote action execution.
 #
 # Deviation from container-images.yml, which builds every other image: this one
-# is its own workflow purely so its `paths` filter can be narrow. The worker's
-# digest is an exec property of //:rbe_linux_x64, so it is inside every action's
-# cache key and inside the key for BuildBuddy's warm Firecracker snapshot pool.
+# is its own workflow purely so its `paths` filter can be narrow.
+# The container-image exec property on //:rbe_linux_x64 carries the full image
+# reference, including its digest; changing the pin changes action and snapshot keys.
 # Rebuilding it orphans the remote action cache and dumps every warm snapshot:
 # measured over 25-27 Aug 2026, a PR CI run starting within an hour of a repin
 # executed ~12x the actions of an identical run later in the epoch, and the 11%
 # of runs that landed in that window pulled 83% of all CAS bytes. The image was
 # repinned 8.2 times a day, and not one of those 22 rebuilds changed anything a
 # Bazel action uses -- they were all `nix/artifact-pins.json` bumps reaching the
-# devtools layer, which now lives in devinfra/bbr_runner/Dockerfile instead.
+# devtools layer, which now lives in devinfra/buildbuddy_remote_runner/Dockerfile instead.
 #
 # So: add a path here only for something an action executes *inside* and Bazel
 # cannot supply from the repo it is building. Developer and agent tooling goes
 # to the runner image.
-name: RBE Worker Image
+name: RBE Container Image
 
 on:
   push:
     branches: [main, devel]
     paths:
-      - "devinfra/rbe_image/**"
-      - ".github/workflows/rbe-worker-image.yml"
+      - "devinfra/rbe_container_image/Dockerfile"
+      - "devinfra/rbe_container_image/dockerd_wrapper.sh"
+      - ".github/workflows/rbe-container-image.yml"
   pull_request:
     paths:
-      - "devinfra/rbe_image/**"
-      - ".github/workflows/rbe-worker-image.yml"
+      - "devinfra/rbe_container_image/Dockerfile"
+      - "devinfra/rbe_container_image/dockerd_wrapper.sh"
+      - ".github/workflows/rbe-container-image.yml"
   workflow_dispatch:
 
 concurrency:
-  group: rbe-worker-image-${{ github.ref }}
+  group: rbe-container-image-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -39,11 +40,11 @@ permissions:
   packages: write
 
 env:
-  RBE_IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-worker
+  RBE_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-container-image
 
 jobs:
   build-only:
-    name: RBE Worker (build only)
+    name: RBE Container Image (build only)
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -58,12 +59,12 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: devinfra/rbe_image/Dockerfile
+          file: devinfra/rbe_container_image/Dockerfile
           push: false
-          cache-from: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache
+          cache-from: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache
 
   build:
-    name: RBE Worker
+    name: RBE Container Image
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -76,18 +77,18 @@ jobs:
       - uses: ./.github/actions/ghcr-build-push
         id: build
         with:
-          image: ${{ env.RBE_IMAGE }}
+          image: ${{ env.RBE_CONTAINER_IMAGE }}
           context: .
-          file: devinfra/rbe_image/Dockerfile
-          cache_from: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache
-          cache_to: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache,mode=max
+          file: devinfra/rbe_container_image/Dockerfile
+          cache_from: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache,mode=max
 
   # Pushes via the ducktape-automation GitHub App so the commit bypasses the
   # main-protection ruleset -- see container-images.yml's pin-digests for why.
   #
   # This commit deliberately carries no `[skip ci]`, unlike every other pin
-  # commit. A new execution platform invalidates the whole action cache, so it
-  # earns a devel sweep of its own rather than having the next unlucky PR
+  # commit. A new RBE container-image pin changes the action platform value and cache key,
+  # so it earns a devel sweep rather than having the next unlucky PR
   # discover it; and the push is what cascades into container-images.yml, which
   # rebuilds the runner on the new base. Nothing else in image_pins.json may
   # drop `[skip ci]`, or the two workflows will pin each other in a loop.
@@ -115,11 +116,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Pin rbe_worker
+      - name: Pin rbe_container
         run: |
-          DIGEST=$(docker manifest inspect "$RBE_IMAGE:${{ needs.build.outputs.pin_tag }}" --verbose | \
+          DIGEST=$(docker manifest inspect "$RBE_CONTAINER_IMAGE:${{ needs.build.outputs.pin_tag }}" --verbose | \
             python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
-          python3 devinfra/update_image_pin.py rbe_worker --digest "$DIGEST"
+          python3 devinfra/update_image_pin.py rbe_container --digest "$DIGEST" --image "$RBE_CONTAINER_IMAGE"
 
       - name: Commit and push
         env:
@@ -133,11 +134,11 @@ jobs:
           git add devinfra/image_pins.json
 
           if git diff --cached --quiet; then
-            echo "rbe_worker pin already up to date"
+            echo "rbe_container pin already up to date"
             exit 0
           fi
 
-          git commit -m "chore: pin rbe_worker image digest"
+          git commit -m "chore: pin rbe_container image digest"
 
           BRANCH="${GITHUB_REF_NAME}"
           if ! git pull --rebase origin "$BRANCH"; then

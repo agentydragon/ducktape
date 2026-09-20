@@ -113,7 +113,7 @@ def _rbe_flags() -> list[str]:
         # Only non-PR workflow pushes should enter BuildBuddy's mainline target
         # tracker. PR and hosted-script invocations must remain untracked.
         flags.extend(["--build_metadata=ROLE=CI", "--build_metadata=DISABLE_TARGET_TRACKING=false"])
-    flags.append("--remote_default_exec_properties=container-image=docker://" + os.environ["RBE_IMAGE"])
+    flags.append("--remote_default_exec_properties=container-image=docker://" + os.environ["RBE_CONTAINER_IMAGE"])
     return flags
 
 

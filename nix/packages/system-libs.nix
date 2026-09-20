@@ -1,8 +1,9 @@
 # System libraries needed for building and testing this repo.
 #
-# Shared between devShell (flake.nix), nix RBE worker images
-# (x/nix_rbe_worker/packages.nix), and mirrored by apt in the Ubuntu RBE image
-# (devinfra/rbe_image/Dockerfile).
+# Used by the Nix devShell (flake.nix); the Ubuntu RBE container image installs
+# corresponding libraries with apt (devinfra/rbe_container_image/Dockerfile).
+# Experimental BuildBuddy Nix images use their own package list at
+# devinfra/buildbuddy_nix_image_packages.nix.
 #
 # Returns an attrset with:
 #   buildInputs  — libraries with dev headers (compile-time + link-time)

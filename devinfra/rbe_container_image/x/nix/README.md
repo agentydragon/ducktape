@@ -1,9 +1,11 @@
-# Nix RBE Image Experiment
+# Nix RBE Container Image Experiment
 
-Experimental Nix-based BuildBuddy RBE worker image built with dockerTools.
+Experimental Nix-based container image for BuildBuddy Remote Execution actions,
+built with dockerTools.
 
-**The primary (working) approach** is in `devinfra/rbe_image/Dockerfile` — the
-Ubuntu base image with Nix devtools baked in via `nix build .#rbetools`.
+The production RBE container image is in `devinfra/rbe_container_image/Dockerfile`.
+This is an alternative built with Nix instead of extending BuildBuddy's Ubuntu
+executor image.
 
 This directory contains an alternative that was explored but has limitations:
 
@@ -21,24 +23,23 @@ need environment variables: it has compiled-in defaults under
 `/run/current-system/sw/share/nix-ld` and works with an empty environment once that
 directory exists in the image. A dockerTools image built that way now runs
 `bazel test //...` at 25/26 (the Haku sandbox image — see
-<../../cluster/k8s/haku/workspaces/image/README.md>; mechanism in
-<../../debug/nixos*bazel_bash/README.md> "Issue 4"). Whether that also revives \_this*
+<../../../../cluster/k8s/haku/workspaces/image/README.md>; mechanism in
+<../../../../debug/nixos*bazel_bash/README.md> "Issue 4"). Whether that also revives \_this*
 image under Firecracker is untested — goinit's pivot-root is a separate question from the
 loader — but the stated blocker for the dockerTools variant no longer holds as written.
 
-## NixOS container variant
+## NixOS BuildBuddy Remote Runner variant
 
-The NixOS worker implementation now lives in
-[the sibling worker directory](../nix_rbe_worker/README.md), with its module,
-flake outputs, and shared package list together.
+The NixOS remote runner implementation lives in
+[the remote runner experiment directory](../../../buildbuddy_remote_runner/x/nixos/README.md).
 
 ## Shared package list
 
-The worker package list used by this image is in
-[the worker directory](../nix_rbe_worker/packages.nix).
+The package list shared by both Nix container image experiments is in
+[shared BuildBuddy Nix image package list](../../../buildbuddy_nix_image_packages.nix).
 
 ## See also
 
-- <devinfra/rbe_image/Dockerfile> — the working Ubuntu+Nix approach
+- <devinfra/rbe_container_image/Dockerfile> — the production Ubuntu-based RBE container image
 - <devinfra/docs/bb_remote_internals.md> — how `bb remote` and Firecracker work
 - [TODO.md](TODO.md) — remaining work items

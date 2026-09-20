@@ -1,8 +1,8 @@
-# Nix RBE Image TODOs
+# Nix RBE Container Image TODOs
 
 > This directory contains experimental image definitions. The published RBE
-> execution image is built from `devinfra/rbe_image/`; its workflow and digest
-> pin live in `.github/workflows/rbe-worker-image.yml` and
+> container image is built from `devinfra/rbe_container_image/`; its workflow and digest
+> pin live in `.github/workflows/rbe-container-image.yml` and
 > `devinfra/image_pins.json`. Do not add a second publishing path here.
 
 ## Image Size

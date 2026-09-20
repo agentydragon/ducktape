@@ -1,8 +1,8 @@
-# Experimental: Nix-based BuildBuddy RBE worker image.
+# Experimental: Nix-based BuildBuddy RBE container image for actions.
 #
-# The primary RBE image is the Ubuntu Dockerfile with Nix devtools baked in
-# (devinfra/rbe_image/Dockerfile). This file is an experiment to build the
-# image purely with Nix dockerTools. It is NOT production-ready.
+# The production RBE container image extends BuildBuddy's Ubuntu executor image
+# (devinfra/rbe_container_image/Dockerfile). This experiment builds an alternative
+# action container image with Nix dockerTools. It is NOT production-ready.
 #
 # Known limitations of the dockerTools approach:
 # - NixOS glibc has nix-store paths compiled into its default library search
@@ -16,9 +16,9 @@
 # - The Ubuntu base image avoids all of this because its glibc natively
 #   searches FHS paths.
 #
-# Build:  nix build .#nix-rbe-image
+# Build:  nix build .#nix-rbe-container-image
 # Load:   docker load < result
-# Test:   docker run --rm nix-rbe-worker bash -c 'gcc --version'
+# Test:   docker run --rm nix-rbe-container-image bash -c 'gcc --version'
 #
 # BuildBuddy requirements:
 # - No ENTRYPOINT (BB execs commands directly via CMD)
@@ -28,7 +28,7 @@
 # - Standard build tools (gcc, binutils, make, git, python3, java)
 { pkgs }:
 let
-  packages = import ../nix_rbe_worker/packages.nix { inherit pkgs; };
+  packages = import ../../../buildbuddy_nix_image_packages.nix { inherit pkgs; };
 
   # Merged environment with all packages on PATH.
   env = pkgs.buildEnv {
@@ -87,7 +87,7 @@ let
 
 in
 pkgs.dockerTools.buildLayeredImage {
-  name = "nix-rbe-worker";
+  name = "nix-rbe-container-image";
   tag = "latest";
 
   contents = pkgs.buildEnv {

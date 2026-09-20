@@ -19,7 +19,7 @@ inputs:
     description: "Optional platform string to include in release metadata"
     required: false
     default: ""
-  rbe_image:
+  rbe_container_image:
     description: "Override RBE container image (optional)"
     required: false
     default: ""
@@ -41,7 +41,7 @@ runs:
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
-        rbe_image: ${{ inputs.rbe_image }}
+        rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Check content hash
       id: check
@@ -95,7 +95,7 @@ runs:
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }} --stamp
-        rbe_image: ${{ inputs.rbe_image }}
+        rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Upload release
       if: steps.check.outputs.should_release == 'true'

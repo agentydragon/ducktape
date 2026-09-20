@@ -24,7 +24,7 @@ from typing import Any
 
 SCHEMA = "ducktape.bb_runner_probe.v1"
 DEFAULT_DIR = Path(os.environ.get("CI_VM_PROBE_DIR", "/home/buildbuddy/workspace/.ducktape-ci-vm-probe"))
-SAFE_ENV_KEYS = ("BUILD_WORKSPACE_DIRECTORY", "GIT_REPO_DEFAULT_BRANCH", "HOME", "PWD", "RBE_IMAGE", "USER")
+SAFE_ENV_KEYS = ("BUILD_WORKSPACE_DIRECTORY", "GIT_REPO_DEFAULT_BRANCH", "HOME", "PWD", "RBE_CONTAINER_IMAGE", "USER")
 PATHS_TO_STAT = (
     "/home/buildbuddy/workspace",
     "/home/buildbuddy/workspace/repo-root",

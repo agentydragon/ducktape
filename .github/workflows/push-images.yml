@@ -32,7 +32,7 @@ name: Push Images
 on:
   workflow_call:
     inputs:
-      rbe_image:
+      rbe_container_image:
         description: "Override RBE container image (optional)"
         required: false
         type: string
@@ -159,7 +159,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: test ${{ matrix.test_target }}
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
 
       # Both targets, deliberately. The image gives the OCI layout `crane push`
       # uploads; its `.digest` sibling gives the `<name>.json.sha256` beside it,
@@ -171,7 +171,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ matrix.image }} ${{ matrix.image }}.digest
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
 
       - uses: imjasonh/setup-crane@v0.7
 
@@ -264,13 +264,13 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: test //props/...
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
 
       - name: Push agent images
         uses: ./.github/actions/bb-remote
         with:
           args: run //props/agents:push_images_bin
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
           env_overrides: |
             PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
             PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}

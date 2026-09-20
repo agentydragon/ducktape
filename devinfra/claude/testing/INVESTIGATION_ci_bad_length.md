@@ -7,7 +7,7 @@
 **Trigger commit**: `168cfe3` ("Add Chromium shared library deps to RBE worker image")
 **Symptom**: Bazelisk download of ~46MB Bazel binary through mock egress proxy failed with `unexpected EOF`. Proxy logs showed `[SSL: BAD_LENGTH] bad length` after forwarding 45,695,525 bytes.
 
-The trigger commit only changed `devinfra/rbe_image/Dockerfile` and had no relation to proxy code.
+The trigger commit only changed `devinfra/rbe_container_image/Dockerfile` and had no relation to proxy code.
 
 ## Timeline
 

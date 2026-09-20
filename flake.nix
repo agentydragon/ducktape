@@ -85,9 +85,9 @@
         inherit system;
         config.allowUnfree = true;
       };
-      # Keep the experimental RBE worker's configuration and output definitions
-      # with the experiment; the root flake only registers its outputs.
-      nixRbeWorkerOutputs = import ./x/nix_rbe_worker/flake-outputs.nix {
+      # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
+      # output definitions with the experiment; the root flake only registers them.
+      buildbuddyRemoteRunnerNixosOutputs = import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix {
         inherit nixpkgs self system;
       };
       artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
@@ -422,9 +422,9 @@
             ;
         })
         // {
-          # Keep worker implementation and output definitions under x/; this
-          # lazy value does not make unrelated packages depend on the experiment.
-          nix-rbe-nixos = nixRbeWorkerOutputs.packages.${system}.nix-rbe-nixos;
+          # Keep the NixOS prototype under x/; this lazy value does not make
+          # unrelated packages depend on the experiment.
+          buildbuddy-remote-runner-nixos-image = buildbuddyRemoteRunnerNixosOutputs.packages.${system}.buildbuddy-remote-runner-nixos-image;
         };
 
       homeConfigurations = {
@@ -567,8 +567,8 @@
           ];
         };
 
-        # Experimental worker implementation and outputs live under x/.
-        nix-rbe-worker = nixRbeWorkerOutputs.nixosConfigurations.nix-rbe-worker;
+        # Experimental NixOS implementation lives under the BuildBuddy Remote Runner.
+        buildbuddy-remote-runner = buildbuddyRemoteRunnerNixosOutputs.nixosConfigurations.buildbuddy-remote-runner;
 
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is

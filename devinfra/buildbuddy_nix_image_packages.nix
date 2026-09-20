@@ -1,7 +1,9 @@
-# Shared package list for BuildBuddy RBE worker images (dockerTools and NixOS).
+# Shared package list for experimental Nix container images used with BuildBuddy.
 #
-# These are the tools needed on BuildBuddy RBE workers and runner VMs.
-# x/nix_rbe_image/default.nix and ./nixos.nix both import this list.
+# These are the tools needed by the experimental RBE container image and the
+# experimental BuildBuddy Remote Runner NixOS image.
+# devinfra/rbe_container_image/x/nix/default.nix and
+# devinfra/buildbuddy_remote_runner/x/nixos/nixos.nix import this list.
 { pkgs }:
 with pkgs;
 [

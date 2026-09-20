@@ -51,7 +51,7 @@ image should be rebased on Debian. It shouldn't.
 ## Cutting over to the Nix image
 
 The risk is entirely **runtime**, so a green CI build proves nothing about it — the
-[nix_rbe_image notes](../../../../../x/nix_rbe_image/README.md) explain why. Re-run this
+[Nix RBE container image experiment notes](../../../../../devinfra/rbe_container_image/x/nix/README.md) explain why. Re-run this
 checklist against any candidate image before switching `sandboxtemplate-haku.yaml`.
 (Bracketed link, not `<...>`: an autolink containing `_` gets parsed as emphasis and
 prettier rewrites the path — it silently turned this into `nix*rbe_image` once already.)
