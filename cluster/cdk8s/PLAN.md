@@ -136,6 +136,76 @@ declarations again.
   unrepresentable rather than merely checked (`test_dependencies`, `test_health_checks`,
   `test_generator_namespace`).
 
+## Candidates I am not sure about
+
+Cleanups and patterns that look right from where the tree is today, not committed to
+by any wave. Each names what would settle it. None is a reason to widen a wave's PR.
+
+- **Flatten the 72 single-file subpackages.** #7391 put each slice's Flux nodes in
+  `cluster/cdk8s/<area>/flux_kustomizations.py` with its own `BUILD.bazel`; 72 of the 79
+  subpackages hold one module. STYLE.md flattens a directory with fewer than three
+  files. Likely target: `cluster/cdk8s/flux_kustomizations/<area>.py` until the
+  directory's workloads convert, at which point the nodes move into the component's
+  package. Unsure whether the move is worth doing before Wave 4 moves most of them
+  anyway; decide at the Wave 1 pause from how many areas Wave 4 will touch.
+- **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
+  order by hand, which is the design. If it becomes hard to read, the shape to try is
+  one function per area that builds its subgraph from explicit predecessor parameters
+  and returns the nodes others need, called from the entry point in order; not a
+  registry, not per-module imports of other areas' nodes. Unsure it is needed; the
+  file has not yet caused a wrong edit.
+- **`generation.write_charts(*builders)`** still takes builder callables at 8 call
+  sites (`lambda app: chart(app, mesh)` in `dns_automation`). Confident it should
+  become `app = directory_app(root, path); chart(app, mesh); app.synth()`; only the
+  timing is open, since Wave 2 changes where every output goes. Fold into Wave 2.
+- **A dumb writer.** After Wave 2, every module's `write_manifests(root)` repeats
+  `mkdir`, `App(outdir=...)`, `synth`, `write_yaml`. The forward shape is each module
+  returning what it built (a mapping of output path to chart or manifest) and one loop
+  at the end writing them. Leaning yes; it is values flowing forward, not a registry.
+  Settle it when Wave 2's move touches every writer.
+- **Peer labels as exported values, not constructs.** `cilium.endpoint_labels(namespace,
+name)` takes strings at 25 sites. The TODO entry proposes passing the workload
+  construct; the same reasoning that kept `Chart` out of Kustomization nodes argues for
+  the owning module exporting its selector labels as a value (`egress.LABELS`) and a
+  network rule taking that. Leaning values. A renamed workload then fails at import,
+  not synth, which is earlier.
+- **One `App` for everything.** Not needed by anything above: cross-directory reads of
+  a construct's `.name` or labels work across Apps, and values-not-constructs makes
+  most of them unnecessary. It would be needed only for `chart.add_dependency` across
+  directories or one validation pass over the whole tree (`Chart.to_json()` validates
+  the whole App). Chart ids (`helmrelease`, `priorityclass`, `config`) would have to
+  become unique. Do not do this until a concrete cross-directory reference needs it.
+- **`Chart(namespace=...)` instead of `metadata(name, namespace)`** at 125 sites. cdk8s
+  applies a chart namespace to every object without one, cluster-scoped objects
+  included, so it needs the ClusterRoles, Bindings and trust-manager Bundles in their
+  own chart first. Unsure the split pays for the 125 lines; measure per chart.
+- **Hardened workloads by construction.** Fleet rules check seccomp, requests and
+  pinned egress after the fact while each construct sets them by hand. A
+  `hardened_deployment(...)` factory (or a cdk8s+ `Deployment` subclass) would make the
+  rule a backstop that rarely fires. Unsure between factory and subclass, and whether
+  the per-construct variation (init containers, sidecars) fits either. Try it on one
+  Wave 4 conversion, not across the tree.
+- **`ServiceMonitor` and `ExternalSecret` helpers.** 8 and 11 construction sites; only
+  `forgejo_images` has a helper. The PDB helper was worth it; these may not be the same
+  shape (ExternalSecret varies by store and data mapping). Measure the sites before
+  writing either.
+- **`health_checks(chart, kinds)` kinds tuples.** Each node lists which kinds gate
+  readiness (`("Cluster", "Job")`, agentplane's `_HEALTH_CHECK_KINDS` with a
+  `Bundle` → `ConfigMap` special case). Unsure whether the kinds are a per-node choice
+  (keep listing them) or a property of the object kind (derive: every Deployment, Job,
+  Cluster in the chart gates). Look at the lists after Wave 4 has a dozen.
+- **Two props styles.** agentplane uses an `Environment` props object (two
+  environments); haku uses module constants (one). Both fit their case; converge only
+  if a second haku environment appears.
+- **A light `settings.py` per agentplane service** (from TODO.md): synth imports each
+  service's `main`, pulling mitmproxy and fastapi in, which is why three synth tests sit
+  at `size = "medium"`. Confident it is worth doing; unsure whether the split belongs to
+  the service packages or to how the contract helpers import. Not cdk8s work as such.
+- **`litellm/config.py`'s per-model `name`/`upstream` lambdas.** Mapping strategies
+  applied immediately, not deferred construction, so not the callable anti-pattern; a
+  data form exists (compute the `(exposed, upstream)` pairs first). Low value; leave
+  unless the file is being edited for another reason.
+
 ## Done
 
 `cluster/k8s` holds only the floor recorded after Wave 2, every Kustomization node's
