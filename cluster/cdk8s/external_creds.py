@@ -54,6 +54,24 @@ CREDENTIALS = (
         ),
     ),
     Credential(
+        secret_file="aws-route53-cert-manager.sops.yaml",
+        secret_name="aws-route53-cert-manager-credentials",
+        consumers=(ApprovedConsumer("cert-manager", "aws-route53-cert-manager-credentials-cert-manager-reader"),),
+    ),
+    Credential(
+        secret_file="aws-route53-dns-automation.sops.yaml",
+        secret_name="aws-route53-dns-automation-credentials",
+        consumers=(ApprovedConsumer("flux-system", "aws-route53-dns-automation-credentials-flux-system-reader"),),
+    ),
+    Credential(
+        secret_file="coinbase-api-credentials.sops.yaml",
+        secret_name="coinbase-api-credentials",
+        consumers=(
+            ApprovedConsumer("coinbase-read", "coinbase-api-credentials-coinbase-read-reader"),
+            ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),
+        ),
+    ),
+    Credential(
         secret_file="gemini.sops.yaml",
         secret_name="llm-gemini",
         consumers=(ApprovedConsumer("litellm", "llm-gemini-litellm-reader"),),
@@ -105,50 +123,50 @@ CREDENTIALS = (
 
 
 def kustomize_resources() -> list[str]:
-    """Return the flat generated RBAC file followed by the hand-written SOPS files."""
+    """Return generated source-side RBAC and canonical SOPS files."""
     return ["external-creds.k8s.yaml", *(credential.secret_file for credential in CREDENTIALS)]
 
 
 def chart(app: App) -> Chart:
-    """Build the explicit credential reader Roles and RoleBindings in one chart."""
+    """Build exact-name, get-only credential reader Roles and RoleBindings in one chart."""
     chart = Chart(app, "external-creds", disable_resource_name_hashes=True)
     for credential in CREDENTIALS:
-        if not credential.consumers:
-            continue
-
-        role_name = f"{credential.secret_name}-reader"
-        Role(
-            chart,
-            f"role-{credential.secret_name}",
-            metadata=metadata(role_name, credential.namespace),
-            rules=[
-                RolePolicyRule(
-                    resources=[
-                        Secret.from_secret_name(chart, f"secret-{credential.secret_name}", credential.secret_name)
-                    ],
-                    verbs=["get"],
-                )
-            ],
-        )
-        for index, consumer in enumerate(credential.consumers):
-            RoleBinding(
+        if credential.consumers:
+            role_name = f"{credential.secret_name}-reader"
+            Role(
                 chart,
-                f"binding-{credential.secret_name}-{index}",
-                metadata=metadata(consumer.binding_name, credential.namespace),
-                role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
-            ).add_subjects(
-                ServiceAccount.from_service_account_name(
-                    chart,
-                    f"service-account-ref-{credential.secret_name}-{index}",
-                    _READER_SERVICE_ACCOUNT,
-                    namespace_name=consumer.namespace,
-                )
+                f"role-{credential.secret_name}",
+                metadata=metadata(role_name, credential.namespace),
+                rules=[
+                    RolePolicyRule(
+                        resources=[
+                            Secret.from_secret_name(
+                                chart, f"secret-{credential.secret_name}-reader", credential.secret_name
+                            )
+                        ],
+                        verbs=["get"],
+                    )
+                ],
             )
+            for index, consumer in enumerate(credential.consumers):
+                RoleBinding(
+                    chart,
+                    f"binding-{credential.secret_name}-{index}",
+                    metadata=metadata(consumer.binding_name, credential.namespace),
+                    role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
+                ).add_subjects(
+                    ServiceAccount.from_service_account_name(
+                        chart,
+                        f"service-account-ref-{credential.secret_name}-{index}",
+                        _READER_SERVICE_ACCOUNT,
+                        namespace_name=consumer.namespace,
+                    )
+                )
     return chart
 
 
 def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) -> Kustomization:
-    """Generate credential grants and Kustomize wiring; SOPS files stay hand-written."""
+    """Generate credential grants and Kustomize wiring; source manifests stay hand-written."""
     resources = kustomize_resources()
     write_charts(root, OUTPUT_DIR, chart)
 

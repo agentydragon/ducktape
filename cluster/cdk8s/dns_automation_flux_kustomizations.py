@@ -5,9 +5,6 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -16,7 +13,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def dns_automation(chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization) -> Kustomization:
+def dns_automation(
+    chart: Chart,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+) -> Kustomization:
     name = "dns-automation"
     return flux_kustomization(
         chart,
@@ -37,10 +40,8 @@ def dns_automation(chart: Chart, tofu_controller: Kustomization, tofu_state_db: 
                     namespace="flux-system",
                 )
             ],
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            depends_on=flux_kustomization_depends_on_many(
+                tofu_controller, tofu_state_db, external_creds, external_secrets_config
             ),
-            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
         ),
     )

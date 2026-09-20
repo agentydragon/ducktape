@@ -5,4 +5,3 @@ resources:
   - clusterissuer-staging.yaml
   - letsencrypt-prod-ca.yaml
   - letsencrypt-staging-ca.yaml
-  - aws-credentials.sops.yaml
