@@ -36,6 +36,20 @@ let
       sha256 = "0psgwfnd5fi0p60pknzz9li70ryxqqjz7gxxvqr0q3q1kzpdhr7q";
     };
   };
+
+  # Nixpkgs 26.05's copilot-lua 2.0.4 expects
+  # sha256-+hQ4Og0ZZS/tvs4z5733qRu5+W4D24HgHHPIL5vd0Eo=, but the fetched source
+  # yields sha256-05f76OeWBlFmlUh90tH4XMMKfNI1jnhuIJDqYPPQokA=. Retire this
+  # override once our locked nixpkgs pin has a valid source/hash pair for this
+  # plugin and this Neovim profile builds.
+  copilotLua = pkgs.vimPlugins.copilot-lua.overrideAttrs (_old: {
+    src = pkgs.fetchFromGitHub {
+      owner = "zbirenbaum";
+      repo = "copilot.lua";
+      rev = "b1482409cefe8b201f89122c682189fabf0436da";
+      hash = "sha256-05f76OeWBlFmlUh90tH4XMMKfNI1jnhuIJDqYPPQokA=";
+    };
+  });
 in
 {
   programs.neovim = {
@@ -135,7 +149,7 @@ in
         '';
       }
       {
-        plugin = copilot-lua;
+        plugin = copilotLua;
         type = "lua";
         config = ''
           require("copilot").setup({
