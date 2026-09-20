@@ -10,23 +10,23 @@ let
   # .pre-commit-config.yaml. Hook environments from pre-commit-managed repos
   # continue to be installed and cached by pre-commit itself.
   preCommitCommonPackages = {
-    bb = ducktapePkgs.bb;
-    bbr = ducktapePkgs.bbr;
+    inherit (ducktapePkgs) bb bbr prettier;
     gitHooks = ducktapePkgs.ducktape-git-hooks;
     preCommit = pkgs.pre-commit;
-    bazelisk = pkgs.bazelisk;
-    nixfmt = pkgs.nixfmt;
-    statix = pkgs.statix;
+    inherit (pkgs)
+      bazelisk
+      nixfmt
+      statix
+      shfmt
+      buildifier
+      gofumpt
+      kubeconform
+      tflint
+      checkov
+      ;
     ruff = ruffLatest;
-    shfmt = pkgs.shfmt;
-    buildifier = pkgs.buildifier;
     keepSorted = pkgs.keep-sorted;
-    gofumpt = pkgs.gofumpt;
     markdownlintCli2 = pkgs.markdownlint-cli2;
-    prettier = ducktapePkgs.prettier;
-    kubeconform = pkgs.kubeconform;
-    tflint = pkgs.tflint;
-    checkov = pkgs.checkov;
   };
   # Rustfmt and Ansible are pre-commit requirements, but stay out of the lean
   # BuildBuddy Remote Runner toolset because of their large closures.
