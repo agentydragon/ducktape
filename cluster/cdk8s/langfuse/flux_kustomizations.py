@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -75,7 +76,8 @@ def langfuse_cache(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/langfuse/cache",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(langfuse_namespace, valkey, local_path_provisioner),
         ),
@@ -98,7 +100,8 @@ def langfuse_db(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/langfuse/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(langfuse_namespace, cnpg, local_path_provisioner),
         ),
@@ -114,7 +117,8 @@ def langfuse_namespace(chart: Chart) -> Kustomization:
             suspend=False,
             interval="10m",
             path="./cluster/k8s/langfuse/namespace",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -134,7 +138,8 @@ def langfuse_seaweed(
             retry_interval="1m",
             interval="10m",
             path="./cluster/k8s/langfuse/seaweed",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -165,7 +170,8 @@ def langfuse_secrets(
             retry_interval="1m",
             interval="10m",
             path="./cluster/k8s/langfuse/secrets",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
