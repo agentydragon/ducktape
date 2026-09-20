@@ -567,12 +567,6 @@ data:
             - list_tags
             - list_workspaces
             - get_tag_schema
-      - id: postscanmail_reads
-        type: exact_tools
-        tools:
-          postscanmail-mcp:
-            - list_items
-            - list_automation_rules
       - id: home_assistant_reads
         type: exact_tools
         tools:
@@ -637,7 +631,6 @@ data:
           - github_reads
           - github_identity_reads
           - tana_safe_tools
-          - postscanmail_reads
           - home_assistant_reads
           - home_assistant_desk_light_control
           - haku_sandbox_control
@@ -768,16 +761,6 @@ data:
             kind: in_process
             credential:
               kind: none
-        postscanmail_mcp:
-          id: postscanmail-mcp
-          backend:
-            kind: remote_mcp
-            url: https://postscanmail-mcp.allegedly.works/mcp
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: dynamic
-                client_name: Haku Console
         ssh:
           id: ssh
           backend:
