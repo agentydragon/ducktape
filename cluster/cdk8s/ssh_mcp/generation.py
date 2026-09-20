@@ -31,25 +31,8 @@ _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
-def ssh_mcp(
-    flux_chart: Chart,
-    root: Path,
-    mesh: Mesh,
-    devbox_service: Service,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-) -> Kustomization:
-    """Write the generated backend and sshpiper manifests under ``root``."""
-    ssh_config = config.load(devbox_service)
-    out_dir = root / _OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    app = App(outdir=str(out_dir))
-    chart = backend.chart(app, config=ssh_config, mesh=mesh)
-    add_fleet_rules(chart)
-    app.synth()
-
-    namespace_kustomization = flux_kustomization(
+def ssh_mcp_namespace(flux_chart: Chart) -> Kustomization:
+    return flux_kustomization(
         flux_chart,
         "ssh-mcp-namespace",
         description="Namespace for the standalone SSH MCP backend.",
@@ -66,6 +49,27 @@ def ssh_mcp(
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="ssh-mcp")],
         ),
     )
+
+
+def ssh_mcp(
+    flux_chart: Chart,
+    root: Path,
+    mesh: Mesh,
+    devbox_service: Service,
+    namespace_kustomization: Kustomization,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+) -> Kustomization:
+    """Write the generated backend and sshpiper manifests under ``root``."""
+    ssh_config = config.load(devbox_service)
+    out_dir = root / _OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    app = App(outdir=str(out_dir))
+    chart = backend.chart(app, config=ssh_config, mesh=mesh)
+    add_fleet_rules(chart)
+    app.synth()
+
     kustomization = flux_kustomization(
         flux_chart,
         config.NAME,

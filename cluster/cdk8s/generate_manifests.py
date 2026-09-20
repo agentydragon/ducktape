@@ -201,6 +201,7 @@ def generate_manifests(root: Path) -> None:
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
         flux_chart
     )
+    ssh_mcp_namespace_kustomization = ssh_mcp_generation.ssh_mcp_namespace(flux_chart)
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     study_casino_namespace_kustomization = study_casino_flux_kustomizations.study_casino_namespace(flux_chart)
     (talos_cloud_controller_manager_flux_kustomizations.talos_cloud_controller_manager(flux_chart))
@@ -891,7 +892,13 @@ def generate_manifests(root: Path) -> None:
         authentik_kustomization,
     )
     ssh_mcp_kustomization = ssh_mcp_generation.ssh_mcp(
-        flux_chart, root, mesh, devbox_service, external_secrets_config_kustomization, forgejo_images_kustomization
+        flux_chart,
+        root,
+        mesh,
+        devbox_service,
+        ssh_mcp_namespace_kustomization,
+        external_secrets_config_kustomization,
+        forgejo_images_kustomization,
     )
     study_casino_flux_kustomizations.study_casino(
         flux_chart,
