@@ -11,9 +11,10 @@ cluster/k8s/agents/ha-mcp/app/image-pins/kustomization.yaml) overrides them at
 `kustomize build` time via Flux's image-automation marker. The ha-mcp container's own
 image is pinned by digest directly and isn't Flux-managed.
 
-bearer.sops.yaml (the facade's static bearer token) stays hand-written alongside this
-generated output -- cdk8s has no key material to synthesize ciphertext with. See
-cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
+The facade's static bearer token is minted by ESO's Password generator (same pattern
+as ssh_mcp/backend.py's `_bearer_credentials`), not hand-written SOPS -- ducktape mints
+this value itself, so there is no ciphertext to keep in sync with the cluster's age
+recipients.
 """
 
 from __future__ import annotations
@@ -54,12 +55,23 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecDataFrom,
+    ExternalSecretSpecDataFromSourceRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateMetadata,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -89,6 +101,8 @@ _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = "cluster/k8s/agents/ha-mcp/app"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
+_BEARER_SECRET_NAME = "ha-mcp-bearer"
+_BEARER_SECRET_KEY = "bearer-token"
 _PLACEHOLDER_TAG = "unset"
 
 _PROVISIONER_NAME = "ha-mcp-token-provisioner"
@@ -103,6 +117,53 @@ _APP_FACADE_PORT = 8765
 _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
 _APP_DATA_DIR = "/data"
+
+
+def _bearer_credentials(scope: Construct) -> None:
+    """The facade's static bearer token: ducktape mints it itself (same pattern as
+    ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
+    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients."""
+    Password(
+        scope,
+        "bearer-password-generator",
+        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
+        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
+    )
+    ExternalSecret(
+        scope,
+        "bearer-external-secret",
+        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
+        spec=ExternalSecretSpec(
+            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+            target=ExternalSecretSpecTarget(
+                name=_BEARER_SECRET_NAME,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                template=ExternalSecretSpecTargetTemplate(
+                    type="Opaque",
+                    metadata=ExternalSecretSpecTargetTemplateMetadata(
+                        annotations={
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
+                        }
+                    ),
+                    data={_BEARER_SECRET_KEY: "{{ .password }}"},
+                ),
+            ),
+            data_from=[
+                ExternalSecretSpecDataFrom(
+                    source_ref=ExternalSecretSpecDataFromSourceRef(
+                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                            api_version="generators.external-secrets.io/v1alpha1",
+                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                            name=_BEARER_SECRET_NAME,
+                        )
+                    )
+                )
+            ],
+        ),
+    )
 
 
 class HaMcpCredentialsProvisioner(Construct):
@@ -237,6 +298,7 @@ class HaMcpApp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_NAMESPACE)
+        _bearer_credentials(self)
         config_map = self._add_config_map()
         deployment = self._add_deployment(config_map)
         self._add_service(deployment)
@@ -350,7 +412,8 @@ class HaMcpApp(Construct):
                 # haku-console by the emberstack reflector) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
-                        secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", "ha-mcp-bearer"), key="bearer-token"
+                        secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
+                        key=_BEARER_SECRET_KEY,
                     )
                 )
             },
@@ -471,13 +534,6 @@ def ha_mcp(
                 ),
                 KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
             ],
-            # bearer.sops.yaml (hand-written, stays alongside this generated output --
-            # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
-            # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
                 forgejo_images,
@@ -489,8 +545,6 @@ def ha_mcp(
     )
     write_yaml(
         app_dir / "kustomization.yaml",
-        # bearer.sops.yaml stays hand-written; this generated file just lists it as a plain
-        # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
+        kustomize_kustomization(resources=[f"{name}.k8s.yaml"], components=["./image-pins"]),
     )
     return kustomization
