@@ -3,7 +3,7 @@
 # Deliberately independent of the shared nix/home host structure (it does NOT
 # import home.nix or the claude_code module). It contains only what
 # web_setup.sh's home-manager mode explicitly needs:
-#   - the devtools (same list the .#devtools profile install ships)
+#   - the shared devToolPackages core (`.#devtools` also includes localOnlyPackages)
 #   - direnv + nix-direnv
 #   - skill deployment into ~/.claude/skills via the shared skills module
 #
@@ -55,9 +55,8 @@ in
     nix-direnv.enable = true;
   };
 
-  # Same toolset the .#devtools profile install ships (claude-hook, statusline,
-  # bbr, bbapi, gh, sops, kubectl, …). Reuses devToolPackages from
-  # nix/flake/devtools.nix so the two install paths can never drift.
+  # Shared devToolPackages core from nix/flake/devtools.nix. The .#devtools
+  # profile adds localOnlyPackages; this Home Manager profile stays narrower.
   home.packages = webDevTools;
 
   home.file = mkSkills { prefix = ".claude"; };

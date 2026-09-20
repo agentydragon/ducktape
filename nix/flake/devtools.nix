@@ -39,9 +39,10 @@ let
     pkgs.ansible
   ];
 
-  # Dev tools shared between the devShell (local `nix develop` / direnv)
-  # and Claude Code web (`nix profile install .#devtools`).
-  # release.yml pushes this to attic so web installs are cache hits.
+  # Shared developer tool core used by `.#devtools` and Claude Code web's
+  # Home Manager profile. The devShell and `.#devtools` also include
+  # `localOnlyPackages`.
+  # The Nix Attic workflow builds this so web installs can use the cache.
   # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
   # gettext + locale data. Blocked on slow rebuild (gitMinimal override
   # isn't in the binary cache, triggers 600+ derivation bootstrap chain).

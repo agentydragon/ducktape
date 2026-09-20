@@ -451,7 +451,8 @@
 
         # Claude Code web session — headless standalone profile installed by
         # web_setup.sh's home-manager mode. Independent of the shared host
-        # structure: it only needs the devtools list and the skills args.
+        # structure: it uses the shared devToolPackages core and skills args.
+        # Unlike .#devtools, it intentionally omits localOnlyPackages.
         # Portable across the web container's user (home.username/homeDirectory
         # read from the env), so it must be built/activated with --impure:
         #   home-manager switch --impure --flake .#claude-web
