@@ -175,7 +175,6 @@ def generate_manifests(root: Path) -> None:
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart)
     forgejo_namespace_kustomization = forgejo_flux_kustomizations.forgejo_namespace(flux_chart)
     gatus_namespace_kustomization = gatus_flux_kustomizations.gatus_namespace(flux_chart)
-    haku_mailbox_namespace_kustomization = haku_flux_kustomizations.haku_mailbox_namespace(flux_chart)
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart)
     hubble_ui_flux_kustomizations.hubble_ui(flux_chart)
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
@@ -311,9 +310,6 @@ def generate_manifests(root: Path) -> None:
     )
     gatus_db_kustomization = gatus_flux_kustomizations.gatus_db(
         flux_chart, gatus_namespace_kustomization, cnpg_kustomization
-    )
-    haku_mailbox_db_kustomization = haku_flux_kustomizations.haku_mailbox_db(
-        flux_chart, haku_mailbox_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
     langfuse_db_kustomization = langfuse_flux_kustomizations.langfuse_db(
         flux_chart, langfuse_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
@@ -807,13 +803,9 @@ def generate_manifests(root: Path) -> None:
     )
     haku_flux_kustomizations.haku_mailbox(
         flux_chart,
-        forgejo_images_kustomization,
-        haku_mailbox_namespace_kustomization,
-        haku_mailbox_db_kustomization,
+        cnpg_kustomization,
         cert_manager_kustomization,
-        agent_machine_access_tf_kustomization,
-        gateway_kustomization,
-        external_secrets_config_kustomization,
+        external_secrets_operator_kustomization,
         cert_manager_issuer_config_kustomization,
     )
     home_assistant_kustomization = home_assistant_flux_kustomizations.home_assistant(

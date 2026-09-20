@@ -354,11 +354,6 @@ spec:
       name: haku-egress-proxy-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
-          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
-      name: haku-mailbox-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-namespace
@@ -726,14 +721,11 @@ spec:
       name: haku-console
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox/app/**"
-          to: "@artifact/cluster/k8s/haku/mailbox/app/"
-      name: haku-mailbox-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox/db/**"
-          to: "@artifact/cluster/k8s/haku/mailbox/db/"
-      name: haku-mailbox-db
+        - from: "@repo/cluster/k8s/haku/mailbox/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/"
+        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
+          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
+      name: haku-mailbox
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/haku/forgejo-tea/**"

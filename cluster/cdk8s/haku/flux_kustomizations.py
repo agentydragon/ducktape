@@ -78,33 +78,11 @@ def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
     )
 
 
-def haku_mailbox_namespace(chart: Chart) -> Kustomization:
-    name = "haku-mailbox-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path="./cluster/k8s/haku/mailbox-namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="2m",
-        ),
-    )
-
-
 def haku_mailbox(
     chart: Chart,
-    forgejo_images: Kustomization,
-    haku_mailbox_namespace: Kustomization,
-    haku_mailbox_db: Kustomization,
+    cnpg: Kustomization,
     cert_manager: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    gateway: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     cert_manager_issuer_config: Kustomization,
 ) -> Kustomization:
     name = "haku-mailbox"
@@ -115,30 +93,23 @@ def haku_mailbox(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/mailbox/app",
+            path="./cluster/k8s/haku/mailbox",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="haku-mailbox-app",
-                namespace="ducktape-flux",
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
             depends_on=flux_kustomization_depends_on_many(
-                forgejo_images,
-                haku_mailbox_namespace,
-                haku_mailbox_db,
+                cnpg,
                 # Certificate CRD + controller
                 cert_manager,
-                # Authentik provider + Haku mailbox identity
-                agent_machine_access_tf,
-                # HTTPRoute parent for the JMAP/management API
-                gateway,
-                # ClusterSecretStore + CRDs (token mirror)
-                external_secrets_config,
+                # ExternalSecret and ClusterExternalSecret CRDs and webhooks
+                external_secrets_operator,
                 # ${LETSENCRYPT_ISSUER}
                 cert_manager_issuer_config,
             ),
@@ -149,29 +120,6 @@ def haku_mailbox(
                     )
                 ]
             ),  # ${LETSENCRYPT_ISSUER}
-        ),
-    )
-
-
-def haku_mailbox_db(
-    chart: Chart, haku_mailbox_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
-    name = "haku-mailbox-db"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path="./cluster/k8s/haku/mailbox/db",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            depends_on=flux_kustomization_depends_on_many(haku_mailbox_namespace, cnpg, local_path_provisioner),
         ),
     )
 
