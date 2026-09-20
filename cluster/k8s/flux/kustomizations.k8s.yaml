@@ -6519,10 +6519,6 @@ metadata:
   name: ha-mcp
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux

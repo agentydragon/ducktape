@@ -189,6 +189,45 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ha-mcp-bearer
+  namespace: ha-mcp
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ha-mcp-bearer
+  namespace: ha-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ha-mcp-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: ha-mcp-bearer
+    template:
+      data:
+        bearer-token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ^haku-console$,^agentplane-staging$
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ^haku-console$,^agentplane-staging$
+      type: Opaque
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
