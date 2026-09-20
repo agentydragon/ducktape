@@ -47,7 +47,7 @@ _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-# The same reflected Secrets haku-console's own home_assistant/tana_rw servers read
+# The same reflected Secrets haku-console's own home_assistant/tana servers read
 # (cluster/cdk8s/haku/console_config.py), widened to reflect into this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
@@ -180,7 +180,7 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
-        "tana_rw": {
+        "tana": {
             "title": "Tana MCP",
             "description": "Tana read/write tools; every Action remains subject to operator approval.",
             "executor": {

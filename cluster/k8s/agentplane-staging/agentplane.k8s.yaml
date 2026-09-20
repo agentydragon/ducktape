@@ -2191,7 +2191,7 @@ data:
             url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ha-mcp/bearer-token
-      tana_rw:
+      tana:
         title: Tana MCP
         description: Tana read/write tools; every Action remains subject to operator approval.
         executor:
