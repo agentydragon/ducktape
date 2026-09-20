@@ -244,24 +244,16 @@ resource "null_resource" "install_talos_kimsufi" {
     timeout     = "15m"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/install_talos_from_image_factory.sh"
+    destination = "/tmp/install_talos_from_image_factory.sh"
+  }
+
   provisioner "remote-exec" {
-    # OVH rescue runs dash (no `set -o pipefail`). Decompress to a temp file
-    # and dd from that, so an unrelated decompressor failure can't silently
-    # feed dd zero bytes. `test -s` makes sure we actually got a raw image.
-    # The Image Factory currently ships `metal-amd64.raw.zst`; older releases
-    # used .xz, hence the URL-suffix switch.
-    # KS-5 has 32 GB RAM; /tmp on tmpfs has room for the ~1.5 GB raw image.
-    # install_disk is per node: KS-5 uses /dev/sda, KS-GAME uses NVMe.
+    # Workers and control planes share the installer; only the target disk
+    # differs. Image URLs still come directly from the public Image Factory.
     inline = [
-      "set -ex",
-      # OVH Debian rescue doesn't have zstd pre-installed; xz-utils is there.
-      "apt-get update -qq && apt-get install -y -qq zstd",
-      "URL='${data.talos_image_factory_urls.kimsufi.urls.disk_image}'",
-      "wget -q -O /tmp/talos.bin \"$URL\"",
-      "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
-      "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
-      "sync",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
     ]
   }
 
@@ -612,16 +604,14 @@ resource "null_resource" "install_talos_kimsufi_cp" {
     timeout     = "15m"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/install_talos_from_image_factory.sh"
+    destination = "/tmp/install_talos_from_image_factory.sh"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "set -ex",
-      "apt-get update -qq && apt-get install -y -qq zstd",
-      "URL='${data.talos_image_factory_urls.kimsufi.urls.disk_image}'",
-      "wget -q -O /tmp/talos.bin \"$URL\"",
-      "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
-      "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
-      "sync",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
     ]
   }
 
