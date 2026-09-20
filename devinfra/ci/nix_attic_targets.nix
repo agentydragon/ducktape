@@ -1,5 +1,5 @@
 # The derivations nix-attic-push builds + pushes, as two attrsets consumed by
-# flake.nix as `legacyPackages.<system>.ci-attic-{main,public}`. nix-fast-build
+# flake.nix as `atticPushTargets.<system>.{main,public}`. nix-fast-build
 # evaluates these in parallel (nix-eval-jobs) and `--skip-cached` builds/pushes
 # only paths missing from the cache. See devinfra/ci/nix_attic_build_and_push.sh.
 #

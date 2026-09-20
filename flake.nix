@@ -364,10 +364,11 @@
         ;
     in
     {
-      # CI push targets for nix-attic-push, split by destination cache. Under
-      # legacyPackages so `nix flake {show,check}` skip them (they force-eval all
-      # host closures). drivefs isolation for `main` lives in the imported file.
-      legacyPackages.${system} =
+      # Purpose-specific targets for nix-attic-push, split by destination
+      # cache. These include the host closures we intend to publish, so keep
+      # them out of ordinary package/check outputs. drivefs isolation for
+      # `main` lives in the imported file.
+      atticPushTargets.${system} =
         let
           atticTargets = import ./devinfra/ci/nix_attic_targets.nix {
             inherit
@@ -378,10 +379,7 @@
               ;
           };
         in
-        {
-          ci-attic-main = atticTargets.main;
-          ci-attic-public = atticTargets.public;
-        };
+        atticTargets;
 
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
