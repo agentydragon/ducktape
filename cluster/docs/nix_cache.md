@@ -13,9 +13,9 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 - **Caches** (priority 41, ED25519 keypairs supplied from SOPS — see Bootstrap):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
   - `gaffer` — private; gaffer-private CI's cache (drivefs and friends)
-  - `public` — anonymous-readable (`is_public: true`); carries only the Claude Code
-    web/Haku bootstrap closures (`devtools`/`bb`/`bbr`/`bbapi`/`agent-haku`/
-    `devShells.default`) — see "Public bootstrap cache" below
+  - `public` — anonymous-readable (`is_public: true`); carries the Claude Code
+    web/Haku and pre-commit CI bootstrap closures (`devtools`/`precommit`/`bb`/
+    `bbr`/`bbapi`/`agent-haku`/`devShells.default`) — see "Public bootstrap cache" below
 - **Trusted public keys** (consumer side): `nix/attic-pubkeys.json`, consumed
   by both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push`
   CI workflow. Generated from `cache-keys.sops.yaml` (see Bootstrap below) —
@@ -103,8 +103,8 @@ Root-caused and tracked as `claude-web-cold-start-attic-cache-2026-07` in
 Haku's state.
 
 Fix: a third cache, **`public`** (`is_public: true`, anonymous reads, no JWT
-needed ever), carrying **only** the web/Haku bootstrap closures —
-`devtools`/`bb`/`bbr`/`bbapi`/`agent-haku`/`devShells.default` — pushed
+needed ever), carrying the web/Haku and pre-commit CI bootstrap closures —
+`devtools`/`precommit`/`bb`/`bbr`/`bbapi`/`agent-haku`/`devShells.default` — pushed
 alongside the existing `main` push by
 `devinfra/ci/nix_attic_build_and_push.sh` (same content, deduped by NAR hash;
 cheap). `devinfra/claude/web_setup.sh` lists `public` before `main` in

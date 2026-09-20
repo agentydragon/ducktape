@@ -3,7 +3,7 @@ description: Install Nix with the anonymous bootstrap cache and a flake package 
 
 inputs:
   package:
-    description: "Nix flake package to install (e.g. devtools, citools)"
+    description: "Nix flake package to install (e.g. devtools, precommit, citools)"
     required: false
     default: devtools
 

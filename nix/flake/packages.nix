@@ -10,6 +10,7 @@
   nix-openclaw,
   ruffLatest,
   localOnlyPackages,
+  preCommitPackages,
   devToolPackages,
 }:
 
@@ -25,6 +26,11 @@ ducktapePkgs
       ducktapePkgs.bbr
       pkgs.sops
     ];
+  };
+  # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
+  precommit = pkgs.symlinkJoin {
+    name = "ducktape-precommit";
+    paths = preCommitPackages;
   };
   # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
   # Default: Rust claude-hook plus Python statusline.

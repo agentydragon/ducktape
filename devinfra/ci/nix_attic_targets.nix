@@ -72,9 +72,11 @@ let
     in
     final.activationPackage;
 
-  # Bootstrap tools agent hosts need before BuildBuddy-backed validation works.
+  # Bootstrap tool environments used by CI and agent hosts before validation works.
   bootstrap =
-    lib.genAttrs [ "bb" "bbr" "bbapi" "devtools" "agent-haku" ] (n: self.packages.${system}.${n})
+    lib.genAttrs [ "bb" "bbr" "bbapi" "devtools" "precommit" "agent-haku" ] (
+      n: self.packages.${system}.${n}
+    )
     // {
       devShell = self.devShells.${system}.default;
     };

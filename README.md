@@ -60,7 +60,8 @@ Deploy: see <nix/README.md> (NixOS hosts use `sudo nixos-rebuild switch`; standa
 ## Development
 
 ```bash
-pre-commit install  # Installs ruff, buildifier, rustfmt, prettier, etc.
+nix shell .#precommit -c pre-commit install
+nix shell .#precommit -c pre-commit run --all-files
 ```
 
 ### Lint/Format Exclusions
