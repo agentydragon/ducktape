@@ -461,7 +461,7 @@ def generate_manifests(root: Path) -> None:
         ntfy_kustomization,
         external_secrets_config_kustomization,
     )
-    agents_flux_kustomizations.claude_sandbox_secrets(
+    claude_sandbox_secrets_kustomization = agents_flux_kustomizations.claude_sandbox_secrets(
         flux_chart,
         claude_rbac_kustomization,
         external_creds_kustomization,
@@ -761,6 +761,7 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
+        claude_sandbox_secrets_kustomization,
         forgejo_images_kustomization,
         seaweedfs_pr_visuals_bucket_kustomization,
     )
@@ -1062,6 +1063,8 @@ def generate_manifests(root: Path) -> None:
         public_coder_agent_proxy_kustomization,
         kubevirt_kustomization,
         forgejo_images_kustomization,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
     )
     staging.agentplane_staging(
         flux_chart,

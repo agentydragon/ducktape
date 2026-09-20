@@ -151,6 +151,51 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: buildbuddy-api-key-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - buildbuddy-api-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-api-key-claude-sandbox-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: claude-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-api-key-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: llm-gemini-reader
   namespace: ducktape-flux
 rules:

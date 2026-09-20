@@ -5,3 +5,4 @@ resources:
   - claude-forgejo-tea.sops.yaml
   - external-creds-reader.yaml
   - openclaw-telegram-bot-token-eso.yaml
+  - buildbuddy-api-key-eso.yaml

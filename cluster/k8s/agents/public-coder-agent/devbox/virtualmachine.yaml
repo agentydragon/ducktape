@@ -97,8 +97,7 @@ spec:
             name: public-coder-agent-proxy-ca-cert
         - name: buildbuddy-api-key
           secret:
-            # Reflected from claude-sandbox/buildbuddy-api-key by the existing
-            # shared-secret reflector policy.
+            # Synced from external-creds by the ExternalSecret in this directory.
             secretName: buildbuddy-api-key
         - name: ssh-host-key
           secret:

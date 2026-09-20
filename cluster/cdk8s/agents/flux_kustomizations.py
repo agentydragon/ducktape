@@ -254,7 +254,13 @@ def claude_sandbox_secrets(
                     kind="ExternalSecret",
                     name="openclaw-telegram-bot-token",
                     namespace="claude-sandbox",
-                )
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="buildbuddy-api-key",
+                    namespace="claude-sandbox",
+                ),
             ],
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
@@ -811,6 +817,8 @@ def public_coder_agent_devbox(
     public_coder_agent_proxy: Kustomization,
     kubevirt: Kustomization,
     forgejo_images: Kustomization,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -835,6 +843,8 @@ def public_coder_agent_devbox(
                 public_coder_agent_proxy,
                 kubevirt,
                 forgejo_images,
+                external_creds,
+                external_secrets_config,
             ),
             wait=True,
             health_checks=[
@@ -843,7 +853,13 @@ def public_coder_agent_devbox(
                     kind="VirtualMachine",
                     name="public-coder-devbox",
                     namespace="public-coder-agent",
-                )
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="buildbuddy-api-key",
+                    namespace="public-coder-agent",
+                ),
             ],
         ),
         description=(
@@ -1022,9 +1038,10 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/agents/shared-secrets",
-            # Staged transfer: leave the existing Telegram Secret in place for
-            # the consumer ExternalSecret to adopt; restore pruning after that
-            # Kustomization reconciles and its inventory drops the old source.
+            # CLEANUP: restore pruning once the Telegram and BuildBuddy ExternalSecrets
+            # are Ready and both staged handoffs are verified. Both target Secrets use
+            # creationPolicy: Orphan to preserve existing names without taking ownership;
+            # cleanup must account for that lifecycle before deleting the old sources.
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

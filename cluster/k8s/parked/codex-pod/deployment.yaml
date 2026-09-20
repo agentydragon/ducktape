@@ -62,9 +62,8 @@ spec:
               # invocation ("sshd requires execution with an absolute path").
               exec /bin/sshd -D -e -f "$HOME/.ssh/sshd_config"
           env:
-            # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY), reflected into
-            # this namespace from shared-secrets/buildbuddy-api-key. Optional so a
-            # brief pre-reflection window doesn't block pod start.
+            # Parked: add an explicit external-creds consumer before reactivating
+            # this workload. Optional so a missing key does not block pod start.
             - name: BUILDBUDDY_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -30,7 +30,7 @@ For this repo:
 
 - Put `SOPS_AGE_KEY` in **Environment variables** if the agent itself must run `sops`.
 - `setup.sh` decrypts the BuildBuddy key from
-  `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` when
+  `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml` when
   `SOPS_AGE_KEY` is available.
 
 If `SOPS_AGE_KEY` is present during setup, `setup.sh` appends exports to
@@ -74,7 +74,7 @@ pre-commit hooks, then validates `bb` / `bbr` availability.
    - `SOPS_AGE_KEY` in environment variables makes runtime decryption possible but is less restrictive than setup-only secrets.
    - If you do not need runtime decryption, prefer keeping key material setup-only.
    - BuildBuddy setup now depends on being able to decrypt
-     `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`.
+     `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`.
 
 3. **Nix bootstrap cost**
    - First-run setup may be slow; cached-container resume mitigates this.

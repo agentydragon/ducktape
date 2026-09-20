@@ -6,14 +6,14 @@ lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 
-| File                                 | Purpose                                                                                                                                                |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                                          |
-| `buildbuddy-api-key.sops.yaml`       | Encrypted `stringData.api-key: test-fake-bb-key` — a k8s Secret, mounted at `/project/cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`. |
-| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                                 |
-| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                             |
-| `claude-web-k8s-jwt.yaml`            | Encrypted `jwt: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-jwt.yaml`, consumed by the daemon's kubeconfig writer.                |
-| `alloy-otlp-bearer-token.yaml`       | Encrypted `token: test-fake-otel-jwt` — mounted at `/project/secrets/alloy-otlp-bearer-token.yaml`, consumed by `web_env.sh`.                          |
+| File                                 | Purpose                                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                                   |
+| `buildbuddy-api-key.sops.yaml`       | Encrypted `stringData.api-key: test-fake-bb-key` — a k8s Secret, mounted at `/project/cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`. |
+| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                          |
+| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                      |
+| `claude-web-k8s-jwt.yaml`            | Encrypted `jwt: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-jwt.yaml`, consumed by the daemon's kubeconfig writer.         |
+| `alloy-otlp-bearer-token.yaml`       | Encrypted `token: test-fake-otel-jwt` — mounted at `/project/secrets/alloy-otlp-bearer-token.yaml`, consumed by `web_env.sh`.                   |
 
 ## Why Fake Encrypted Files?
 
