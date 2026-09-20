@@ -3,7 +3,6 @@
 
 import { spawn } from "child_process";
 import esbuild from "esbuild";
-import esbuildSvelte from "esbuild-svelte";
 import tailwindcss from "esbuild-plugin-tailwindcss";
 import { createServer } from "http";
 import { readFile } from "fs/promises";
@@ -105,33 +104,21 @@ const CONTENT_TYPES = {
 
 // Start esbuild in watch mode
 const ctx = await esbuild.context({
-  entryPoints: [resolve(__dirname, "src/main.ts")],
+  entryPoints: [resolve(__dirname, "src/main.tsx")],
   bundle: true,
   outdir: resolve(__dirname, "dist"),
   format: "esm",
+  jsx: "automatic",
   splitting: true,
   sourcemap: true,
   target: ["es2022"],
-  plugins: [
-    esbuildSvelte({
-      compilerOptions: {
-        css: "injected",
-      },
-    }),
-    tailwindcss(),
-  ],
+  plugins: [tailwindcss()],
   alias: {
     $lib: resolve(__dirname, "src/lib"),
     $components: resolve(__dirname, "src/components"),
   },
-  // Support svelte package exports condition (required for svelte-data-table, svelte-markdown)
-  conditions: ["svelte", "browser", "module", "import"],
+  conditions: ["browser", "module", "import"],
   logLevel: "info",
-  // Suppress source map warnings - Svelte 5 compiler generates invalid source maps
-  // https://github.com/sveltejs/svelte/issues/16615
-  logOverride: {
-    "invalid-source-mappings": "silent",
-  },
 });
 
 await ctx.watch();

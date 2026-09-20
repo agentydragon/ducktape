@@ -1,4 +1,4 @@
-# Prettier bundled with plugins (svelte) so .prettierrc.cjs's require() resolves.
+# Prettier packaged separately so repository formatter versions stay pinned.
 #
 # Single source of truth for prettier version — used by devshell, pre-commit
 # (language: system), GHA (setup-nix-devtools), and update_image_pin.py.
@@ -14,7 +14,7 @@ pkgs.buildNpmPackage {
 
   src = ./.;
 
-  npmDepsHash = "sha256-isZwUuHGbSKEZl4FUYPYcUbyMGBXhk/ekaPkvFlAZbo=";
+  npmDepsHash = "sha256-zqUp4uywdO0aY1fN/cbTumwMHzjQMwUxiWKadSDbsWg=";
 
   dontBuild = true;
 
@@ -35,7 +35,7 @@ pkgs.buildNpmPackage {
   nativeBuildInputs = [ pkgs.makeWrapper ];
 
   meta = {
-    description = "Prettier with svelte plugin";
+    description = "Prettier formatter";
     homepage = "https://prettier.io";
     mainProgram = "prettier";
   };

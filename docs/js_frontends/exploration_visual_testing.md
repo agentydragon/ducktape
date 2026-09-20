@@ -1,5 +1,7 @@
 # Visual Regression Testing Alternatives: Exploration
 
+> Historical exploration from before the Props frontend migrated to React + Mantine. The current build and visual harness are documented in [the Props frontend README](../../props/frontend/README.md).
+
 **Context**: We have Svelte components (props/frontend) and want to generate PNG snapshots for visual regression testing. Current setup uses Storybook + Playwright, but Playwright has module identity issues in our Bazel + pnpm workspace setup (see [known_problems.md](known_problems.md)).
 
 **Goal**: Explore viable alternatives that can work with Bazel, pnpm workspaces, and Svelte components.

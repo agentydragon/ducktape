@@ -1,69 +1,73 @@
-// Hash-based router for Svelte 5.
-// Uses the URL constructor for proper parsing — no manual string splitting.
-import { writable, derived } from "svelte/store";
+import { useSyncExternalStore } from "react";
 
-function parseHash(hash: string): { pathname: string; searchParams: URLSearchParams } {
-  // Parse hash fragment (e.g. "#/runs?definition=sha256:...") as a URL.
+export interface RouteLocation {
+  pathname: string;
+  searchParams: URLSearchParams;
+}
+
+export function parseHash(hash: string): RouteLocation {
+  // Parse the hash fragment (e.g. "#/runs?status=exited") as a URL.
   const fragment = hash.slice(1) || "/";
   const url = new URL(fragment, "http://x");
   return { pathname: url.pathname, searchParams: url.searchParams };
 }
 
-function createRouter() {
-  const hash = writable(window.location.hash);
+let location = parseHash(typeof window === "undefined" ? "" : window.location.hash);
+const listeners = new Set<() => void>();
 
-  if (typeof window !== "undefined") {
-    window.addEventListener("hashchange", () => {
-      hash.set(window.location.hash);
-    });
-  }
-
-  return {
-    hash: { subscribe: hash.subscribe },
-    navigate(to: string) {
-      window.location.hash = to;
-    },
-  };
+function updateLocation(): void {
+  const next = parseHash(window.location.hash);
+  if (next.pathname === location.pathname && next.searchParams.toString() === location.searchParams.toString()) return;
+  location = next;
+  for (const listener of listeners) listener();
 }
 
-const router = createRouter();
-const parsed = derived(router.hash, parseHash);
+if (typeof window !== "undefined") window.addEventListener("hashchange", updateLocation);
 
-// Clean pathname (no query string). Use for route matching and nav highlighting.
-export const pathname = derived(parsed, ($p) => $p.pathname);
-
-// Current query params as URLSearchParams.
-export const searchParams = derived(parsed, ($p) => $p.searchParams);
-
-export function goto(path: string) {
-  router.navigate(path);
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
-// Resolve a path to a full href (prefixes with #).
+function getLocation(): RouteLocation {
+  return location;
+}
+
+export function useRoute(): RouteLocation {
+  return useSyncExternalStore(subscribe, getLocation, getLocation);
+}
+
+export function usePathname(): string {
+  return useRoute().pathname;
+}
+
+export function useSearchParams(): URLSearchParams {
+  return useRoute().searchParams;
+}
+
+export function goto(path: string): void {
+  window.location.hash = path;
+}
+
 export function resolve(path: string): string {
-  return "#" + path;
+  return `#${path}`;
 }
 
-// Parse SvelteKit-style route params from a path pattern.
-// e.g. parseParams("/runs/[runId]", "/runs/abc") → { runId: "abc" }
+/** Parse route params from a path pattern, such as `/runs/[runId]`. */
 export function parseParams(pattern: string, path: string): Record<string, string> | null {
   const paramNames: string[] = [];
   const regexStr = pattern
-    .replace(/\[\.\.\.(\w+)\]/g, (_, name) => {
+    .replace(/\[\.\.\.(\w+)\]/g, (_, name: string) => {
       paramNames.push(name);
-      return "(.+)"; // catch-all
+      return "(.+)";
     })
-    .replace(/\[(\w+)\]/g, (_, name) => {
+    .replace(/\[(\w+)\]/g, (_, name: string) => {
       paramNames.push(name);
       return "([^/]+)";
     });
 
-  const match = path.match(new RegExp("^" + regexStr + "$"));
+  const match = path.match(new RegExp(`^${regexStr}$`));
   if (!match) return null;
 
-  const params: Record<string, string> = {};
-  paramNames.forEach((name, i) => {
-    params[name] = match[i + 1];
-  });
-  return params;
+  return Object.fromEntries(paramNames.map((name, index) => [name, match[index + 1]]));
 }

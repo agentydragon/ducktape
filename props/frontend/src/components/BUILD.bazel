@@ -1,152 +1,228 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
     "//props/frontend:__subpackages__",
 ])
 
-# Component libraries with explicit deps
-
-js_library(
+ts_library(
     name = "TabButton",
-    srcs = ["TabButton.svelte"],
+    srcs = ["TabButton.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "CopyButton",
-    srcs = ["CopyButton.svelte"],
+    srcs = ["CopyButton.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:toast",
+    ],
 )
 
-js_library(
+ts_library(
     name = "BackButton",
-    srcs = ["BackButton.svelte"],
-    deps = ["//props/frontend/src/lib:router"],
+    srcs = ["BackButton.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:router",
+    ],
 )
 
-js_library(
+ts_library(
     name = "Breadcrumb",
-    srcs = ["Breadcrumb.svelte"],
-    deps = ["//props/frontend/src/lib:router"],
+    srcs = ["Breadcrumb.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:router",
+    ],
 )
 
-js_library(
+ts_library(
     name = "ExpandableItem",
-    srcs = ["ExpandableItem.svelte"],
-    deps = ["//props/frontend/src/lib:llmRequestUtils"],
+    srcs = ["ExpandableItem.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:llmRequestUtils",
+    ],
 )
 
-js_library(
+ts_library(
     name = "CollapsibleSection",
-    srcs = ["CollapsibleSection.svelte"],
-    deps = ["//props/frontend/src/lib:llmRequestUtils"],
+    srcs = ["CollapsibleSection.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:llmRequestUtils",
+    ],
 )
 
-js_library(
+ts_library(
     name = "LLMRequestSection",
-    srcs = ["LLMRequestSection.svelte"],
+    srcs = ["LLMRequestSection.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":CollapsibleSection",
         ":CopyButton",
         ":ExpandableItem",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
     ],
 )
 
-js_library(
+ts_library(
     name = "LLMResponseSection",
-    srcs = ["LLMResponseSection.svelte"],
+    srcs = ["LLMResponseSection.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":CollapsibleSection",
         ":CopyButton",
         ":ExpandableItem",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
     ],
 )
 
-js_library(
+ts_library(
     name = "RawJsonSection",
-    srcs = ["RawJsonSection.svelte"],
+    srcs = ["RawJsonSection.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":CopyButton",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
     ],
 )
 
-js_library(
+ts_library(
     name = "LLMRequestViewer",
-    srcs = ["LLMRequestViewer.svelte"],
+    srcs = ["LLMRequestViewer.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":LLMRequestSection",
         ":LLMResponseSection",
         ":RawJsonSection",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:icons",
     ],
 )
 
-js_library(
+ts_library(
     name = "FileTree",
-    srcs = ["FileTree.svelte"],
+    srcs = ["FileTree.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:fileTypes",
+        "//props/frontend/src/lib:icons",
     ],
 )
 
-js_library(
+ts_library(
     name = "GradingEdges",
-    srcs = ["GradingEdges.svelte"],
+    srcs = ["GradingEdges.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:CritiqueIssueLink",
         "//props/frontend/src/lib:OccurrenceLink",
         "//props/frontend/src/lib:client",
     ],
 )
 
-js_library(
+ts_library(
     name = "IssueComment",
-    srcs = ["IssueComment.svelte"],
+    srcs = ["IssueComment.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":CopyButton",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:OccurrenceLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:icons",
     ],
 )
 
-js_library(
+ts_library(
     name = "FileViewer",
-    srcs = ["FileViewer.svelte"],
+    srcs = ["FileViewer.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":IssueComment",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/highlight.js",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:fileTypes",
         "//props/frontend/src/lib:highlighting",
+        "//props/frontend/src/lib:icons",
         "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "DefinitionDetail",
-    srcs = ["DefinitionDetail.svelte"],
+    srcs = ["DefinitionDetail.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":BackButton",
         ":Breadcrumb",
         ":RunsBrowser",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "ExampleDetail",
-    srcs = ["ExampleDetail.svelte"],
+    srcs = ["ExampleDetail.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":BackButton",
         ":Breadcrumb",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:FileLink",
         "//props/frontend/src/lib:SnapshotLink",
@@ -156,44 +232,60 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "RunsBrowser",
-    srcs = ["RunsBrowser.svelte"],
+    srcs = ["RunsBrowser.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":BackButton",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:ExampleLink",
         "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:status",
+        "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "RunDetail",
-    srcs = ["RunDetail.svelte"],
+    srcs = ["RunDetail.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":BackButton",
         ":Breadcrumb",
         ":FileViewer",
         ":GradingEdges",
         ":LLMRequestViewer",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:ExampleLink",
         "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:status",
+        "//props/frontend/src/lib:toast",
     ],
 )
 
-js_library(
+ts_library(
     name = "RunTriggerModal",
-    srcs = ["RunTriggerModal.svelte"],
+    srcs = ["RunTriggerModal.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:toast",
+        "//props/frontend/src/lib:types",
     ],
 )

@@ -117,9 +117,9 @@ repos:
         language: system
         files: ^(cluster|website)/.*\.md$
 
-  # NOTE: ESLint and svelte-check are handled by Bazel:
+  # NOTE: ESLint and TypeScript type checking are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
-  # - svelte-check: bazel test //props/frontend:svelte_check_test
+  # - TypeScript: ts_library targets type-check when built.
 
   # Buildifier - Bazel/Starlark formatting and linting — buildifier provided by devShell / web-session via Nix
   - repo: local
@@ -188,7 +188,7 @@ repos:
         name: prettier
         entry: prettier --write --ignore-unknown --list-different
         language: system
-        files: "\\.(js|mjs|cjs|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
+        files: "\\.(js|mjs|cjs|jsx|ts|tsx|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent frontends (1 Svelte, 3 React).
+This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent React frontends.
 
 ---
 
@@ -123,11 +123,9 @@ npm.npm_translate_lock(
       "@eslint/js": [""],
       "@typescript-eslint/eslint-plugin": [""],
       "@typescript-eslint/parser": [""],
-      "eslint-plugin-svelte": [""],
-      "eslint-plugin-import": [""],
+      "eslint-plugin-import-x": [""],
       "eslint-plugin-react": [""],
       "eslint-plugin-react-hooks": [""],
-      "svelte-eslint-parser": [""],
       "globals": [""],
   },
   ```
@@ -136,11 +134,12 @@ npm.npm_translate_lock(
 
 The ducktape repository currently uses aspect_rules_js for:
 
-- **Props frontend** (SvelteKit): Vite build, svelte-check, storybook, playwright visual tests
+- **Props frontend** (React + Mantine): esbuild, TypeScript checks, Puppeteer visual harness
 - **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
+- **study_casino frontend** (React): browser frontend
 - **rspcache admin_ui** (React): Vite build
 
-All use cases work well for bundling and dev servers, but Playwright test runner hits the module identity issue (#1).
+Bundling and dev servers work across these projects. Props uses its Puppeteer harness; the Playwright module-identity issue (#1) remains relevant for projects that use Playwright.
 
 ---
 
@@ -383,7 +382,7 @@ Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources
 
 ## 10. Recommended Setup for Ducktape
 
-Given the current architecture (1 Svelte frontend, 3 React frontends):
+Given the current architecture (4 React frontends):
 
 ### Primary Stack
 
@@ -430,7 +429,7 @@ Given the current architecture (1 Svelte frontend, 3 React frontends):
 
 3. **ESLint Integration**
    - Set up aspect_rules_lint configuration
-   - Test with all three frontends (svelte-check, eslint combo)
+   - Test all four current frontends with their TypeScript and ESLint checks
    - Configure hoisting for all required plugins
 
 4. **Cross-Frontend Shared Packages**

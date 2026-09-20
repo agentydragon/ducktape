@@ -2,10 +2,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
+    "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "bundler",
-    "allowJs": true,
-    "checkJs": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -20,5 +19,5 @@
       "$components/*": ["src/components/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"]
 }

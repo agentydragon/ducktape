@@ -1,76 +1,105 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
     "//props/frontend:__subpackages__",
 ])
 
-# Page libraries with explicit deps
-
-js_library(
+ts_library(
     name = "RunDetailPage",
-    srcs = ["RunDetailPage.svelte"],
-    deps = ["//props/frontend/src/components:RunDetail"],
+    srcs = ["RunDetailPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/components:RunDetail",
+    ],
 )
 
-js_library(
+ts_library(
     name = "RunsPage",
-    srcs = ["RunsPage.svelte"],
+    srcs = ["RunsPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/components:RunsBrowser",
         "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "DefinitionDetailPage",
-    srcs = ["DefinitionDetailPage.svelte"],
+    srcs = ["DefinitionDetailPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/components:DefinitionDetail",
         "//props/frontend/src/lib:client",
     ],
 )
 
-js_library(
+ts_library(
     name = "ExamplesPage",
-    srcs = ["ExamplesPage.svelte"],
+    srcs = ["ExamplesPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/components:ExampleDetail",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:router",
     ],
 )
 
-js_library(
+ts_library(
     name = "SnapshotsPage",
-    srcs = ["SnapshotsPage.svelte"],
+    srcs = ["SnapshotsPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:router",
     ],
 )
 
-js_library(
+ts_library(
     name = "OverviewPage",
-    srcs = ["OverviewPage.svelte"],
+    srcs = ["OverviewPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
-        "//props/frontend/src/components:TabButton",
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DefinitionsTable",
         "//props/frontend/src/components/stats:DistributionChart",
         "//props/frontend/src/components/stats:SummaryCards",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "SnapshotDetailPage",
-    srcs = ["SnapshotDetailPage.svelte"],
+    srcs = ["SnapshotDetailPage.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/components:BackButton",
         "//props/frontend/src/components:Breadcrumb",
         "//props/frontend/src/components:CopyButton",
@@ -82,8 +111,8 @@ js_library(
         "//props/frontend/src/lib:OccurrenceLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
-        "//props/frontend/src/lib:expansionState",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:toast",
     ],
 )

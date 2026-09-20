@@ -1,13 +1,20 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
-# Link npm packages for this workspace member
+# Link npm packages for this workspace member.
 npm_link_all_packages(name = "node_modules")
 
-# Export config files
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    visibility = ["//props/frontend:__subpackages__"],
+)
+
+# Export config files.
 exports_files([
     ".prettierrc",
     "tsconfig.json",
@@ -19,25 +26,32 @@ exports_files(
 )
 
 # ============================================================
-# App entry point (transitive deps pull in all sources)
+# App entry point
 # ============================================================
 
 js_library(
     name = "app_css",
     srcs = ["src/app.css"],
+    deps = [
+        ":node_modules/@mantine/core",
+        ":node_modules/@mantine/notifications",
+        ":node_modules/highlight.js",
+        ":node_modules/tailwindcss",
+    ],
 )
 
-js_library(
+ts_library(
     name = "app",
-    srcs = [
-        "src/App.svelte",
-        "src/main.ts",
-    ],
+    srcs = ["src/App.tsx"],
+    tsconfig = ":tsconfig",
     deps = [
-        ":app_css",
-        ":node_modules/svelte",
+        ":node_modules/@mantine/core",
+        ":node_modules/@mantine/notifications",
+        ":node_modules/@types/react",
+        ":node_modules/react",
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
         "//props/frontend/src/pages:DefinitionDetailPage",
@@ -47,6 +61,23 @@ js_library(
         "//props/frontend/src/pages:RunsPage",
         "//props/frontend/src/pages:SnapshotDetailPage",
         "//props/frontend/src/pages:SnapshotsPage",
+    ],
+)
+
+ts_library(
+    name = "main",
+    srcs = [
+        "src/assets.d.ts",
+        "src/main.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":app",
+        ":app_css",
+        ":node_modules/@types/react",
+        ":node_modules/@types/react-dom",
+        ":node_modules/react",
+        ":node_modules/react-dom",
     ],
 )
 
@@ -61,10 +92,11 @@ js_binary(
     data = [
         "dev.mjs",
         "index.html",
-        "svelte.config.js",
         "tsconfig.json",
-        ":app",
-        ":node_modules",
+        ":main",
+        ":node_modules/esbuild",
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/tailwindcss",
         "//props/backend:backend_cli",
         "//props/frontend/src/lib:schema",
     ],
@@ -76,58 +108,33 @@ js_binary(
 # Production bundle
 # ============================================================
 
-# Svelte + Tailwind plugins for the native esbuild() rule (see spa_bundle).
+# Tailwind plugin and aliases for the native esbuild() rule (see spa_bundle).
 js_library(
     name = "esbuild_config",
     srcs = ["esbuild_config.mjs"],
     deps = [
         ":node_modules/esbuild-plugin-tailwindcss",
-        ":node_modules/esbuild-svelte",
-        ":node_modules/svelte",
+        ":node_modules/react-dom",
         ":node_modules/tailwindcss",
     ],
 )
 
 # index.html is served separately by the backend (packaged at /frontend, with
-# the bundle under /frontend/dist), so it is not copied into the bundle dir.
+# the bundle under /frontend/dist).
 spa_bundle(
     name = "bundle",
     config = ":esbuild_config",
-    entry_point = "src/main.ts",
-    index_html = None,
-    # esbuild-svelte with `css: injected` rejects "linked" source maps.
-    sourcemap = "external",
+    entry_point = "src/main.tsx",
+    # CSS imports are bundled by esbuild; keep the link in index.html for the emitted stylesheet.
+    sourcemap = "linked",
     splitting = True,
     visibility = ["//props/backend:__pkg__"],
-    # The app's components import many npm packages (lucide-svelte, svelte-sonner,
-    # highlight.js, chart.js, …) without per-file js_library npm deps; the whole
-    # linked node_modules makes them resolvable, as the old driver's nodePaths did.
     deps = [
-        ":app",
-        ":node_modules",
+        ":main",
+        # Mantine hooks import react-dom as a peer dependency. Make that runtime
+        # package visible to esbuild's Bazel-aware resolver.
+        ":node_modules/react-dom",
     ],
-)
-
-# ============================================================
-# Type checking
-# ============================================================
-
-# Run: bazel test //props/frontend:svelte_check_test
-svelte_check_bin.svelte_check_test(
-    name = "svelte_check_test",
-    args = [
-        "--tsconfig",
-        "tsconfig.json",
-    ],
-    chdir = package_name(),
-    data = [
-        "svelte.config.js",
-        "tsconfig.json",
-        ":app",
-        ":node_modules",
-        "//props/frontend/src/lib:schema",
-    ],
-    tags = ["lint"],
 )
 
 # ============================================================
@@ -140,16 +147,22 @@ js_library(
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-js_library(
+ts_library(
     name = "harness_lib",
     srcs = [
-        "tests/harness/harness.ts",
-        "tests/harness/index.html",
+        "tests/harness/assets.d.ts",
+        "tests/harness/harness.tsx",
+        "tests/harness/scenarios.d.mts",
     ] + glob(["tests/harness/fixtures/*.ts"]),
     tags = ["no-lint"],
+    tsconfig = ":tsconfig",
     deps = [
         ":app_css",
-        ":node_modules/svelte",
+        ":node_modules/@mantine/core",
+        ":node_modules/@types/react",
+        ":node_modules/@types/react-dom",
+        ":node_modules/react",
+        ":node_modules/react-dom",
         ":scenarios",
         "//props/frontend/src/components:DefinitionDetail",
         "//props/frontend/src/components:FileViewer",
@@ -159,6 +172,7 @@ js_library(
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DistributionChart",
         "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/pages:SnapshotDetailPage",
     ],
 )
@@ -168,7 +182,9 @@ js_binary(
     data = [
         "tests/harness/esbuild.config.mjs",
         ":harness_lib",
-        ":node_modules",
+        ":node_modules/esbuild",
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/tailwindcss",
     ],
     entry_point = "tests/harness/esbuild.config.mjs",
 )
@@ -201,7 +217,6 @@ filegroup(
 
 js_test(
     name = "router_test",
-    data = [":node_modules"],
     entry_point = "tests/router.test.mjs",
 )
 

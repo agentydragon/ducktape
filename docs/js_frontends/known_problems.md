@@ -1,5 +1,7 @@
 # Known Problems with JS Frontend Bazel Integration
 
+The Props-specific Storybook/Vite and Playwright findings below describe the previous Svelte frontend. Props now uses a React + Mantine esbuild app and a Puppeteer visual harness; the Bazel workspace and module-resolution observations may still apply to other frontends.
+
 ## 1. Playwright Module Identity Issue
 
 **Symptom**: Playwright crashes with "Playwright Test did not expect test() to be called here" and mentions "two different versions of @playwright/test".
@@ -49,7 +51,7 @@ When we flatten the pnpm workspace (single package.json at root, no workspace me
 
 **Root Cause**: Storybook 8.x requires vite ^4.0.0 || ^5.0.0 || ^6.0.0. Cannot use vite 7.x.
 
-**Current Workaround**: Pinned vite to 6.3.5, @sveltejs/vite-plugin-svelte to 5.1.0.
+**Previous Svelte workaround**: Props pinned vite to 6.3.5 and @sveltejs/vite-plugin-svelte to 5.1.0. This no longer applies to Props; the frontend now uses esbuild.
 
 **Status**: Resolved, but constrains vite upgrades until Storybook catches up.
 
