@@ -7266,6 +7266,10 @@ spec:
       namespace: ducktape-flux
     - name: haku-console
       namespace: ducktape-flux
+    - name: ha-mcp
+      namespace: ducktape-flux
+    - name: tana-mcp
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
