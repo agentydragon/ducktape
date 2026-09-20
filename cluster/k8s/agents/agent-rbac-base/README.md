@@ -141,11 +141,11 @@ grant.
 ## Adding Agent RBAC for a New Service
 
 1. For service-specific or sensitive access, create `<service>/agent-rbac/` with:
-   - `flux-kustomization.yaml` — depends on service's namespace kustomization + agent RBAC base
    - `kustomization.yaml` — lists the RoleBinding YAML(s)
    - RoleBinding YAML(s) referencing the appropriate ClusterRole from this directory
-2. Add the `flux-kustomization.yaml` path to the root `cluster/k8s/kustomization.yaml`
-3. The service namespace kustomization has **zero coupling** to agent infrastructure
+2. Add the service's Flux Kustomization generator under `cluster/cdk8s/`; wire its
+   namespace and agent RBAC dependencies in `generate_manifests.py`.
+3. The service namespace kustomization has **zero coupling** to agent infrastructure.
 
 ## Authentication
 

@@ -245,7 +245,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
                 agent_dir / "app" / "cluster-metadata-reader.yaml",
                 agent_dir / "app" / "extended-diagnostics-reader.yaml",
                 k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
-                k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
+                k8s_dir / "flux" / "ducktape-flux" / "ducktape-flux-reader.yaml",
             )
         ),
         haku_console_objects,

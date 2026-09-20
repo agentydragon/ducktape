@@ -4,7 +4,6 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 exports_files(
     [
-        "flux-kustomization.yaml",
         "kustomization.yaml",
         "litellm.k8s.yaml",
     ],

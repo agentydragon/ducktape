@@ -282,7 +282,7 @@ EXTERNAL_ARTIFACT_KIND = "ExternalArtifact"
 
 async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
     """Run flux build and return (returncode, stdout, stderr)."""
-    kustomization_file = k8s_dir / "flux-system" / "gotk-sync.yaml"
+    kustomization_file = k8s_dir / "flux" / "flux-system" / "gotk-sync.yaml"
 
     if not kustomization_file.exists():
         raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")

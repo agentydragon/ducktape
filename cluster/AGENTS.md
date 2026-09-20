@@ -179,10 +179,11 @@ read <skills/seaweed_operator/SKILL.md> before operating on them.
 
 ## Flux Kustomization Wiring
 
-Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
-`cluster/k8s/kustomization.yaml`. A directory's own `kustomization.yaml` lists only the
-manifests Flux applies at `spec.path` — **never its `flux-kustomization.yaml`**, which
-would apply it redundantly.
+Flux `Kustomization` resources are defined together in the generated
+`cluster/k8s/flux/kustomizations.k8s.yaml`, applied from the **root**
+`cluster/k8s/kustomization.yaml` through `flux/`. A directory's own `kustomization.yaml`
+lists only the manifests Flux applies at `spec.path` — never its Flux Kustomization,
+which lives in the central chart.
 
 ### Migrating stateful Flux Kustomizations
 
@@ -198,8 +199,8 @@ does not make deletion safe.
 **Do not mix HelmReleases with CRD instances in the same Kustomization unless the
 path is an explicitly documented consolidation exception.**
 Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
-each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
-caught by `//cluster/validation:test_crd_layering`.
+each layer's Flux Kustomization with `dependsOn` on the previous. Violations are caught
+by `//cluster/validation:test_crd_layering`.
 
 The paths listed in `MIXED_CRD_LAYERING_EXCEPTIONS` are intentional exceptions while
 Flux Kustomizations are being consolidated to reduce needless artifacts and long
@@ -215,15 +216,15 @@ An app whose source ducktape does **not** own — a third-party image, Helm char
 tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
 `loom/wayback/deploy/`, `haku/x/dispatch/deploy/` — moves entirely to
 `cluster/k8s/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
-layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). Every
-`flux-kustomization.yaml` under it carries `spec.suspend: true` and
-`metadata.annotations.ducktape.org/parked: "true"`, and is **never** referenced from
-root `cluster/k8s/kustomization.yaml`. `cluster/validation/test_cluster_integration.py`'s
-`test_parked_manifests_location` enforces both directions: the annotation is required
-under `cluster/k8s/parked/` and forbidden anywhere else.
+layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). Its Flux Kustomization
+remains in the central chart with `spec.suspend: true` and
+`metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
+the parked workload manifests. `cluster/validation/test_cluster_integration.py`'s
+`test_parked_manifests_location` checks that the annotation matches whether `spec.path`
+is under `cluster/k8s/parked/`.
 
-Revive by reversing all three: drop the annotation, drop (or flip) `suspend`, move the
-directory back out of `parked/`, and add its `flux-kustomization.yaml` back to root.
+Revive by reversing all three: drop the annotation, drop (or flip) `suspend`, and move
+the directory back out of `parked/`. Its Kustomization stays in the central chart.
 
 Ducktape-owned code is never part of this convention — it keeps manifests under its own
 `<project>/deploy/`, active or suspended, right beside the source. Current inventory and
@@ -231,8 +232,8 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every `*.k8s.yaml` under `cluster/k8s`, and the `flux-kustomization.yaml` and
-`kustomization.yaml` beside one in `agentplane-{staging,testing}`, `litellm/app`,
+Every `*.k8s.yaml` under `cluster/k8s`, and the `kustomization.yaml` beside generated
+resources in `agentplane-{staging,testing}`, `litellm/app`,
 `agents/ha-mcp/app`, `aiquota`, `artifact-generators`, `clickhouse/schema`,
 `external-creds`, `haku/console{,/db,/migration}` and `monitoring/etcd`, is
 `bb run //cluster/cdk8s:generate_manifests` output

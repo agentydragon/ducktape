@@ -3,9 +3,9 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
-The `haku-console.k8s.yaml`, `flux-kustomization.yaml` and `kustomization.yaml` here are
-generated from `cluster/cdk8s/haku/` (`charts.py` composes the one Kustomization —
-database, migration, console and API proxy; `console_config.py` is the non-secret config
+The `haku-console.k8s.yaml` and `kustomization.yaml` here are generated from
+`cluster/cdk8s/haku/` (`charts.py` composes the database, migration, console and API proxy
+in one Kustomization, emitted in the central Flux chart; `console_config.py` is the non-secret config
 the `haku-console-config` ConfigMap carries, rendered and checked through the console's
 own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
 Secrets, `indexer-role.sql` (a `configMapGenerator` input, so a changed script re-hashes

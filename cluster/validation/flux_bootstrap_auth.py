@@ -27,7 +27,7 @@ def _sops_managed_secret_keys(k8s_dir: Path) -> set[tuple[str, str]]:
 
 
 def _bootstrap_gitrepositories(k8s_dir: Path) -> list[GitRepositoryResource]:
-    bootstrap_sync = k8s_dir / "flux-system" / "gotk-sync.yaml"
+    bootstrap_sync = k8s_dir / "flux" / "flux-system" / "gotk-sync.yaml"
     if not bootstrap_sync.exists():
         return []
     return [
