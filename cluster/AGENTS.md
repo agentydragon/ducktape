@@ -206,7 +206,7 @@ Kustomizations: admitting the HelmRelease does not install its CRDs synchronousl
 `//cluster/validation:test_crd_layering`.
 
 - Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
-- Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
+- Grouped example: `k8s/langfuse/` — one Flux unit composing namespace, secrets, database, cache, storage, and app directories
 
 ### Parked (non-ducktape-owned) application manifests
 

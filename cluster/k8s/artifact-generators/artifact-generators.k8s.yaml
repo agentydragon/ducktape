@@ -180,11 +180,6 @@ spec:
       name: haku-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/langfuse/namespace/**"
-          to: "@artifact/cluster/k8s/langfuse/namespace/"
-      name: langfuse-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/volsync/**"
           to: "@artifact/cluster/k8s/volsync/"
       name: volsync
@@ -253,11 +248,6 @@ spec:
         - from: "@repo/cluster/k8s/haku/rbac/**"
           to: "@artifact/cluster/k8s/haku/rbac/"
       name: haku-rbac
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/secrets/**"
-          to: "@artifact/cluster/k8s/langfuse/secrets/"
-      name: langfuse-secrets
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/litellm/namespace/**"
@@ -798,24 +788,9 @@ spec:
       name: kvm-device-plugin
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/langfuse/app/**"
-          to: "@artifact/cluster/k8s/langfuse/app/"
-      name: langfuse-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/seaweed/**"
-          to: "@artifact/cluster/k8s/langfuse/seaweed/"
-      name: langfuse-seaweed
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/cache/**"
-          to: "@artifact/cluster/k8s/langfuse/cache/"
-      name: langfuse-cache
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/db/**"
-          to: "@artifact/cluster/k8s/langfuse/db/"
-      name: langfuse-db
+        - from: "@repo/cluster/k8s/langfuse/**"
+          to: "@artifact/cluster/k8s/langfuse/"
+      name: langfuse
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/litellm/db/**"
@@ -926,11 +901,6 @@ spec:
         - from: "@repo/cluster/k8s/seaweedfs/forgejo-bucket/**"
           to: "@artifact/cluster/k8s/seaweedfs/forgejo-bucket/"
       name: seaweedfs-forgejo-bucket
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/langfuse-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/langfuse-bucket/"
-      name: seaweedfs-langfuse-bucket
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/seaweedfs/loom-gym-bucket/**"
