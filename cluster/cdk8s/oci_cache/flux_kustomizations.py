@@ -31,7 +31,7 @@ def oci_cache(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/oci-cache",
+            path="./",
             prune=True,
             # Do not delete the cache namespace if this Flux owner is removed later.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

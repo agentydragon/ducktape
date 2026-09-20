@@ -24,7 +24,7 @@ def website(chart: Chart, gateway: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/website",
+            path="./",
             prune=True,
             wait=True,
             depends_on=[

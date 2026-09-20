@@ -29,7 +29,7 @@ def tofu_state_db(chart: Chart, cnpg: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/tofu-state",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,

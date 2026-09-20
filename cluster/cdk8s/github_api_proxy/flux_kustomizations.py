@@ -34,7 +34,7 @@ def github_api_proxy(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/github-api-proxy",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,

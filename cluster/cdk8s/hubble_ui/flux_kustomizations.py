@@ -19,7 +19,7 @@ def hubble_ui(chart: Chart) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/hubble-ui",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

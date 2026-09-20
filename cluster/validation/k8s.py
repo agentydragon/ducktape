@@ -353,11 +353,18 @@ class ImagePolicyResource(K8sResource):
 
 class _ArtifactCopy(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    from_path: str = Field(default="", alias="from")
     to: str = ""
 
     def artifact_dir(self) -> str:
-        """The repo-relative directory this copy lands in: `@artifact/cluster/k8s/parked/` -> `cluster/k8s/parked`."""
+        """The artifact-relative directory this copy lands in; an empty string is the artifact root."""
         return self.to.removeprefix("@artifact/").strip("/")
+
+    def local_source_dir(self) -> str | None:
+        """Return the copied source directory under `cluster/k8s`, if it comes from this repo."""
+        source = self.from_path.removeprefix("@repo/").removesuffix("/**").strip("/")
+        prefix = "cluster/k8s/"
+        return source.removeprefix(prefix) if source.startswith(prefix) else None
 
 
 class _ArtifactGeneratorArtifact(BaseModel):

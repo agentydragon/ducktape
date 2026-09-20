@@ -25,7 +25,7 @@ def authentik(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization)
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/authentik",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
@@ -63,7 +63,7 @@ def authentik_db_backups(chart: Chart, cnpg: Kustomization, seaweedfs_cluster: K
             interval="10m",
             retry_interval="1m",
             timeout="15m",
-            path="./cluster/k8s/authentik/db-backups",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -111,7 +111,7 @@ def sso_providers_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/authentik/sso-providers-tf",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

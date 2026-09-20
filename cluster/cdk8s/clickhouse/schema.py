@@ -103,7 +103,7 @@ def clickhouse_schema(flux_chart: Chart, root: Path, clickhouse: Kustomization) 
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
             ),
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             wait=True,
             health_checks=health_checks(rendered_chart, ("Job",)),

@@ -26,7 +26,7 @@ def volsync(chart: Chart, snapshot_controller: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/volsync",
+            path="./",
             prune=True,
             wait=True,
             depends_on=[flux_kustomization_depends_on(snapshot_controller)],

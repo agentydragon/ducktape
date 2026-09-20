@@ -35,7 +35,7 @@ def seaweedfs_cluster(
         spec=KustomizationSpec(
             suspend=False,
             interval="10m",
-            path="./cluster/k8s/seaweedfs/cluster",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -65,7 +65,7 @@ def seaweedfs_filer_db(chart: Chart, seaweedfs_namespace: Kustomization, cnpg: K
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/seaweedfs/db",
+            path="./",
             prune=True,
             wait=True,
             # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
@@ -87,7 +87,7 @@ def seaweedfs_drivefs_artifacts_bucket(chart: Chart, seaweedfs_cluster: Kustomiz
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/drivefs-artifacts-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -117,7 +117,7 @@ def seaweedfs_external_credentials(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/external-credentials",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -142,7 +142,7 @@ def seaweedfs_forgejo_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> 
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/forgejo-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -170,7 +170,7 @@ def seaweedfs_loom_gym_bucket(chart: Chart, seaweedfs_cluster: Kustomization) ->
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/loom-gym-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -197,7 +197,7 @@ def seaweedfs_monitoring(
         spec=KustomizationSpec(
             suspend=False,
             interval="10m",
-            path="./cluster/k8s/seaweedfs/monitoring",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -219,7 +219,7 @@ def seaweedfs_namespace(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             suspend=False,
             interval="10m",
-            path="./cluster/k8s/seaweedfs/namespace",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -237,7 +237,7 @@ def seaweedfs_operator(chart: Chart, seaweedfs_namespace: Kustomization) -> Kust
             suspend=False,
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/operator",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -266,7 +266,7 @@ def seaweedfs_pr_visuals_bucket(chart: Chart, seaweedfs_cluster: Kustomization) 
             interval="1h",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/seaweedfs/pr-visuals-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -296,7 +296,7 @@ def seaweedfs_public_coder_agent_backups_bucket(chart: Chart, seaweedfs_cluster:
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/public-coder-agent-backups-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -324,7 +324,7 @@ def seaweedfs_public_s3(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/public-s3",
+            path="./",
             prune=True,
             # Gate on Bucket CRs managed in this repo that the public identities target.
             # Claude and DriveFS identities authenticate through native IAM; static
@@ -411,7 +411,7 @@ def seaweedfs_registry_cache_bucket(chart: Chart, seaweedfs_cluster: Kustomizati
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/registry-cache-bucket",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -444,7 +444,7 @@ def seaweedfs_secrets(
         spec=KustomizationSpec(
             suspend=False,
             interval="10m",
-            path="./cluster/k8s/seaweedfs/secrets",
+            path="./",
             prune=True,
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,

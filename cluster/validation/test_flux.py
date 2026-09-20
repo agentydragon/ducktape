@@ -9,7 +9,7 @@ import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import CyclicDependencyError, assert_no_cycles
-from cluster.validation.flux import parse_flux_kustomizations
+from cluster.validation.flux import FluxKustomizationSpec, SourceRef, parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -88,6 +88,26 @@ spec:
         spec = parse_flux_kustomizations(flux_file)["parked-app"]
 
         assert spec.parked
+
+    def test_resolves_root_external_artifact_to_copy_source(self, tmp_path: Path) -> None:
+        """A root-path ExternalArtifact validates its local source directory from copy metadata."""
+        k8s_dir = tmp_path / "cluster" / "k8s"
+        source_dir = k8s_dir / "activitywatch"
+        source_dir.mkdir(parents=True)
+        spec = FluxKustomizationSpec(
+            namespace="ducktape-flux", path="./", source_ref=SourceRef(kind="ExternalArtifact", name="activitywatch")
+        )
+
+        assert (
+            spec.local_dir(k8s_dir, artifact_source_paths={("ducktape-flux", "activitywatch"): {"": "activitywatch"}})
+            == source_dir.resolve()
+        )
+        assert (
+            FluxKustomizationSpec(
+                namespace="ducktape-flux", path="./", source_ref=SourceRef(kind="GitRepository", name="ducktape")
+            ).local_dir(k8s_dir)
+            is None
+        )
 
 
 def _write_yaml(path, content: str) -> None:

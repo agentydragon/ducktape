@@ -26,7 +26,7 @@ def external_secrets_config(chart: Chart, external_secrets_operator: Kustomizati
         spec=KustomizationSpec(
             interval="10m0s",
             retry_interval="30s",
-            path="./cluster/k8s/external-secrets/config",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -79,7 +79,7 @@ def external_secrets_operator(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/external-secrets/operator",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

@@ -529,7 +529,7 @@ def ha_mcp(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
             ),
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[

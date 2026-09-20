@@ -25,7 +25,7 @@ def seaweedfs_csi(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomizati
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/seaweedfs-csi",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[

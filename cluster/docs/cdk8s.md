@@ -22,6 +22,8 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
    `artifact-generators` imports the deployed source-watcher CRD and keeps its artifact
    inventory explicit in `cdk8s/artifact_generators.py`; `test_actions_artifact` checks
    that inventory against the active Flux consumers and their rendered Kustomize output.
+   A single-directory bundle copies its contents to the artifact root and uses Flux path
+   `./`; bundles that share bases keep their repository-relative paths in the artifact.
 2. **One or a few generated files** in an otherwise hand-written directory, each a
    `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A
    ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,

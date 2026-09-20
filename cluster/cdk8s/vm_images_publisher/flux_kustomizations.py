@@ -25,7 +25,7 @@ def vm_images_publisher(chart: Chart, seaweedfs_cluster: Kustomization) -> Kusto
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/vm-images-publisher",
+            path="./",
             prune=True,
             # attic-reader-netrc.sops.yaml is SOPS-encrypted; without this, Flux applies
             # the ciphertext literally and the publisher's attic auth (netrc) is garbage.

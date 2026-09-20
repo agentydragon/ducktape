@@ -33,7 +33,7 @@ def litellm_keys_tf(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path="./cluster/k8s/litellm/keys-tf",
+            path="./",
             prune=True,
             # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
             # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key

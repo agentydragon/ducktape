@@ -30,7 +30,7 @@ def alloy_otlp_bearer_token_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/alloy-otlp-bearer-token-tf",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -64,7 +64,7 @@ def alloy(chart: Chart, mimir: Kustomization, grafana_helmrepository: Kustomizat
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/alloy",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -90,7 +90,7 @@ def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomiza
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path="./cluster/k8s/monitoring/cilium",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -146,7 +146,7 @@ def grafana_helmrepository(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-helmrepository",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -195,7 +195,7 @@ def grafana_operator(chart: Chart, monitoring_namespace: Kustomization) -> Kusto
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-operator",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -223,7 +223,7 @@ def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/loki",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-loki", namespace="ducktape-flux"
@@ -262,7 +262,7 @@ def mimir(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/mimir",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -307,7 +307,7 @@ def monitoring_namespace(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/namespace",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -328,7 +328,7 @@ def monitoring_rules(chart: Chart, monitoring_crds: Kustomization) -> Kustomizat
         "monitoring-rules",
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/monitoring/rules",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -356,7 +356,7 @@ def monitoring_stack(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/stack",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -411,7 +411,7 @@ def tempo(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/tempo",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,

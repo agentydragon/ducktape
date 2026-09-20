@@ -21,7 +21,7 @@ def dcgm_exporter(chart: Chart, nvidia_device_plugin: Kustomization, monitoring_
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/dcgm-exporter",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

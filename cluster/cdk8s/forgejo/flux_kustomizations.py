@@ -28,7 +28,7 @@ def forgejo_agentydragon_repos(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/agentydragon-repos",
+            path="./",
             prune=True,
             wait=True,
             # Wait for the Terraform apply (adopts ducktape/gaffer-private, creates
@@ -63,7 +63,7 @@ def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_stat
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/agentydragon",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -100,7 +100,7 @@ def forgejo(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/forgejo",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
@@ -142,7 +142,7 @@ def budget_ledger(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/budget-ledger",
+            path="./",
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service user + the
@@ -177,7 +177,7 @@ def budget_namespace(chart: Chart) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="1h",
-            path="./cluster/k8s/forgejo/budget-namespace",
+            path="./",
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -199,7 +199,7 @@ def forgejo_cache(chart: Chart, valkey: Kustomization, local_path_provisioner: K
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/forgejo/cache",
+            path="./",
             prune=True,
             wait=True,
             # Retry until the forgejo aggregate creates the Namespace. Waiting for
@@ -224,7 +224,7 @@ def forgejo_claude(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/claude",
+            path="./",
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the claude Forgejo service user + the
@@ -268,7 +268,7 @@ def cpap_data(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/cpap-data",
+            path="./",
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service users + the
@@ -312,7 +312,7 @@ def haku_state(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/haku-state",
+            path="./",
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service user + the

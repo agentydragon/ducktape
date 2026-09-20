@@ -21,7 +21,7 @@ def agentplane_crds(chart: Chart) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="2m",
-            path="./cluster/k8s/agentplane-crds",
+            path="./",
             # Pruning a CRD deletes every instance with it; removing one is a deliberate manual step, as
             # for the other CRD Kustomizations (external-secrets-crds, snapshot-controller-crds).
             prune=False,

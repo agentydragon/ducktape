@@ -30,7 +30,7 @@ def study_casino(chart: Chart, cnpg: Kustomization, external_secrets_operator: K
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/study-casino",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(

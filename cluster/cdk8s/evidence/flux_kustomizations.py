@@ -20,7 +20,7 @@ def evidence_market_roster(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/evidence",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

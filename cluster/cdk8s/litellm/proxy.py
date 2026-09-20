@@ -442,7 +442,7 @@ def litellm(
         "litellm",
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/litellm",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(

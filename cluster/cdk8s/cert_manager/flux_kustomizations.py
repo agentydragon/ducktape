@@ -30,7 +30,7 @@ def cert_manager(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/cert-manager/app",
+            path="./",
             prune=True,
             wait=True,
             # Health check ensures cert-manager pods are ready before dependents try to create Certificates
@@ -122,7 +122,7 @@ def cert_manager_issuer_config(chart: Chart) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/cert-manager/issuer-config",
+            path="./",
             prune=True,
             wait=True,
         ),
@@ -141,7 +141,7 @@ def cert_manager_trust(chart: Chart, cert_manager: Kustomization, kyverno: Kusto
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/cert-manager/trust",
+            path="./",
             prune=True,
             wait=True,
             # Health check ensures trust-manager is ready before ClusterIssuers depend on it

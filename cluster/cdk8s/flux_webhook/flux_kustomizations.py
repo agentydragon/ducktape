@@ -28,7 +28,7 @@ def flux_webhook(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/flux-webhook",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

@@ -24,7 +24,7 @@ def nvidia_runtimeclass(chart: Chart) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/nvidia-runtimeclass",
+            path="./",
             prune=True,
         ),
         description="NVIDIA RuntimeClass prerequisite for GPU workloads.",

@@ -25,7 +25,7 @@ def metrics_server(chart: Chart, kyverno: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/metrics-server",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[

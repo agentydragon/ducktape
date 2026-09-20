@@ -31,7 +31,7 @@ def forgejo_images(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo-images",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

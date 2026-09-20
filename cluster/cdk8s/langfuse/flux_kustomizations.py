@@ -28,7 +28,7 @@ def langfuse(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/langfuse",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(

@@ -30,7 +30,7 @@ def gateway(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/gateway",
+            path="./",
             prune=True,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
