@@ -1,12 +1,11 @@
-# Nix RBE Image Experiments
+# Nix RBE Image Experiment
 
-Experimental approaches for Nix-based BuildBuddy RBE worker images.
+Experimental Nix-based BuildBuddy RBE worker image built with dockerTools.
 
 **The primary (working) approach** is in `devinfra/rbe_image/Dockerfile` — the
 Ubuntu base image with Nix devtools baked in via `nix build .#rbetools`.
 
-This directory contains two alternative approaches that were explored but have
-limitations:
+This directory contains an alternative that was explored but has limitations:
 
 ## `default.nix` — dockerTools.buildLayeredImage
 
@@ -27,21 +26,19 @@ directory exists in the image. A dockerTools image built that way now runs
 image under Firecracker is untested — goinit's pivot-root is a separate question from the
 loader — but the stated blocker for the dockerTools variant no longer holds as written.
 
-## `nixos.nix` — NixOS container (docker-image.nix)
+## NixOS container variant
 
-Full NixOS container with systemd, envfs, nix-ld. Would handle all FHS
-compatibility automatically.
+The NixOS worker implementation now lives in
+[the sibling worker directory](../nix_rbe_worker/README.md), with its module,
+flake outputs, and shared package list together.
 
-**Limitation**: BuildBuddy's Firecracker goinit does NOT run the container's
-`/init` — it pivot-roots into the rootfs and spawns its own vmexec service.
-systemd never starts, so envfs/nix-ld activation scripts don't run.
+## Shared package list
 
-## `packages.nix` — Shared package list
-
-Shared between both experimental images and potentially the Dockerfile approach.
+The worker package list used by this image is in
+[the worker directory](../nix_rbe_worker/packages.nix).
 
 ## See also
 
 - <devinfra/rbe_image/Dockerfile> — the working Ubuntu+Nix approach
 - <devinfra/docs/bb_remote_internals.md> — how `bb remote` and Firecracker work
-- <x/nix_rbe_image/TODO.md> — remaining work items
+- [TODO.md](TODO.md) — remaining work items

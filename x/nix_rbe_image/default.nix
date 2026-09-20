@@ -28,7 +28,7 @@
 # - Standard build tools (gcc, binutils, make, git, python3, java)
 { pkgs }:
 let
-  packages = import ./packages.nix { inherit pkgs; };
+  packages = import ../nix_rbe_worker/packages.nix { inherit pkgs; };
 
   # Merged environment with all packages on PATH.
   env = pkgs.buildEnv {

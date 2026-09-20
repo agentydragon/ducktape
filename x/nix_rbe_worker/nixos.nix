@@ -1,13 +1,13 @@
-# NixOS-based BuildBuddy RBE worker / runner image.
+# Experimental NixOS-based BuildBuddy RBE worker / runner image.
 #
 # Full NixOS container with systemd, envfs, nix-ld — all the NixOS Bazel
-# compatibility machinery. Intended for use as both:
-# - RBE container image (exec_properties container-image)
-# - bb remote runner VM (runner_exec_properties container-image)
+# compatibility machinery. This may be useful for RBE container and runner
+# images, but BuildBuddy's Firecracker goinit currently does not run /init;
+# see README.md before trying to use it.
 #
 # The runner VM use case requires a working init (systemd) to set up envfs,
-# nix-ld, and the environment. dockerTools images can't do this, but NixOS
-# containers boot /init → systemd → activation scripts → everything works.
+# nix-ld, and the environment. dockerTools images can't do this, but normal
+# NixOS container startup does.
 #
 # Build:  nix build .#nix-rbe-nixos
 # Load:   docker import result/tarball/*.tar.xz nix-rbe-nixos

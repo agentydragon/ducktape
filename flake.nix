@@ -85,6 +85,11 @@
         inherit system;
         config.allowUnfree = true;
       };
+      # Keep the experimental RBE worker's configuration and output definitions
+      # with the experiment; the root flake only registers its outputs.
+      nixRbeWorkerOutputs = import ./x/nix_rbe_worker/flake-outputs.nix {
+        inherit nixpkgs self system;
+      };
       artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
       rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
       artifactOverrides =
@@ -399,22 +404,24 @@
           inherit pkgs;
         };
       };
-      packages.${system} = import ./nix/flake/packages.nix {
-        inherit
-          self
-          system
-          pkgs
-          ducktapePkgs
-          gafferPkgs
-          home-manager
-          pkgsUnstable
-          pkgsMaster
-          nix-openclaw
-          ruffLatest
-          localOnlyPackages
-          devToolPackages
-          ;
-      };
+      packages.${system} =
+        (import ./nix/flake/packages.nix {
+          inherit
+            self
+            system
+            pkgs
+            ducktapePkgs
+            gafferPkgs
+            home-manager
+            pkgsUnstable
+            pkgsMaster
+            nix-openclaw
+            ruffLatest
+            localOnlyPackages
+            devToolPackages
+            ;
+        })
+        // nixRbeWorkerOutputs.packages.${system};
 
       homeConfigurations = {
         # NixOS VM
@@ -556,14 +563,6 @@
           ];
         };
 
-        # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
-        nix-rbe-worker = nixpkgs.lib.nixosSystem {
-          inherit system;
-          modules = [
-            ./x/nix_rbe_image/nixos.nix
-          ];
-        };
-
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is
         # worker.py on the anthropic Python SDK now, not `ant` (the anthropic-cli
@@ -575,8 +574,8 @@
             ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
         };
-
-      };
+      }
+      // nixRbeWorkerOutputs.nixosConfigurations;
 
       # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.
       nixOnDroidConfigurations = {
