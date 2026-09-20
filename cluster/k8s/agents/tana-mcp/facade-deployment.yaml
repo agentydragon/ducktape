@@ -60,7 +60,7 @@ spec:
             - name: MCP_FACADE_UPSTREAM__BEARER_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: tana-agentydragon-gmail-com-account-pat
+                  name: tana-mcp-pat
                   key: token
           resources:
             requests:

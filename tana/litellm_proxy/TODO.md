@@ -19,10 +19,12 @@ source-faithful to that evidence.
     blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
+- Make Tana auth deployment-safe:
+  - remove this section once the ESO distribution and central resigner write
+    path have landed and been verified live
 - Keep refresh-token ownership in the resigner:
-  - LiteLLM config gets the reflected refresh-token env var through the
-    standard `api_key: os.environ/...` reference; its custom handler uses the
-    resolved value but never owns the token
+  - LiteLLM reads the ESO-managed refresh-token env var through the standard
+    `api_key: os.environ/...` reference, but never rotates or persists it
   - LiteLLM may cache Firebase ID tokens, but must not persist or adopt rotated
     Firebase refresh tokens
   - the existing resigner remains the only component that maintains the

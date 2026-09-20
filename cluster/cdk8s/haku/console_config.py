@@ -388,8 +388,8 @@ def _mcp_servers() -> dict[str, Any]:
         "grocy_sf": _remote_oauth_server(
             "grocy-sf", "https://grocy-mcp-sf.allegedly.works/mcp", {"kind": "dynamic", "client_name": "Haku Console"}
         ),
-        # Haku Console authenticates directly with the account PAT. The credential lives only
-        # in haku-console; inner Haku agents receive proxied tool schemas/results, never the PAT.
+        # Haku Console authenticates directly with the account PAT. Its ESO consumer copy lives
+        # only in haku-console; inner Haku agents receive proxied tool schemas/results, never the PAT.
         "tana": _static_bearer_server("tana", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"),
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.

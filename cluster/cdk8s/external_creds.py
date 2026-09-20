@@ -35,7 +35,7 @@ class ApprovedConsumer:
 class Credential:
     """Non-secret metadata needed to render a credential's source-side grant."""
 
-    secret_file: str
+    secret_file: str | None
     secret_name: str
     consumers: tuple[ApprovedConsumer, ...] = ()
     namespace: str = NAMESPACE
@@ -143,12 +143,36 @@ CREDENTIALS = (
         secret_name="openclaw-telegram-bot-token",
         consumers=(ApprovedConsumer("claude-sandbox", "openclaw-telegram-bot-token-claude-sandbox-reader"),),
     ),
+    Credential(
+        secret_file="tana-firebase-refresh-token-seed.sops.yaml",
+        secret_name="tana-firebase-refresh-token-seed",
+        consumers=(ApprovedConsumer(NAMESPACE, "tana-firebase-refresh-token-seed-flux-reader"),),
+    ),
+    Credential(
+        secret_file=None,
+        secret_name="tana-firebase-refresh-token",
+        consumers=(
+            ApprovedConsumer("litellm", "tana-firebase-refresh-token-litellm-reader"),
+            ApprovedConsumer("tana-mcp", "tana-firebase-refresh-token-tana-mcp-reader"),
+        ),
+    ),
+    Credential(
+        secret_file="tana-pat.sops.yaml",
+        secret_name="tana-agentydragon-gmail-com-account-pat",
+        consumers=(
+            ApprovedConsumer("haku-console", "tana-agentydragon-gmail-com-account-pat-haku-console-reader"),
+            ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),
+        ),
+    ),
 )
 
 
 def kustomize_resources() -> list[str]:
     """Return generated source-side RBAC and canonical SOPS files."""
-    return ["external-creds.k8s.yaml", *(credential.secret_file for credential in CREDENTIALS)]
+    return [
+        "external-creds.k8s.yaml",
+        *(credential.secret_file for credential in CREDENTIALS if credential.secret_file is not None),
+    ]
 
 
 def chart(app: App) -> Chart:

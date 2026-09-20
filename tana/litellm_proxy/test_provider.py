@@ -883,7 +883,7 @@ def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:
 
 def test_reads_refresh_token_from_kubernetes_secret_json() -> None:
     def runner(args: list[str]) -> subprocess.CompletedProcess[str]:
-        assert args == ["kubectl", "get", "secret", "-n", "tana-mcp", "tana-firebase-refresh-token", "-o", "json"]
+        assert args == ["kubectl", "get", "secret", "-n", "tana-mcp", "tana-mcp-firebase-refresh-token", "-o", "json"]
         stdout = json.dumps({"data": {"refresh_token": base64.b64encode(b"refresh-token").decode("ascii")}})
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 

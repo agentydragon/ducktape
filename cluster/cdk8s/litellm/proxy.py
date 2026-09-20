@@ -180,7 +180,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _SecretEnv("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
                 _SecretEnv("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
                 _SecretEnv(
-                    "TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token", optional=True
+                    "TANA_FIREBASE_REFRESH_TOKEN", "litellm-tana-firebase-refresh-token", "refresh_token", optional=True
                 ),
             ),
             startup_failure_threshold=36,
@@ -425,6 +425,8 @@ def litellm(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    external_creds: Kustomization,
+    tana_firebase_refresh_token: Kustomization,
 ) -> Kustomization:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
 
@@ -455,7 +457,9 @@ def litellm(
             timeout="10m",
             retry_interval="1m",
             wait=True,
-            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
+            depends_on=flux_kustomization_depends_on_many(
+                cnpg, external_secrets_operator, monitoring_crds, external_creds, tana_firebase_refresh_token
+            ),
         ),
     )
     write_yaml(

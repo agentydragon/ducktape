@@ -6,7 +6,8 @@ Firebase session is dead, this sidecar:
 1. Reads the Firebase refresh token from a K8s Secret.
 2. Swaps it for a fresh Firebase ID token via securetoken.googleapis.com.
    If the response includes a rotated refresh token, writes it back to the
-   configured K8s Secret.
+   configured central runtime K8s Secret; ESO propagates it to each consumer
+   namespace.
 3. Uses the ID token to call Tana's `fetchCustomToken` Cloud Function, which
    returns a fresh Firebase custom token bound to the user's account.
 4. POSTs `tana://auth?token=<customToken>&providerId=tanaFirebaseToken` to
@@ -41,7 +42,8 @@ class ResignerConfig(BaseSettings):
     # Google's docs, so this is config, not a secret.
     api_key: str
     # The deployment supplies the Secret coordinates through its ConfigMap;
-    # there are no baked-in namespace, name, or key defaults.
+    # this setup points at the central runtime Secret, while ESO owns its
+    # separate consumer copies. There are no baked-in coordinate defaults.
     secret_namespace: str
     secret_name: str
     secret_key: str
@@ -191,7 +193,7 @@ async def _read_refresh_token(api: client.CoreV1Api, cfg: ResignerConfig) -> str
 
 
 async def _write_rotated_refresh_token(api: client.CoreV1Api, cfg: ResignerConfig, new_token: str) -> None:
-    """Patch the configured K8s Secret with the rotated refresh token."""
+    """Patch the configured central K8s Secret with the rotated refresh token."""
     body = {"stringData": {cfg.secret_key: new_token}}
     try:
         await api.patch_namespaced_secret(cfg.secret_name, cfg.secret_namespace, body)

@@ -735,7 +735,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: refresh_token
-                  name: tana-firebase-refresh-token
+                  name: litellm-tana-firebase-refresh-token
                   optional: true
             - name: LANGFUSE_OTEL_HOST
               value: http://langfuse-web.langfuse.svc.cluster.local:3000
