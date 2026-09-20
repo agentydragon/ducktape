@@ -30,7 +30,8 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 # with cache.nixos.org as a fallback. Only the symlinkJoin derivation needs
 # a local build.
 
-# Copy only the repo files needed to evaluate and build `.#rbetools`. Keep
+# Copy only the repo files needed to evaluate and build
+# `.#buildbuddy-remote-runner-tools`. Keep
 # this list in sync with the buildbuddy-remote-runner path filters in
 # .github/workflows/container-images.yml. Pull requests build this image
 # without publishing it, so missing evaluation inputs fail before merge.
@@ -40,7 +41,7 @@ COPY nix/attic-pubkeys.json /tmp/flake/nix/attic-pubkeys.json
 COPY nix/flake /tmp/flake/nix/flake
 COPY nix/packages /tmp/flake/nix/packages
 # nix/packages/gaffer.nix reads ../gaffer-pins.json during package-set
-# evaluation, even though rbetools does not include the private artifacts.
+# evaluation, even though the runner tools do not include the private artifacts.
 COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
 COPY skills/skills_registry.json /tmp/flake/skills/skills_registry.json
 SHELL ["/bin/bash", "-c"]
@@ -65,20 +66,20 @@ RUN mkdir -p ~/.config/nix \
     # Use nix build (not nix profile install) to avoid the profile manifest
     # keeping a reference to the nixpkgs source tree (~457MB).
     #
-    # With the public Attic cache current, only rbetools' symlinkJoin needs a
+    # With the public Attic cache current, only the runner-tools symlinkJoin needs a
     # local build. Without those substitutes, Nix's sandbox fallback in this
     # nested BuildKit environment lets Python wheel builds create
     # /homeless-shelter, which makes later derivations fail. Cap parallelism
     # too in case the closure is temporarily cold.
-    && RBETOOLS=$(nix build .#rbetools \
+    && BUILDBUDDY_RUNNER_TOOLS=$(nix build .#buildbuddy-remote-runner-tools \
          --max-jobs 2 --no-link --print-out-paths) \
     # Register as GC root so nix-collect-garbage keeps the closure.
-    && nix-store --add-root /nix/var/nix/gcroots/rbetools -r "$RBETOOLS" \
+    && nix-store --add-root /nix/var/nix/gcroots/buildbuddy-remote-runner-tools -r "$BUILDBUDDY_RUNNER_TOOLS" \
     # Symlink binaries into /usr/local/bin (goinit PATH).
-    && for bin in "$RBETOOLS"/bin/*; do \
+    && for bin in "$BUILDBUDDY_RUNNER_TOOLS"/bin/*; do \
          ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"; \
        done \
-    # Remove profile, flake source, and anything not in the rbetools closure.
+    # Remove profile, flake source, and anything not in the runner-tools closure.
     # Run GC before removing nix-profile (which has nix binaries on PATH).
     && nix-collect-garbage -d \
     && rm -rf ~/.nix-profile ~/.nix-defexpr /tmp/flake

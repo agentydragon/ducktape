@@ -68,21 +68,17 @@ publishes; preserve dated observations as historical records.
 Verification: inspect the published GHCR manifests/tags after the renamed workflows
 run, then check each surviving command against those tags.
 
-### C. [INV] Decide whether `rbetools` should name its consumer
+### C. [DONE] Name the runner package output after its consumer
 
-Evidence: `nix/flake/packages.nix:36-38` exports `rbetools`; the renamed
-`devinfra/buildbuddy_remote_runner/Dockerfile` installs `.#rbetools` into the
-BuildBuddy Remote Runner image.
+The flake output is `buildbuddy-remote-runner-tools`; the
+`devinfra/buildbuddy_remote_runner/Dockerfile` installs it into the BuildBuddy Remote
+Runner image.
 
-Why: “RBE tools” does not say that this bundle serves the Bazel client running on the
-BuildBuddy Remote Runner, and can be mistaken for tools installed in the RBE action
-container.
+Why: the package serves the Bazel client running on the BuildBuddy Remote Runner. The
+output name distinguishes it from tools installed in the RBE action container.
 
-Proposed change: if the output has no external consumers, consider a name such as
-`buildbuddy-remote-runner-tools`, updating the flake output and Dockerfile together.
-
-Verification: search the repository and flake consumers for `rbetools`; confirm the
-new output is used only for the remote runner bundle.
+Verification: repository search confirms that the flake output is used only for the
+remote runner bundle.
 
 ### D. [INV] Clarify the `bb_runner_probe` name and schema owner
 

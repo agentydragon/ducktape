@@ -41,8 +41,8 @@ ducktapePkgs
   };
   # BuildBuddy runner VM tools: Bazel via Bazelisk, bazel-diff, and bb for
   # best-effort CI diagnostics. Pre-commit runs in a separate GitHub workflow.
-  rbetools = pkgs.symlinkJoin {
-    name = "ducktape-rbetools";
+  buildbuddy-remote-runner-tools = pkgs.symlinkJoin {
+    name = "ducktape-buildbuddy-remote-runner-tools";
     paths = buildBuddyRunnerTools;
   };
   # Haku's agent closure: the single shared `.#devtools` plus agent
