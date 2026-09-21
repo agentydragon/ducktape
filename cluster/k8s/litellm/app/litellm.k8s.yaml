@@ -132,12 +132,12 @@ data:
           api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           timeout: 60
+          custom_llm_provider: tana
           tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
           tana_user_context: Generic AI Query
           tana_tool_user_context: Ask Tana
           tana_ignore_large_context_warning: true
           tana_ignore_out_of_credits_warning: false
-          custom_llm_provider: tana
         model_info:
           mode: chat
           supports_function_calling: true
@@ -147,12 +147,12 @@ data:
           api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           timeout: 60
+          custom_llm_provider: tana
           tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
           tana_user_context: Generic AI Query
           tana_tool_user_context: Ask Tana
           tana_ignore_large_context_warning: true
           tana_ignore_out_of_credits_warning: false
-          custom_llm_provider: tana
         model_info:
           mode: chat
           supports_function_calling: true
@@ -162,12 +162,12 @@ data:
           api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           timeout: 60
+          custom_llm_provider: tana
           tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
           tana_user_context: Generic AI Query
           tana_tool_user_context: Ask Tana
           tana_ignore_large_context_warning: true
           tana_ignore_out_of_credits_warning: false
-          custom_llm_provider: tana
         model_info:
           mode: chat
           supports_function_calling: true

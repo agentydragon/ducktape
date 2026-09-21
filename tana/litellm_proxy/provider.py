@@ -441,9 +441,8 @@ class TanaLiteLLM(CustomLLM):
         super().__init__()
         self._base_config = TanaProxyConfig.from_env(include_refresh_token=False)
         self._client = client or TanaProxyClient(self._base_config)
-        self._injected_client = client is not None
         self._clients_by_config: OrderedDict[TanaProxyConfig, _CredentialAwareChatClient] = OrderedDict()
-        if not self._injected_client:
+        if isinstance(self._client, TanaProxyClient):
             self._clients_by_config[self._base_config] = cast(_CredentialAwareChatClient, self._client)
 
     def _client_for_request(
@@ -452,7 +451,7 @@ class TanaLiteLLM(CustomLLM):
         config, provider_options = _litellm_request_config(
             self._base_config, optional_params, api_base=api_base, timeout=timeout
         )
-        if self._injected_client:
+        if not isinstance(self._client, TanaProxyClient):
             return cast(_CredentialAwareChatClient, self._client), provider_options
 
         client = self._clients_by_config.get(config)
@@ -586,6 +585,8 @@ def _litellm_request_config(
             raise TanaProxyError(f"LiteLLM did not resolve model parameter {option_name!r} from the environment")
         overrides[field_name] = value
 
+    if api_base == "":
+        api_base = None
     if api_base is not None:
         if not isinstance(api_base, str) or not api_base.strip():
             raise TanaProxyError("LiteLLM api_base for Tana must be a non-empty string")
