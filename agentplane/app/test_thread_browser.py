@@ -15,7 +15,15 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
-from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
+from playwright.async_api import (
+    APIResponse,
+    Page,
+    Request,
+    Route,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+    expect,
+)
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
@@ -512,16 +520,40 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
-    await page.wait_for_function(
-        """anchor => {
+    try:
+        await page.wait_for_function(
+            """anchor => {
             const area = document.querySelector('[aria-label="Thread history"]');
             const item = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
             return item !== null && Math.abs(
                 item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
             ) <= 2;
         }""",
-        arg=anchor,
-    )
+            arg=anchor,
+        )
+    except PlaywrightTimeoutError:
+        geometry = await page.evaluate(
+            """expected => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                const top = area.getBoundingClientRect().top;
+                return {
+                    expected,
+                    scrollTop: area.scrollTop,
+                    scrollHeight: area.scrollHeight,
+                    viewportHeight: area.clientHeight,
+                    viewportWidth: area.clientWidth,
+                    rows: [...area.querySelectorAll('[data-conversation-anchor]')].map(item => ({
+                        cursor: item.dataset.conversationAnchor,
+                        offset: item.getBoundingClientRect().top - top,
+                        height: item.getBoundingClientRect().height,
+                    })),
+                };
+            }""",
+            anchor,
+        )
+        thread_id = urlsplit(page.url).fragment.split("/")[-1]
+        (undeclared_outputs_dir() / f"reading-anchor-{thread_id}.json").write_text(json.dumps(geometry, indent=2))
+        raise
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:
