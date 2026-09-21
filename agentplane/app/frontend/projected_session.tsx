@@ -27,6 +27,7 @@ import {
   type PayloadRef,
 } from "./conversation_store";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
+import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -88,91 +89,131 @@ function EvidenceFrames({
   entity: ConversationEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [pages, setPages] = useState<NativeFramePage[]>([]);
+  const [page, setPage] = useState<NativeFramePage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const request = useRef<AbortController | null>(null);
   const scope = {
     sourceId: entity.sourceId,
     projectionEpoch: entity.projectionEpoch,
     entityKind: entity.entityKind,
     entityId: entity.entityId,
   };
-  const load = (): void => {
-    if (error) return;
-    const after = pages.at(-1)?.next_after_sequence ?? "0";
-    void conversationFrames(threadId, scope, observationCursor, after).then(
-      (page) => setPages((previous) => [...previous, page]),
-      (reason: unknown) => setError(displayableError(reason))
-    );
+  useEffect(() => () => request.current?.abort(), []);
+  const load = (after = "0"): void => {
+    if (loading) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setLoading(true);
+    void conversationFrames(threadId, scope, observationCursor, after, controller.signal)
+      .then(
+        (value) => {
+          if (!controller.signal.aborted) setPage(value);
+        },
+        (reason: unknown) => {
+          if (!controller.signal.aborted) setError(displayableError(reason));
+        }
+      )
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
   };
   return (
-    <details onToggle={(event) => event.currentTarget.open && pages.length === 0 && load()}>
-      <summary>Observation {observationCursor} raw frames</summary>
+    <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {pages
-        .flatMap((page) => page.frames)
-        .map((frame) => (
-          <Text
-            component="pre"
-            size="xs"
-            key={frame.source_sequence}
-            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-          >
-            {frame.availability === "present"
-              ? JSON.stringify(frame.entry, null, 2)
-              : `Raw frame ${frame.source_sequence} unavailable`}
-          </Text>
-        ))}
-      {pages.at(-1)?.next_after_sequence && (
-        <Button variant="subtle" onClick={load}>
+      {page?.frames.map((frame) => (
+        <Text
+          component="pre"
+          size="xs"
+          key={frame.source_sequence}
+          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        >
+          {frame.availability === "present"
+            ? JSON.stringify(frame.entry, null, 2)
+            : `Raw frame ${frame.source_sequence} unavailable`}
+        </Text>
+      ))}
+      {!page && (
+        <Button loading={loading} onClick={() => load()}>
+          Load raw frames
+        </Button>
+      )}
+      {page?.next_after_sequence && (
+        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
           Load more frames
         </Button>
       )}
-    </details>
+    </Stack>
+  );
+}
+
+function EvidencePageView({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
+  const [page, setPage] = useState<EvidencePage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const request = useRef<AbortController | null>(null);
+  const scope = {
+    sourceId: entity.sourceId,
+    projectionEpoch: entity.projectionEpoch,
+    entityKind: entity.entityKind,
+    entityId: entity.entityId,
+  };
+  useEffect(() => {
+    load();
+    return () => request.current?.abort();
+  }, []);
+  const load = (after = "0"): void => {
+    if (loading) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setLoading(true);
+    void conversationEvidence(threadId, scope, after, controller.signal)
+      .then(
+        (value) => {
+          if (!controller.signal.aborted) setPage(value);
+        },
+        (reason: unknown) => {
+          if (!controller.signal.aborted) setError(displayableError(reason));
+        }
+      )
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+  };
+  return (
+    <Stack gap="xs">
+      {error && <Text c="red">{error}</Text>}
+      {page?.observations.map((observation) =>
+        observation.has_native ? (
+          <EvidenceFrames
+            key={observation.observation_cursor}
+            threadId={threadId}
+            entity={entity}
+            observationCursor={observation.observation_cursor}
+          />
+        ) : (
+          <Text size="xs" key={observation.observation_cursor}>
+            Observation {observation.observation_cursor} has no native frame
+          </Text>
+        )
+      )}
+      {page?.next_after_cursor && (
+        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
+          Load more evidence
+        </Button>
+      )}
+    </Stack>
   );
 }
 
 function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
-  const [pages, setPages] = useState<EvidencePage[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const scope = {
-    sourceId: entity.sourceId,
-    projectionEpoch: entity.projectionEpoch,
-    entityKind: entity.entityKind,
-    entityId: entity.entityId,
-  };
-  const load = (): void => {
-    if (error) return;
-    const after = pages.at(-1)?.next_after_cursor ?? "0";
-    void conversationEvidence(threadId, scope, after).then(
-      (page) => setPages((previous) => [...previous, page]),
-      (reason: unknown) => setError(displayableError(reason))
-    );
-  };
+  const [open, setOpen] = useState(false);
   return (
-    <details onToggle={(event) => event.currentTarget.open && pages.length === 0 && load()}>
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Evidence</summary>
-      {error && <Text c="red">{error}</Text>}
-      {pages
-        .flatMap((page) => page.observations)
-        .map((observation) =>
-          observation.has_native ? (
-            <EvidenceFrames
-              key={observation.observation_cursor}
-              threadId={threadId}
-              entity={entity}
-              observationCursor={observation.observation_cursor}
-            />
-          ) : (
-            <Text size="xs" key={observation.observation_cursor}>
-              Observation {observation.observation_cursor} has no native frame
-            </Text>
-          )
-        )}
-      {pages.at(-1)?.next_after_cursor && (
-        <Button variant="subtle" onClick={load}>
-          Load more evidence
-        </Button>
-      )}
+      {open && <EvidencePageView threadId={threadId} entity={entity} />}
     </details>
   );
 }
@@ -189,17 +230,21 @@ function EntityCard({
   if (entity.entityKind === "confirmed_input") {
     return (
       <Group justify="flex-end" data-conversation-anchor={entity.cursor.toString()}>
-        <Paper p="sm" withBorder maw="80%">
+        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
           <Body threadId={threadId} reference={entity.inputRef} follow={false} />
+          <Evidence threadId={threadId} entity={entity} />
         </Paper>
       </Group>
     );
   }
   if (entity.entityKind === "lifecycle") {
     return (
-      <Text size="xs" c="dimmed" data-conversation-anchor={entity.cursor.toString()}>
-        {"observation" in entity.state ? entity.state.observation : "lifecycle"}
-      </Text>
+      <Stack gap="xs" data-conversation-anchor={entity.cursor.toString()}>
+        <Text size="xs" c="dimmed">
+          {"observation" in entity.state ? entity.state.observation : "lifecycle"}
+        </Text>
+        <Evidence threadId={threadId} entity={entity} />
+      </Stack>
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
@@ -238,9 +283,14 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [errors, setErrors] = useState(new Map<string, string>());
   const active = useRef(new Set<string>());
   const commandIds = useMemo(
-    () => new Set(entities.filter((row) => row.entityKind === "command").map((row) => row.entityId)),
+    () =>
+      new Set([
+        ...entities.filter((row) => row.entityKind === "command").map((row) => row.entityId),
+        ...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : [])),
+      ]),
     [entities]
   );
+  const [reconcileAttempt, setReconcileAttempt] = useState(0);
   const localCommandKey = local.commands
     .slice(0, 128)
     .map((value) => value.command.commandId)
@@ -258,6 +308,9 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
           store.observeCommandIds(
             new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
           );
+          if (result.commands.some((value) => value.outcome === null) && reconcileAttempt < 5) {
+            window.setTimeout(() => setReconcileAttempt((value) => value + 1), 250 * 2 ** reconcileAttempt);
+          }
         }
       },
       (reason: unknown) => {
@@ -266,7 +319,7 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
       }
     );
     return () => controller.abort();
-  }, [localCommandKey, projectionEpoch, sourceId, store, threadId]);
+  }, [localCommandKey, projectionEpoch, reconcileAttempt, sourceId, store, threadId]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -308,6 +361,7 @@ function VirtualizedHistory({
   const viewport = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousCount = useRef(segments.length);
+  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
   const virtualizer = useVirtualizer({
     count: segments.length,
@@ -321,8 +375,19 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (element && atBottom.current && segments.length > previousCount.current)
       element.scrollTop = element.scrollHeight;
+    if (element && previousCount.current === 0 && segments.length > 0 && readingAnchor.current) {
+      const index = segments.findIndex(
+        (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
+      );
+      if (index >= 0) {
+        virtualizer.scrollToIndex(index, { align: "start" });
+        requestAnimationFrame(() => {
+          if (viewport.current && readingAnchor.current) viewport.current.scrollTop += readingAnchor.current.offset;
+        });
+      }
+    }
     previousCount.current = segments.length;
-  }, [segments.length]);
+  }, [segments, virtualizer]);
   return (
     <div
       ref={viewport}
@@ -332,6 +397,14 @@ function VirtualizedHistory({
       onScroll={(event) => {
         const element = event.currentTarget;
         atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+        const first = virtualizer.getVirtualItems()[0];
+        const firstEntity = first ? segments[first.index] : undefined;
+        if (first && firstEntity) {
+          readingAnchor.current = {
+            key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
+            offset: element.scrollTop - first.start,
+          };
+        }
         const oldest = segments[0]?.cursor.toString();
         if (element.scrollTop < 80 && oldest && requestedBefore.current !== oldest) {
           requestedBefore.current = oldest;
@@ -370,17 +443,19 @@ function ProjectedSessionBody({
   entities,
   thread,
   onLoadOlder,
+  available,
 }: {
   threadId: string;
   entities: ConversationEntity[];
   thread: ThreadView;
   onLoadOlder: (cursor: string) => void;
+  available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const running = !thread.archived && controls?.harness_state === "running";
+  const running = available && !thread.archived && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   useEffect(() => {
@@ -432,14 +507,13 @@ function ProjectedSessionBody({
         .map((row) => {
           if (!("outcome" in row.state)) return null;
           return (
-            <Text
-              key={row.entityId}
-              size="xs"
-              c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}
-            >
-              {row.state.operation} · {row.state.outcome}
-              {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-            </Text>
+            <Stack key={row.entityId} gap="xs">
+              <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+                {row.state.operation} · {row.state.outcome}
+                {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+              </Text>
+              <Evidence threadId={threadId} entity={row} />
+            </Stack>
           );
         })}
       {commands.local.commands.map((value) => (
@@ -526,6 +600,13 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [before, setBefore] = useState<string | undefined>();
   const [name, setName] = useState("");
+  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
+  const sandboxAvailable =
+    environment.connection === "connected" &&
+    environment.health?.fresh === true &&
+    environment.snapshot?.sandboxes.some(
+      (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
+    ) === true;
   useEffect(() => {
     void getThread(threadId).then((value) => {
       setThread(value);
@@ -556,10 +637,23 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
           Thread archived. Showing retained conversation history; controls are disabled.
         </Text>
       )}
+      {thread &&
+        environment.snapshot &&
+        !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
+          <Text role="status" c="dimmed">
+            Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+          </Text>
+        )}
       {thread && (
         <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
           {(rows) => (
-            <ProjectedSessionBody threadId={threadId} entities={rows} thread={thread} onLoadOlder={setBefore} />
+            <ProjectedSessionBody
+              threadId={threadId}
+              entities={rows}
+              thread={thread}
+              onLoadOlder={setBefore}
+              available={sandboxAvailable}
+            />
           )}
         </ConversationCollection>
       )}

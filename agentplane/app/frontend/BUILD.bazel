@@ -359,6 +359,7 @@ ts_library(
         ":client",
         ":command_state",
         ":event_stream",
+        ":live",
         ":local_commands",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -770,6 +771,7 @@ ts_library(
     deps = [
         ":client",
         ":conversation_store",
+        ":live",
         ":local_commands",
         ":markdown",
         "//:node_modules/@bufbuild/protobuf",
