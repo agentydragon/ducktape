@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -15,7 +16,7 @@ import pytest_bazel
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory import IngestionLease, TrajectoryStore
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -35,7 +36,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
         ) as service:
             store = TrajectoryStore.connect(service.database_url)
             try:
-                thread, source = await _project_initial_item(store)
+                thread, source, lease = await _project_initial_item(store)
                 params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'"}
                 async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
                     initial = await client.get("/v1/shape", params=params | {"offset": "-1"})
@@ -69,8 +70,13 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                             if state["wal_status"] == "lost":
                                 break
                         _write_artifact("slot-timeline.json", json.dumps(timeline, indent=2, sort_keys=True))
-                        assert timeline[-1]["wal_bytes"] >= _WAL_CAP_BYTES
-                        assert timeline[-1]["slot"]["wal_status"] == "lost"
+                        latest = timeline[-1]
+                        written = latest["wal_bytes"]
+                        slot = latest["slot"]
+                        assert isinstance(written, int)
+                        assert isinstance(slot, dict)
+                        assert written >= _WAL_CAP_BYTES
+                        assert slot["wal_status"] == "lost"
 
                         # This commit must appear only after the client discards its old stream cursor.
                         source.append(
@@ -83,7 +89,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                         source.append(
                             event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh"))
                         )
-                        await store.record(thread, source.entries[-2:])
+                        await store.record(thread, source.entries[-2:], lease=lease)
                     finally:
                         await connection.close()
 
@@ -107,7 +113,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                 await store.close()
 
 
-async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, ReplicationSource]:
+async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -116,9 +122,11 @@ async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, Replicati
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
     thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-    await store.set_attached(thread, source.attached)
-    await store.record(thread, source.entries)
-    return thread, source
+    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=2))
+    assert lease is not None
+    await store.set_attached(thread, source.attached, lease=lease)
+    await store.record(thread, source.entries, lease=lease)
+    return thread, source, lease
 
 
 async def _connect(service: ElectricService) -> asyncpg.Connection:
