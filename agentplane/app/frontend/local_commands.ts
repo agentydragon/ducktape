@@ -15,6 +15,8 @@ export interface LocalCommandSnapshot {
   error: string | null;
 }
 
+export const MAX_RETAINED_COMMANDS = 128;
+
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
   if (typeof value.submittedAt !== "number") {
@@ -86,6 +88,11 @@ export class LocalCommands {
         throw new Error("A local command id cannot be reused with a different payload");
       }
       return existing;
+    }
+    if (this.snapshot.commands.length >= MAX_RETAINED_COMMANDS) {
+      throw new Error(
+        `Dismiss or finish a retained command before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
+      );
     }
     const value: LocalCommand = { command, submittedAt: Date.now(), admission: null };
     localStorage.setItem(this.key(command.commandId), encode(value));
