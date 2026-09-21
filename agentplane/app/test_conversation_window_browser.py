@@ -10,6 +10,8 @@ from agentplane.app.test_thread_browser import ThreadBrowser, db_url
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep @pypi//protobuf
+
 pytest_plugins = ("agentplane.app.test_thread_browser",)
 __all__ = ["db_url"]
 
@@ -136,12 +138,21 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained across shape rotation")
-    await page.wait_for_function(
-        """() => window.__agentplaneConversationCollectionTrace?.some(event =>
-            event.kind === 'collected' && event.status === 'cleaned-up' && event.size === 0 &&
-            event.subscriberCount === 0
-        )"""
-    )
+    try:
+        await page.wait_for_function(
+            """() => {
+                const trace = window.__agentplaneConversationCollectionTrace ?? [];
+                const active = trace.filter(event => event.kind === 'query' && event.role === 'active').at(-1);
+                const retired = new Set(trace.filter(event => event.kind === 'unsubscribed')
+                    .map(event => event.id).filter(id => id !== active?.id));
+                return retired.size > 0 && [...retired].every(id => trace.some(event =>
+                    event.id === id && event.kind === 'collected' && event.status === 'cleaned-up' &&
+                    event.size === 0 && event.subscriberCount === 0));
+            }"""
+        )
+    finally:
+        trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
+        (undeclared_outputs_dir() / "conversation-window-collections.json").write_text(json.dumps(trace, indent=2))
     await cdp.send("HeapProfiler.collectGarbage")
     heap_after = await cdp.send("Runtime.getHeapUsage")
     trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
@@ -153,6 +164,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     assert all(event["subscriberCount"] >= 1 for event in ready)
     active = [event for event in ready if event["role"] == "active"]
     assert active[-1]["size"] <= 61
+    await page.screenshot(path=undeclared_outputs_dir() / "conversation-window-retained-reader.png")
 
 
 async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(thread_browser: ThreadBrowser) -> None:
