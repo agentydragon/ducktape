@@ -243,6 +243,12 @@ class RunnerBridge:
                             await feed.close()
                         thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
                         snapshot = await self._store.feed_state(thread_id)
+                        # A semantic replay failure is durable evidence that this runner's prefix is
+                        # unsafe. A new coordinator or app replica must not call set_attached() and
+                        # make its failed conversation view appear healthy before replaying the same
+                        # rejected suffix again. A distinct session is the explicit recovery path.
+                        if snapshot is not None and isinstance(snapshot.end, FeedError):
+                            continue
                         if (
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
                             and snapshot is not None
