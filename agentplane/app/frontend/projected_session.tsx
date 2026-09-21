@@ -531,6 +531,7 @@ function VirtualizedHistory({
   const previousScrollHeight = useRef(0);
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
+  const captureNextScroll = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -637,10 +638,13 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
+        captureNextScroll.current = true;
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
         cancelRestoration();
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key))
+          captureNextScroll.current = true;
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
@@ -659,6 +663,7 @@ function VirtualizedHistory({
       }}
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
+        captureNextScroll.current = true;
         if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
         touchY.current = next ?? null;
       }}
@@ -671,6 +676,8 @@ function VirtualizedHistory({
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
+        if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
+        captureNextScroll.current = false;
         const viewportTop = element.getBoundingClientRect().top;
         const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
           (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
