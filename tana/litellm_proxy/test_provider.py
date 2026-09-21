@@ -762,7 +762,7 @@ def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(isolate
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> AsyncIterator[GenericStreamingChunk]:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "call echo_tool"}]
@@ -959,7 +959,7 @@ def test_litellm_handler_returns_model_response() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> TanaChatResult:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -994,7 +994,7 @@ def test_litellm_handler_returns_tool_calls() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> TanaChatResult:
             assert model == "claude-test"
             assert optional_params is not None
@@ -1037,7 +1037,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> TanaChatResult:
             raise AssertionError("streaming test should not call non-streaming chat_completion")
 
@@ -1047,7 +1047,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> Iterator[GenericStreamingChunk]:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -1085,7 +1085,7 @@ def test_litellm_handler_astreaming_yields_chunks() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> AsyncIterator[GenericStreamingChunk]:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -1129,7 +1129,7 @@ def test_litellm_routes_async_streaming_to_custom_provider() -> None:
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> AsyncIterator[GenericStreamingChunk]:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -1167,7 +1167,7 @@ def test_registered_tana_provider_handles_async_litellm_completion(isolated_lite
             messages: Sequence[Mapping[str, Any]],
             optional_params: Mapping[str, Any] | None = None,
             *,
-            refresh_token: str,
+            refresh_token: str | None = None,
         ) -> TanaChatResult:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]

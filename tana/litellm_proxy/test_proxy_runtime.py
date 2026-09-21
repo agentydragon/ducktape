@@ -81,7 +81,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
                 messages: Sequence[Mapping[str, Any]],
                 optional_params: Mapping[str, Any] | None = None,
                 *,
-                refresh_token: str,
+                refresh_token: str | None = None,
             ) -> TanaChatResult:
                 assert model == "tana/gpt-4o-mini"
                 assert messages == [{"role": "user", "content": "hi"}]
