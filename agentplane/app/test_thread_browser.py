@@ -220,13 +220,6 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
         )
     )
     source.append(event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json="{")))
-    source.append(
-        event_pb2.Event(
-            item_completed=event_pb2.ItemCompleted(
-                item_id="tool", tool=event_pb2.ToolResult(output="On-demand tool output", succeeded=True)
-            )
-        )
-    )
     requests: list[str] = []
     page.on("request", lambda request: requests.append(request.url))
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
@@ -274,6 +267,25 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 tool_card = page.locator(f'[data-conversation-anchor="{tool.cursor}"]')
                 await tool_card.locator("summary", has_text="Arguments").click()
                 await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
+                source.append(
+                    event_pb2.Event(
+                        tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
+                    )
+                )
+                await expect(tool_card.get_by_text('{"path":', exact=True)).to_be_visible()
+                source.append(
+                    event_pb2.Event(
+                        tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
+                    )
+                )
+                await expect(tool_card.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+                source.append(
+                    event_pb2.Event(
+                        item_completed=event_pb2.ItemCompleted(
+                            item_id="tool", tool=event_pb2.ToolResult(output="On-demand tool output", succeeded=True)
+                        )
+                    )
+                )
                 await tool_card.locator("summary", has_text="Output").click()
                 await expect(tool_card.get_by_text("On-demand tool output", exact=True)).to_be_visible()
                 reasoning_card = page.locator(f'[data-conversation-anchor="{reasoning.cursor}"]')
