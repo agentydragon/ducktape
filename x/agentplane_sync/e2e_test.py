@@ -2841,7 +2841,7 @@ async def test_electric_end_to_end() -> None:
                                 f"{app_url}/?conversation=alpha-large&payloadRef={current_text_ref}",
                                 wait_until="domcontentloaded",
                             )
-                            await _wait_ready(page, exact_bigint=True)
+                            await _wait_ready(page)
                             stale_revision_visible = await _assert_rendered_payload(
                                 page,
                                 expected="seed text +during-history +first +second +disconnect-trigger +offline +rotate +restart",
@@ -2861,8 +2861,8 @@ async def test_electric_end_to_end() -> None:
                             stale_revision_rows = [
                                 row for record in stale_revision_records for row in record.get("chunkRows", [])
                             ]
-                            stale_revision_rows.sort(key=lambda row: row["chunkIndex"])
-                            assert [row["chunkIndex"] for row in stale_revision_rows] == list(
+                            stale_revision_rows.sort(key=lambda row: int(row["chunkIndex"]))
+                            assert [int(row["chunkIndex"]) for row in stale_revision_rows] == list(
                                 range(stale_revision_probe["chunkCount"])
                             ), stale_revision_records
                             assert all(
@@ -2887,7 +2887,7 @@ async def test_electric_end_to_end() -> None:
                                     "chunkRows": len(stale_revision_rows),
                                     "contentBytes": stale_revision_wire_bytes,
                                     "responseBytes": sum(record["responseBytes"] for record in stale_revision_records),
-                                    "chunkIndexes": [row["chunkIndex"] for row in stale_revision_rows],
+                                "chunkIndexes": [int(row["chunkIndex"]) for row in stale_revision_rows],
                                 },
                                 "queryPlan": stale_revision_plan,
                             }
@@ -2921,8 +2921,10 @@ async def test_electric_end_to_end() -> None:
                                     and record.get("status") == 200
                                 ]
                                 probe_rows = [row for record in probe_records for row in record.get("chunkRows", [])]
-                                probe_rows.sort(key=lambda row: row["chunkIndex"])
-                                assert [row["chunkIndex"] for row in probe_rows] == list(range(probe["chunkCount"])), {
+                                probe_rows.sort(key=lambda row: int(row["chunkIndex"]))
+                                assert [int(row["chunkIndex"]) for row in probe_rows] == list(
+                                    range(probe["chunkCount"])
+                                ), {
                                     "probe": probe,
                                     "records": probe_records,
                                 }
