@@ -273,8 +273,8 @@ class K8sVMClient:
                     "image": vm_image,
                     "securityContext": {"capabilities": {"add": ["NET_ADMIN"]}},
                     "resources": {
-                        "requests": {"cpu": str(cpus), "memory": f"{mem_mib}Mi", "squat.ai/kvm": "1"},
-                        "limits": {"cpu": str(cpus), "memory": f"{mem_mib}Mi", "squat.ai/kvm": "1"},
+                        "requests": {"cpu": str(cpus), "memory": f"{mem_mib}Mi", "devic.es/kvm": "1"},
+                        "limits": {"cpu": str(cpus), "memory": f"{mem_mib}Mi", "devic.es/kvm": "1"},
                     },
                     "ports": [{"containerPort": 2026, "name": "firecracker-api"}],
                     "volumeDevices": volume_devices,

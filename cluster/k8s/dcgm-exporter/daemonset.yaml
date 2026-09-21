@@ -21,7 +21,7 @@ spec:
       labels:
         app: dcgm-exporter
     spec:
-      # Only wyrm2 has GPUs (matches the kvm-device-plugin precedent). Generalize to a
+      # Only wyrm2 has GPUs. Generalize to a
       # GPU label if more GPU nodes appear.
       nodeSelector:
         kubernetes.io/hostname: wyrm2

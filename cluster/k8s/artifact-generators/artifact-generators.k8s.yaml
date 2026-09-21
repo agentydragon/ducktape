@@ -319,11 +319,6 @@ spec:
       name: claude-sandbox-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
-          to: "@artifact/cluster/k8s/agents/coinbase-read/"
-      name: coinbase-read
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
           to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
       name: forgejo-token-rotation
@@ -691,11 +686,6 @@ spec:
         - from: "@repo/cluster/k8s/kubevirt/operator/**"
           to: "@artifact/cluster/k8s/kubevirt/operator/"
       name: kubevirt-operator
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
-          to: "@artifact/cluster/k8s/kvm-device-plugin/"
-      name: kvm-device-plugin
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/langfuse/**"

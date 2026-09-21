@@ -10,7 +10,12 @@ on:
   pull_request:
     paths:
       - ".bazelversion"
-      - "openclaw/**"
+      - "openclaw/default.nix"
+      - "openclaw/gateway.nix"
+      - "openclaw/bundle-runtime-plugin.sh"
+      - "openclaw/proxy-setup.mjs"
+      - "openclaw/npm_wrapper/**"
+      - "openclaw/patches/**"
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
@@ -23,7 +28,12 @@ on:
     branches: [devel]
     paths:
       - ".bazelversion"
-      - "openclaw/**"
+      - "openclaw/default.nix"
+      - "openclaw/gateway.nix"
+      - "openclaw/bundle-runtime-plugin.sh"
+      - "openclaw/proxy-setup.mjs"
+      - "openclaw/npm_wrapper/**"
+      - "openclaw/patches/**"
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
