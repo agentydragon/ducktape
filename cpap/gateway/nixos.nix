@@ -21,8 +21,8 @@ let
 in
 {
   imports = [
-    ../../modules/operator.nix
-    ../../modules/vm-hardware.nix
+    ../../nix/nixos/modules/operator.nix
+    ../../nix/nixos/modules/vm-hardware.nix
   ];
 
   # MT7921U firmware and driver for the USB adapter passed through by KubeVirt.

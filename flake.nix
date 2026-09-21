@@ -251,6 +251,9 @@
       mkNixos =
         {
           hostname,
+          # Most host modules are kept under nix/nixos/hosts. Component-owned
+          # guests can keep their module beside the component's other recipes.
+          hostModule ? ./nix/nixos/hosts/${hostname},
           username ? "agentydragon",
           homeManagerHost ? hostname,
           hardwareModule ? null,
@@ -298,7 +301,7 @@
           };
           modules = [
             ./nix/nixos/modules/base.nix
-            ./nix/nixos/hosts/${hostname}
+            hostModule
           ]
           ++ nixpkgs.lib.optionals enableHomeManager [
             home-manager.nixosModules.home-manager
@@ -559,6 +562,7 @@
         # from the OptiPlex host.
         cpap-gateway = mkNixos {
           hostname = "cpap-gateway";
+          hostModule = ./cpap/gateway/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           enableHomeManager = false;
         };
