@@ -64,6 +64,11 @@ CREDENTIALS = (
         consumers=(ApprovedConsumer("flux-system", "aws-route53-dns-automation-credentials-flux-system-reader"),),
     ),
     Credential(
+        secret_file="brave-search-api-key.sops.yaml",
+        secret_name="brave-search-api-key",
+        consumers=(ApprovedConsumer("public-coder-agent", "brave-search-api-key-public-coder-agent-reader"),),
+    ),
+    Credential(
         secret_file="coinbase-api-credentials.sops.yaml",
         secret_name="coinbase-api-credentials",
         consumers=(

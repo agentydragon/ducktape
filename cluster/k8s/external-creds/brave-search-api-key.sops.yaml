@@ -1,0 +1,87 @@
+# This is the only copy of the Brave Search API key in the repository. It
+# authenticates to an external platform rather than a service this cluster owns.
+#
+# Flux applies the canonical Secret in ducktape-flux; the public-coder-agent
+# proxy consumes it through ESO. Workstations decrypt this same file as
+# $BRAVE_API_KEY through ducktape.sopsEnv, which is why .sops.yaml gives it
+# user keys in addition to the cluster pair. Rotation changes one file.
+#
+# Agent containers never receive it. They get a non-secret placeholder that
+# their proxy substitutes into X-Subscription-Token on api.search.brave.com.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: brave-search-api-key
+    namespace: ducktape-flux
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:E+s/b78Ad303hrebXTp0t2/X9VFcEWT7obuOBl10d7JeMhW8kEqveixIl9OkqKI+VFZSkhfBe4GU667Iv/skVAHcZJs1c7c+1jBODqWUMF2aT77gMwUh9D9elaV7DpzmJkXpF6noqFgRqw7If/KvlJ5uLiWbEr62SyjOduUG8mWbYQ7Ylz8BJkSgoDZMNcfp5jg9A1Hnog==,iv:ruda+JzeP69SPFRsyGBc+JuM22mAvjt8ORRRjIPiLbc=,tag:MB5GNz4gvBbGniHiC6cZng==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1ZVpxQkU5WnFTalhjT3k4
+            ejBlY05SNGtBUXNqWWZtclpnbnFvSDVRSndNCllITjhhTlpXRDRyREQxRkRQb0hh
+            Y1RkOXhKUkVnQVNxaUpMWTgyL1RtZW8KLS0tIGphVHVKSllYOXJreHhaVTZwQ2Qx
+            cVJCZUp6R25BamJBeVZjUktMUDhxc00KJ9OHlnMajjp8487liLPS+zU1Mg7AvjrK
+            kTEXgXXSLXBCY5edE49ZqZQNWsTRWuBdILxEeL3gkaJlJB7UUMOeKQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAwTjJQZm5pVG81cWsvVUJF
+            bFp4bVJZS3NLbEpHWjE2OXlFN21vUGdkcUdZCk0rM05QZFR3aDA1RFYyb2kvRXBp
+            K2hMeVlWdkd6dDUyTkZiODA0cHVDTm8KLS0tIGswdXNwWGVUY2tVQnA3eGRtbWpv
+            WXdZR1F3SzRCbVRNQjJnWUhsOWxYNVEKa3GguaCjX3vZYIxwFCLmP5vYedWLRdv4
+            umdR1txMP2D2vrJF9sNr8aV3711+ToSQpiu1357vs2M7C0OLXMsnhA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBnSnZzVU8vNGtjaHdDZit5
+            WGJ6VFhCRU1HNC94RDAvNEo4VlRob0YwbG1zCmMwNDNOeG1tRkJIbllLTU5TQ2xM
+            TWQ5QlBZbGhoQm5Iby9OM2Q4Vy9TNm8KLS0tIGJ0aklhc0Q0R2pqVDhOL1VDa2N6
+            N1lDdWtFSlNlTnFidEVkU2UvaEwxMEEKAYIema2brSE8J9wxoMwazEXfFj0J3r+M
+            +htS5EyoVvtBisgnf40VNrx+MiWyfmOARphTytoL6+WiKMz8twV03g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOY0VvZ3pvdVlGenB1MUdo
+            RSs4Uk9TeGtiOG1UeEU5b0VpSlhzTHFBUlJFCndNZk03MUp0Ni9hNDNWVUVaWHJT
+            U0g4ODJwbHJ5TXN6ems2QkhzemtFUWcKLS0tIGxRUytyOTBhWVA2d204R3NkQnNw
+            SXVBU3dxVmxtSElqbFFIbXRaZldGVE0KDwqQBvPdTKVDnVwiUPEbfHwITTNeh/pU
+            +SGKNkiWxfwOEwTbpLwWX4CC2Hlq9cWN09vZiXy2h1wdByUXwa2Itg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6SncvWU5WanNaS00yYnp1
+            Qm5JYXR1RTB4SEFVczRqbzZYVXYyOUVVQUZVCmtteHd0QXlqMnNlUmZRTlAwNU9O
+            V1hpdUFMKzg4U2htTTkxRDBiVlFuM2MKLS0tIHRiMndzMUE1NmRhTUZoRlZWT3g0
+            TGZGczFUQ2ErVGRoQnpCRFlkazhLNWsKRlrjCTYWp6Yv1mIerq0ruKexfpd4AMJ4
+            94LWcCROBnE2LAPUFA8Qc9Bp3LDZvru3FupIbpV63/V//fRfg2lAoQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3MGozVlh3Vjc1VmFuWUtZ
+            cDRXNlpPSGR6MDNmUTVsTm8veGNJcGhja1c0CnlXWXNpRGdURUdteHB6VFJGV2o1
+            SUkrSEdZMDFoVmtWankyTEp1dXV5eFEKLS0tIEgzNy9YcVl5QUZ3Q1Z6RGFLcHpz
+            Wmk0R3FMTE5Sd2J6MC9FRTlycGd0blUKdBLZJGdT2JVmeruhgg6P4J2eGDYSvDji
+            6rQJhPZ7Yqh1ZVQG0TMN7HScaEIjYA2Zzjn8/CBoriHClOPHsVZ3zg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBobE1wYWtLWEMwNlZ3QXk2
+            VDhTUHJvTmpxU3VYVU5ZOVpzVnpnVWcwYW1jCmJobEJyalhlbTBOUjB3dDV0RnlR
+            N0ROTU9LSWVCZ21ETVlnYlFMMnpJUEkKLS0tIFNTYWEwRi96dnExcFhHdEpUakUz
+            M0tWbkVORmQzU0dSOHh3RlErakVEZnMKzbGOnA4bxdqa89+tVr/7qaZWjg/rfHQj
+            6yXY4c7kpwfWf17hkWscl+L3ii6m24MAEYioMHlLVpXk0UjYf/Lg8A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1wjv755gsh9l02wm3wet48kjl6ju5ckk3jgllfpe8xmfauqqardgq7pt7ud
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-20T23:23:57Z"
+    mac: ENC[AES256_GCM,data:RDmBI5MVevfG2J6pp2Q63ewyEi53hj5UosExoTs6jYR+XWsMIIP4iX28M3Uh5Xp7Jkr/moAcSjFg0aGyCmS2s03IpiUsrn6Fmh6HVK6XvSzJPXlFq8SXKq8inLhPkjuM3GWHZwP8xc82Fa6DoAMQw3WtkoFMQtywxDtTgkIHKbw=,iv:IPpJ3eGh7jnSOh8YQqAYD1/c2Bn7j9SHnErOuGFn1VM=,tag:rwWyIwOb1qRZtJ9Bkzm/mA==,type:str]
+    version: 3.13.3

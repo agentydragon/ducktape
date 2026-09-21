@@ -6446,6 +6446,10 @@ spec:
       namespace: ducktape-flux
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: agent-shared-secrets
+      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: cert-manager-trust
@@ -6470,6 +6474,10 @@ spec:
     - apiVersion: cert-manager.io/v1
       kind: Certificate
       name: public-coder-agent-proxy-root-ca
+      namespace: public-coder-agent
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: brave-search-api-key
       namespace: public-coder-agent
   interval: 1h
   path: ./cluster/k8s/agents/public-coder-agent/proxy
@@ -6622,7 +6630,7 @@ spec:
       namespace: public-coder-agent
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/app
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

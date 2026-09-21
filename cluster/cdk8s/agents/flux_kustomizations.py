@@ -721,7 +721,9 @@ def public_coder_agent_app(
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/agents/public-coder-agent/app",
-            prune=True,
+            # Temporary ownership-transfer safeguard while the proxy Kustomization takes over
+            # external-creds-reader. Restore pruning after the proxy inventory is verified.
+            prune=False,
             # Safety net for a planned cdk8s conversion of this directory that may move which
             # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
             # landing. This directory holds real PVCs (pvc-v2.yaml, pvc-diagnostics.yaml).
@@ -895,6 +897,8 @@ def public_coder_agent_proxy(
     chart: Chart,
     external_secrets_config: Kustomization,
     public_coder_agent_namespace: Kustomization,
+    external_creds: Kustomization,
+    agent_shared_secrets: Kustomization,
     cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     reflector: Kustomization,
@@ -921,6 +925,9 @@ def public_coder_agent_proxy(
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
                 public_coder_agent_namespace,
+                external_creds,
+                # Retain/order the old reflected source while the Brave ExternalSecret adopts its target.
+                agent_shared_secrets,
                 cert_manager_environment,
                 cert_manager_trust,
                 reflector,
@@ -955,6 +962,12 @@ def public_coder_agent_proxy(
                     api_version="cert-manager.io/v1",
                     kind="Certificate",
                     name="public-coder-agent-proxy-root-ca",
+                    namespace="public-coder-agent",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="brave-search-api-key",
                     namespace="public-coder-agent",
                 ),
             ],
@@ -1042,10 +1055,12 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/agents/shared-secrets",
-            # CLEANUP: restore pruning once the Telegram and BuildBuddy ExternalSecrets
-            # are Ready and both staged handoffs are verified. Both handoffs use
-            # ExternalSecrets with creationPolicy: Orphan to preserve existing target
-            # names without ownership; cleanup must account for that lifecycle first.
+            # Keep the legacy Brave source declared during ESO adoption; remove it with pruning
+            # enabled after the new proxy ExternalSecret is Ready.
+            # CLEANUP: restore pruning once the Telegram, BuildBuddy, and Brave ExternalSecrets
+            # are Ready and their staged handoffs/inventories are verified. The handoffs use
+            # creationPolicy: Orphan to preserve existing target names without ownership; cleanup
+            # must account for that lifecycle first.
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
