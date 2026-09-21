@@ -1,6 +1,7 @@
 """Real Electric and logical PostgreSQL with the deployment's restricted database role."""
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -103,6 +104,9 @@ async def electric_service(
             )
             if electric_storage_dir is not None:
                 await asyncio.to_thread(electric_storage_dir.mkdir, parents=True, exist_ok=True)
+                # The upstream image runs as UID 1000; Kubernetes supplies this through the
+                # deployment's fsGroup, while a Docker bind mount preserves the test process UID.
+                await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
                 electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric")
             with electric:
                 url = f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
