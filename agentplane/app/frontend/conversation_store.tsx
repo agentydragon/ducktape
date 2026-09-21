@@ -286,10 +286,13 @@ export function PayloadBody({
       window.removeEventListener("online", online);
     };
   }, [follow, reference, referenceKey, refreshConversation, threadId]);
-  if (!selection) return error ? <p role="alert">{error}</p> : children(null);
+  const sameScope =
+    selection?.reference.source_id === reference.source_id &&
+    selection.reference.projection_epoch === reference.projection_epoch;
+  if (!selection || !sameScope) return error ? <p role="alert">{error}</p> : children(null);
   return (
     <>
-      {selection.key !== referenceKey && <p role="status">Loading newer revision; showing last complete revision.</p>}
+      {selection.key !== referenceKey && <p role="status">Loading newer revision; showing previous revision.</p>}
       {error && <p role="alert">{error}; retrying.</p>}
       <ActivePayloadBody
         threadId={threadId}
