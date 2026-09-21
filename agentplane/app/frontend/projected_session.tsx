@@ -33,6 +33,12 @@ import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_discl
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+
+export function pruneCommandErrors(errors: Map<string, string>, commandIds: ReadonlySet<string>): Map<string, string> {
+  if (Array.from(errors.keys()).every((id) => commandIds.has(id))) return errors;
+  return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
+}
+
 const LIFECYCLE_LABELS: Record<string, string> = {
   turn_started: "Turn started",
   turn_completed: "Turn completed",
@@ -364,13 +370,9 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
   useEffect(() => {
-    setErrors((previous) => {
-      if (Array.from(previous.keys()).every((id) => local.commands.some((command) => command.command.commandId === id)))
-        return previous;
-      return new Map(
-        Array.from(previous).filter(([id]) => local.commands.some((command) => command.command.commandId === id))
-      );
-    });
+    setErrors((previous) =>
+      pruneCommandErrors(previous, new Set(local.commands.map((command) => command.command.commandId)))
+    );
   }, [local.commands]);
   const effectedCommandIds = useMemo(
     () =>
