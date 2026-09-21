@@ -917,6 +917,7 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:command_pb2",

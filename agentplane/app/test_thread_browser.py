@@ -9,6 +9,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -17,6 +18,7 @@ from google.protobuf import json_format
 from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
 
 from agentplane.app.testing.electric_service import electric_service
+from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import TrajectoryStore
@@ -29,10 +31,17 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture
-async def page(request: pytest.FixtureRequest) -> AsyncIterator[Page]:
+def certificate(tmp_path: Path) -> BrowserCertificate:
+    return browser_certificate(tmp_path / "tls")
+
+
+@pytest.fixture
+async def page(request: pytest.FixtureRequest, certificate: BrowserCertificate) -> AsyncIterator[Page]:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
-            headless=True, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS
+            headless=True,
+            executable_path=chromium_executable(),
+            args=[*CONTAINER_BASE_BROWSER_ARGS, f"--ignore-certificate-errors-spki-list={certificate.spki}"],
         )
         try:
             async with await browser.new_context(viewport={"width": 1280, "height": 900}) as context:
@@ -136,7 +145,9 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         assert await store.events(thread_id, limit=100) == thread_source.entries
 
 
-async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(page: Page) -> None:
+async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
+    page: Page, certificate: BrowserCertificate
+) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -180,11 +191,12 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(p
                 app_process(
                     service.database_url, target, frontend_directory=directory, electric_url=service.url
                 ) as app,
+                http2_proxy(app.url, certificate) as ingress,
                 asyncio.timeout(60),
             ):
                 opened = await source.opened.get()
                 opened.replay.set()
-                await page.goto(f"{app.url}/#/threads/{thread}")
+                await page.goto(f"{ingress}/#/threads/{thread}")
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
@@ -214,7 +226,11 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(p
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
                 ).to_have_count(1)
-                assert not any(urlsplit(url).path == f"/threads/{thread}/events" for url in requests)
+                assert not any(urlsplit(url).path.startswith(f"/threads/{thread}/events") for url in requests)
+                assert await page.evaluate(
+                    """() => performance.getEntriesByType('resource').some(
+                        entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
+                )
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reloaded.png")
         finally:
             await store.close()
