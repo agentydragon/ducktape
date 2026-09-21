@@ -81,6 +81,15 @@ the repository's 1.8.0 image. A passing 409/reset probe establishes the
 configured handle lifecycle; even a passing bounded-history sample is not a
 long-run server-memory bound.
 
+The separate stalled-reader probe also uses 1.8.1, but keeps two cached fixed
+shapes: the full tail shape whose raw downstream socket stops after its HTTP
+headers, and a `changes_only` shape opened before writes. It writes 65 batches
+of 30 64-KiB values, waits for Electric's logical-replication slot to process
+each write, resumes the stalled full reader, and restarts Electric. It records
+PID RSS and cgroup `anon`, `file`, `active_file`, `inactive_file`,
+`file_dirty`, and `shmem` at eight-batch levels. This is a finite service
+sample; cgroup usage is evidence to attribute, not a test bound.
+
 The growth predicate sends its BIGINT bound as a decimal string through
 Electric's positional `params[n]` query parameters. The first probe attempt put
 `9007199254740993` directly into the SQL filter; Electric 1.8.1 returned 500
@@ -116,6 +125,9 @@ environment, not a production load test.
 | Electric restart and replication-slot/WAL observation                               | Confirmed in the single-service test         | Electric 1.8 is stopped and restarted; both browser pages receive the next update. One logical slot is active with `wal_level=logical`; retained WAL measured 366,192 bytes in this run. Requests held against the deliberately stopped service briefly return 500 before the new service is ready; the collections retry and recover.                                 |
 | Configured shape-cap eviction and fresh-handle reset on Electric 1.8.1              | Confirmed                                    | RBE run [`b5fdc116`](https://app.buildbuddy.io/invocation/b5fdc116-9ae6-4742-acd2-eab63ce4979a): full snapshots returned 1k, 20k, and 1k rows; with `ELECTRIC_MAX_SHAPES=2`, the oldest handle returned 409 plus `must-refetch` after 75s, and a new handle reloaded all 1k rows. Logs show the expiry manager removing that handle.                                   |
 | Electric process memory during the 1.8.1 capacity probe                             | Sampled; bounded growth unproven             | `shape-capacity-evidence.json` records PID 1 RSS from 317,396 KiB at readiness to 313,380 KiB after the 20k-row full shape, 301,764 KiB after expiry, and 302,072 KiB after reset; peak RSS was 319,308 KiB. cgroup usage ranged from 258.8 MB after expiry to 272.4 MB at readiness. This single full-shape run is not evidence of a fixed-active-shape memory bound. |
+| Stalled full-shape reader during continued fixed-tail writes                         | Finite two-shape PID RSS sample               | [RBE run `51f6033b`](https://app.buildbuddy.io/invocation/51f6033b-b25a-41ad-a2c6-1c7281b0d2e2) left a real socket unread after headers, then processed 127,795,200 model bytes across 65 batches. The socket receive queue was nonzero; independent and resumed readers reached the current 30 rows using logical-slot checkpoints. PID RSS grew 16,328 KiB (315,904 to 332,232 KiB), below this test's 24-MiB two-shape budget. cgroup grew 536,506,368 bytes, primarily file cache (56,303,616 to 561,627,136 bytes), so no cgroup bound is claimed. |
+| Persisted full-shape reload after the same writes                                   | Does not meet a strict reload-cost gate      | The same artifact's restart reused the full-shape handle but replayed 1,980 operations and 254,436,421 bytes to recover 30 current rows. This records a reload-cost failure mode, not a bounded restart result. |
+| Warmed `changes_only` fixed shape after restart and held-write race                 | Confirmed for the spike request flow          | The second shape was opened before the 65 batches, reused its persisted handle after restart with `offset=now`, and returned zero historic operations in 72 bytes. Its whole fixed-shape GET subset returned 30 current rows in 1,976,227 bytes. A held PostgreSQL write was absent from the snapshot under its `xmin`/`xmax`/`xip_list` metadata, then arrived in one live page after commit and a processed-WAL checkpoint. |
 | Authentication, multiple browsers, and two proxy instances                          | Confirmed in the test topology               | The API rejects cross-conversation access and caller-supplied GET table, POST table, and conversation `WHERE` overrides. Both browsers receive updates while 62 requests alternate across two stateless proxy instances (31 each), with no sticky state.                                                                                                               |
 | Sustained write/network amplification and persisted-cache recovery                  | Not established                              | Response rows/bytes, per-field payload parts, query plans, and one WAL measurement are recorded, but there is no sustained throughput benchmark or production retention policy. No browser persistence or collection tags are configured, so cold persisted-cache/tag recovery still needs a separate test.                                                            |
 
@@ -214,12 +226,15 @@ the exact-reference, immutable-prefix, per-field, and transaction semantics.
   capture raw runner output.
 - Long-run browser heap bounds/virtualization and Electric server RSS/retained
   heap across fixed active subscriptions, unrelated history growth, shape
-  churn/expiry, resets, restarts, and slow readers remain unproven. The 1.8.1
-  capacity probe measures a single 1k/20k/1k full-shape sequence; the separate
-  bounded-history probe is a finite 100-to-100,000-row experiment: its sampled
-  Electric RSS changed by about 1.9 MiB between the initial bounded snapshot
-  and 100,000 database rows, but this is not a steady-state proof. Replication
-  buffers, shape caches/history, backpressure, and payload retention policy
-  remain server-side adoption gates.
+  churn/expiry, resets, and slow readers remain unproven. The 1.8.1 capacity
+  probe measures a single 1k/20k/1k full-shape sequence; the bounded-history
+  probe is a finite 100-to-100,000-row experiment. The stalled-reader probe is
+  another finite sample with two cached shapes: PID RSS grew 16,328 KiB while
+  127,795,200 model bytes were written, but its cgroup grew 536,506,368 bytes
+  largely as file cache. It does not establish an RSS or cgroup steady-state
+  bound. Its full-shape restart replayed 254,436,421 bytes for 30 current rows,
+  while its warmed spike `changes_only` subset skipped that history. Replication
+  buffers, shape caches/history, backpressure, reload cost, and payload
+  retention policy remain server-side adoption gates.
 - BuildBuddy test outputs are evidence for a particular invocation; they are
   not committed screenshots or performance baselines.
