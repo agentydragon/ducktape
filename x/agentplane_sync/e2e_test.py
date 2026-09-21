@@ -1509,6 +1509,7 @@ async def test_electric_end_to_end() -> None:
                                 database_row = await pool.fetchrow(
                                     "SELECT * FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:live-item'"
                                 )
+                                assert database_row is not None
                                 _write_json(
                                     outputs / "payload-race-before-rplus-one-evidence.json",
                                     {
