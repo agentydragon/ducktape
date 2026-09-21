@@ -3434,41 +3434,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    description: Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage.
-    ducktape.org/parked: "true"
-  name: archivebox
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: seaweedfs-csi
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: archivebox
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: archivebox
-      namespace: archivebox
-  interval: 10m
-  path: ./cluster/k8s/parked/archivebox
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: archivebox
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 15m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-public-s3
   namespace: ducktape-flux
 spec:
