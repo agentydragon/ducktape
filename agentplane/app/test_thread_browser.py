@@ -24,12 +24,21 @@ from playwright.async_api import (
     async_playwright,
     expect,
 )
+from sqlalchemy import select, update
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory import (
+    ConversationEntity,
+    ConversationPayloadChunk,
+    ConversationPayloadManifest,
+    ConversationProjectionCheckpoint,
+    ConversationProjectionEvidence,
+    ConversationProjectionNativeLink,
+    TrajectoryStore,
+)
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -243,6 +252,99 @@ async def test_switching_threads_starts_at_each_threads_tail(
             await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
             await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "conversation-thread-navigation.png")
+
+
+async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
+    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread_browser.opened.replay.set()
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await draft.fill("Draft survives projection replacement")
+    previous = await page.request.get(f"{thread_browser.browser_url}/threads/{thread}/sync/interest")
+    assert previous.ok
+    old_interest = await previous.json()
+    ready = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
+
+    def rebuilt_reference(reference: dict[str, object] | None) -> dict[str, object] | None:
+        return {**reference, "projection_epoch": "test-rebuilt-epoch"} if reference is not None else None
+
+    async def hold_old_evidence(route: Route) -> None:
+        response = await route.fetch()
+        assert response.ok
+        ready.set()
+        await release.wait()
+        try:
+            await route.fulfill(response=response)
+        finally:
+            finished.set()
+
+    await page.route("**/conversation/evidence?*", hold_old_evidence)
+    try:
+        await page.locator('[data-conversation-anchor="3"] summary', has_text="Evidence").click()
+        async with asyncio.timeout(15):
+            await ready.wait()
+
+        # Stand in for an explicit background rebuild's atomic epoch publication.
+        # This touches only the disposable test database; the live app and Electric
+        # must detect replacement without a page reload or a custom client reset.
+        async with store._sessions() as session, session.begin():
+            rows = list(await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread)))
+            for row in rows:
+                row.projection_epoch = "test-rebuilt-epoch"
+                row.text_ref = rebuilt_reference(row.text_ref)
+                row.arguments_ref = rebuilt_reference(row.arguments_ref)
+                row.output_ref = rebuilt_reference(row.output_ref)
+                row.input_ref = rebuilt_reference(row.input_ref)
+            for model in (
+                ConversationProjectionCheckpoint,
+                ConversationPayloadManifest,
+                ConversationPayloadChunk,
+                ConversationProjectionEvidence,
+                ConversationProjectionNativeLink,
+            ):
+                await session.execute(
+                    update(model).where(model.thread_id == thread).values(projection_epoch="test-rebuilt-epoch")
+                )
+            await session.execute(
+                update(ConversationPayloadChunk)
+                .where(
+                    ConversationPayloadChunk.thread_id == thread,
+                    ConversationPayloadChunk.owner_id == "test-browser-item",
+                )
+                .values(text="Test replaced prefix")
+            )
+
+        await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible(timeout=20_000)
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
+        await expect(draft).to_have_value("Draft survives projection replacement")
+        await expect(page.locator('[data-conversation-anchor="3"] details[open]')).to_have_count(0)
+        release.set()
+        async with asyncio.timeout(15):
+            await finished.wait()
+        await expect(page.locator('[data-conversation-anchor="3"] details[open]')).to_have_count(0)
+        await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible()
+
+        stale = await page.request.get(
+            f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
+            params={
+                **{key: old_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")},
+                "offset": "now",
+            },
+        )
+        assert stale.status == 410
+        await page.screenshot(path=undeclared_outputs_dir() / "projected-epoch-replacement.png")
+    finally:
+        release.set()
+        if ready.is_set():
+            async with asyncio.timeout(15):
+                await finished.wait()
+        await page.unroute("**/conversation/evidence?*", hold_old_evidence)
 
 
 async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(

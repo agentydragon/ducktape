@@ -213,3 +213,32 @@ the worktree patch applied before execution. The built probe source artifact's
 SHA-256 `7792dbc7d23f302de5fe7afb9e6acb2bd84e68fa13c0121079407c31258577b7`
 matches the file in spike commit `830fb2cfcc`. The downloaded measurement artifact
 was independently inspected; it is finite evidence, not a months-long guarantee.
+
+## Current-snapshot bootstrap
+
+At `b94ecf4dd9`, mutable entity and command shapes use the standard TanStack
+on-demand integration with Electric changes-only logs. The app keeps the indexed
+fixed-interest predicate and accepts only a whole-shape GET subset snapshot.
+Immutable payload chunks retain their existing log. Proxy validation rejects
+caller filters, pagination, shape definitions and duplicate protocol parameters.
+
+Proxy tests and the changed Python/TypeScript libraries passed
+[32a5b159](https://app.buildbuddy.io/invocation/32a5b159-5885-4282-9d66-d7bb04b73b06).
+That invocation exposed an integration assertion still treating subset envelopes
+as stream arrays. Corrected assertions at `ee74c3451a` passed the real
+PostgreSQL/Electric/two-replica history, old-item updates, selected commands,
+exact-revision bodies and evicted-window revisit test:
+[6bda034f](https://app.buildbuddy.io/invocation/6bda034f-0ee9-4150-a7c9-7855a04af815).
+Revisit now requires one current version instead of replaying obsolete versions.
+
+The built browser streaming/lazy-body/evidence scenario passed at `b94ecf4dd9`:
+[51c5308f](https://app.buildbuddy.io/invocation/51c5308f-de9d-44bf-aa92-5e6d5b140201).
+Its actual trace confirms native GET subset requests, snapshot transaction metadata
+and the library's subsequent live stream. The evidence PNG was inspected. These
+functional checks do not replace the separate update-heavy reload/resource probe.
+
+The clean scroll repeat at `a0b5654ab6` failed four of twelve shard runs:
+[54e444d7](https://app.buildbuddy.io/invocation/54e444d7-ae0c-4010-b118-e535a60f3bd5).
+Individual logs locate the failures at the first anchor assertion after new source
+updates, with expected rows still mounted. A prior tracing-enabled pass did not
+hold without instrumentation; scroll correctness remains open.
