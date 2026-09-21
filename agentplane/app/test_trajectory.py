@@ -683,5 +683,87 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert await store.last_cursor(thread) == 4
 
 
+async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
+    confirmed = _event(
+        2,
+        harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+            harness_message_id="message", text="question", origin_command_ids=["input"], turn_id="turn"
+        ),
+    )
+    confirmed.event.source_sequences.extend([81, 82])
+    await store.record(
+        thread,
+        [
+            _event(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
+            confirmed,
+            _event(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
+        ],
+        lease=lease,
+    )
+    await store.record(
+        thread,
+        [
+            _event(
+                4,
+                item_started=event_pb2.ItemStarted(
+                    item_id="tool-b", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="later"
+                ),
+            ),
+            _event(
+                5,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-b", tool=event_pb2.ToolResult(output="B", succeeded=True)
+                ),
+            ),
+            _event(6, tool_arguments=event_pb2.ToolArguments(item_id="tool-a", arguments_json='{"path":"x"}')),
+            _event(
+                7,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-a", tool=event_pb2.ToolResult(output="", succeeded=False)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        entities = {
+            (row.entity_kind, row.entity_id): row
+            for row in (
+                await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread))
+            ).all()
+        }
+        manifests = (
+            await session.scalars(
+                select(ConversationPayloadManifest)
+                .where(ConversationPayloadManifest.thread_id == thread)
+                .order_by(ConversationPayloadManifest.owner_id, ConversationPayloadManifest.revision_cursor)
+            )
+        ).all()
+    first, second = entities[("item", "tool-a")], entities[("item", "tool-b")]
+    assert (first.cursor, first.revision_cursor, second.cursor, second.revision_cursor) == (3, 7, 4, 5)
+    assert first.arguments_ref is not None
+    assert first.arguments_ref["revision_cursor"] == "6"
+    assert first.output_ref is not None
+    assert first.output_ref["revision_cursor"] == "7"
+    assert first.output_ref["generation"] == "7"
+    assert second.output_ref is not None
+    assert second.output_ref["revision_cursor"] == "5"
+    assert entities[("confirmed_input", "2")].input_ref is not None
+    assert entities[("command", "input")].pending is False
+    assert entities[("command", "input")].state["outcome"] == "effected"
+    assert [(manifest.owner_id, manifest.revision_cursor, manifest.chunk_count) for manifest in manifests] == [
+        ("input", 1, 1),
+        ("message", 2, 1),
+        ("tool-a", 3, 1),
+        ("tool-a", 6, 1),
+        ("tool-a", 7, 0),
+        ("tool-b", 5, 1),
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
