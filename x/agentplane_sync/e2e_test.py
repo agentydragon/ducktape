@@ -867,17 +867,24 @@ def _write_browser_journal(
     _write_json(path, {"events": network_events, "records": records, "pageErrors": page_errors})
 
 
-async def _wait_for_payload_gc(page: Page, shape_ref: str) -> dict[str, Any]:
+async def _payload_collection_id(page: Page, conversation_id: str, shape_ref: str) -> str:
+    epoch = await page.get_by_test_id("payload-body").get_attribute("data-epoch")
+    assert epoch is not None
+    return f"agentplane-payload-chunks:{conversation_id}:{shape_ref}:{epoch}"
+
+
+async def _wait_for_payload_gc(page: Page, shape_ref: str, collection_id: str) -> dict[str, Any]:
     await page.wait_for_function(
-        """(shapeRef) => window.__syncEvidence.retiredPayloadCollections.some(entry =>
-          entry.shapeRef === shapeRef && entry.automaticGc && entry.sizeAfterCleanup === 0
+        """({shapeRef, collectionId}) => window.__syncEvidence.retiredPayloadCollections.some(entry =>
+          entry.shapeRef === shapeRef && entry.collectionId === collectionId
+          && entry.automaticGc && entry.sizeAfterCleanup === 0
           && entry.subscribersAfterCleanup === 0 && entry.statusAfterCleanup === 'cleaned-up')""",
-        arg=shape_ref,
+        arg={"shapeRef": shape_ref, "collectionId": collection_id},
         timeout=30_000,
     )
     entries = await page.evaluate(
-        "(shapeRef) => window.__syncEvidence.retiredPayloadCollections.filter(entry => entry.shapeRef === shapeRef)",
-        arg=shape_ref,
+        "(collectionId) => window.__syncEvidence.retiredPayloadCollections.filter(entry => entry.collectionId === collectionId)",
+        arg=collection_id,
     )
     matching = [
         entry
@@ -1914,6 +1921,7 @@ async def test_electric_end_to_end() -> None:
                                 revision=base_cursor + 12,
                             )
                             tool_shape_ref = tool_output_replacement["shapeRef"]
+                            tool_collection_id = await _payload_collection_id(page, "alpha-large", tool_shape_ref)
                             output_requests_before_close = len(
                                 [
                                     request
@@ -1924,7 +1932,9 @@ async def test_electric_end_to_end() -> None:
                                 ]
                             )
                             await page.get_by_role("button", name="Close payload").click()
-                            initial_output_gc = await _wait_for_payload_gc(page, tool_shape_ref)
+                            initial_output_gc = await _wait_for_payload_gc(
+                                page, tool_shape_ref, tool_collection_id
+                            )
 
                             closed_chunks = [
                                 f"closed-interest-{index:02d}:" + "x" * 8_192 for index in range(64)
@@ -2013,8 +2023,13 @@ async def test_electric_end_to_end() -> None:
                                 assert reopened_body["contentBytes"] == str(expected_closed_bytes)
                                 opened_heap = await heap_session.send("Runtime.getHeapUsage")
                                 reopened_shape_ref = reopened_body["shapeRef"]
+                                reopened_collection_id = await _payload_collection_id(
+                                    page, "alpha-large", reopened_shape_ref
+                                )
                                 await page.get_by_role("button", name="Close payload").click()
-                                reopened_gc = await _wait_for_payload_gc(page, reopened_shape_ref)
+                                reopened_gc = await _wait_for_payload_gc(
+                                    page, reopened_shape_ref, reopened_collection_id
+                                )
                                 await heap_session.send("HeapProfiler.collectGarbage")
                                 closed_heap = await heap_session.send("Runtime.getHeapUsage")
                                 revisit_evidence.append(
@@ -2116,8 +2131,13 @@ async def test_electric_end_to_end() -> None:
                                 page, expected="", payload_ref=empty_output_ref, revision=empty_output_cursor
                             )
                             assert empty_output_visible["chunkCount"] == 0, empty_output_visible
+                            empty_output_collection_id = await _payload_collection_id(
+                                page, "alpha-large", empty_output_visible["shapeRef"]
+                            )
                             await page.get_by_role("button", name="Close payload").click()
-                            empty_output_gc = await _wait_for_payload_gc(page, empty_output_visible["shapeRef"])
+                            empty_output_gc = await _wait_for_payload_gc(
+                                page, empty_output_visible["shapeRef"], empty_output_collection_id
+                            )
                             older_output_ref = await pool.fetchval(
                                 "SELECT output_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:older-tool-row'"
                             )
@@ -2144,13 +2164,22 @@ async def test_electric_end_to_end() -> None:
                                 "revision": str(base_cursor + 6),
                                 "content": '{"x":1}',
                             }, arguments_after_stale_manifest
-                            stale_manifest_requests = (
-                                await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
-                            ).json()["payloadRequests"]
+                            older_manifest_path = f"/api/payloads/alpha-large/{older_output_ref}"
+                            stale_manifest_browser_events = [
+                                event
+                                for event in network_events
+                                if event.get("page") == "page-1"
+                                and urlsplit(event.get("url", "")).path == older_manifest_path
+                                and event.get("event") in {"request", "requestfailed"}
+                            ]
                             assert any(
-                                request["part"] == "manifest" and request["payloadRef"] == older_output_ref
-                                for request in stale_manifest_requests
-                            ), stale_manifest_requests
+                                event["event"] == "request" for event in stale_manifest_browser_events
+                            ), stale_manifest_browser_events
+                            assert any(
+                                event["event"] == "requestfailed"
+                                and event.get("failure") == "net::ERR_ABORTED"
+                                for event in stale_manifest_browser_events
+                            ), stale_manifest_browser_events
                             await page.get_by_role("button", name="Open older output").click()
                             older_output_visible = await _assert_rendered_payload(
                                 page,
@@ -2173,7 +2202,8 @@ async def test_electric_end_to_end() -> None:
                                     "emptyOutputCollection": empty_output_gc,
                                     "staleManifestSwitch": {
                                         "heldRef": older_output_ref,
-                                        "renderedArgumentsAfterLateResponse": arguments_after_stale_manifest,
+                                        "renderedArgumentsAfterHeldRequestCancelled": arguments_after_stale_manifest,
+                                        "browserEvents": stale_manifest_browser_events,
                                         "routeError": route_control["manifestRouteError"],
                                     },
                                     "retiredOutputShapeRef": tool_shape_ref,
@@ -2666,13 +2696,10 @@ async def test_electric_end_to_end() -> None:
                                     and request["part"] == "chunks"
                                 ]
                             )
+                            text_collection_id = await _payload_collection_id(page, "alpha-large", text_shape_ref)
                             await page.get_by_role("button", name="Close payload").click()
-                            await page.wait_for_function(
-                                """(shapeRef) => window.__syncEvidence.retiredPayloadCollections.some(entry =>
-                                  entry.shapeRef === shapeRef && entry.sizeAfterCleanup === 0
-                                  && entry.subscribersAfterCleanup === 0 && entry.statusAfterCleanup === 'cleaned-up')""",
-                                arg=text_shape_ref,
-                                timeout=30_000,
+                            text_collection_gc = await _wait_for_payload_gc(
+                                page, text_shape_ref, text_collection_id
                             )
                             replacement_cursor = stream_end_cursor + 1
                             text_replacement_result = await apply_batch(
