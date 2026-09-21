@@ -113,7 +113,7 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
 function entityCollection(threadId: string, interest: EntityInterest) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-conversation:${threadId}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      id: `agentplane-conversation:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
@@ -317,7 +317,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
 function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow}`,
+      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
