@@ -27,6 +27,33 @@ instance reset, or disabling of raw capture is part of this work.
 | Actual frontend cutover and single server-state owner              | Application routes use the projected TanStack DB view.                                                                                                                                                                                                                                                   | Obsolete full-history session/reducer removed in `f0a968286e`; final replacement browser/visual coverage remains.                                                                                                                                                                                                                                                    |
 | Reviewable complete PR stack                                       | Independent runner #7535 and batching #7546; pure fold #7523; storage #7540; lazy debug #7555; Electric/frontend #7537; assembled acceptance #7551; WAL #7560.                                                                                                                                           | Refresh stack bases to remove unrelated ancestry from review diffs; final current-head CI, rendered-artifact review and requirement audit.                                                                                                                                                                                                                           |
 
+## Chronological debug and command evidence
+
+At `7b77cad72a`, the debug API and projector tests plus changed library checks passed
+[2ec6ca31](https://app.buildbuddy.io/invocation/2ec6ca31-962e-4616-93a5-5f4b40b06818).
+The archive endpoint returns whole original observations in count-bounded,
+exclusive-keyset pages, including unlinked native packets, stderr and checkpoints.
+Every settled command associates its outcome with the stable admission entity;
+effects may also associate with a lifecycle/input entity. The tests cover failed,
+noop and effect settlements, batch partitions, authentication, cursor precision,
+forward/backward paging and an untruncated stderr body over 2 MiB.
+
+The on-demand frontend drawer is implemented at `ee46509b9d`; it keeps one raw page,
+mounts JSON only for expanded observations, aborts page requests on disposal, and
+links from semantic evidence to its original chronological context. Real desktop
+and phone browser proof and rendered-image inspection remain pending.
+
+## Tail queries after settled commands
+
+At `75f92056bc`, the production tail-bound query was exercised after 10,000 settled
+commands through actual ingestion:
+[dfc9c92b](https://app.buildbuddy.io/invocation/dfc9c92b-521e-4cf3-8536-f47d2a8f7c94).
+The downloaded EXPLAIN artifact shows a backward scan of the partial segment cursor
+index: one index search, three shared-buffer hits, and no row filtering. This closes
+the specific risk of scanning command rows to find the last conversation segment.
+The full 33-test trajectory suite subsequently passed at `1f259b30c2`
+[c897a7ca](https://app.buildbuddy.io/invocation/c897a7ca-fe1c-4909-a23c-3b8b82cfdfc8).
+
 ## Authenticated proxy boundary
 
 At `85db5c8798`, all five production sync routes passed missing, incorrect, and
