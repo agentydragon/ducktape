@@ -208,7 +208,7 @@ def test_parallel_old_item_updates_keep_positions_fields_and_evidence(script: li
     assert first.arguments.reference.field is PayloadField.ARGUMENTS
     assert first.completion == "tool"
     assert first.tool_succeeded is False
-    assert {e.observation_cursor for e in store.evidence if e.item_cursor == first.cursor} == {6, 7, 10, 11, 12}
+    assert {e.observation_cursor for e in store.evidence if e.entity_cursor == first.cursor} == {6, 7, 10, 11, 12}
 
 
 def test_authoritative_empty_replacement_is_present_and_new_generation() -> None:
