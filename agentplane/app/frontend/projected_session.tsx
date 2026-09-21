@@ -183,12 +183,12 @@ function EvidenceFrames(props: {
   entity: ConversationEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const { entity } = props;
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Observation {props.observationCursor} raw frames</summary>
-      {open && <EvidenceFramesPage {...props} />}
-    </details>
+    <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
+      <EvidenceFramesPage key={id} {...props} />
+    </RetainedDisclosure>
   );
 }
 
@@ -265,12 +265,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
 }
 
 function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Evidence</summary>
-      {open && <EvidencePageView threadId={threadId} entity={entity} />}
-    </details>
+    <RetainedDisclosure id={id} summary="Evidence">
+      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+    </RetainedDisclosure>
   );
 }
 
