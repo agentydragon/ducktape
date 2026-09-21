@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Iterator
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -32,7 +33,8 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory import CONVERSATION_PROJECTION_EPOCH, TrajectoryStore
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -686,6 +688,78 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert (await http.patch(f"/threads/{thread_id}", json={})).status_code == 422
         missing = await http.patch("/threads/00000000-0000-0000-0000-000000000000", json={"name": "nobody"})
         assert missing.status_code == 404
+
+
+async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    """A reload asks the authoritative scope about browser-held ids without resending commands."""
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread = await store.thread("live", "command-reconcile", spec)
+    lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+    assert lease is not None
+    failed = command_pb2.Command(
+        command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")
+    )
+    pending = command_pb2.Command(
+        command_id="pending", submit_input=command_pb2.SubmitInput(text="still awaiting the runner")
+    )
+
+    def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+        return event_log_pb2.EventEntry(
+            cursor=cursor,
+            origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor),
+            event=event_pb2.Event(**observation),  # type: ignore[arg-type]
+        )
+
+    await store.record(
+        thread,
+        [
+            entry(1, command_admitted=event_pb2.CommandAdmitted(command=failed)),
+            entry(2, command_failed=event_pb2.CommandFailed(command_id="failed", reason="runner rejected it")),
+            entry(3, command_admitted=event_pb2.CommandAdmitted(command=pending)),
+        ],
+        lease=lease,
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    body = {
+        "source_id": "test-runner",
+        "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
+        "command_ids": ["failed", "pending", "absent", "failed"],
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert first.status_code == 200, first.text
+        assert first.json() == {
+            "source_id": "test-runner",
+            "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
+            "commands": [
+                {"command_id": "failed", "outcome": "failed"},
+                {"command_id": "pending", "outcome": "pending"},
+                {"command_id": "absent", "outcome": None},
+            ],
+        }
+        # This is the reload path after a committed admission's HTTP response was lost.
+        reloaded = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert reloaded.json() == first.json()
+
+        stale = await http.post(
+            f"/threads/{thread}/commands/reconcile", json={**body, "projection_epoch": "old-projection"}
+        )
+        assert stale.status_code == 410
+        invalid = await http.post(f"/threads/{thread}/commands/reconcile", json={**body, "command_ids": ["id"] * 129})
+        assert invalid.status_code == 422
 
 
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
