@@ -145,8 +145,8 @@ spec:
       name: tofu-controller
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/tofu-state/db/**"
-          to: "@artifact/cluster/k8s/tofu-state/db/"
+        - from: "@repo/cluster/k8s/tofu-state/**"
+          to: "@artifact/cluster/k8s/tofu-state/"
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
@@ -878,11 +878,6 @@ spec:
         - from: "@repo/cluster/k8s/talos-cloud-controller-manager/**"
           to: "@artifact/cluster/k8s/talos-cloud-controller-manager/"
       name: talos-cloud-controller-manager
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/tofu-state/namespace/**"
-          to: "@artifact/cluster/k8s/tofu-state/namespace/"
-      name: tofu-state-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/user-agentydragon/**"

@@ -724,22 +724,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: tofu-state-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/tofu-state/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: tofu-state-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: user-agentydragon
   namespace: ducktape-flux
 spec:
@@ -1950,19 +1934,16 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: tofu-state-namespace
-      namespace: ducktape-flux
     - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
       kind: Database
   interval: 10m
-  path: ./cluster/k8s/tofu-state/db
+  path: ./cluster/k8s/tofu-state
   prune: true
   retryInterval: 1m
   sourceRef:
