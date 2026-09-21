@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
 
 from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -69,7 +68,7 @@ class ScratchBase(DeclarativeBase):
 
 class AdapterItem(ScratchBase):
     __tablename__ = "adapter_item"
-    __table_args__: ClassVar[dict[str, list[str]]] = {"prefixes": ["TEMPORARY"]}
+    __table_args__ = ({"prefixes": ["TEMPORARY"]},)
 
     adapter_id: Mapped[str] = mapped_column(primary_key=True)
     item_id: Mapped[str] = mapped_column(primary_key=True)
@@ -77,7 +76,7 @@ class AdapterItem(ScratchBase):
 
 class AdapterMessage(ScratchBase):
     __tablename__ = "adapter_message"
-    __table_args__: ClassVar[dict[str, list[str]]] = {"prefixes": ["TEMPORARY"]}
+    __table_args__ = ({"prefixes": ["TEMPORARY"]},)
 
     adapter_id: Mapped[str] = mapped_column(primary_key=True)
     message_id: Mapped[str] = mapped_column(primary_key=True)
