@@ -882,6 +882,7 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
