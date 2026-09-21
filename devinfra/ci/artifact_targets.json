@@ -86,7 +86,7 @@
     },
     "ducktape-claude-api": {
       "tests": "//devinfra/claude/claude_api/...",
-      "nixPackage": false
+      "nixPackage": true
     },
     "ducktape-git-hooks": {
       "tests": "//devinfra/precommit/... //cluster/validation/...",
