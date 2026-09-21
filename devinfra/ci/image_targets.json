@@ -83,10 +83,6 @@
       "test": "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
       "registry": "forgejo"
     },
-    "manifold-mcp-server": {
-      "target": "@ducktape_manifold_mcp_server//:image",
-      "registry": "forgejo"
-    },
     "osm-mcp": {
       "target": "//third_party/osmmcp:image",
       "registry": "forgejo"

@@ -399,9 +399,9 @@ noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
   MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
   (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
   is removed from the active bundle; manifests remain for manual revival. Its API-key
-  Secret was Reflector-mirrored into an `augur` namespace defined in the separate
-  `gaffer-private` repo (not accessible from this repo) — parking stops that mirror source;
-  whether `augur` still consumes the key was not verified before parking.
+  Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
+  `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
+  remains; the secret manifest stays parked.
 - **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live

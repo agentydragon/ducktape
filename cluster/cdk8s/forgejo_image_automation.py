@@ -87,7 +87,6 @@ IMAGES = (
     "homeassistant-provisioner",
     "iron-proxy",
     "loki-read-proxy",
-    "manifold-mcp-server",
     "matrix-user-provisioner",
     "mcp-oauth-facade",
     "osm-mcp",
