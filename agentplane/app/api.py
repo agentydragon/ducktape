@@ -46,6 +46,7 @@ from agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
+from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
 from agentplane.app.inventory import (
     SANDBOX_BINDING_ANNOTATION,
@@ -621,6 +622,7 @@ def create_app(
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
+    electric: ElectricProxy | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -643,6 +645,7 @@ def create_app(
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     app.state.operator_actions = operator_actions
+    app.state.electric = electric
     app.state.drain = Drain()
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
@@ -661,6 +664,8 @@ def create_app(
         live_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
+    if electric is not None:
+        app.include_router(electric_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,

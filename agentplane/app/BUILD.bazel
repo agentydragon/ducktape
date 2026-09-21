@@ -40,6 +40,7 @@ py_library(
         ":consent",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -912,5 +913,28 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "electric",
+    srcs = ["electric.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_electric",
+    srcs = ["test_electric.py"],
+    deps = [
+        ":conftest",
+        ":electric",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
     ],
 )
