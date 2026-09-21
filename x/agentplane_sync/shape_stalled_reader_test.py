@@ -131,6 +131,39 @@ def _latest_models(operations: list[dict[str, Any]]) -> dict[str, str]:
     return latest
 
 
+async def _consume_latest_tail(
+    client: httpx.AsyncClient,
+    shape_url: str,
+    snapshot: dict[str, Any],
+    *,
+    offset: str,
+    where_clause: str,
+    where_params: tuple[str, ...],
+    expected_model: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    latest_models: dict[str, str] = {}
+    pages: list[dict[str, Any]] = []
+    for _ in range(30):
+        page = await _read_live_page(
+            client,
+            shape_url,
+            snapshot,
+            offset=offset,
+            where_clause=where_clause,
+            where_params=where_params,
+            columns=SHAPE_COLUMNS,
+        )
+        next_offset = page["offset"]
+        assert isinstance(next_offset, str), page
+        assert next_offset != offset, page
+        offset = next_offset
+        latest_models.update(_latest_models(page["operations"]))
+        pages.append({"responseBytes": page["responseBytes"], "offset": offset})
+        if len(latest_models) == BOUNDED_HISTORY_TAIL_ROWS and set(latest_models.values()) == {expected_model}:
+            return offset, pages
+    raise AssertionError({"expectedModel": expected_model, "latestModels": latest_models, "pages": pages})
+
+
 async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None:
     outputs = undeclared_outputs_dir() / "electric-stalled-reader"
     outputs.mkdir(parents=True, exist_ok=True)
@@ -201,23 +234,20 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
 
                         expected_model, target_lsn = await _update_tail(pool, 0)
                         evidence["walCheckpoints"].append(await _wait_for_wal_processed(pool, target_lsn))
-                        first_page = await _read_live_page(
+                        healthy_offset, healthy_pages = await _consume_latest_tail(
                             client,
                             shape_url,
                             snapshot,
                             offset=healthy_offset,
                             where_clause=where_clause,
                             where_params=where_params,
-                            columns=SHAPE_COLUMNS,
+                            expected_model=expected_model,
                         )
-                        healthy_offset = first_page["offset"]
                         response_headers = await asyncio.wait_for(stalled_reader.readuntil(b"\r\n\r\n"), timeout=30)
                         assert response_headers.startswith(b"HTTP/1.1 200"), response_headers
                         evidence["stalledResponseHeaders"] = response_headers.decode(errors="replace").splitlines()
                         evidence["stalledBuffersAtStart"] = _stalled_reader_buffers(stalled_writer)
-                        evidence["healthyPages"].append(
-                            {"batch": 0, "responseBytes": first_page["responseBytes"], "offset": healthy_offset}
-                        )
+                        evidence["healthyPages"].extend({"batch": 0, **page} for page in healthy_pages)
                         evidence["memorySamples"].append(
                             {"stage": "stalled-response-started", **_sample_memory(electric)}
                         )
@@ -227,22 +257,16 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             checkpoint = await _wait_for_wal_processed(pool, target_lsn)
                             if batch % SAMPLE_EVERY == 0 or batch == WRITE_BATCHES:
                                 evidence["walCheckpoints"].append(checkpoint)
-                            page = await _read_live_page(
+                            healthy_offset, healthy_pages = await _consume_latest_tail(
                                 client,
                                 shape_url,
                                 snapshot,
                                 offset=healthy_offset,
                                 where_clause=where_clause,
                                 where_params=where_params,
-                                columns=SHAPE_COLUMNS,
+                                expected_model=expected_model,
                             )
-                            healthy_offset = page["offset"]
-                            models = _latest_models(page["operations"])
-                            assert len(models) == BOUNDED_HISTORY_TAIL_ROWS, page
-                            assert set(models.values()) == {expected_model}
-                            evidence["healthyPages"].append(
-                                {"batch": batch, "responseBytes": page["responseBytes"], "offset": healthy_offset}
-                            )
+                            evidence["healthyPages"].extend({"batch": batch, **page} for page in healthy_pages)
                             if batch % SAMPLE_EVERY == 0:
                                 evidence["memorySamples"].append(
                                     {"stage": f"stalled-after-batch-{batch}", **_sample_memory(electric)}
