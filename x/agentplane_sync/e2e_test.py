@@ -867,6 +867,30 @@ def _write_browser_journal(
     _write_json(path, {"events": network_events, "records": records, "pageErrors": page_errors})
 
 
+async def _wait_for_payload_gc(page: Page, shape_ref: str) -> dict[str, Any]:
+    await page.wait_for_function(
+        """(shapeRef) => window.__syncEvidence.retiredPayloadCollections.some(entry =>
+          entry.shapeRef === shapeRef && entry.automaticGc && entry.sizeAfterCleanup === 0
+          && entry.subscribersAfterCleanup === 0 && entry.statusAfterCleanup === 'cleaned-up')""",
+        arg=shape_ref,
+        timeout=30_000,
+    )
+    entries = await page.evaluate(
+        "(shapeRef) => window.__syncEvidence.retiredPayloadCollections.filter(entry => entry.shapeRef === shapeRef)",
+        arg=shape_ref,
+    )
+    matching = [
+        entry
+        for entry in entries
+        if entry["automaticGc"]
+        and entry["sizeAfterCleanup"] == 0
+        and entry["subscribersAfterCleanup"] == 0
+        and entry["statusAfterCleanup"] == "cleaned-up"
+    ]
+    assert matching, {"shapeRef": shape_ref, "retired": entries}
+    return cast(dict[str, Any], matching[-1])
+
+
 async def test_electric_end_to_end() -> None:
     outputs = undeclared_outputs_dir() / "electric-derisk"
     outputs.mkdir(parents=True, exist_ok=True)
@@ -1900,13 +1924,147 @@ async def test_electric_end_to_end() -> None:
                                 ]
                             )
                             await page.get_by_role("button", name="Close payload").click()
-                            await page.wait_for_function(
-                                """(shapeRef) => window.__syncEvidence.retiredPayloadCollections.some(entry =>
-                                  entry.shapeRef === shapeRef && entry.sizeAfterCleanup === 0
-                                  && entry.subscribersAfterCleanup === 0 && entry.statusAfterCleanup === 'cleaned-up')""",
-                                arg=tool_shape_ref,
-                                timeout=30_000,
+                            initial_output_gc = await _wait_for_payload_gc(page, tool_shape_ref)
+
+                            closed_chunks = [
+                                f"closed-interest-{index:02d}:" + "x" * 8_192 for index in range(64)
+                            ]
+                            closed_delta_start = base_cursor + 13
+                            closed_delta_end = closed_delta_start + len(closed_chunks) - 1
+                            closed_delta_result = await apply_batch(
+                                pool,
+                                conversation_id="alpha-large",
+                                source_id=SOURCE,
+                                entries=[
+                                    _entry(
+                                        SOURCE,
+                                        closed_delta_start + index,
+                                        "tool_output_delta",
+                                        event_pb2.ToolOutputDelta(item_id="tool-row", text=chunk),
+                                    )
+                                    for index, chunk in enumerate(closed_chunks)
+                                ],
                             )
+                            assert closed_delta_result == ApplyResult(closed_delta_end, 0, 1, len(closed_chunks)), (
+                                closed_delta_result
+                            )
+                            closed_payload_ref = await pool.fetchval(
+                                "SELECT output_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:tool-row'"
+                            )
+                            assert isinstance(closed_payload_ref, str)
+                            assert closed_payload_ref != tool_replacement_ref
+                            closed_manifest = await pool.fetchrow(
+                                """SELECT generation_id,revision,chunk_count,content_bytes,source_cursor
+                                   FROM projected_payload_manifest WHERE conversation_id='alpha-large' AND payload_ref=$1""",
+                                closed_payload_ref,
+                            )
+                            assert closed_manifest is not None
+                            assert closed_manifest["revision"] == closed_delta_end
+                            assert closed_manifest["source_cursor"] == closed_delta_end
+                            assert closed_manifest["chunk_count"] == len(closed_chunks) + 1
+                            expected_closed_body = "REPLACED_TOOL_OUTPUT" + "".join(closed_chunks)
+                            expected_closed_bytes = len(expected_closed_body.encode("utf-8"))
+                            assert closed_manifest["content_bytes"] == expected_closed_bytes
+                            await page.wait_for_function(
+                                """(ref) => document.querySelector('[data-row-key="item:tool-row"]')?.dataset.outputPayloadRef === ref""",
+                                arg=closed_payload_ref,
+                                timeout=45_000,
+                            )
+                            closed_body_state = await page.get_by_test_id("payload-body").evaluate(
+                                "body => ({state: body.dataset.state, content: body.textContent ?? ''})"
+                            )
+                            assert closed_body_state == {"state": "closed", "content": ""}, closed_body_state
+                            closed_payload_requests = (
+                                await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                            ).json()["payloadRequests"]
+                            output_payload_requests_while_closed = [
+                                request
+                                for request in closed_payload_requests
+                                if request["field"] == "output"
+                                and request["itemId"] == "tool-row"
+                                and request["part"] in {"manifest", "chunks", "revision"}
+                            ]
+                            assert len(output_payload_requests_while_closed) == output_requests_before_close, (
+                                output_requests_before_close,
+                                output_payload_requests_while_closed,
+                            )
+                            assert not any(
+                                request["payloadRef"] == closed_payload_ref for request in closed_payload_requests
+                            ), closed_payload_requests
+                            closed_payload_state_refs = await page.evaluate(
+                                "() => window.__syncEvidence.payloadStates.map(state => state.payloadRef)"
+                            )
+                            assert closed_payload_ref not in closed_payload_state_refs, closed_payload_state_refs
+
+                            heap_session = await context.new_cdp_session(page)
+                            await heap_session.send("HeapProfiler.enable")
+                            await heap_session.send("HeapProfiler.collectGarbage")
+                            heap_before_revisit = await heap_session.send("Runtime.getHeapUsage")
+                            revisit_evidence: list[dict[str, Any]] = []
+                            for revisit in range(4):
+                                await page.get_by_role("button", name="Open output").click()
+                                reopened_body = await _assert_rendered_payload(
+                                    page,
+                                    expected=expected_closed_body,
+                                    payload_ref=closed_payload_ref,
+                                    revision=closed_delta_end,
+                                )
+                                assert reopened_body["chunkCount"] == len(closed_chunks) + 1
+                                assert reopened_body["contentBytes"] == str(expected_closed_bytes)
+                                opened_heap = await heap_session.send("Runtime.getHeapUsage")
+                                reopened_shape_ref = reopened_body["shapeRef"]
+                                await page.get_by_role("button", name="Close payload").click()
+                                reopened_gc = await _wait_for_payload_gc(page, reopened_shape_ref)
+                                await heap_session.send("HeapProfiler.collectGarbage")
+                                closed_heap = await heap_session.send("Runtime.getHeapUsage")
+                                revisit_evidence.append(
+                                    {
+                                        "revisit": revisit,
+                                        "rendered": reopened_body,
+                                        "openHeapUsedBytes": opened_heap["usedSize"],
+                                        "closedHeapUsedBytes": closed_heap["usedSize"],
+                                        "collection": reopened_gc,
+                                    }
+                                )
+                            await heap_session.detach()
+                            closed_heap_values = [entry["closedHeapUsedBytes"] for entry in revisit_evidence]
+                            closed_heap_range = max(closed_heap_values) - min(closed_heap_values)
+                            assert closed_heap_range <= 2 * 1024 * 1024, {
+                                "heapBeforeRevisit": heap_before_revisit,
+                                "closedHeapUsedBytes": closed_heap_values,
+                                "allowedRangeBytes": 2 * 1024 * 1024,
+                            }
+                            retired_closed_body_collections = [
+                                entry
+                                for entry in await page.evaluate("() => window.__syncEvidence.retiredPayloadCollections")
+                                if entry["shapeRef"] == closed_payload_ref
+                            ]
+                            assert len(retired_closed_body_collections) == len(revisit_evidence), (
+                                retired_closed_body_collections,
+                                revisit_evidence,
+                            )
+                            assert len({entry["collectionId"] for entry in retired_closed_body_collections}) == len(
+                                revisit_evidence
+                            ), retired_closed_body_collections
+                            collection_gc_evidence = {
+                                "initialClosedRevision": {
+                                    "shapeRef": tool_shape_ref,
+                                    "automaticGc": initial_output_gc,
+                                    "bytesWrittenWhileClosed": expected_closed_bytes,
+                                    "chunkCountWrittenWhileClosed": len(closed_chunks),
+                                    "payloadRequestsBeforeClose": output_requests_before_close,
+                                    "payloadRequestsAfterClosedAppend": len(output_payload_requests_while_closed),
+                                    "closedBrowserState": closed_body_state,
+                                },
+                                "revisitCount": len(revisit_evidence),
+                                "revisits": revisit_evidence,
+                                "heapBeforeRevisit": heap_before_revisit,
+                                "closedHeapUsedByteRange": closed_heap_range,
+                                "closedCollections": retired_closed_body_collections,
+                            }
+                            _write_json(outputs / "payload-collection-gc-evidence.json", collection_gc_evidence)
+
+                            empty_output_cursor = closed_delta_end + 1
                             closed_result = await apply_batch(
                                 pool,
                                 conversation_id="alpha-large",
@@ -1914,7 +2072,7 @@ async def test_electric_end_to_end() -> None:
                                 entries=[
                                     _entry(
                                         SOURCE,
-                                        base_cursor + 13,
+                                        empty_output_cursor,
                                         "item_completed",
                                         event_pb2.ItemCompleted(
                                             item_id="tool-row", tool=event_pb2.ToolResult(output="", succeeded=True)
@@ -1922,7 +2080,16 @@ async def test_electric_end_to_end() -> None:
                                     )
                                 ],
                             )
-                            assert closed_result == ApplyResult(base_cursor + 13, 0, 1, 1), closed_result
+                            assert closed_result == ApplyResult(empty_output_cursor, 0, 1, 1), closed_result
+                            requests_before_empty_open = len(
+                                [
+                                    request
+                                    for request in (
+                                        await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                                    ).json()["payloadRequests"]
+                                    if request["field"] == "output" and request["itemId"] == "tool-row"
+                                ]
+                            )
                             await page.wait_for_function(
                                 """(ref) => document.querySelector('[data-row-key="item:tool-row"]')?.dataset.outputPayloadRef === ref""",
                                 arg=await pool.fetchval(
@@ -1930,28 +2097,27 @@ async def test_electric_end_to_end() -> None:
                                 ),
                                 timeout=45_000,
                             )
-                            payload_after_close = (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
-                                "payloadRequests"
-                            ]
-                            assert (
-                                len(
-                                    [
-                                        request
-                                        for request in payload_after_close
-                                        if request["field"] == "output" and request["itemId"] == "tool-row"
-                                    ]
-                                )
-                                == output_requests_before_close
-                            )
                             assert await page.get_by_test_id("payload-body").inner_text() == ""
                             empty_output_ref = await pool.fetchval(
                                 "SELECT output_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:tool-row'"
                             )
+                            requests_after_empty_commit = len(
+                                [
+                                    request
+                                    for request in (
+                                        await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                                    ).json()["payloadRequests"]
+                                    if request["field"] == "output" and request["itemId"] == "tool-row"
+                                ]
+                            )
+                            assert requests_after_empty_commit == requests_before_empty_open
                             await page.get_by_role("button", name="Open output").click()
                             empty_output_visible = await _assert_rendered_payload(
-                                page, expected="", payload_ref=empty_output_ref, revision=base_cursor + 13
+                                page, expected="", payload_ref=empty_output_ref, revision=empty_output_cursor
                             )
                             assert empty_output_visible["chunkCount"] == 0, empty_output_visible
+                            await page.get_by_role("button", name="Close payload").click()
+                            empty_output_gc = await _wait_for_payload_gc(page, empty_output_visible["shapeRef"])
                             older_output_ref = await pool.fetchval(
                                 "SELECT output_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:older-tool-row'"
                             )
@@ -2003,6 +2169,8 @@ async def test_electric_end_to_end() -> None:
                                     "toolOutputReplacement": tool_output_replacement,
                                     "emptyToolOutput": empty_output_visible,
                                     "olderToolOutputReplacement": older_output_visible,
+                                    "closedInterestAppendAndRevisit": collection_gc_evidence,
+                                    "emptyOutputCollection": empty_output_gc,
                                     "staleManifestSwitch": {
                                         "heldRef": older_output_ref,
                                         "renderedArgumentsAfterLateResponse": arguments_after_stale_manifest,
@@ -2014,7 +2182,7 @@ async def test_electric_end_to_end() -> None:
                             )
                             await page.screenshot(path=outputs / "alpha-large-updated.png", full_page=True)
 
-                            head_cursor = base_cursor + 14
+                            head_cursor = empty_output_cursor + 1
                             head_result = await apply_batch(
                                 pool,
                                 conversation_id="alpha-large",
@@ -2064,7 +2232,7 @@ async def test_electric_end_to_end() -> None:
                             assert prior_handle is not None, previous_page1_records[-10:]
                             assert prior_offset is not None, previous_page1_records[-10:]
                             route_control["disconnectNextPage1Live"] = True
-                            disconnect_trigger_cursor = base_cursor + 15
+                            disconnect_trigger_cursor = head_cursor + 1
                             trigger_result = await apply_batch(
                                 pool,
                                 conversation_id="alpha-large",
@@ -2106,8 +2274,8 @@ async def test_electric_end_to_end() -> None:
                                 outputs / "browser-network-journal.json", network_events, response_records, page_errors
                             )
                             offline_batch = [
-                                _text_entry(SOURCE, base_cursor + 16, "live-item", " +offline"),
-                                _text_entry(SOURCE, base_cursor + 17, target_item_id, " +older-offline"),
+                                _text_entry(SOURCE, disconnect_trigger_cursor + 1, "live-item", " +offline"),
+                                _text_entry(SOURCE, disconnect_trigger_cursor + 2, target_item_id, " +older-offline"),
                             ]
                             await apply_batch(
                                 pool, conversation_id="alpha-large", source_id=SOURCE, entries=offline_batch
@@ -2136,12 +2304,12 @@ async def test_electric_end_to_end() -> None:
                             for opened in (page, page_two):
                                 await opened.wait_for_function(
                                     "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
-                                    arg=str(base_cursor + 16),
+                                    arg=str(disconnect_trigger_cursor + 1),
                                     timeout=60_000,
                                 )
                             await page.wait_for_function(
                                 "(expected) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === expected.key && node.dataset.revision === expected.revision)",
-                                arg={"key": target_key, "revision": str(base_cursor + 17)},
+                                arg={"key": target_key, "revision": str(disconnect_trigger_cursor + 2)},
                                 timeout=60_000,
                             )
                             await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
@@ -2197,7 +2365,7 @@ async def test_electric_end_to_end() -> None:
                             recovery_record_start = len(response_records)
                             route_control["recordResetSubsets"] = True
                             route_control["badHandle"] = True
-                            rotation_cursor = base_cursor + 18
+                            rotation_cursor = disconnect_trigger_cursor + 3
                             await apply_batch(
                                 pool,
                                 conversation_id="alpha-large",
@@ -2290,7 +2458,7 @@ async def test_electric_end_to_end() -> None:
                             )
                             history_preserved = (
                                 post_reset_state["historyCount"] == 60
-                                and post_reset_state["targetRevision"] == str(base_cursor + 17)
+                                and post_reset_state["targetRevision"] == str(disconnect_trigger_cursor + 2)
                                 and post_reset_state["targetStatus"] == "complete"
                                 and post_reset_state["liveTextRevision"] == str(rotation_cursor)
                             )
@@ -2337,7 +2505,7 @@ async def test_electric_end_to_end() -> None:
                                 await _wait_electric(restarted_url)
                                 proxy_one.state.electric_url = f"{restarted_url}/v1/shape"
                                 proxy_two.state.electric_url = f"{restarted_url}/v1/shape"
-                                restart_cursor = base_cursor + 19
+                                restart_cursor = disconnect_trigger_cursor + 4
                                 await apply_batch(
                                     pool,
                                     conversation_id="alpha-large",

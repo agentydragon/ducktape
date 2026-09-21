@@ -73,10 +73,10 @@ environment, not a production load test.
 | Initial bootstrap for 1,000 and 50,000 rows                                         | Confirmed                              | Both real Electric snapshots load 30 rows. Captured response sizes were 19,092 bytes and 19,100 bytes respectively; the large history did not inflate the initial transfer. Shape rows omit text, arguments, output, reasoning, and content fields.                                                                                                                                     |
 | Scroll anchor pixel preservation                                                    | Confirmed                              | `scroll-evidence.json`: anchor top 175.875px before loading, 1,135.875px before correction, correction 960px, and final displacement 0px.                                                                                                                                                                                                                                               |
 | Any-item and out-of-order updates; selective payloads                               | Partial                                | The original run established selective loading on an after-cursor payload route, but that route did not prove an exact immutable body revision or bounded reopen. The current code replaces it with exact manifest references and immutable chunks; see the active revision experiment below.                                                                                           |
-| Exact body revision R while R+1 commits; stale selection/hydration callbacks        | In progress                            | The current test pins R, holds its exact Electric snapshot request until R+1 commits, then requires the network rows and rendered body to remain exactly R before explicitly opening the follow-latest value. The earlier `109c2098` eager run showed correct rendering but failed an aggregate request-count assertion; the current on-demand fixed-shape run is queued as `c9e2f4ee`. |
-| Bounded exact-revision reconstruction after many same-generation appends            | In progress                            | The test reopens the earlier pinned ref after 32 appends and a later replacement. It checks exact chunk indexes/cursors/bytes, stored generation size, and an `EXPLAIN ANALYZE` primary-key range scan. RBE evidence is pending.                                                                                                                                                        |
-| Follow-latest appends without retransmitting the growing prefix                     | In progress                            | The follow-latest generation shape uses Electric's full snapshot plus change stream; the browser checks that each immutable chunk arrives once as 32 append events advance the manifest. The current RBE run is pending.                                                                                                                                                                |
-| Closing selected-body interests releases collection rows and stops delivery         | In progress                            | The implementation calls TanStack `Collection.cleanup()` and records post-cleanup size/subscribers/status; the new close/reopen browser assertions have not yet completed in RBE. Heap reclamation is not established by collection cleanup.                                                                                                                                            |
+| Exact body revision R while R+1 commits; stale selection/hydration callbacks        | Confirmed for pinned and follow-latest reads | [RBE run `05e6146f`](https://app.buildbuddy.io/invocation/05e6146f-ab09-4c01-adf9-645c5befe03c) held R's Electric snapshot until R+1 committed, then rendered exact R. A follow-latest selection rendered R+1 and then R+2. That run stopped later at the old manual-cleanup assertion, before the new lifecycle test. |
+| Bounded exact-revision reconstruction after later same-generation appends            | Confirmed for the tested R prefix     | The same run reopened pinned R with its two-chunk manifest while the current reference had advanced. The request carried exact BIGINT generation and cursor values as decimal positional parameters; the shape constrained `chunk_index` to R's manifest count. This does not measure a long-run retention policy. |
+| Follow-latest append after advancing the manifest                                   | Partial                                | The browser rendered R+1, then the newly appended R+2 body from the same generation, with the exact current ref/revision. The 32-chunk transfer experiment later in the test was not reached by that run.                                                                                                                                                                               |
+| Closing selected-body interests releases collection rows and stops delivery         | In progress                            | The prior RBE run exposed an unsafe manual `Collection.cleanup()` from the panel's React effect cleanup. Pinned TanStack DB 0.8.7 source shows that call is immediate; the replacement relies on no-subscriber GC and records collection size, subscribers, cleanup time, and Chromium heap after repeated reopen/close cycles. New RBE evidence is pending. |
 | Live head arrival while old history stays loaded                                    | Confirmed                              | A newly created head item enters the 30-row tail while the already loaded 60 older rows remain visible. The anchor and row IDs stay stable.                                                                                                                                                                                                                                             |
 | Atomic React visibility for item/control/command updates                            | Confirmed                              | These entities share one tagged row collection. Both browser pages render only the old tuple or the new tuple from the single PostgreSQL transaction; no intermediate combination is observed.                                                                                                                                                                                          |
 | Reconnect with same handle, no gaps/duplicates/regressions                          | Confirmed                              | A real page-1 live poll is aborted with `net::ERR_INTERNET_DISCONNECTED`; writes continue while offline. The browser resumes using the same Electric handle and offset, catches up both changed items, and observes monotonically increasing revisions.                                                                                                                                 |
@@ -121,8 +121,24 @@ one. This uses ordinary Electric snapshots and change streams; the spike adds
 no payload replay protocol. The follow-latest shape transfers the complete
 current body because that body is selected, then streams append chunks without
 re-requesting the full prefix. The pinned shape transfers only the requested
-manifest prefix. The current RBE run is measuring both paths and their SQL work;
-until its undeclared outputs are inspected, the design remains unverified.
+manifest prefix. In the last inspected RBE run, R's held snapshot returned two
+chunks even though R+1 had become current, and the follow-latest selection then
+rendered R+1 and R+2. The test verifies the forwarded positional BIGINT
+parameters and the `EXPLAIN ANALYZE` range scan. That run later failed at the
+manual-cleanup assertion, so it does not count as a passing full E2E invocation.
+
+The pinned `@tanstack/db` 0.8.7 source confirms that `Collection.cleanup()`
+performs immediate cleanup regardless of active subscribers. Its automatic GC
+instead waits for the subscriber count to reach zero; `useLiveQuery` in pinned
+React DB 0.3.7 gives its derived query a 1 ms GC interval. Payload source
+collections now also use a short positive GC interval and wait for the derived
+query's source subscription to retire. The new browser scenario appends 64
+8 KiB chunks while the interest is closed, checks there are no requests or
+rendered body for that new ref, then reopens and renders the complete current
+value four times. It requires each source collection to be `cleaned-up` with
+zero rows and subscribers. Chromium CDP heap readings after forced GC are
+recorded and gated against a 2 MiB retained-heap range; this is a small repeated
+cycle probe, not a sustained memory bound.
 
 The production projector may choose another physical layout; it must preserve
 the exact-reference, immutable-prefix, per-field, and transaction semantics.
@@ -139,9 +155,9 @@ the exact-reference, immutable-prefix, per-field, and transaction semantics.
 - The event fixture and projection are intentionally small and local to this
   spike. This is not the production projector implementation and does not
   capture raw runner output.
-- Browser heap bounds/virtualization and Electric server RSS/retained heap across
-  history growth, resets, restarts, and slow readers are unmeasured. Replication
-  buffers, shape caches/history, backpressure, and payload retention policy are
-  still server-side adoption gates.
+- Long-run browser heap bounds/virtualization and Electric server RSS/retained
+  heap across history growth, shape churn/expiry, resets, restarts, and slow
+  readers remain unproven. Replication buffers, shape caches/history,
+  backpressure, and payload retention policy remain server-side adoption gates.
 - BuildBuddy test outputs are evidence for a particular invocation; they are
   not committed screenshots or performance baselines.

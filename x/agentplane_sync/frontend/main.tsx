@@ -118,6 +118,8 @@ declare global {
         subscribersAfterCleanup: number;
         sizeAfterCleanup: number;
         statusAfterCleanup: string;
+        automaticGc: boolean;
+        cleanupElapsedMs: number;
       }>;
       scroll: Array<{
         key: string;
@@ -166,6 +168,10 @@ function makePayloadChunks(conversationId: string, payloadRef: string, epoch: nu
       id: `agentplane-payload-chunks:${conversationId}:${payloadRef}:${epoch}`,
       schema: payloadChunkSchema,
       getKey: (row) => `${row.sourceId}:${row.generationId}:${row.chunkIndex}`,
+      // Let TanStack's GC stop this shape after the query's source subscription
+      // retires. Calling cleanup() directly from React effect cleanup races that
+      // subscription and leaves the live query in an error state.
+      gcTime: 1,
       syncMode: followLatest ? "eager" : "on-demand",
       shapeOptions: {
         url: new URL(
@@ -272,15 +278,28 @@ function PayloadPanel({
     const collection = chunksCollection;
     const shapeRef = selection.shapeRef;
     return () => {
-      void collection.cleanup().then(() => {
-        window.__syncEvidence.retiredPayloadCollections.push({
-          shapeRef,
-          collectionId: collection.id,
-          subscribersAfterCleanup: collection.subscriberCount,
-          sizeAfterCleanup: collection.size,
-          statusAfterCleanup: collection.status,
-        });
-      });
+      const closedAt = performance.now();
+      const recordGc = () => {
+        const status = collection.status;
+        const automaticGc = status === "cleaned-up";
+        if (automaticGc || performance.now() - closedAt >= 10_000) {
+          window.__syncEvidence.retiredPayloadCollections.push({
+            shapeRef,
+            collectionId: collection.id,
+            subscribersAfterCleanup: collection.subscriberCount,
+            sizeAfterCleanup: collection.size,
+            statusAfterCleanup: status,
+            automaticGc,
+            cleanupElapsedMs: Number((performance.now() - closedAt).toFixed(1)),
+          });
+          return;
+        }
+        // The derived useLiveQuery collection owns this collection until its
+        // own no-subscriber GC runs. Poll after unmount rather than cleaning up
+        // a source that still has a live query dependent.
+        window.setTimeout(recordGc, 10);
+      };
+      window.setTimeout(recordGc, 10);
     };
   }, [chunksCollection, selection.shapeRef]);
   const chunksQuery = useLiveQuery((q) => q.from({ chunk: chunksCollection }), [chunksCollection]);
