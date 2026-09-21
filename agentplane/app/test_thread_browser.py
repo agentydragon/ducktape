@@ -396,6 +396,40 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
     await expect(draft).to_have_value("Draft survives debug inspection")
     await expect(card.locator("details").first).to_have_attribute("open", "")
 
+    # Closing the drawer cancels an in-flight real archive response. A response released
+    # afterwards must not repopulate the closed view or disturb the conversation draft.
+    response_ready = asyncio.Event()
+    release_response = asyncio.Event()
+    response_finished = asyncio.Event()
+
+    async def hold_debug_response(route: Route) -> None:
+        response = await route.fetch()
+        response_ready.set()
+        await release_response.wait()
+        try:
+            await route.fulfill(response=response)
+        finally:
+            response_finished.set()
+
+    await page.route("**/conversation/observations?*", hold_debug_response)
+    try:
+        await page.get_by_role("button", name="Debug history", exact=True).click()
+        async with asyncio.timeout(10):
+            await response_ready.wait()
+        async with page.expect_event(
+            "requestfailed", predicate=lambda request: "/conversation/observations" in request.url
+        ):
+            await page.keyboard.press("Escape")
+            release_response.set()
+        async with asyncio.timeout(10):
+            await response_finished.wait()
+        await expect(dialog).to_have_count(0)
+        await expect(page.locator("[data-debug-observation]")).to_have_count(0)
+        await expect(draft).to_have_value("Draft survives debug inspection")
+    finally:
+        release_response.set()
+        await page.unroute("**/conversation/observations?*", hold_debug_response)
+
 
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
