@@ -458,7 +458,7 @@ function SelectedCommandRows({
             {terminal && row && "outcome" in row.state ? (
               <>
                 <Text c={row.state.outcome === "failed" ? "red" : undefined}>
-                  {row.state.operation.replaceAll("_", " ")} · {row.state.outcome}
+                  {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
                 {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
@@ -490,6 +490,17 @@ function SelectedCommandRows({
       })}
     </Stack>
   );
+}
+
+function commandOutcomeLabel(operation: string, outcome: string): string {
+  const subject =
+    {
+      submit_input: "Input",
+      change_model: "Model change",
+      interrupt_turn: "Interrupt",
+      stop_runner_session: "Harness shutdown",
+    }[operation] ?? "Command";
+  return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
 function VirtualizedHistory({
@@ -743,7 +754,7 @@ function ProjectedSessionBody({
                 <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
                   {row.state.outcome === "pending"
                     ? "Saved · awaiting effect"
-                    : `${row.state.operation.replaceAll("_", " ")} · ${row.state.outcome}`}
+                    : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
                 {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
