@@ -121,8 +121,8 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
 
 @pytest.mark.parametrize(
     ("history_size", "materialized_item_count"),
-    [(100, 0), (10_000, 0), (10_000, 2_000)],
-    ids=["one-hundred-native", "ten-thousand-native", "ten-thousand-with-two-thousand-items"],
+    [(200, 100), (4_000, 2_000), (40_000, 20_000)],
+    ids=["one-hundred-items", "two-thousand-items", "twenty-thousand-items"],
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
     store: TrajectoryStore,
@@ -132,6 +132,9 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     request: pytest.FixtureRequest,
 ) -> None:
     """A real old-item update only preloads its touched rows after large frame and entity histories."""
+    # This test deliberately creates 20,000 materialized entities in bounded record batches.
+    # Keep the writer fence valid for that workload; this does not change the test timeout.
+    assert await store.renew_ingestion(lease, timedelta(minutes=10))
     thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
@@ -191,6 +194,10 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
 
     plans: list[str] = []
     async with store._engine.connect() as connection:
+        # Use normal planner statistics after the actual write workload.  The artifact below is
+        # deliberately the captured production statements, not a hand-written query with planner
+        # switches, so its buffers compare point lookups across entity cardinalities.
+        await connection.exec_driver_sql("ANALYZE conversation_entity")
         for statement, parameters in captured:
             result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
             plans.extend(row[0] for row in result)
@@ -219,6 +226,82 @@ def _history_event(cursor: int, materialized_item_count: int) -> event_pb2.Event
             )
         return _event(cursor, text_delta=event_pb2.TextDelta(item_id=item_id, text="materialized"))
     return _event(cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}'))
+
+
+async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
+    store: TrajectoryStore, lease: IngestionLease, request: pytest.FixtureRequest
+) -> None:
+    """Tail-window bounds do not walk settled commands that sort after the last segment."""
+    assert await store.renew_ingestion(lease, timedelta(minutes=10))
+    thread = await store.thread("sb-1", "command-dense-tail", SPEC)
+    await store.record(
+        thread,
+        [
+            _event(
+                1, item_started=event_pb2.ItemStarted(item_id="only-segment", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        ],
+        lease=lease,
+    )
+    cursor = 2
+    for batch_start in range(0, 10_000, 50):
+        batch: list[event_log_pb2.EventEntry] = []
+        for command_index in range(batch_start, batch_start + 50):
+            command_id = f"settled-{command_index}"
+            batch.append(
+                _event(
+                    cursor,
+                    command_admitted=event_pb2.CommandAdmitted(
+                        command=command_pb2.Command(
+                            command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
+                        )
+                    ),
+                )
+            )
+            cursor += 1
+            batch.append(_event(cursor, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")))
+            cursor += 1
+        await store.record(thread, batch, lease=lease)
+
+    scope = await store.current_conversation_scope(thread)
+    assert scope is not None
+    captured: list[tuple[str, Any]] = []
+
+    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
+        if statement.lstrip().startswith("SELECT") and "conversation_entity" in statement:
+            captured.append((statement, parameters))
+
+    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    try:
+        async with store._sessions() as session:
+            cursors = list(
+                await session.scalars(
+                    select(ConversationEntity.cursor)
+                    .where(
+                        ConversationEntity.thread_id == thread,
+                        ConversationEntity.source_id == scope.source_id,
+                        ConversationEntity.projection_epoch == scope.projection_epoch,
+                        ConversationEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
+                        ConversationEntity.cursor < scope.through_cursor + 1,
+                    )
+                    .order_by(ConversationEntity.cursor.desc())
+                    .limit(30)
+                )
+            )
+    finally:
+        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    assert cursors == [1]
+    assert len(captured) == 1
+    async with store._engine.connect() as connection:
+        await connection.exec_driver_sql("ANALYZE conversation_entity")
+        statement, parameters = captured[0]
+        result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
+        plan = "\n".join(row[0] for row in result)
+    assert "ix_conversation_entity_scope_segment_cursor" in plan
+    assert "Rows Removed by Filter" not in plan
+    (undeclared_outputs_dir() / f"{request.node.name}-segment-tail-profile.txt").write_text(
+        f"settled_command_count=10000\n{plan}\n"
+    )
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
@@ -759,8 +842,9 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
                         "WHERE datname = current_database() AND application_name = 'agentplane-trajectory-updates'"
                     )
                 )
-            # The termination callback wakes local consumers before the reconnect attempt.
-            await asyncio.wait_for(changed.wait(), timeout=5)
+            # Wait on the termination callback itself, rather than an untagged Changes wakeup:
+            # a previous database notification can arrive after the subscription starts.
+            await asyncio.wait_for(replica._updates.wait_until_disconnected(), timeout=5)
             assert not replica.updates_connected
             changed.clear()
             await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
