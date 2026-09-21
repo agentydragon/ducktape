@@ -476,13 +476,10 @@ spec:
       name: cli-proxy-api
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
-          to: "@artifact/cluster/k8s/clickhouse/namespace/"
-      name: clickhouse-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/clickhouse/operator/**"
           to: "@artifact/cluster/k8s/clickhouse/operator/"
+        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
+          to: "@artifact/cluster/k8s/clickhouse/namespace/"
       name: clickhouse-operator
       originRevision: "@repo"
     - copy:
