@@ -10,7 +10,7 @@ description: >-
 # Grafana dashboards
 
 Use this skill for every new or changed dashboard under
-`cluster/k8s/monitoring/grafana-instance/dashboards/`. The deliverable is a
+`cluster/k8s/monitoring/grafana-instance/`. The deliverable is a
 dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
@@ -35,7 +35,7 @@ Run the packaged verifier from the repository root:
 
 ```bash
 bb run //cluster/skills/grafana:verify_dashboard -- \
-  --dashboard cluster/k8s/monitoring/grafana-instance/dashboards/<dashboard>.json \
+  --dashboard cluster/k8s/monitoring/grafana-instance/<dashboard>.json \
   --screenshot-dir /tmp/grafana-<dashboard>-verify
 ```
 

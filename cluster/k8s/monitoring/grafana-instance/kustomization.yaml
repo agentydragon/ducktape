@@ -1,8 +1,39 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../grafana-db
+  - postgres-cluster-ovh.yaml
   - grafana.yaml
   - httproute.yaml
-  - dashboards/
-  - datasources/
+  - flux-cluster.yaml
+  - cert-manager.yaml
+  - authentik.yaml
+  - cloudnative-pg.yaml
+  - cilium-agent.yaml
+  - etcd.yaml
+  - gpu.yaml
+  - interface-flap-frequency.yaml
+  - node-exporter-full.yaml
+  - rugged-power.yaml
+  - cluster-storage-io.yaml
+  - mimir.yaml
+  - loki.yaml
+  - tempo.yaml
+configMapGenerator:
+  - name: flux-cluster-dashboard
+    namespace: monitoring
+    files:
+      - flux-cluster.json
+  - name: rugged-power-dashboard
+    namespace: monitoring
+    files:
+      - rugged-power.json
+  - name: cluster-storage-io-dashboard
+    namespace: monitoring
+    files:
+      - cluster-storage-io.json
+  - name: interface-flap-frequency-dashboard
+    namespace: monitoring
+    files:
+      - interface-flap-frequency.json
+configurations:
+  - kustomizeconfig

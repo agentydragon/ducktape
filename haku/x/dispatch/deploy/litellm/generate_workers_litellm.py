@@ -1,4 +1,4 @@
-"""Generates haku/x/dispatch/deploy/litellm/workers-litellm-config.yaml.
+"""Generates haku/x/dispatch/deploy/workers-litellm-config.yaml.
 
 Run to regenerate the committed file:
     bazel run //haku/x/dispatch/deploy/litellm:generate_workers_litellm_bin
@@ -68,7 +68,7 @@ def generate() -> str:
 
 
 def main() -> None:
-    out_path = get_build_workspace_directory() / "haku/x/dispatch/deploy/litellm/workers-litellm-config.yaml"
+    out_path = get_build_workspace_directory() / "haku/x/dispatch/deploy/workers-litellm-config.yaml"
     out_path.write_text(generate())
     prettier_format_in_place(out_path)
     print(f"Generated {out_path}")

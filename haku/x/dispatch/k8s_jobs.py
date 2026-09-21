@@ -1,7 +1,7 @@
 """Stamping validator-gated Jobs into zone namespaces.
 
 The Job body comes from the reviewed template in
-haku/x/dispatch/deploy/dispatcher/job-template.yaml — this module only
+haku/x/dispatch/deploy/job-template.yaml — this module only
 substitutes the per-job values, it never composes pod specs in code. The k8s
 Job name is derived from the caller's idempotency key, so exactly-once creation
 is enforced atomically by the API server (AlreadyExists on retry), with no

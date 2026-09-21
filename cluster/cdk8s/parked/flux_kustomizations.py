@@ -72,41 +72,6 @@ def agent_box(
     )
 
 
-def archivebox(chart: Chart, seaweedfs_csi: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
-    name = "archivebox"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # Retain the declaration without allowing Flux to recreate retired objects.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="15m",
-            path="./cluster/k8s/parked/archivebox",
-            prune=True,
-            # Captured web archives are user data. Removing this experimental controller
-            # must not implicitly delete the Deployment, namespace, or either PVC.
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            depends_on=flux_kustomization_depends_on_many(seaweedfs_csi, local_path_provisioner),
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="archivebox"),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="archivebox", namespace="archivebox"
-                ),
-            ],
-        ),
-        description=(
-            "Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage."
-        ),
-    )
-
-
 def augur_evidence(
     chart: Chart,
     forgejo: Kustomization,

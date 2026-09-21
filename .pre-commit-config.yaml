@@ -272,9 +272,9 @@ repos:
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
-            cluster/k8s/gatus/app/config\.yaml|
+            cluster/k8s/gatus/config\.yaml|
             cluster/k8s/home-assistant/app/provisioner\.yaml|
-            cluster/k8s/evidence/market-roster/market-roster\.yaml|
+            cluster/k8s/evidence/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|
             cluster/k8s/grocy/vallejo/mcp/config\.yaml|
@@ -292,12 +292,12 @@ repos:
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
-            haku/x/dispatch/deploy/litellm/workers-litellm-config\.yaml|
+            haku/x/dispatch/deploy/workers-litellm-config\.yaml|
             # per-index haku-indexer chunk config slices mounted via configMapGenerator
             cluster/k8s/haku/console/indexer-chunk-[a-z0-9-]+-config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
-            haku/x/dispatch/deploy/dispatcher/job-template\.yaml|
-            haku/x/dispatch/deploy/dispatcher/zones\.yaml|
+            haku/x/dispatch/deploy/job-template\.yaml|
+            haku/x/dispatch/deploy/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests

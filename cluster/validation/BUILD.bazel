@@ -576,7 +576,7 @@ py_test(
     srcs = ["test_haku_dispatch_zones_contract.py"],
     data = [
         "//cluster/k8s:kustomization.yaml",
-        "//haku/x/dispatch/deploy/dispatcher:manifests",
+        "//haku/x/dispatch/deploy:manifests",
     ],
     deps = [
         ":conftest",

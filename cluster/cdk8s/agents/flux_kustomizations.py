@@ -323,35 +323,11 @@ def forgejo_token_rotation(
     )
 
 
-def haku_egress_proxy_namespace(chart: Chart) -> Kustomization:
-    name = "haku-egress-proxy-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path="./cluster/k8s/agents/haku-egress-proxy-namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="2m",
-        ),
-    )
-
-
 def haku_egress_proxy(
     chart: Chart,
-    haku_egress_proxy_namespace: Kustomization,
-    haku_openclaw_spike_namespace: Kustomization,
-    haku_state: Kustomization,
-    cert_manager_environment: Kustomization,
+    cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
-    reflector: Kustomization,
-    external_secrets_config: Kustomization,
-    external_creds: Kustomization,
-    forgejo_images: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-egress-proxy"
     return flux_kustomization(
@@ -361,22 +337,12 @@ def haku_egress_proxy(
             interval="10m",
             path="./cluster/k8s/agents/haku-egress-proxy",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(
-                haku_egress_proxy_namespace,
-                haku_openclaw_spike_namespace,
-                # proxy-held Forgejo and Haku Console credentials
-                haku_state,
-                cert_manager_environment,
-                cert_manager_trust,
-                reflector,
-                external_secrets_config,
-                external_creds,
-                forgejo_images,
-            ),
+            depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),

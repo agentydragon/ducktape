@@ -227,8 +227,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
           to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
-        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
       name: grafana-instance
       originRevision: "@repo"
     - copy:
@@ -294,11 +292,6 @@ spec:
         - from: "@repo/cluster/k8s/grocy/app-base/**"
           to: "@artifact/cluster/k8s/grocy/app-base/"
       name: grocy-vallejo
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
-      name: haku-egress-proxy-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
@@ -649,8 +642,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/haku/mailbox/**"
           to: "@artifact/cluster/k8s/haku/mailbox/"
-        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
-          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
       name: haku-mailbox
       originRevision: "@repo"
     - copy:

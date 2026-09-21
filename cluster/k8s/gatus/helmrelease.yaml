@@ -55,7 +55,7 @@ spec:
       enabled: false
 
     # Storage moved off the local SQLite PVC onto the gatus-db CNPG
-    # cluster on OVH-HA (cluster/k8s/gatus/db/).
+    # cluster on OVH-HA (cluster/k8s/gatus/postgres-cluster.yaml).
     persistence:
       enabled: false
 

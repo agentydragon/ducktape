@@ -37,7 +37,7 @@ Severity: high
 
 Owner:
 
-- Kubernetes Job deadline and TTL in `haku/x/dispatch/deploy/dispatcher/job-template.yaml:18-21`
+- Kubernetes Job deadline and TTL in `haku/x/dispatch/deploy/job-template.yaml:18-21`
 
 Recreation:
 
@@ -156,7 +156,7 @@ Severity: high
 Owner:
 
 - actual generated credentials in `tf/gitops/haku-state/main.tf:29-31,99-101`
-- dispatcher credentials in `haku/x/dispatch/deploy/dispatcher/credentials.yaml`
+- dispatcher credentials in `haku/x/dispatch/deploy/credentials.yaml`
 
 Recreation:
 
@@ -271,7 +271,7 @@ These are not currently failing the deployed configuration, but their propagatio
 
 ### P. Dispatch zone abstraction carries only namespace and model names
 
-`haku/x/dispatch/config.py:26-32` models namespace and allowed models. The Job template globally hardcodes `HARNESS=claude` and `ANTHROPIC_*` authentication (`haku/x/dispatch/deploy/dispatcher/job-template.yaml:44-66`), while the classifier defines only the ZAI policy. The worker already has a Codex branch, and the planned OAI zone requires it.
+`haku/x/dispatch/config.py:26-32` models namespace and allowed models. The Job template globally hardcodes `HARNESS=claude` and `ANTHROPIC_*` authentication (`haku/x/dispatch/deploy/job-template.yaml:44-66`), while the classifier defines only the ZAI policy. The worker already has a Codex branch, and the planned OAI zone requires it.
 
 Adding OAI to `zones.yaml` can pass current parity tests while launching Claude with the wrong authentication and admission policy.
 

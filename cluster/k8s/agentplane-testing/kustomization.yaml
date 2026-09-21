@@ -2,6 +2,25 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - agentplane.k8s.yaml
-  - litellm-credentials/
-components:
-  - ./image-pins
+  - litellm-credentials.k8s.yaml
+images:
+  - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
+    newTag: devel-20260920014010-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-egress
+    newTag: devel-20260921043020-289a724 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
+    newTag: devel-20260920014021-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-app
+    newTag: devel-20260921002529-0e0af92 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
+    newTag: devel-20260920014006-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-runner
+    newTag: devel-20260920014210-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-runner:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
+    newTag: devel-20260920014007-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-action-service
+    newTag: devel-20260921002937-f4dd6a6 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
+    newTag: devel-20260920014018-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
+    newTag: devel-20260921002531-0e0af92 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
