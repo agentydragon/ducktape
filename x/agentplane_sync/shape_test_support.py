@@ -104,8 +104,10 @@ def _sample_memory(electric: LoggedContainer) -> dict[str, Any]:
         status = proc_status.output.decode(errors="replace")
         sample["pid1VmRSSKiB"] = _proc_status_value(status, "VmRSS")
         sample["pid1VmHWMKiB"] = _proc_status_value(status, "VmHWM")
-        cmdline = container.exec_run(["cat", "/proc/1/cmdline"])
-        sample["pid1Command"] = cmdline.output.decode(errors="replace").replace("\x00", " ").strip()
+        process_name = container.exec_run(["cat", "/proc/1/comm"])
+        sample["pid1Name"] = process_name.output.decode(errors="replace").strip()
+        executable = container.exec_run(["readlink", "/proc/1/exe"])
+        sample["pid1Executable"] = executable.output.decode(errors="replace").strip()
     return sample
 
 
@@ -115,9 +117,14 @@ def _proc_status_value(status: str, key: str) -> int | None:
 
 
 def _shape_params(
-    conversation_id: str, *, where_clause: str | None = None, columns: str = SHAPE_COLUMNS, live: str = "false"
+    conversation_id: str,
+    *,
+    where_clause: str | None = None,
+    where_params: tuple[str, ...] | None = None,
+    columns: str = SHAPE_COLUMNS,
+    live: str = "false",
 ) -> dict[str, str]:
-    return {
+    params = {
         "table": "sync_view_row",
         "where": where_clause or f"conversation_id = '{conversation_id}'",
         "columns": columns,
@@ -125,6 +132,8 @@ def _shape_params(
         "log": "full",
         "live": live,
     }
+    params.update({f"params[{index}]": value for index, value in enumerate(where_params or (), start=1)})
+    return params
 
 
 async def _read_snapshot(
@@ -133,9 +142,10 @@ async def _read_snapshot(
     conversation_id: str,
     *,
     where_clause: str | None = None,
+    where_params: tuple[str, ...] | None = None,
     columns: str = SHAPE_COLUMNS,
 ) -> dict[str, Any]:
-    base_params = _shape_params(conversation_id, where_clause=where_clause, columns=columns)
+    base_params = _shape_params(conversation_id, where_clause=where_clause, where_params=where_params, columns=columns)
     offset = "-1"
     handle: str | None = None
     all_messages: list[dict[str, Any]] = []
@@ -199,10 +209,13 @@ async def _read_stale_handle(
     snapshot: dict[str, Any],
     *,
     where_clause: str | None = None,
+    where_params: tuple[str, ...] | None = None,
     columns: str = SHAPE_COLUMNS,
 ) -> httpx.Response:
     params = {
-        **_shape_params(snapshot["conversationId"], where_clause=where_clause, columns=columns),
+        **_shape_params(
+            snapshot["conversationId"], where_clause=where_clause, where_params=where_params, columns=columns
+        ),
         "handle": snapshot["handle"],
         "offset": snapshot["offset"],
     }
@@ -210,10 +223,23 @@ async def _read_stale_handle(
 
 
 async def _read_live_page(
-    client: httpx.AsyncClient, shape_url: str, snapshot: dict[str, Any], *, offset: str, where_clause: str, columns: str
+    client: httpx.AsyncClient,
+    shape_url: str,
+    snapshot: dict[str, Any],
+    *,
+    offset: str,
+    where_clause: str,
+    where_params: tuple[str, ...] | None = None,
+    columns: str,
 ) -> dict[str, Any]:
     params = {
-        **_shape_params(snapshot["conversationId"], where_clause=where_clause, columns=columns, live="true"),
+        **_shape_params(
+            snapshot["conversationId"],
+            where_clause=where_clause,
+            where_params=where_params,
+            columns=columns,
+            live="true",
+        ),
         "handle": snapshot["handle"],
         "offset": offset,
     }

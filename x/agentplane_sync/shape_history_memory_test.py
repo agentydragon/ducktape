@@ -40,12 +40,14 @@ from x.agentplane_sync.shape_test_support import (
 async def test_electric_bounded_tail_history_growth_and_expiry() -> None:
     outputs = undeclared_outputs_dir() / "electric-bounded-history"
     outputs.mkdir(parents=True, exist_ok=True)
-    active_where = f"conversation_id = '{BOUNDED_HISTORY_CONVERSATION}' AND anchor >= {BOUNDED_HISTORY_TAIL_ANCHOR}"
+    active_where = f"conversation_id = '{BOUNDED_HISTORY_CONVERSATION}' AND anchor >= $1"
+    active_where_params = (str(BOUNDED_HISTORY_TAIL_ANCHOR),)
     evidence: dict[str, Any] = {
         "electricImage": electric_1_8_1.IMAGE.tag,
         "configuredMaxShapes": SHAPE_LIMIT,
         "boundedConversation": BOUNDED_HISTORY_CONVERSATION,
         "tailPredicate": active_where,
+        "tailParams": list(active_where_params),
         "tailRows": BOUNDED_HISTORY_TAIL_ROWS,
         "tailAnchorBase": str(BOUNDED_HISTORY_TAIL_ANCHOR),
         "historyTargets": [100, 10_000, 100_000],
@@ -104,6 +106,7 @@ async def test_electric_bounded_tail_history_growth_and_expiry() -> None:
                             shape_url,
                             BOUNDED_HISTORY_CONVERSATION,
                             where_clause=active_where,
+                            where_params=active_where_params,
                             columns=ACTIVE_SHAPE_COLUMNS,
                         )
                         assert active_snapshot["rowCount"] == BOUNDED_HISTORY_TAIL_ROWS, active_snapshot
@@ -157,6 +160,7 @@ async def test_electric_bounded_tail_history_growth_and_expiry() -> None:
                                 active_snapshot,
                                 offset=active_offset,
                                 where_clause=active_where,
+                                where_params=active_where_params,
                                 columns=ACTIVE_SHAPE_COLUMNS,
                             )
                             operations = live_page["operations"]
@@ -249,6 +253,7 @@ async def test_electric_bounded_tail_history_growth_and_expiry() -> None:
                                 shape_url,
                                 active_snapshot,
                                 where_clause=active_where,
+                                where_params=active_where_params,
                                 columns=ACTIVE_SHAPE_COLUMNS,
                             )
                             stale_messages = _messages(stale_response.content)
@@ -275,6 +280,7 @@ async def test_electric_bounded_tail_history_growth_and_expiry() -> None:
                                 shape_url,
                                 BOUNDED_HISTORY_CONVERSATION,
                                 where_clause=active_where,
+                                where_params=active_where_params,
                                 columns=ACTIVE_SHAPE_COLUMNS,
                             )
                             assert reopened_snapshot["handle"] != active_snapshot["handle"], {
