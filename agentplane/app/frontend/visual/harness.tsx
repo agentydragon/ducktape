@@ -34,7 +34,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricShape, electricSubset, routes } from "./network";
+import { electricLongPoll, electricShape, electricSubset, routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -1194,6 +1194,7 @@ routes.push(
     (match, query) => {
       const subset = currentSubset(query);
       if (!subset && query.get("offset") !== null) {
+        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`);
         return electricShape([], `visual-entities-${match[1]}`);
       }
       if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
@@ -1213,6 +1214,7 @@ routes.push(
     (match, query) => {
       const subset = currentSubset(query);
       if (!subset && query.get("offset") !== null) {
+        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`);
         return electricShape([], `visual-commands-${match[1]}`);
       }
       if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
@@ -1278,6 +1280,8 @@ routes.push(
                   text: body,
                 }),
               ];
+      if (query.get("live") === "true" && query.get("offset") !== "-1")
+        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "conversation_payload_chunk");
       return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
     },
   ],

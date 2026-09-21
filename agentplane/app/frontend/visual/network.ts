@@ -92,6 +92,16 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
 }
 
 /**
+ * A valid live response whose body has not received a change yet. Fetch itself settles, while
+ * Electric's body reader waits until the collection cancels it during teardown.
+ */
+export function electricLongPoll(handle: string, relation?: string): Response {
+  const schema = ELECTRIC_SCHEMAS[relation ?? "conversation_entity"];
+  if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
+  return new Response(new ReadableStream<Uint8Array>({ cancel() {} }), { headers: shapeHeaders(handle, schema) });
+}
+
+/**
  * Current-state bootstrap used by `syncMode: "on-demand"`: Electric returns operations in a
  * subset envelope rather than the append-only shape log. The snapshot mark links each row to the
  * PostgreSQL visibility metadata and lets the client discard overlapping streamed changes.
