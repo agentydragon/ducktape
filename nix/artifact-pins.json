@@ -13,8 +13,8 @@
       "sha256": "9p/EigBiffsyUe/ujkK6qdFdAHWOY+KnaSrdYgD5pHM="
     },
     "claude-statusline": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-37a4e60b6a07/claude_statusline-0.1.0-py3-none-any.whl",
-      "sha256": "N6TmC2oHUiv7Ads0IEmr1y5ozj7dN2P4MKHXjmJCRac="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-eccc702d7a6c/claude_statusline-0.1.0-py3-none-any.whl",
+      "sha256": "7MxwLXpsjP/AkpfnTbEljb8PqVAQdQKkNE8sljrJRX4="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-f1dea8f63b3a/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -37,12 +37,12 @@
       "sha256": "xLSYbdXqluTgG9i9McpNr1+GLA+Ff0x8XntVm5g37K4="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-cabe718bbeef/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-4acbd2a2a31b/aiquota.zip",
       "sha256": "UVmFytgin2i+9Nj12lC3t6L9WrjmqXYNQZ4dRD0eyEo="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-cabe718bbeef/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "TTwyhF2u1goHE1E/rECpypgzRUqBwhaPAEIbFzLbk/o="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-4acbd2a2a31b/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "GxkFxSm+5LRey0vad2V78GTUAY5yZrvXL6wJbbcKjIM="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-4d27bb98d9fe/debundle",
@@ -223,6 +223,10 @@
     "skill-grafana": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-87f6afbe4683/grafana.skill",
       "sha256": "h/avvkaDIUFunaaQn/xSzEabkraZKQdqJnAOcQdYEAg="
+    },
+    "ducktape-claude-api": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-7b6ebfd5ec93/ducktape_claude_api-0.1.0-py3-none-any.whl",
+      "sha256": "e26/1eyT6ReNRuD+KcfIV1Ml6cAMaBvSbx++Cby85wI="
     }
   }
 }

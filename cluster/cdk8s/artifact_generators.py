@@ -106,7 +106,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("nvidia-device-plugin", ("cluster/k8s/nvidia-device-plugin",)),
     ("nvidia-runtimeclass", ("cluster/k8s/nvidia-runtimeclass",)),
     ("claude-sandbox-secrets", ("cluster/k8s/agents/claude-sandbox-secrets",)),
-    ("coinbase-read", ("cluster/k8s/agents/coinbase-read",)),
     ("forgejo-token-rotation", ("cluster/k8s/agents/forgejo-token-rotation",)),
     ("ha-mcp", ("cluster/k8s/agents/ha-mcp/app",)),
     (
@@ -148,7 +147,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("dcgm-exporter", ("cluster/k8s/dcgm-exporter",)),
     ("descheduler", ("cluster/k8s/descheduler",)),
     ("dns-automation", ("cluster/k8s/dns-automation",)),
-    ("evidence-market-roster", ("cluster/k8s/evidence",)),
     ("flux-grafana-secrets", ("cluster/k8s/flux-grafana-secrets",)),
     ("flux-image-automation-forgejo", ("cluster/k8s/flux-image-automation-forgejo",)),
     ("flux-monitoring", ("cluster/k8s/flux-monitoring",)),
@@ -193,7 +191,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("kube-system", ("cluster/k8s/kube-system",)),
     ("kubevirt-cdi-operator", ("cluster/k8s/kubevirt/cdi-operator",)),
     ("kubevirt-operator", ("cluster/k8s/kubevirt/operator",)),
-    ("kvm-device-plugin", ("cluster/k8s/kvm-device-plugin",)),
     ("langfuse", ("cluster/k8s/langfuse",)),
     ("matrix-app", ("cluster/k8s/matrix",)),
     ("matrix-user-provisioner", ("cluster/k8s/matrix/user-provisioner",)),

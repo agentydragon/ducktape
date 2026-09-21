@@ -57,6 +57,18 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   - Reject declared providers no Pod reads. These were source-graph consistency checks;
     they did not query the cluster or prove a live resource existed.
 
+- **Cross-check ESO namespace whitelists once ESO manifests are uniformly in cdk8s.** A
+  `ClusterExternalSecret.spec.namespaces` entry only actually syncs if the backing
+  `ClusterSecretStore.spec.conditions[].namespaces` also allows it — two independently
+  hand-written namespace lists that can silently drift. PR #7407 widened
+  `google-access-token`'s `ClusterExternalSecret` to add `agentplane-staging` without
+  widening `kubernetes-airlock-secret-store`'s `conditions`, so the sync failed with
+  `SecretSyncedError: could not get secret data from provider` until caught by hand.
+  Once every `ClusterExternalSecret`/`ClusterSecretStore` pair is a cdk8s construct,
+  derive both namespace lists from one source, or validate at synth that a
+  ClusterExternalSecret's namespaces are a subset of its store's condition namespaces,
+  so this can't recur.
+
   Specific coverage removed:
   - Agentplane staging: `agentplane-oidc` and `agentplane-mcp-oauth` from
     `sso-providers-tf`, `litellm-key-agentplane-staging` from `litellm-keys-tf`,

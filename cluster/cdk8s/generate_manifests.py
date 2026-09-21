@@ -38,7 +38,6 @@ from cluster.cdk8s.clickhouse import flux_kustomizations as clickhouse_flux_kust
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
-from cluster.cdk8s.evidence import flux_kustomizations as evidence_flux_kustomizations
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
@@ -71,7 +70,6 @@ from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
-from cluster.cdk8s.kvm_device_plugin import flux_kustomizations as kvm_device_plugin_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
@@ -155,7 +153,6 @@ def generate_manifests(root: Path) -> None:
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
-    evidence_flux_kustomizations.evidence_market_roster(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_kustomization = (
         flux_image_automation_ghcr_flux_kustomizations.flux_image_automation_ghcr(flux_chart)
@@ -166,7 +163,6 @@ def generate_manifests(root: Path) -> None:
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
     cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart)
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(flux_chart)
-    kvm_device_plugin_flux_kustomizations.kvm_device_plugin(flux_chart)
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
@@ -222,7 +218,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, snapshot_controller_crds_kustomization
     )
     forgejo_flux_kustomizations.forgejo_cache(flux_chart, valkey_kustomization, local_path_provisioner_kustomization)
-    haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
+    haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(flux_chart, kyverno_policies_kustomization)
     vpa_kustomization = vpa_flux_kustomizations.vpa(flux_chart, kyverno_kustomization, metrics_server_kustomization)
     clickhouse_kustomization = clickhouse_flux_kustomizations.clickhouse(flux_chart, clickhouse_operator_kustomization)
@@ -251,9 +247,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, claude_rbac_kustomization
     )
     external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
-    agents_flux_kustomizations.coinbase_read(
-        flux_chart, external_creds_kustomization, external_secrets_config_kustomization
-    )
     goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(flux_chart, vpa_kustomization)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(flux_chart, root, clickhouse_kustomization)
     cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
@@ -353,12 +346,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
     )
     agents_flux_kustomizations.claude_sandbox_secrets(
-        flux_chart,
-        claude_rbac_kustomization,
-        external_creds_kustomization,
-        external_secrets_config_kustomization,
-        agent_shared_secrets_kustomization,
-        ollama_kustomization,
+        flux_chart, claude_rbac_kustomization, external_secrets_config_kustomization
     )
     agents_flux_kustomizations.haku_openclaw_spike_backup(
         flux_chart, external_secrets_operator_kustomization, volsync_kustomization
@@ -399,9 +387,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, seaweedfs_cluster_kustomization
     )
-    agents_flux_kustomizations.kubectl_passthrough_mcp(
-        flux_chart, gateway_kustomization, agent_machine_access_tf_kustomization
-    )
+    agents_flux_kustomizations.kubectl_passthrough_mcp(flux_chart)
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
         cnpg_kustomization,
@@ -476,9 +462,7 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
     )
-    haku_ci_flux_kustomizations.haku_ci(
-        flux_chart, forgejo_kustomization, keda_kustomization, reflector_kustomization, haku_forgejo_tea_kustomization
-    )
+    haku_ci_flux_kustomizations.haku_ci(flux_chart, keda_kustomization)
     flux_grafana_secrets_flux_kustomizations.flux_grafana_secrets(
         flux_chart, grafana_instance_kustomization, grafana_operator_kustomization
     )
@@ -514,25 +498,11 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    airlock_kustomization = agents_flux_kustomizations.airlock(
-        flux_chart,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
-        sso_providers_tf_kustomization,
-        reflector_kustomization,
-        external_secrets_config_kustomization,
-    )
+    agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
-        flux_chart,
-        forgejo_images_kustomization,
-        external_creds_kustomization,
-        external_secrets_config_kustomization,
-        agent_machine_access_tf_kustomization,
+        flux_chart, external_secrets_config_kustomization
     )
-    agents_flux_kustomizations.loki_read_proxy(
-        flux_chart, external_secrets_config_kustomization, forgejo_images_kustomization
-    )
+    agents_flux_kustomizations.loki_read_proxy(flux_chart, external_secrets_config_kustomization)
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,
         forgejo_images_kustomization,
@@ -546,14 +516,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     agents_flux_kustomizations.tana_mcp(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        valkey_kustomization,
-        agent_machine_access_tf_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, external_secrets_config_kustomization, valkey_kustomization, monitoring_crds_kustomization
     )
     cli_proxy_api_kustomization = cli_proxy_api_flux_kustomizations.cli_proxy_api(
         flux_chart,
@@ -713,7 +676,7 @@ def generate_manifests(root: Path) -> None:
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, forgejo_images_kustomization, grocy_vallejo_kustomization
     )
-    ha_mcp_kustomization = ha_mcp.ha_mcp(
+    ha_mcp.ha_mcp(
         flux_chart,
         root,
         external_secrets_config_kustomization,
@@ -750,8 +713,6 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         kyverno_policies_kustomization,
         external_secrets_config_kustomization,
-        external_creds_kustomization,
-        forgejo_images_kustomization,
     )
     parked_flux_kustomizations.haku_managed_agent(
         flux_chart,
@@ -772,20 +733,12 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         claude_rbac_kustomization,
         cnpg_kustomization,
-        external_creds_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        litellm_keys_tf_kustomization,
-        local_path_provisioner_kustomization,
-        reflector_kustomization,
     )
     agents_flux_kustomizations.agent_workspaces_app(
         flux_chart,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         agent_sandbox_controller_kustomization,
-        litellm_keys_tf_kustomization,
         kyverno_policies_kustomization,
     )
     parked_flux_kustomizations.haku_dispatch(
@@ -797,7 +750,7 @@ def generate_manifests(root: Path) -> None:
         litellm_kustomization,
         litellm_keys_tf_kustomization,
     )
-    haku_console_kustomization = haku_charts.haku_console(
+    haku_charts.haku_console(
         flux_chart,
         haku_console_health_checks,
         cnpg_kustomization,
@@ -836,18 +789,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         claude_rbac_kustomization,
         cnpg_kustomization,
-        external_creds_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        litellm_keys_tf_kustomization,
-        local_path_provisioner_kustomization,
-        reflector_kustomization,
-        sso_providers_tf_kustomization,
-        ssh_mcp_kustomization,
-        haku_console_kustomization,
-        ha_mcp_kustomization,
-        airlock_kustomization,
     )
     flux_app.synth()
 

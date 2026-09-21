@@ -28,7 +28,6 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
-    DEPENDS_ON,
     ActionsProps,
     AppProps,
     DbProps,
@@ -119,7 +118,6 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    depends_on=DEPENDS_ON,
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
     include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
@@ -170,13 +168,7 @@ def agentplane_testing(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    litellm_keys_tf: Kustomization,
-    local_path_provisioner: Kustomization,
-    reflector: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -208,13 +200,7 @@ def agentplane_testing(
                 cert_manager_trust,
                 claude_rbac,
                 cnpg,
-                external_creds,
                 external_secrets_config,
-                forgejo_images,
-                gateway,
-                litellm_keys_tf,
-                local_path_provisioner,
-                reflector,
             ),
         ),
     )

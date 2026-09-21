@@ -516,11 +516,12 @@
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
+          hostModule = ./cluster/k8s/parked/agent-box/nix/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/agent-box/codex.nix;
+            module = ./cluster/k8s/parked/agent-box/nix/home/codex.nix;
           };
         };
 
@@ -531,10 +532,11 @@
           hostname = "public-coder-devbox";
           username = "coder";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./openclaw/public_coder_agent/devbox/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/public-coder-devbox.nix;
+            module = ./openclaw/public_coder_agent/devbox/home.nix;
           };
         };
 
@@ -568,11 +570,11 @@
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
-        # Not a real host — see nix/nixos/hosts/bazel-test/ for config.
+        # Not a real host — see devinfra/nixos_bazel_test/nixos.nix.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
-            ./nix/nixos/hosts/bazel-test
+            ./devinfra/nixos_bazel_test/nixos.nix
             home-manager.nixosModules.home-manager
           ];
         };

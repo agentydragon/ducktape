@@ -97,23 +97,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: evidence-market-roster
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/evidence
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: evidence-market-roster
-    namespace: ducktape-flux
-  timeout: 2m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: external-secrets-crds
   namespace: ducktape-flux
 spec:
@@ -254,27 +237,6 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: kvm-device-plugin
-  namespace: ducktape-flux
-spec:
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: DaemonSet
-      name: generic-device-plugin
-      namespace: kvm-device-plugin
-  interval: 10m
-  path: ./cluster/k8s/kvm-device-plugin
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: kvm-device-plugin
-    namespace: ducktape-flux
-  timeout: 2m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1608,26 +1570,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: coinbase-read
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agents/coinbase-read
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: coinbase-read
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: goldilocks
   namespace: ducktape-flux
 spec:
@@ -2455,13 +2397,7 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: agent-shared-secrets
-      namespace: ducktape-flux
-    - name: ollama
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -2949,11 +2885,6 @@ metadata:
   name: kubectl-passthrough-mcp
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -3571,13 +3502,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: keda
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: haku-forgejo-tea
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku-ci
@@ -3824,16 +3749,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
   healthChecks:
@@ -3860,13 +3775,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3893,8 +3802,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3978,15 +3885,7 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: valkey
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -5026,11 +4925,7 @@ spec:
       namespace: ducktape-flux
     - name: kyverno-policies
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/workspaces/app
@@ -5109,19 +5004,7 @@ spec:
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: reflector
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
@@ -5217,11 +5100,7 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: agent-sandbox-controller
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
       namespace: ducktape-flux
     - name: kyverno-policies
       namespace: ducktape-flux
@@ -5467,29 +5346,7 @@ spec:
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: ssh-mcp
-      namespace: ducktape-flux
-    - name: haku-console
-      namespace: ducktape-flux
-    - name: ha-mcp
-      namespace: ducktape-flux
-    - name: airlock
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1

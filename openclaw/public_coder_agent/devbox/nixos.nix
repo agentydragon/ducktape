@@ -22,7 +22,7 @@
   ...
 }:
 let
-  keys = import ../../../ssh-keys.nix;
+  keys = import ../../../nix/ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
   buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
@@ -91,8 +91,8 @@ let
 in
 {
   imports = [
-    ../../modules/vm-hardware.nix
-    ../../modules/bazel
+    ../../../nix/nixos/modules/vm-hardware.nix
+    ../../../nix/nixos/modules/bazel
   ];
 
   # NixOS's disk-image builder uses LKL's cptofs to populate the ext4 image.

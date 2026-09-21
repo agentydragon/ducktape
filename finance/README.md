@@ -10,4 +10,5 @@ Finance tools and portfolio tracking utilities.
 - **`evidence/`**: shared read floor for the augur-evidence repo — source specs,
   checkout, loaders, and prediction-market record models (consumed by augur and loom)
 - **`scraper/`**: the augur-evidence git scraper (FRED/Yahoo/Zillow sources + the
-  prediction-market mirror), deployed as the `augur-evidence` CronJob image
+  prediction-market mirror). Its cluster pipeline is parked; the retained market roster
+  for a future revival lives in the [retained market roster](scraper/market-roster.yaml).
