@@ -144,5 +144,29 @@ async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(t
             )
 
 
+async def test_terminal_commands_release_scheduling_state_and_retry_is_deduplicated(tmp_path: Path) -> None:
+    async with session_with_blocked_adapter(tmp_path) as (session, _):
+        commands = [
+            command_pb2.Command(command_id=f"model-{i}", change_model=command_pb2.ChangeModel(model="test-model"))
+            for i in range(32)
+        ]
+        for command in commands:
+            await session.command(command)
+            dispatch = session._normal_dispatch_task
+            if dispatch is not None:
+                await dispatch
+            stored = await session.journal.get(command.command_id)
+            assert stored is not None
+            assert stored.terminal_cursor is not None
+        assert not session._scheduled_commands
+        assert not session._dispatched_commands
+        cursor = session.journal.last_cursor
+        for command in commands:
+            await session.command(command)
+        assert session.journal.last_cursor == cursor
+        assert not session._scheduled_commands
+        assert session._normal_dispatch_task is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
