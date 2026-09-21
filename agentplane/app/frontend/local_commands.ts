@@ -155,6 +155,11 @@ export class LocalCommands {
     if (changed) this.reload();
   }
 
+  dismiss(id: string): void {
+    localStorage.removeItem(this.key(id));
+    this.reload();
+  }
+
   private key(id: string): string {
     return `${this.prefix}${encodeURIComponent(id)}`;
   }

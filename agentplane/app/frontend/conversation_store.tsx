@@ -126,6 +126,59 @@ function entityCollection(threadId: string, interest: EntityInterest) {
   );
 }
 
+function commandUrl(
+  threadId: string,
+  sourceId: string,
+  projectionEpoch: string,
+  commandIds: readonly string[]
+): string {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/commands`, window.location.href);
+  url.searchParams.set("source_id", sourceId);
+  url.searchParams.set("projection_epoch", projectionEpoch);
+  for (const id of [...new Set(commandIds)].sort()) url.searchParams.append("command_id", id);
+  return url.toString();
+}
+
+function commandCollection(threadId: string, sourceId: string, projectionEpoch: string, commandIds: readonly string[]) {
+  const selected = [...new Set(commandIds)].sort();
+  return createCollection(
+    electricCollectionOptions({
+      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}`,
+      gcTime: 1_000,
+      schema: entitySchema,
+      getKey: (row) => row.entityId,
+      syncMode: "eager",
+      shapeOptions: {
+        url: commandUrl(threadId, sourceId, projectionEpoch, selected),
+        columnMapper: snakeCamelMapper(),
+      },
+    })
+  );
+}
+
+export function CommandSelection({
+  threadId,
+  sourceId,
+  projectionEpoch,
+  commandIds,
+  children,
+}: {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  commandIds: readonly string[];
+  children: (rows: ConversationEntity[]) => JSX.Element;
+}): JSX.Element {
+  const key = [...new Set(commandIds)].sort().join("\u0000");
+  const collection = useMemo(
+    () => commandCollection(threadId, sourceId, projectionEpoch, key.split("\u0000")),
+    [key, projectionEpoch, sourceId, threadId]
+  );
+  const query = useLiveQuery((q) => q.from({ command: collection }), [collection]);
+  if (query.isError) return <p role="alert">Command synchronization stopped.</p>;
+  return children(query.data ?? []);
+}
+
 function ActiveConversation({
   threadId,
   interest,

@@ -13,7 +13,6 @@ import {
   displayableError,
   getThread,
   models,
-  reconcileCommands,
   renameThread,
   type EvidencePage,
   type NativeFramePage,
@@ -21,6 +20,7 @@ import {
 } from "./client";
 import {
   ConversationCollection,
+  CommandSelection,
   decimalBigInt,
   PayloadBody,
   type ConversationEntity,
@@ -359,58 +359,12 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, string>());
   const active = useRef(new Set<string>());
-  const commandIds = useMemo(
+  const effectedCommandIds = useMemo(
     () =>
-      new Set([
-        ...entities.filter((row) => row.entityKind === "command").map((row) => row.entityId),
-        ...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : [])),
-      ]),
+      new Set([...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))]),
     [entities]
   );
-  const [reconcileAttempt, setReconcileAttempt] = useState(0);
-  const localCommandKey = local.commands
-    .slice(0, 128)
-    .map((value) => value.command.commandId)
-    .join("\u0000");
-  useEffect(() => store.observeCommandIds(commandIds), [commandIds, store]);
-  const scope = entities.find((row) => row.entityKind === "view_state");
-  const sourceId = scope?.sourceId;
-  const projectionEpoch = scope?.projectionEpoch;
-  useEffect(() => setReconcileAttempt(0), [localCommandKey, projectionEpoch, sourceId]);
-  useEffect(() => {
-    if (!sourceId || !projectionEpoch || !localCommandKey) return;
-    const controller = new AbortController();
-    let retry: number | undefined;
-    void reconcileCommands(
-      threadId,
-      sourceId,
-      projectionEpoch,
-      localCommandKey.split("\u0000"),
-      controller.signal
-    ).then(
-      (result) => {
-        if (!controller.signal.aborted) {
-          store.observeCommandIds(
-            new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
-          );
-          if (result.commands.some((value) => value.outcome === null)) {
-            retry = window.setTimeout(
-              () => setReconcileAttempt((value) => value + 1),
-              Math.min(5_000, 250 * 2 ** reconcileAttempt)
-            );
-          }
-        }
-      },
-      (reason: unknown) => {
-        if (!controller.signal.aborted)
-          setErrors((previous) => new Map(previous).set("reconciliation", displayableError(reason)));
-      }
-    );
-    return () => {
-      controller.abort();
-      if (retry !== undefined) window.clearTimeout(retry);
-    };
-  }, [localCommandKey, projectionEpoch, reconcileAttempt, sourceId, store, threadId]);
+  useEffect(() => store.observeCommandIds(effectedCommandIds), [effectedCommandIds, store]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -433,7 +387,106 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
       return false;
     }
   }
-  return { local, errors, submit, deliver };
+  return { local, errors, submit, deliver, store };
+}
+
+function SelectedCommandOutcomes({
+  threadId,
+  sourceId,
+  projectionEpoch,
+  commands,
+  store,
+  errors,
+  deliver,
+}: {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  commands: LocalCommand[];
+  store: LocalCommands;
+  errors: ReadonlyMap<string, string>;
+  deliver: (value: LocalCommand) => Promise<void>;
+}): JSX.Element {
+  const ids = commands.slice(0, 128).map((value) => value.command.commandId);
+  return (
+    <CommandSelection threadId={threadId} sourceId={sourceId} projectionEpoch={projectionEpoch} commandIds={ids}>
+      {(rows) => (
+        <SelectedCommandRows
+          threadId={threadId}
+          rows={rows}
+          commands={commands}
+          store={store}
+          errors={errors}
+          deliver={deliver}
+        />
+      )}
+    </CommandSelection>
+  );
+}
+
+function SelectedCommandRows({
+  threadId,
+  rows,
+  commands,
+  store,
+  errors,
+  deliver,
+}: {
+  threadId: string;
+  rows: ConversationEntity[];
+  commands: LocalCommand[];
+  store: LocalCommands;
+  errors: ReadonlyMap<string, string>;
+  deliver: (value: LocalCommand) => Promise<void>;
+}): JSX.Element {
+  useEffect(() => {
+    for (const row of rows) {
+      if ("outcome" in row.state && row.state.outcome === "effected") store.dismiss(row.entityId);
+    }
+  }, [rows, store]);
+  const byId = new Map(rows.map((row) => [row.entityId, row]));
+  return (
+    <Stack role="region" aria-label="Pending commands" gap="xs">
+      {commands.map((value) => {
+        const row = byId.get(value.command.commandId);
+        const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+        return (
+          <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+            {terminal && row && "outcome" in row.state ? (
+              <>
+                <Text c={row.state.outcome === "failed" ? "red" : undefined}>
+                  {row.state.operation.replaceAll("_", " ")} · {row.state.outcome}
+                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                </Text>
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
+                  Dismiss
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text size="sm">
+                  {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
+                </Text>
+                {value.command.operation.case === "submitInput" && (
+                  <Markdown source={value.command.operation.value.text} />
+                )}
+                {value.command.operation.case === "changeModel" && (
+                  <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "interruptTurn" && (
+                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+                )}
+                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+                {errors.get(value.command.commandId) && <Text c="red">{errors.get(value.command.commandId)}</Text>}
+                {!value.admission && <Button onClick={() => void deliver(value)}>Retry</Button>}
+              </>
+            )}
+          </Paper>
+        );
+      })}
+    </Stack>
+  );
 }
 
 function VirtualizedHistory({
@@ -452,7 +505,9 @@ function VirtualizedHistory({
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
-  const scrollMetrics = useRef({ top: 0, contentHeight: 0, viewportHeight: 0 });
+  const previousScrollTop = useRef(0);
+  const pointerScrolling = useRef(false);
+  const touchY = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
@@ -505,22 +560,39 @@ function VirtualizedHistory({
       ref={viewport}
       role="region"
       aria-label="Thread history"
+      tabIndex={0}
       style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
+      onWheel={(event) => {
+        if (event.deltaY < 0) atBottom.current = false;
+      }}
+      onKeyDown={(event) => {
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
+      }}
+      onPointerDown={() => {
+        pointerScrolling.current = true;
+      }}
+      onPointerUp={() => {
+        pointerScrolling.current = false;
+      }}
+      onPointerCancel={() => {
+        pointerScrolling.current = false;
+      }}
+      onTouchStart={(event) => {
+        touchY.current = event.touches[0]?.clientY ?? null;
+      }}
+      onTouchMove={(event) => {
+        const next = event.touches[0]?.clientY;
+        if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
+        touchY.current = next ?? null;
+      }}
+      onTouchEnd={() => {
+        touchY.current = null;
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        const previous = scrollMetrics.current;
         if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
-        else if (
-          element.scrollTop < previous.top &&
-          element.scrollHeight === previous.contentHeight &&
-          element.clientHeight === previous.viewportHeight
-        )
-          atBottom.current = false;
-        scrollMetrics.current = {
-          top: element.scrollTop,
-          contentHeight: element.scrollHeight,
-          viewportHeight: element.clientHeight,
-        };
+        else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        previousScrollTop.current = element.scrollTop;
         const first = virtualizer.getVirtualItems()[0];
         const firstEntity = first ? segments[first.index] : undefined;
         if (first && firstEntity) {
@@ -610,11 +682,13 @@ function ProjectedSessionBody({
           ? 1
           : 0
     );
+  const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ConversationEntity & { state: Extract<ConversationEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" && "outcome" in row.state
+      row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
   );
-  const hasPendingCommands = projectedCommands.length > 0 || commands.local.commands.length > 0;
+  const hasPendingCommands = projectedCommands.length > 0;
+  const selectedCommandIds = commands.local.commands.slice(0, 128);
 
   function submit(): void {
     if (!draft.trim() || !running) return;
@@ -662,28 +736,18 @@ function ProjectedSessionBody({
                 <Evidence threadId={threadId} entity={row} />
               </Paper>
             ))}
-            {commands.local.commands.map((value) => (
-              <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-                <Text size="sm">
-                  {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
-                </Text>
-                {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
-                )}
-                {value.command.operation.case === "changeModel" && (
-                  <Text>Change model to {value.command.operation.value.model}</Text>
-                )}
-                {value.command.operation.case === "interruptTurn" && (
-                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-                )}
-                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {commands.errors.get(value.command.commandId) && (
-                  <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
-                )}
-                {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
-              </Paper>
-            ))}
           </Stack>
+        )}
+        {view && selectedCommandIds.length > 0 && (
+          <SelectedCommandOutcomes
+            threadId={threadId}
+            sourceId={view.sourceId}
+            projectionEpoch={view.projectionEpoch}
+            commands={selectedCommandIds}
+            store={commands.store}
+            errors={commands.errors}
+            deliver={commands.deliver}
+          />
         )}
         {operational?.feed_error && (
           <Text role="alert" c="red">
