@@ -892,15 +892,15 @@ class TrajectoryStore:
             except EventReplicationError:
                 raise
             except ValueError as error:
-                cursor = (
+                error_cursor = (
                     error.cursor if isinstance(error, conversation_projection.ObservationNotUnderstoodError) else None
                 )
                 message = (
-                    f"conversation projection failed at cursor {cursor}: {error}"
-                    if cursor is not None
+                    f"conversation projection failed at cursor {error_cursor}: {error}"
+                    if error_cursor is not None
                     else f"conversation projection failed: {error}"
                 )
-                raise ConversationProjectionError(message, cursor=cursor) from error
+                raise ConversationProjectionError(message, cursor=error_cursor) from error
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
