@@ -44,14 +44,13 @@ own GitHub account and pushes to its own forks.
 
 ## Layers
 
-| Directory      | Contents                                                                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace/`   | Namespace only                                                                                                                                    |
-| `credentials/` | External-creds reader identity and Brave Search ExternalSecret                                                                                    |
-| `proxy/`       | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                                                 |
-| `app/`         | OpenClaw Deployment, config, state PVC, other ExternalSecrets, NetworkPolicies                                                                    |
-| `devbox/`      | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
-| `sshpiper/`    | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
+| Directory    | Contents                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `namespace/` | Namespace only                                                                                                                                    |
+| `proxy/`     | Interception CA, trust bundle, iron-proxy, FQDN allowlist, and proxy-only credential mirrors                                                      |
+| `app/`       | OpenClaw Deployment, config, state PVC, other ExternalSecrets, NetworkPolicies                                                                    |
+| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
+| `sshpiper/`  | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
 
 The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
 which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live

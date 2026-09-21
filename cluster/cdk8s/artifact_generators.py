@@ -129,7 +129,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("plaid-mcp", ("cluster/k8s/agents/plaid-mcp",)),
     ("public-coder-agent-app", ("cluster/k8s/agents/public-coder-agent/app",)),
     ("public-coder-agent-backup", ("cluster/k8s/agents/public-coder-agent/backup",)),
-    ("public-coder-agent-credentials", ("cluster/k8s/agents/public-coder-agent/credentials",)),
     ("activitywatch", ("cluster/k8s/activitywatch",)),
     ("agent-workspaces-app", ("cluster/k8s/agents/agent-sandbox/workspaces",)),
     ("airlock", ("cluster/k8s/agents/airlock",)),

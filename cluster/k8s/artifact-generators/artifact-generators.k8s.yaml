@@ -434,11 +434,6 @@ spec:
       name: public-coder-agent-backup
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/credentials/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/credentials/"
-      name: public-coder-agent-credentials
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"
           to: "@artifact/cluster/k8s/activitywatch/"
       name: activitywatch
