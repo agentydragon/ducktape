@@ -115,9 +115,6 @@ def upgrade() -> None:
         "conversation_entity",
         "conversation_payload_manifest",
         "conversation_payload_chunk",
-        "conversation_projection_evidence",
-        "conversation_projection_native_link",
-        "event",
     )
     for table in synced_tables:
         op.execute(f'ALTER TABLE "{table}" REPLICA IDENTITY FULL')

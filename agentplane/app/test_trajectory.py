@@ -476,11 +476,19 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
         thread,
         [
             _event(
-                4, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+                4,
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id="test-failed", interrupt_turn=command_pb2.InterruptTurn(turn_id="test-turn")
+                    )
+                ),
             ),
-            _event(5, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
-            _event(6, model_changed=event_pb2.ModelChanged(model="test-next-model")),
-            _event(7, harness_exited=event_pb2.HarnessExited()),
+            _event(
+                5, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+            ),
+            _event(6, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
+            _event(7, model_changed=event_pb2.ModelChanged(model="test-next-model")),
+            _event(8, harness_exited=event_pb2.HarnessExited()),
         ],
         lease=lease,
     )
@@ -492,26 +500,26 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     assert stopped.attached.active_turn_id == ""
     assert stopped.attached.spec.model == "test-next-model"
     assert stopped.attached.spec.reasoning_effort == SPEC.reasoning_effort
-    assert stopped.attached.last_cursor == 7
+    assert stopped.attached.last_cursor == 8
     view = await replica.get_thread(thread)
     assert view is not None
     assert view.model == "test-next-model"
     with pytest.raises(EventReplicationError, match="conflicting runner entry"):
-        await store.record(thread, [_event(7, harness_started=event_pb2.HarnessStarted())], lease=lease)
+        await store.record(thread, [_event(8, harness_started=event_pb2.HarnessStarted())], lease=lease)
     assert await replica.feed_state(thread) == stopped
     with pytest.raises(ValueError, match="older"):
         await store.set_attached(thread, attached, lease=lease)
     assert await replica.feed_state(thread) == stopped
-    await store.record(thread, [_event(8, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
+    await store.record(thread, [_event(9, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
     resumed = await replica.feed_state(thread)
     assert resumed is not None
     assert resumed.end is None
     assert resumed.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    await store.record(thread, [_event(9, harness_lost=event_pb2.HarnessLost())], lease=lease)
+    await store.record(thread, [_event(10, harness_lost=event_pb2.HarnessLost())], lease=lease)
     lost = await replica.feed_state(thread)
     assert lost is not None
     assert lost.attached.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
-    assert lost.attached.last_cursor == 9
+    assert lost.attached.last_cursor == 10
 
 
 async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
@@ -661,7 +669,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         (3, 1, 2),
     ]
     assert [chunk.text for chunk in chunks] == ["hello world", "!"]
-    assert [(row.entity_cursor, row.observation_cursor) for row in evidence] == [(1, 1)]
+    assert {(row.entity_cursor, row.observation_cursor) for row in evidence} == {(1, 1), (1, 2), (1, 3)}
     assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
     await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
