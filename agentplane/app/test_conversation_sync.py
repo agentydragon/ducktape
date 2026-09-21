@@ -164,6 +164,81 @@ async def _cross_replica_sync(
         )
         stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
+        await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
+
+
+async def _history_windows(
+    client_one: httpx.AsyncClient,
+    client_two: httpx.AsyncClient,
+    path: str,
+    previous_params: dict[str, str],
+    store: TrajectoryStore,
+    source: ReplicationSource,
+    thread: UUID,
+    lease: IngestionLease,
+) -> None:
+    start = len(source.entries)
+    for index in range(95):
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(
+                    item_id=f"history-{index:03}", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
+                )
+            )
+        )
+        source.append(
+            event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=f"history-{index:03}", text=f"Body {index}"))
+        )
+    await store.record(thread, source.entries[start:], lease=lease)
+
+    # A disconnected client refreshes its interest instead of replaying an unbounded backlog.
+    expired = await client_two.get(f"{path}/entities", params=previous_params | {"offset": "-1"})
+    assert expired.status_code == 409
+    tail = await client_two.get(f"{path}/interest")
+    tail.raise_for_status()
+    tail_interest = tail.json()
+    tail_params = {"anchor_cursor": tail_interest["anchor_cursor"], "tail_from": tail_interest["tail_from"]}
+    snapshot = await client_two.get(f"{path}/entities", params=tail_params | {"offset": "-1"})
+    snapshot.raise_for_status()
+    assert snapshot.headers["cache-control"] == "private, no-store"
+    rows = [message["value"] for message in snapshot.json() if "value" in message]
+    assert {row["entity_id"] for row in rows if row["entity_kind"] == "item"} == {
+        f"history-{index:03}" for index in range(65, 95)
+    }
+    assert "Body 94" not in snapshot.text
+
+    # Keep the live tail while replacing the bounded historical window on each scroll.
+    before = tail_interest["tail_from"]
+    for lower in (35, 5):
+        selected = await client_one.get(f"{path}/interest", params={"before_cursor": before})
+        selected.raise_for_status()
+        interest = selected.json()
+        window_params = {key: interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
+        page = await client_two.get(f"{path}/entities", params=window_params | {"offset": "-1"})
+        page.raise_for_status()
+        page_rows = [message["value"] for message in page.json() if "value" in message]
+        assert {row["entity_id"] for row in page_rows if row["entity_kind"] == "item"} == {
+            f"history-{index:03}" for index in (*range(lower, lower + 30), *range(65, 95))
+        }
+        before = interest["window_from"]
+
+    # An item inside the history window remains live even while newer items exist.
+    entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-010", text=" revised")))
+    await store.record(thread, [entry], lease=lease)
+    offset = page.headers["electric-offset"]
+    while True:
+        revision = await client_one.get(
+            f"{path}/entities",
+            params=window_params | {"offset": offset, "handle": page.headers["electric-handle"], "live": "true"},
+        )
+        revision.raise_for_status()
+        offset = revision.headers["electric-offset"]
+        if any(
+            message.get("value", {}).get("entity_id") == "history-010"
+            and str(message.get("value", {}).get("revision_cursor")) == str(entry.cursor)
+            for message in revision.json()
+        ):
+            break
 
 
 if __name__ == "__main__":
