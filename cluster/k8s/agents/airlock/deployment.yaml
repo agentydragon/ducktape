@@ -51,7 +51,7 @@ spec:
             - name: AIRLOCK_OIDC_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: airlock-oidc-config
+                  name: airlock-session-secret
                   key: session-secret
             - name: OURA_CLIENT_ID
               valueFrom:
