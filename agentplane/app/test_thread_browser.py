@@ -341,6 +341,9 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await page.screenshot(path=undeclared_outputs_dir() / "projected-epoch-replacement.png")
     finally:
         release.set()
+        if ready.is_set():
+            async with asyncio.timeout(15):
+                await finished.wait()
         await page.unroute("**/conversation/evidence?*", hold_old_evidence)
 
 
