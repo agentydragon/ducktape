@@ -58,7 +58,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache"
+            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=full"
         )
     await electric.aclose()
 
@@ -70,7 +70,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
     assert query["table"] == "conversation_entity"
-    assert "log" not in query
+    assert query["log"] == "full"
     assert query["replica"] == "full"
     assert "cursor >= $4" in query["where"]
     assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
@@ -89,10 +89,12 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         stale_tail = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=0&offset=-1")
         arbitrary = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&table=event")
+        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=changes_only")
     await electric.aclose()
 
     assert stale_tail.status_code == 409
     assert arbitrary.status_code == 400
+    assert bad_log.status_code == 400
 
 
 async def test_payload_shape_uses_server_verified_exact_revision() -> None:
