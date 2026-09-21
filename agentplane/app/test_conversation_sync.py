@@ -11,6 +11,8 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.protocol import event_pb2
 
+# gazelle:include_dep @pypi//protobuf
+
 
 async def test_materialized_revisions_replicate_with_restricted_role() -> None:
     async with electric_service() as service:

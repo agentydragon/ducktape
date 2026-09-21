@@ -984,6 +984,7 @@ py_test(
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:event_pb2",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
