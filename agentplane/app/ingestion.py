@@ -1,7 +1,7 @@
 """Bounded event batching with one persistent transport read across flush deadlines."""
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from agentplane.protocol import event_log_pb2
 from agentplane.runner.client import StreamClosedError
@@ -11,7 +11,7 @@ from agentplane.runner.client import StreamClosedError
 
 async def event_batches(
     read: Callable[[], Awaitable[event_log_pb2.EventEntry]], *, limit: int = 128, delay_s: float = 0.025
-) -> AsyncIterator[list[event_log_pb2.EventEntry]]:
+) -> AsyncGenerator[list[event_log_pb2.EventEntry]]:
     """Flush by count, elapsed batch delay, or EOF; never cancel a read to flush a batch."""
     if limit < 1 or delay_s <= 0:
         raise ValueError("batch size and delay must be positive")
