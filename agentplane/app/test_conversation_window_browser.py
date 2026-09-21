@@ -29,12 +29,12 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
 
     page.on("request", observe_request)
     await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
-    cdp = await page.context.new_cdp_session(page)
-    await cdp.send("HeapProfiler.collectGarbage")
-    heap_before = await cdp.send("Runtime.getHeapUsage")
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    cdp = await page.context.new_cdp_session(page)
+    await cdp.send("HeapProfiler.collectGarbage")
+    heap_before = await cdp.send("Runtime.getHeapUsage")
     initial_entity_url = await page.evaluate(
         """() => performance.getEntriesByType('resource')
             .map(entry => entry.name).find(name => name.includes('/sync/entities?'))"""
