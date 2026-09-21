@@ -6,6 +6,7 @@ resource "authentik_provider_oauth2" "airlock" {
   name               = "airlock-server"
   client_id          = "airlock-server"
   client_type        = "confidential"
+  grant_types        = ["authorization_code"]
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
