@@ -117,8 +117,6 @@ _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
-# The proxy's own upstream trust, separate from the bundle a runner mounts.
-_UPSTREAM_CA_BUNDLE = "agentplane-egress-upstream-ca"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
@@ -378,10 +376,7 @@ class Egress(Construct):
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
-        # Keep the shared Bundle until both dedicated ConfigMaps exist and the
-        # follow-up switches the proxy mounts. See debug/agentplane_upstream_ca_handoff.md.
-        self._add_upstream_bundle("legacy-upstream-bundle", _UPSTREAM_CA_BUNDLE)
-        self.upstream_bundle = self._add_upstream_bundle("upstream-bundle", f"{env.namespace}-egress-upstream-ca")
+        self.upstream_bundle = self._add_upstream_bundle()
         settings_cm = self._add_settings_configmap()
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
@@ -496,7 +491,7 @@ class Egress(Construct):
             ),
         )
 
-    def _add_upstream_bundle(self, id: str, name: str) -> Bundle:
+    def _add_upstream_bundle(self) -> Bundle:
         """What this proxy verifies destinations against, as distinct from what a runner trusts.
 
         The runner's bundle carries the interception root, because the proxy is what answers it.
@@ -510,8 +505,8 @@ class Egress(Construct):
         """
         return Bundle(
             self,
-            id,
-            metadata=ApiObjectMetadata(name=name),
+            "upstream-bundle",
+            metadata=ApiObjectMetadata(name=f"{self.env.namespace}-egress-upstream-ca"),
             spec=BundleSpec(
                 sources=[
                     BundleSpecSources(use_default_c_as=True),
@@ -565,7 +560,7 @@ class Egress(Construct):
         upstream_ca_volume = Volume.from_config_map(
             self,
             "upstream-ca-volume",
-            ConfigMap.from_config_map_name(self, "upstream-ca-ref", _UPSTREAM_CA_BUNDLE),
+            ConfigMap.from_config_map_name(self, "upstream-ca-ref", self.upstream_bundle.name),
             name="upstream-ca",
         )
 

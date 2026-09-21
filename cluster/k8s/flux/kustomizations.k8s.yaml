@@ -5498,17 +5498,10 @@ spec:
       name: agentplane-testing-egress-ca
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
-      name: agentplane-egress-upstream-ca
-    - apiVersion: trust.cert-manager.io/v1alpha1
-      kind: Bundle
       name: agentplane-testing-egress-upstream-ca
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-testing-egress-ca
-      namespace: agentplane-testing
-    - apiVersion: v1
-      kind: ConfigMap
-      name: agentplane-egress-upstream-ca
       namespace: agentplane-testing
     - apiVersion: v1
       kind: ConfigMap
@@ -5908,17 +5901,10 @@ spec:
       name: agentplane-egress-ca
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
-      name: agentplane-egress-upstream-ca
-    - apiVersion: trust.cert-manager.io/v1alpha1
-      kind: Bundle
       name: agentplane-staging-egress-upstream-ca
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-egress-ca
-      namespace: agentplane-staging
-    - apiVersion: v1
-      kind: ConfigMap
-      name: agentplane-egress-upstream-ca
       namespace: agentplane-staging
     - apiVersion: v1
       kind: ConfigMap

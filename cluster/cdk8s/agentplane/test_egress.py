@@ -72,5 +72,18 @@ def test_upstream_bundles_have_independent_environment_ownership(
         ]
 
 
+def test_environments_do_not_share_cluster_scoped_bundles(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    owners: dict[str, str] = {}
+    for namespace, manifests in agentplane_manifests.items():
+        for doc in manifests:
+            if doc["kind"] != "Bundle":
+                continue
+            name = doc["metadata"]["name"]
+            assert name not in owners, f"Bundle {name} is owned by both {owners.get(name)} and {namespace}"
+            owners[name] = namespace
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

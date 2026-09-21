@@ -696,29 +696,6 @@ spec:
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: agentplane-egress-upstream-ca
-spec:
-  sources:
-    - useDefaultCAs: true
-    - configMap:
-        key: ca.crt
-        name: kube-root-ca.crt
-  target:
-    configMap:
-      key: ca-certificates.crt
-      metadata:
-        annotations:
-          description: "Trust bundle the agentplane-testing egress proxy verifies destinations with: public roots plus this cluster's CA"
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values:
-            - agentplane-testing
----
-apiVersion: trust.cert-manager.io/v1alpha1
-kind: Bundle
-metadata:
   name: agentplane-testing-egress-upstream-ca
 spec:
   sources:
@@ -913,7 +890,7 @@ spec:
           secret:
             secretName: agentplane-testing-egress-ca
         - configMap:
-            name: agentplane-egress-upstream-ca
+            name: agentplane-testing-egress-upstream-ca
           name: upstream-ca
         - emptyDir: {}
           name: confdir
