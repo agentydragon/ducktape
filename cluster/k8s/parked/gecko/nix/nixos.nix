@@ -6,7 +6,7 @@
   ...
 }:
 let
-  keys = import ../../../ssh-keys.nix;
+  keys = import ../../../../../nix/ssh-keys.nix;
   sshKeys = with keys; [
     wyrm2
     atlas
@@ -16,11 +16,11 @@ let
 in
 {
   imports = [
-    ../../modules/operator.nix
-    ../../modules/vm-hardware.nix
-    ../../modules/bazel
-    ../../modules/system-inspection-sudo.nix
-    ../../modules/attic-substituter.nix
+    ../../../../../nix/nixos/modules/operator.nix
+    ../../../../../nix/nixos/modules/vm-hardware.nix
+    ../../../../../nix/nixos/modules/bazel
+    ../../../../../nix/nixos/modules/system-inspection-sudo.nix
+    ../../../../../nix/nixos/modules/attic-substituter.nix
   ];
 
   # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
@@ -28,7 +28,7 @@ in
   # by gecko's cloud-init-persisted host key + agentydragon user key.
   ducktape.attic-substituter = {
     enable = true;
-    sopsFile = ../../../../secrets/hosts/gecko-attic.yaml;
+    sopsFile = ../../../../../secrets/hosts/gecko-attic.yaml;
   };
 
   # Passwordless sudo for read-only system inspection commands used by agents.

@@ -545,10 +545,11 @@
           hostname = "gecko";
           username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./cluster/k8s/parked/gecko/nix/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/gecko.nix;
+            module = ./cluster/k8s/parked/gecko/nix/home.nix;
           };
         };
 
