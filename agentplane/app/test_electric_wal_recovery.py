@@ -104,7 +104,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     _write_artifact("same-state-restart.json", json.dumps(same_state_restart, indent=2, sort_keys=True))
 
                     await service.stop()
-                    await _drop_lost_slot(service)
+                    await _drop_slot(service)
                     await asyncio.to_thread(_reset_state_dir, Path(state_dir))
                     await service.start()
                     stale = await client.get(
@@ -154,10 +154,10 @@ async def _slot_state_after_restart(service: ElectricService) -> dict[str, objec
         await connection.close()
 
 
-async def _drop_lost_slot(service: ElectricService) -> None:
+async def _drop_slot(service: ElectricService) -> None:
     connection = await _connect(service)
     try:
-        assert (await _slot_state(connection))["wal_status"] == "lost"
+        assert not (await _slot_state(connection))["active"]
         await connection.execute("SELECT pg_drop_replication_slot($1)", _SLOT)
     finally:
         await connection.close()
