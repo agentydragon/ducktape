@@ -550,10 +550,21 @@ function VirtualizedHistory({
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
+  const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
+  function correctRestoration(): number | null {
+    const anchor = readingAnchor.current;
+    const element = viewport.current;
+    if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
+    const row = element.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+    if (!row) return null;
+    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    element.scrollTop += correction;
+    return correction;
+  }
   const virtualizer = useVirtualizer({
     count: segments.length,
     getScrollElement: () => viewport.current,
@@ -561,6 +572,15 @@ function VirtualizedHistory({
     getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
+    onChange: (instance, sync) => {
+      // A card can resize before virtual-core applies its measured transform. Wait for
+      // that measurement rather than guessing how many animation frames it requires.
+      if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
+      if (correctRestoration() !== null) {
+        restorationSize.current = null;
+        restoringAnchor.current = null;
+      }
+    },
   });
   // ResizeObserver below preserves the first visible row explicitly. This is an
   // instance hook in the pinned virtual-core version, rather than an option.
@@ -568,6 +588,7 @@ function VirtualizedHistory({
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
+    restorationSize.current = null;
     restoringAnchor.current = null;
   };
   const expectUserScroll = () => {
@@ -595,20 +616,26 @@ function VirtualizedHistory({
       };
     }
   };
-  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
+  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }, awaitMeasurement = false) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
-    const correctFromDom = (): boolean => {
+    const correctFromDom = (): number | null => {
       const element = viewport.current;
       const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
-      if (!element || !row) return false;
+      if (!element || !row) return null;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-      element.scrollTop += currentOffset - anchor.offset;
-      return true;
+      const correction = currentOffset - anchor.offset;
+      element.scrollTop += correction;
+      return correction;
     };
-    if (!correctFromDom()) virtualizer.scrollToIndex(index, { align: "start" });
+    const correction = correctFromDom();
+    if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
+    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
+      restorationSize.current = virtualizer.getTotalSize();
+      return;
+    }
     restorationFrame.current = requestAnimationFrame(() => {
       if (restoringAnchor.current === anchor.key) correctFromDom();
       restorationFrame.current = requestAnimationFrame(() => {
@@ -653,7 +680,7 @@ function VirtualizedHistory({
       // Content can resize while a wheel, touch, or key scroll is still settling. Its
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
-      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current);
+      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
