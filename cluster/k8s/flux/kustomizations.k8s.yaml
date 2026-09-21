@@ -2397,7 +2397,7 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3749,7 +3749,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3775,7 +3775,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3801,7 +3801,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1

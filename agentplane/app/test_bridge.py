@@ -27,20 +27,27 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import Feed, RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import FeedError, TrajectoryStore
+from agentplane.app.trajectory import (
+    ConversationEntity,
+    ConversationOperationalState,
+    ConversationProjectionCheckpoint,
+    FeedError,
+    TrajectoryStore,
+)
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
-from agentplane.runner.client import Attachment, RunnerClient, StreamClosedError
+from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -48,6 +55,22 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 SANDBOX = "bridge-test-sandbox"
 SESSION = "bridge-1"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
+
+
+@pytest.fixture
+async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
+    """Preserve native stderr when an app-level bridge case fails during harness launch."""
+    yield
+    report = request.node.stash.get(_CALL_REPORT, None)
+    if report is None or not report.failed:
+        return
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for session_id, session in runner.runner.sessions.items():
+        entries = await session.journal.since(0, limit=512)
+        sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
+    (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
+        json.dumps(sessions, indent=2, sort_keys=True)
+    )
 
 
 async def _thread_id(http: httpx.AsyncClient, session_id: str = SESSION) -> str:
@@ -315,7 +338,11 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str, runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
+    app_url: str,
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    spec: protocol_pb2.SessionSpec,
+    failed_native_journal: None,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     thread = await store.thread(SANDBOX, SESSION, spec)
@@ -351,7 +378,11 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
 
 
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
-    app_url: str, runner: RunnerHandle, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+    app_url: str,
+    runner: RunnerHandle,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_native_journal: None,
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
@@ -579,6 +610,94 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
         finally:
             attachment.cancel()
     finally:
+        await client.close()
+
+
+async def test_semantic_feed_failure_survives_replica_reconcile(
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    db_url: str,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
+
+    async def address_of(name: str) -> str:
+        assert name == SANDBOX
+        return runner.target
+
+    client = RunnerClient(runner.target, capture_history=True)
+    replica_store = TrajectoryStore.connect(db_url)
+    await replica_store.start_updates()
+    try:
+        attachment = await client.attach(SESSION, spec=spec)
+        try:
+            await attachment.detach()
+            await attachment.drain_until_end()
+            assert attachment.seen
+            attachment.seen[-1].event.at.seconds += 1
+            thread = await store.thread(SANDBOX, SESSION, spec)
+            lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+            assert lease is not None
+            await store.record(thread, attachment.seen, lease=lease)
+            await Feed(session_id=SESSION, client=client, store=store, lease=lease).run()
+            failed = await replica_store.feed_state(thread)
+            assert failed is not None
+            assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+            async with replica_store._sessions() as session:
+                checkpoint = await session.get(ConversationProjectionCheckpoint, thread)
+                assert checkpoint is not None
+                view = await session.get(
+                    ConversationEntity,
+                    (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current"),
+                )
+                assert view is not None
+                operational = ConversationOperationalState.model_validate(view.state["operational"])
+            assert operational.feed_error is not None
+            assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
+            await store.release_ingestion(lease)
+        finally:
+            attachment.cancel()
+
+        survivor = RunnerBridge(address_of=address_of, store=replica_store)
+        try:
+            await survivor.start([SANDBOX])
+            await survivor.reconcile()
+            assert not survivor._feeds
+            assert await replica_store.feed_state(thread) == failed
+
+            dispatched = False
+
+            async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
+                nonlocal dispatched
+                dispatched = True
+
+            monkeypatch.setattr(survivor, "_command", reject_dispatch)
+            with pytest.raises(RunnerError, match="runner history is rejected"):
+                await survivor.command(
+                    thread,
+                    command_pb2.Command(
+                        command_id="must-not-reach-rejected-runner",
+                        submit_input=command_pb2.SubmitInput(text="must not dispatch"),
+                    ),
+                )
+            assert not dispatched
+
+            contacted_runner = False
+
+            async def reject_client(_sandbox: str) -> RunnerClient:
+                nonlocal contacted_runner
+                contacted_runner = True
+                raise AssertionError("a rejected feed must refuse reopen before native attach")
+
+            monkeypatch.setattr(survivor, "_client", reject_client)
+            with pytest.raises(RunnerError, match="runner history is rejected"):
+                await survivor.open_session(SANDBOX, SESSION, spec)
+            assert not contacted_runner
+        finally:
+            await survivor.close()
+    finally:
+        await replica_store.close()
         await client.close()
 
 

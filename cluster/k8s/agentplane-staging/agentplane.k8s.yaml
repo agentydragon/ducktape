@@ -355,6 +355,9 @@ spec:
         replication: true
   monitoring:
     enablePodMonitor: true
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: 512MB
   probes:
     liveness:
       isolationCheck:

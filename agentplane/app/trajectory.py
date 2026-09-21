@@ -267,6 +267,10 @@ class IngestionLeaseLostError(Exception):
 class EventReplicationError(ValueError):
     """The runner stream conflicts with the archived prefix or skips an entry."""
 
+    def __init__(self, message: str, *, cursor: int | None = None) -> None:
+        super().__init__(message)
+        self.cursor = cursor
+
 
 class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
@@ -355,7 +359,7 @@ class ConversationControlsState(BaseModel):
 class ConversationFeedErrorState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    cursor: str
+    cursor: str | None
     message: str
 
 
@@ -852,16 +856,20 @@ class TrajectoryStore:
             inserted: list[event_log_pb2.EventEntry] = []
             for entry in entries:
                 if not entry.cursor or not entry.origin.source_id or entry.origin.sequence != entry.cursor:
-                    raise EventReplicationError(f"invalid runner origin at cursor {entry.cursor}")
+                    raise EventReplicationError(f"invalid runner origin at cursor {entry.cursor}", cursor=entry.cursor)
                 if source_id is not None and entry.origin.source_id != source_id:
-                    raise EventReplicationError(f"runner source changed at cursor {entry.cursor}")
+                    raise EventReplicationError(f"runner source changed at cursor {entry.cursor}", cursor=entry.cursor)
                 payload = MessageToDict(entry)
                 if entry.cursor in payloads:
                     if payloads[entry.cursor] != payload:
-                        raise EventReplicationError(f"conflicting runner entry at cursor {entry.cursor}")
+                        raise EventReplicationError(
+                            f"conflicting runner entry at cursor {entry.cursor}", cursor=entry.cursor
+                        )
                     continue
                 if entry.cursor != cursor + 1:
-                    raise EventReplicationError(f"expected runner cursor {cursor + 1}, received {entry.cursor}")
+                    raise EventReplicationError(
+                        f"expected runner cursor {cursor + 1}, received {entry.cursor}", cursor=entry.cursor
+                    )
                 session.add(
                     Event(
                         thread_id=thread_id,
@@ -881,17 +889,18 @@ class TrajectoryStore:
                 return
             try:
                 await _record_conversation_projection(session, thread_id, inserted[0].origin.source_id, inserted)
-            except ConversationProjectionError:
+            except EventReplicationError:
                 raise
             except ValueError as error:
-                cursor = (
-                    error.cursor
-                    if isinstance(error, conversation_projection.ObservationNotUnderstoodError)
-                    else inserted[-1].cursor
+                error_cursor = (
+                    error.cursor if isinstance(error, conversation_projection.ObservationNotUnderstoodError) else None
                 )
-                raise ConversationProjectionError(
-                    f"conversation projection failed at cursor {cursor}: {error}"
-                ) from error
+                message = (
+                    f"conversation projection failed at cursor {error_cursor}: {error}"
+                    if error_cursor is not None
+                    else f"conversation projection failed: {error}"
+                )
+                raise ConversationProjectionError(message, cursor=error_cursor) from error
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
@@ -1128,11 +1137,14 @@ async def _record_conversation_projection(
         operational = None
     else:
         if checkpoint.source_id != source_id:
-            raise EventReplicationError(f"conversation source changed at cursor {entries[0].cursor}")
+            raise EventReplicationError(
+                f"conversation source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
+            )
         if checkpoint.projection_epoch != CONVERSATION_PROJECTION_EPOCH:
             raise ConversationProjectionError(
                 f"conversation projection epoch {checkpoint.projection_epoch!r} must be reset for "
-                f"{CONVERSATION_PROJECTION_EPOCH!r}"
+                f"{CONVERSATION_PROJECTION_EPOCH!r}",
+                cursor=entries[0].cursor,
             )
         state, operational = await _conversation_state(session, checkpoint)
     batch = conversation_projection.EventBatch(source_id, state.position.through_cursor, tuple(entries))
@@ -1235,8 +1247,7 @@ async def _set_conversation_operational(
                     None
                     if error is None
                     else ConversationFeedErrorState(
-                        cursor=str(error_cursor if error_cursor is not None else checkpoint.through_cursor),
-                        message=error,
+                        cursor=None if error_cursor is None else str(error_cursor), message=error
                     )
                 ),
             )

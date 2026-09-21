@@ -346,7 +346,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
     )
     agents_flux_kustomizations.claude_sandbox_secrets(
-        flux_chart, claude_rbac_kustomization, external_secrets_config_kustomization
+        flux_chart, claude_rbac_kustomization, external_secrets_operator_kustomization
     )
     agents_flux_kustomizations.haku_openclaw_spike_backup(
         flux_chart, external_secrets_operator_kustomization, volsync_kustomization
@@ -498,11 +498,11 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
+    agents_flux_kustomizations.airlock(flux_chart, external_secrets_operator_kustomization)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
-        flux_chart, external_secrets_config_kustomization
+        flux_chart, external_secrets_operator_kustomization
     )
-    agents_flux_kustomizations.loki_read_proxy(flux_chart, external_secrets_config_kustomization)
+    agents_flux_kustomizations.loki_read_proxy(flux_chart, external_secrets_operator_kustomization)
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,
         forgejo_images_kustomization,
