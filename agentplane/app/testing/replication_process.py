@@ -263,7 +263,22 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(electric_http, store.current_conversation_scope)
+            electric=ElectricProxy(
+                electric_http,
+                lambda thread_id, anchor, before, page_size: store.conversation_entity_interest(
+                    thread_id, anchor_cursor=anchor, before_cursor=before, page_size=page_size
+                ),
+                lambda thread_id, owner_cursor, owner_id, field, generation, revision: (
+                    store.conversation_payload_selection(
+                        thread_id,
+                        owner_cursor=owner_cursor,
+                        owner_id=owner_id,
+                        field=field,
+                        generation=generation,
+                        revision_cursor=revision,
+                    )
+                ),
+            )
             if electric_url is not None
             else None,
         )

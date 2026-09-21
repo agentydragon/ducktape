@@ -448,3 +448,17 @@ Deployment must configure the Action Service's VAPID identity and exact push-ser
 before enrollment can work. Browser permission is requested only from an explicit registration
 click. Real browser/OS push-service delivery still needs operator acceptance; transport and
 service-worker tests do not establish that production experience.
+
+### Lazy conversation evidence
+
+`GET /threads/{thread_id}/conversation/evidence` lists observations associated with
+one `entity_kind`/`entity_id`, scoped by the exact `source_id` and `projection_epoch`.
+It returns observation cursors and whether native links exist, without reading frame bodies.
+`after_cursor` is exclusive; `next_after_cursor` is null at the end of the page sequence.
+
+`GET /threads/{thread_id}/conversation/evidence/{observation_cursor}/frames` expands
+one association under the same scope and entity. It pages native links by exclusive
+`after_sequence`, returning whole raw entries. Missing captured frames are explicitly
+`unavailable`; an association with no native links returns an empty page. All returned
+cursors/sequences are decimal strings. Both reads default to 30 records and allow up to
+200, reject stale source/epoch references with 410, and require the normal app identity.

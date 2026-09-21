@@ -37,6 +37,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from agentplane.app import conversation_projection
 from agentplane.app.changes import Changes
+from agentplane.app.conversation_debug import (
+    ConversationEvidenceNotFoundError,
+    ConversationScopeChangedError,
+    EvidenceObservation,
+    EvidencePage,
+    NativeFrame,
+    NativeFramePage,
+)
 from agentplane.app.operator_sessions import Base, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
@@ -79,13 +87,14 @@ class Event(Base):
     __tablename__ = "event"
     __table_args__ = (
         Index("ix_event_thread_at", "thread_id", "at"),
-        Index("ix_event_thread_origin_sequence", "thread_id", "origin_sequence"),
+        Index("ix_event_thread_origin", "thread_id", "origin_source_id", "origin_sequence"),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    origin_source_id: Mapped[str] = mapped_column(Text)
     origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
@@ -218,7 +227,7 @@ class ConversationProjectionEvidence(Base):
     )
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
 
@@ -230,7 +239,7 @@ class ConversationProjectionNativeLink(Base):
     )
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
@@ -480,6 +489,120 @@ class TrajectoryStore:
                 manifest.content_bytes,
             )
 
+    async def conversation_evidence(
+        self,
+        thread_id: UUID,
+        *,
+        source_id: str,
+        projection_epoch: str,
+        entity_kind: str,
+        entity_id: str,
+        after_cursor: int,
+        limit: int,
+    ) -> EvidencePage:
+        if not 1 <= limit <= 200 or after_cursor < 0:
+            raise ValueError("invalid evidence page bounds")
+        async with self._sessions() as session:
+            entity_cursor = await _evidence_entity_cursor(
+                session, thread_id, source_id, projection_epoch, entity_kind, entity_id
+            )
+            native_exists = (
+                select(ConversationProjectionNativeLink.source_sequence)
+                .where(
+                    ConversationProjectionNativeLink.thread_id == ConversationProjectionEvidence.thread_id,
+                    ConversationProjectionNativeLink.source_id == ConversationProjectionEvidence.source_id,
+                    ConversationProjectionNativeLink.projection_epoch
+                    == ConversationProjectionEvidence.projection_epoch,
+                    ConversationProjectionNativeLink.entity_cursor == ConversationProjectionEvidence.entity_cursor,
+                    ConversationProjectionNativeLink.observation_cursor
+                    == ConversationProjectionEvidence.observation_cursor,
+                )
+                .exists()
+            )
+            rows = list(
+                await session.execute(
+                    select(ConversationProjectionEvidence.observation_cursor, native_exists)
+                    .where(
+                        ConversationProjectionEvidence.thread_id == thread_id,
+                        ConversationProjectionEvidence.source_id == source_id,
+                        ConversationProjectionEvidence.projection_epoch == projection_epoch,
+                        ConversationProjectionEvidence.entity_cursor == entity_cursor,
+                        ConversationProjectionEvidence.observation_cursor > after_cursor,
+                    )
+                    .order_by(ConversationProjectionEvidence.observation_cursor)
+                    .limit(limit + 1)
+                )
+            )
+            return EvidencePage(
+                observations=[
+                    EvidenceObservation(observation_cursor=str(cursor), has_native=native)
+                    for cursor, native in rows[:limit]
+                ],
+                next_after_cursor=str(rows[limit - 1][0]) if len(rows) > limit else None,
+            )
+
+    async def conversation_native_frames(
+        self,
+        thread_id: UUID,
+        *,
+        source_id: str,
+        projection_epoch: str,
+        entity_kind: str,
+        entity_id: str,
+        observation_cursor: int,
+        after_sequence: int,
+        limit: int,
+    ) -> NativeFramePage:
+        if not 1 <= limit <= 200 or after_sequence < 0:
+            raise ValueError("invalid native frame page bounds")
+        async with self._sessions() as session:
+            entity_cursor = await _evidence_entity_cursor(
+                session, thread_id, source_id, projection_epoch, entity_kind, entity_id
+            )
+            association = await session.get(
+                ConversationProjectionEvidence,
+                (thread_id, source_id, projection_epoch, entity_cursor, observation_cursor),
+            )
+            if association is None:
+                raise ConversationEvidenceNotFoundError("no evidence association for the selected observation")
+            rows = list(
+                await session.execute(
+                    select(ConversationProjectionNativeLink.source_sequence, Event.payload)
+                    .outerjoin(
+                        Event,
+                        (
+                            (Event.thread_id == ConversationProjectionNativeLink.thread_id)
+                            & (Event.origin_source_id == ConversationProjectionNativeLink.source_id)
+                            & (Event.origin_sequence == ConversationProjectionNativeLink.source_sequence)
+                            & (Event.kind == "native")
+                        ),
+                    )
+                    .where(
+                        ConversationProjectionNativeLink.thread_id == thread_id,
+                        ConversationProjectionNativeLink.source_id == source_id,
+                        ConversationProjectionNativeLink.projection_epoch == projection_epoch,
+                        ConversationProjectionNativeLink.entity_cursor == entity_cursor,
+                        ConversationProjectionNativeLink.observation_cursor == observation_cursor,
+                        ConversationProjectionNativeLink.source_sequence > after_sequence,
+                    )
+                    .order_by(ConversationProjectionNativeLink.source_sequence)
+                    .limit(limit + 1)
+                )
+            )
+            return NativeFramePage(
+                frames=[
+                    NativeFrame.model_validate(
+                        {
+                            "source_sequence": str(sequence),
+                            "availability": "present" if payload is not None else "unavailable",
+                            "entry": payload,
+                        }
+                    )
+                    for sequence, payload in rows[:limit]
+                ],
+                next_after_sequence=str(rows[limit - 1][0]) if len(rows) > limit else None,
+            )
+
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
     ) -> None:
@@ -524,6 +647,7 @@ class TrajectoryStore:
                     Event(
                         thread_id=thread_id,
                         cursor=entry.cursor,
+                        origin_source_id=entry.origin.source_id,
                         origin_sequence=entry.origin.sequence,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
@@ -800,7 +924,7 @@ async def _record_conversation_projection(
             "thread_id": thread_id,
             "source_id": evidence.source_id,
             "projection_epoch": evidence.projection_epoch,
-            "item_cursor": evidence.item_cursor,
+            "entity_cursor": evidence.entity_cursor,
             "observation_cursor": evidence.observation_cursor,
         }
         await session.execute(insert(ConversationProjectionEvidence).values(**values).on_conflict_do_nothing())
@@ -1205,6 +1329,20 @@ def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[
         "revision_cursor": str(reference.revision_cursor),
         "generation": str(reference.generation),
     }
+
+
+async def _evidence_entity_cursor(
+    session: AsyncSession, thread_id: UUID, source_id: str, projection_epoch: str, entity_kind: str, entity_id: str
+) -> int:
+    checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+    if checkpoint is None:
+        raise ConversationEvidenceNotFoundError("no materialized conversation")
+    if (checkpoint.source_id, checkpoint.projection_epoch) != (source_id, projection_epoch):
+        raise ConversationScopeChangedError("the conversation source or projection epoch has changed")
+    entity = await session.get(ConversationEntity, (thread_id, source_id, projection_epoch, entity_kind, entity_id))
+    if entity is None:
+        raise ConversationEvidenceNotFoundError("no selected conversation entity")
+    return entity.cursor
 
 
 def _positive_duration(duration: timedelta) -> None:
