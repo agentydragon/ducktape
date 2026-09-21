@@ -26,6 +26,7 @@ import type {
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
+import { EventEntrySchema } from "../../../protocol/event_log_pb";
 import {
   Harness,
   HarnessState,
@@ -1075,7 +1076,8 @@ routes.push(
   ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])]
 );
 
-function shapeEntity(row: Record<string, unknown>): Record<string, unknown> {
+/** Encode the database-facing Electric row, including PostgreSQL JSONB and bool columns. */
+function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   const value = { ...row };
   for (const field of ["state", "text_ref", "arguments_ref", "output_ref", "input_ref"] as const) {
     if (value[field] !== null) value[field] = JSON.stringify(value[field]);
@@ -1106,7 +1108,33 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
 }
 
 function threadRows(threadId: string): Record<string, unknown>[] {
-  return conversationRows(threadId).map(shapeEntity);
+  return conversationRows(threadId).map(electricEntity);
+}
+
+function archivedStderr(cursor: number): Record<string, unknown> {
+  return toJson(
+    EventEntrySchema,
+    create(EventEntrySchema, {
+      cursor: BigInt(cursor),
+      origin: { sourceId: CONVERSATION_SOURCE, sequence: BigInt(cursor) },
+      event: create(EventSchema, {
+        observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } },
+      }),
+    })
+  ) as Record<string, unknown>;
+}
+
+function archivedCompletion(cursor: number): Record<string, unknown> {
+  return toJson(
+    EventEntrySchema,
+    create(EventEntrySchema, {
+      cursor: BigInt(cursor),
+      origin: { sourceId: CONVERSATION_SOURCE, sequence: BigInt(cursor) },
+      event: create(EventSchema, {
+        observation: { case: "itemCompleted", value: { itemId: "m-2", outcome: { case: "text", value: "complete" } } },
+      }),
+    })
+  ) as Record<string, unknown>;
 }
 
 function observationPage(threadId: string) {
@@ -1117,14 +1145,14 @@ function observationPage(threadId: string) {
         source_id: CONVERSATION_SOURCE,
         source_sequence: "31",
         kind: "harness_stderr",
-        entry: { observation: { harness_stderr: { text: "warning: fixture stderr" } } },
+        entry: archivedStderr(31),
       },
       {
         cursor: "34",
         source_id: CONVERSATION_SOURCE,
         source_sequence: "34",
         kind: "item_completed",
-        entry: { observation: { item_completed: { item_id: "m-2" } } },
+        entry: archivedCompletion(34),
       },
     ],
     next_before_cursor: null,
@@ -1145,7 +1173,10 @@ routes.push(
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
-    (match) => {
+    (match, query) => {
+      if (query.get("offset") !== null && query.get("offset") !== "-1") {
+        return electricShape([], `visual-entities-${match[1]}`);
+      }
       const rows = threadRows(match[1]).map((row) => {
         if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
         return { ...row, revision_cursor: "8" };
@@ -1160,6 +1191,9 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
     (match, query) => {
+      if (query.get("offset") !== null && query.get("offset") !== "-1") {
+        return electricShape([], `visual-commands-${match[1]}`);
+      }
       const selected = new Set(query.getAll("command_id"));
       const rows = threadRows(match[1]).filter(
         (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
@@ -1205,21 +1239,23 @@ routes.push(
       const revisionCursor = query.get("revision_cursor") ?? "0";
       const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
       const rows =
-        body === undefined
+        query.get("offset") !== null && query.get("offset") !== "-1"
           ? []
-          : [
-              shapeRow("conversation_payload_chunk", {
-                thread_id: match[1],
-                source_id: CONVERSATION_SOURCE,
-                projection_epoch: CONVERSATION_EPOCH,
-                owner_cursor: ownerCursor,
-                owner_id: ownerId,
-                field,
-                generation,
-                chunk_index: "0",
-                text: body,
-              }),
-            ];
+          : body === undefined
+            ? []
+            : [
+                shapeRow("conversation_payload_chunk", {
+                  thread_id: match[1],
+                  source_id: CONVERSATION_SOURCE,
+                  projection_epoch: CONVERSATION_EPOCH,
+                  owner_cursor: ownerCursor,
+                  owner_id: ownerId,
+                  field,
+                  generation,
+                  chunk_index: "0",
+                  text: body,
+                }),
+              ];
       return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
     },
   ],
@@ -1236,7 +1272,7 @@ routes.push(
         {
           source_sequence: "31",
           availability: "present",
-          entry: { observation: { harness_stderr: { text: "warning: fixture stderr" } } },
+          entry: archivedStderr(31),
         },
       ],
       next_after_sequence: null,
