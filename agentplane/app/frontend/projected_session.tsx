@@ -31,6 +31,14 @@ import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+const LIFECYCLE_LABELS: Record<string, string> = {
+  turn_started: "Turn started",
+  turn_completed: "Turn completed",
+  model_changed: "Model changed",
+  harness_started: "Harness started",
+  harness_exited: "Harness exited",
+  harness_lost: "Harness connection lost",
+};
 
 function Body({
   threadId,
@@ -100,7 +108,10 @@ function EvidenceFramesPage({
     entityKind: entity.entityKind,
     entityId: entity.entityId,
   };
-  useEffect(() => () => request.current?.abort(), []);
+  useEffect(() => {
+    load();
+    return () => request.current?.abort();
+  }, []);
   const load = (after = "0"): void => {
     if (loading) return;
     request.current?.abort();
@@ -138,9 +149,9 @@ function EvidenceFramesPage({
             : `Raw frame ${frame.source_sequence} unavailable`}
         </Text>
       ))}
-      {!page && (
+      {!page && error && (
         <Button loading={loading} onClick={() => load()}>
-          Load raw frames
+          Retry raw frames
         </Button>
       )}
       {afterSequence !== "0" && (
@@ -270,11 +281,20 @@ function EntityCard({
     );
   }
   if (entity.entityKind === "lifecycle") {
+    const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
     return (
       <Stack gap="xs" data-conversation-anchor={entity.cursor.toString()}>
-        <Text size="xs" c="dimmed">
-          {"observation" in entity.state ? entity.state.observation : "lifecycle"}
+        <Text size="xs" c={observation === "harness_lost" ? "red" : "dimmed"}>
+          {LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " ")}
         </Text>
+        {"event" in entity.state && (
+          <details>
+            <summary>Lifecycle details</summary>
+            <Text component="pre" size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {JSON.stringify(entity.state.event, null, 2)}
+            </Text>
+          </details>
+        )}
         <Evidence threadId={threadId} entity={entity} />
       </Stack>
     );
