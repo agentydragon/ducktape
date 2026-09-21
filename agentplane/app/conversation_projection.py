@@ -14,6 +14,7 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 
 class ObservationNotUnderstoodError(ValueError):
     def __init__(self, cursor: int, observation: str | None) -> None:
+        self.cursor = cursor
         super().__init__(f"uninterpreted semantic observation {observation!r} at cursor {cursor}")
 
 
