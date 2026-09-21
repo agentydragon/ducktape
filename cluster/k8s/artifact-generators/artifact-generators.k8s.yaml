@@ -693,11 +693,6 @@ spec:
       name: kubevirt-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
-          to: "@artifact/cluster/k8s/kvm-device-plugin/"
-      name: kvm-device-plugin
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/langfuse/**"
           to: "@artifact/cluster/k8s/langfuse/"
       name: langfuse

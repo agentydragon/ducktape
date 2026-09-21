@@ -464,7 +464,6 @@ py_library(
         "//cluster/cdk8s/kube_api_proxy:flux_kustomizations",
         "//cluster/cdk8s/kube_system:flux_kustomizations",
         "//cluster/cdk8s/kubevirt:flux_kustomizations",
-        "//cluster/cdk8s/kvm_device_plugin:flux_kustomizations",
         "//cluster/cdk8s/kyverno:flux_kustomizations",
         "//cluster/cdk8s/langfuse:flux_kustomizations",
         "//cluster/cdk8s/litellm:credentials",

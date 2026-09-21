@@ -193,7 +193,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("kube-system", ("cluster/k8s/kube-system",)),
     ("kubevirt-cdi-operator", ("cluster/k8s/kubevirt/cdi-operator",)),
     ("kubevirt-operator", ("cluster/k8s/kubevirt/operator",)),
-    ("kvm-device-plugin", ("cluster/k8s/kvm-device-plugin",)),
     ("langfuse", ("cluster/k8s/langfuse",)),
     ("matrix-app", ("cluster/k8s/matrix",)),
     ("matrix-user-provisioner", ("cluster/k8s/matrix/user-provisioner",)),

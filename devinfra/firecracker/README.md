@@ -20,7 +20,7 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 | NixOS rootfs       | `nix/nixos/hosts/fc_dev/`        | NixOS config for guest rootfs      |
 | Rootfs provisioner | `provision-rootfs.sh`            | Build rootfs via Nix, dd to LV     |
 | K8s manifests      | `deploy/`                        | Archived — unwired from Flux       |
-| KVM plugin         | `cluster/k8s/kvm-device-plugin/` | Device plugin for `/dev/kvm`       |
+| KVM plugin         | `deploy/kvm-device-plugin/`      | Device plugin for `/dev/kvm`       |
 
 ## Quick Start
 
