@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import tempfile
 from datetime import timedelta
 from pathlib import Path
@@ -103,13 +102,10 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                         raise AssertionError("Electric resumed a lost replication slot without an explicit reset")
                     _write_artifact("same-state-restart.json", json.dumps(same_state_restart, indent=2, sort_keys=True))
 
-                    await service.stop()
-                    await _drop_slot(service)
-                    await asyncio.to_thread(_reset_state_dir, Path(state_dir))
                     try:
-                        await service.start()
+                        await service.wait_ready()
                     except TimeoutError:
-                        _write_artifact("reset-restart.log", await service.logs())
+                        _write_artifact("automatic-recovery.log", await service.logs())
                         raise
                     stale = await client.get(
                         "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
@@ -158,15 +154,6 @@ async def _slot_state_after_restart(service: ElectricService) -> dict[str, objec
         await connection.close()
 
 
-async def _drop_slot(service: ElectricService) -> None:
-    connection = await _connect(service)
-    try:
-        assert not (await _slot_state(connection))["active"]
-        await connection.execute("SELECT pg_drop_replication_slot($1)", _SLOT)
-    finally:
-        await connection.close()
-
-
 async def _slot_state(connection: asyncpg.Connection) -> dict[str, object]:
     row = await connection.fetchrow(
         """
@@ -193,12 +180,6 @@ def _values(response: httpx.Response) -> list[dict[str, object]]:
 def _write_artifact(name: str, body: str) -> None:
     path = undeclared_outputs_dir() / name
     path.write_text(body + "\n")
-
-
-def _reset_state_dir(path: Path) -> None:
-    shutil.rmtree(path)
-    path.mkdir(mode=0o777)
-    path.chmod(0o777)
 
 
 if __name__ == "__main__":

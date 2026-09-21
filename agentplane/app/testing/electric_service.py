@@ -23,6 +23,7 @@ class ElectricService:
     url: str
     _stop: Callable[[], Awaitable[None]]
     _start: Callable[[float], Awaitable[None]]
+    _wait_ready: Callable[[float], Awaitable[None]]
     _logs: Callable[[], Awaitable[str]]
 
     async def stop(self) -> None:
@@ -36,6 +37,10 @@ class ElectricService:
     async def logs(self) -> str:
         """Return logs from every run of the Electric container."""
         return await self._logs()
+
+    async def wait_ready(self, *, timeout_s: float = 60) -> None:
+        """Wait for a running Electric process to pass its health check."""
+        await self._wait_ready(timeout_s)
 
 
 async def _connect(dsn: str) -> asyncpg.Connection:
@@ -128,4 +133,7 @@ async def electric_service(
                     raw = await asyncio.to_thread(electric.get_wrapped_container().logs)
                     return raw.decode(errors="replace")
 
-                yield ElectricService(database_url, url, stop, start, logs)
+                async def wait_ready(timeout_s: float) -> None:
+                    await _ready(url, timeout_s=timeout_s)
+
+                yield ElectricService(database_url, url, stop, start, wait_ready, logs)
