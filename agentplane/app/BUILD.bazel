@@ -21,9 +21,9 @@ py_test(
     name = "test_conversation_projection",
     srcs = ["test_conversation_projection.py"],
     deps = [
+        ":conftest",
         ":conversation_projection",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
@@ -451,6 +451,7 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
+        ":conversation_projection",
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",
