@@ -545,7 +545,6 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
-  const captureFrame = useRef<number | null>(null);
   const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
@@ -596,13 +595,9 @@ function VirtualizedHistory({
     restoringAnchor.current = null;
   };
   const expectUserScroll = () => {
+    if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
-    if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
-    captureFrame.current = requestAnimationFrame(() => {
-      if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      captureFrame.current = null;
-    });
   };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
@@ -691,11 +686,6 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (captureFrame.current !== null) {
-        cancelAnimationFrame(captureFrame.current);
-        captureFrame.current = null;
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -727,6 +717,9 @@ function VirtualizedHistory({
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
+      onKeyUp={() => {
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
+      }}
       onPointerDown={() => {
         cancelRestoration();
         pointerScrolling.current = true;
@@ -734,9 +727,11 @@ function VirtualizedHistory({
       }}
       onPointerUp={() => {
         pointerScrolling.current = false;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onPointerCancel={() => {
         pointerScrolling.current = false;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onTouchStart={(event) => {
         cancelRestoration();
@@ -750,6 +745,7 @@ function VirtualizedHistory({
       }}
       onTouchEnd={() => {
         touchY.current = null;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
