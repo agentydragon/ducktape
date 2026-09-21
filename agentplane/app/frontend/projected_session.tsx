@@ -358,6 +358,7 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, string>());
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
   const effectedCommandIds = useMemo(
     () =>
@@ -381,13 +382,14 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   function submit(value: Command): boolean {
     try {
       void deliver(store.remember(value));
+      setSubmissionError(null);
       return true;
     } catch (reason) {
-      setErrors((previous) => new Map(previous).set(value.commandId, displayableError(reason)));
+      setSubmissionError(displayableError(reason));
       return false;
     }
   }
-  return { local, errors, submit, deliver, store };
+  return { local, errors, submissionError, submit, deliver, store };
 }
 
 function SelectedCommandOutcomes({
@@ -506,6 +508,8 @@ function VirtualizedHistory({
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousScrollTop = useRef(0);
+  const previousScrollHeight = useRef(0);
+  const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const touchY = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
@@ -549,8 +553,17 @@ function VirtualizedHistory({
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return;
+    previousScrollHeight.current = element.scrollHeight;
+    previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
+      // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
+      // that grows the last card, before the browser dispatches its scroll event. Preserve that
+      // user choice across the resize without interpreting arbitrary layout movement as intent.
+      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
+      if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
+      previousScrollHeight.current = element.scrollHeight;
+      previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
     return () => observer.disconnect();
@@ -758,6 +771,11 @@ function ProjectedSessionBody({
         {modelError && (
           <Text role="alert" c="red">
             {modelError}
+          </Text>
+        )}
+        {commands.submissionError && (
+          <Text role="alert" c="red">
+            {commands.submissionError}
           </Text>
         )}
         <Textarea

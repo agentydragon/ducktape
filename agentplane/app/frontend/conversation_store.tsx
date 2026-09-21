@@ -175,8 +175,14 @@ export function CommandSelection({
     [key, projectionEpoch, sourceId, threadId]
   );
   const query = useLiveQuery((q) => q.from({ command: collection }), [collection]);
-  if (query.isError) return <p role="alert">Command synchronization stopped.</p>;
-  return children(query.data ?? []);
+  return (
+    <>
+      {query.isError && (
+        <p role="alert">Command synchronization stopped. Retained commands remain available to retry.</p>
+      )}
+      {children(query.data ?? [])}
+    </>
+  );
 }
 
 function ActiveConversation({
