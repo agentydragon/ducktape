@@ -35,6 +35,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, mapped_column
 
+from agentplane.app import conversation_projection
 from agentplane.app.changes import Changes
 from agentplane.app.operator_sessions import Base, OperatorSessionStore
 from agentplane.app.presets import Harness
@@ -46,6 +47,9 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 # SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
 # gazelle:include_dep @pypi//asyncpg
+
+
+CONVERSATION_PROJECTION_EPOCH = "v1"
 
 
 class Thread(Base):
@@ -389,6 +393,7 @@ class TrajectoryStore:
                 source_id = entry.origin.source_id
             if not inserted:
                 return
+            await _record_conversation_projection(session, thread_id, inserted[0].origin.source_id, inserted)
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
@@ -590,6 +595,446 @@ class TrajectoryStore:
                 .limit(limit)
             )
             return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
+
+
+async def _record_conversation_projection(
+    session: AsyncSession, thread_id: UUID, source_id: str, entries: Sequence[event_log_pb2.EventEntry]
+) -> None:
+    checkpoint = await session.scalar(
+        select(ConversationProjectionCheckpoint)
+        .where(ConversationProjectionCheckpoint.thread_id == thread_id)
+        .with_for_update()
+    )
+    if checkpoint is None:
+        state = conversation_projection.initial(source_id, CONVERSATION_PROJECTION_EPOCH)
+    else:
+        if checkpoint.source_id != source_id:
+            raise EventReplicationError(f"conversation source changed at cursor {entries[0].cursor}")
+        state = await _conversation_state(session, checkpoint)
+    batch = conversation_projection.EventBatch(source_id, state.position.through_cursor, tuple(entries))
+    result = conversation_projection.advance(
+        state, batch, await _prior_conversation_entities(session, thread_id, batch)
+    )
+    await _write_conversation_payloads(session, thread_id, result.payload_writes)
+    for values in _conversation_entities(thread_id, result):
+        await session.execute(
+            insert(ConversationEntity)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=[
+                    ConversationEntity.thread_id,
+                    ConversationEntity.source_id,
+                    ConversationEntity.projection_epoch,
+                    ConversationEntity.entity_kind,
+                    ConversationEntity.entity_id,
+                ],
+                set_=values,
+            )
+        )
+    for evidence in result.evidence_upserts:
+        for source_sequence in evidence.source_sequences:
+            await session.execute(
+                insert(ConversationProjectionEvidence)
+                .values(
+                    thread_id=thread_id,
+                    source_id=evidence.source_id,
+                    projection_epoch=evidence.projection_epoch,
+                    item_cursor=evidence.item_cursor,
+                    observation_cursor=evidence.observation_cursor,
+                    source_sequence=source_sequence,
+                )
+                .on_conflict_do_nothing()
+            )
+    checkpoint_values = {
+        "source_id": result.state.position.source_id,
+        "projection_epoch": result.state.position.projection_epoch,
+        "through_cursor": result.state.position.through_cursor,
+    }
+    await session.execute(
+        insert(ConversationProjectionCheckpoint)
+        .values(thread_id=thread_id, **checkpoint_values)
+        .on_conflict_do_update(index_elements=[ConversationProjectionCheckpoint.thread_id], set_=checkpoint_values)
+    )
+
+
+async def _conversation_state(
+    session: AsyncSession, checkpoint: ConversationProjectionCheckpoint
+) -> conversation_projection.ViewState:
+    row = await session.scalar(
+        select(ConversationEntity).where(
+            ConversationEntity.thread_id == checkpoint.thread_id,
+            ConversationEntity.source_id == checkpoint.source_id,
+            ConversationEntity.projection_epoch == checkpoint.projection_epoch,
+            ConversationEntity.entity_kind == "view_state",
+            ConversationEntity.entity_id == "current",
+        )
+    )
+    if row is None:
+        raise ValueError("conversation checkpoint has no current controls")
+    controls = row.state["controls"]
+    if not isinstance(controls, dict):
+        raise ValueError("conversation controls are invalid")
+    return conversation_projection.ViewState(
+        conversation_projection.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
+        conversation_projection.Controls(
+            applied_model=_optional_str(controls, "applied_model"),
+            active_turn_id=_optional_str(controls, "active_turn_id"),
+            harness_state=_optional_str(controls, "harness_state"),
+        ),
+        _json_int(row.state, "unresolved_count"),
+    )
+
+
+async def _prior_conversation_entities(
+    session: AsyncSession, thread_id: UUID, batch: conversation_projection.EventBatch
+) -> conversation_projection.PriorEntities:
+    required = conversation_projection.touched_keys(batch)
+    checkpoint = await session.scalar(
+        select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+    )
+    if checkpoint is None:
+        return conversation_projection.PriorEntities(
+            dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids)
+        )
+    rows = await session.scalars(
+        select(ConversationEntity).where(
+            ConversationEntity.thread_id == thread_id,
+            ConversationEntity.source_id == checkpoint.source_id,
+            ConversationEntity.projection_epoch == checkpoint.projection_epoch,
+            (
+                (ConversationEntity.entity_kind == "item") & (ConversationEntity.entity_id.in_(required.item_ids))
+                | (ConversationEntity.entity_kind == "command")
+                & (ConversationEntity.entity_id.in_(required.command_ids))
+            ),
+        )
+    )
+    items: dict[str, conversation_projection.ConversationItem | None] = dict.fromkeys(required.item_ids)
+    commands: dict[str, conversation_projection.CommandSummary | None] = dict.fromkeys(required.command_ids)
+    for row in rows:
+        if row.entity_kind == "item":
+            items[row.entity_id] = _conversation_item(row)
+        elif row.entity_kind == "command":
+            commands[row.entity_id] = _command_summary(row)
+    return conversation_projection.PriorEntities(items, commands)
+
+
+def _conversation_item(row: ConversationEntity) -> conversation_projection.ConversationItem:
+    return conversation_projection.ConversationItem(
+        row.source_id,
+        row.projection_epoch,
+        row.entity_id,
+        row.cursor,
+        row.revision_cursor,
+        kind=_json_int(row.state, "kind"),
+        tool_name=_json_str(row.state, "tool_name"),
+        turn_id=row.turn_id,
+        text=_field_value(row.text_ref),
+        arguments=_field_value(row.arguments_ref),
+        output=_field_value(row.output_ref),
+        completion=_optional_str(row.state, "completion"),
+        tool_succeeded=_optional_bool(row.state, "tool_succeeded"),
+    )
+
+
+def _command_summary(row: ConversationEntity) -> conversation_projection.CommandSummary:
+    outcome = _json_str(row.state, "outcome")
+    return conversation_projection.CommandSummary(
+        row.source_id,
+        row.projection_epoch,
+        row.entity_id,
+        row.cursor,
+        _json_str(row.state, "operation"),
+        conversation_projection.CommandOutcome(outcome),
+        _optional_json_int(row.state, "outcome_cursor"),
+        _optional_str(row.state, "outcome_reason"),
+        _field_value(row.input_ref),
+    )
+
+
+def _field_value(value: dict[str, object] | None) -> conversation_projection.FieldValue | None:
+    return conversation_projection.FieldValue(_payload_ref_from_json(value)) if value is not None else None
+
+
+def _payload_ref_from_json(value: dict[str, object]) -> conversation_projection.PayloadRef:
+    return conversation_projection.PayloadRef(
+        _json_str(value, "source_id"),
+        _json_str(value, "projection_epoch"),
+        _json_int(value, "owner_cursor"),
+        _json_str(value, "owner_item_id"),
+        conversation_projection.PayloadField(_json_str(value, "field")),
+        _json_int(value, "revision_cursor"),
+        _json_int(value, "generation"),
+    )
+
+
+def _json_str(value: dict[str, object], key: str) -> str:
+    item = value[key]
+    if not isinstance(item, str):
+        raise ValueError(f"conversation JSON {key} is not a string")
+    return item
+
+
+def _optional_str(value: dict[str, object], key: str) -> str | None:
+    item = value[key]
+    if item is not None and not isinstance(item, str):
+        raise ValueError(f"conversation JSON {key} is not a string")
+    return item
+
+
+def _optional_bool(value: dict[str, object], key: str) -> bool | None:
+    item = value[key]
+    if item is not None and not isinstance(item, bool):
+        raise ValueError(f"conversation JSON {key} is not a boolean")
+    return item
+
+
+def _json_int(value: dict[str, object], key: str) -> int:
+    item = value[key]
+    if isinstance(item, bool) or not isinstance(item, (int, str)):
+        raise ValueError(f"conversation JSON {key} is not an integer")
+    return int(item)
+
+
+def _optional_json_int(value: dict[str, object], key: str) -> int | None:
+    item = value[key]
+    if item is None:
+        return None
+    if isinstance(item, bool) or not isinstance(item, (int, str)):
+        raise ValueError(f"conversation JSON {key} is not an integer")
+    return int(item)
+
+
+@dataclass
+class _PayloadPlan:
+    reference: conversation_projection.PayloadRef
+    prefix_chunks: int
+    prefix_bytes: int
+    text: str
+    replaced: bool
+
+
+async def _write_conversation_payloads(
+    session: AsyncSession, thread_id: UUID, writes: Sequence[conversation_projection.PayloadWrite]
+) -> None:
+    plans_by_reference: dict[conversation_projection.PayloadRef, _PayloadPlan] = {}
+    final_plans: dict[tuple[int, str, conversation_projection.PayloadField], _PayloadPlan] = {}
+    for write in writes:
+        if isinstance(write, conversation_projection.ReplacePayload):
+            plan = _PayloadPlan(write.reference, 0, 0, write.text, True)
+        else:
+            prior = plans_by_reference.get(write.base) if write.base is not None else None
+            if prior is None:
+                if write.base is None:
+                    prior_chunks = 0
+                    prior_bytes = 0
+                else:
+                    manifest = await session.get(
+                        ConversationPayloadManifest, _payload_manifest_key(thread_id, write.base)
+                    )
+                    if manifest is None:
+                        raise ValueError("append references a missing payload manifest")
+                    prior_chunks = manifest.chunk_count
+                    prior_bytes = manifest.content_bytes
+                plan = _PayloadPlan(write.reference, prior_chunks, prior_bytes, write.text, False)
+            else:
+                plan = _PayloadPlan(
+                    write.reference, prior.prefix_chunks, prior.prefix_bytes, prior.text + write.text, prior.replaced
+                )
+        plans_by_reference[plan.reference] = plan
+        final_plans[(plan.reference.owner_cursor, plan.reference.owner_item_id, plan.reference.field)] = plan
+    for plan in final_plans.values():
+        text_bytes = len(plan.text.encode())
+        chunk_count = 0 if plan.replaced and not plan.text else plan.prefix_chunks + 1
+        await session.execute(
+            insert(ConversationPayloadManifest).values(
+                thread_id=thread_id,
+                source_id=plan.reference.source_id,
+                projection_epoch=plan.reference.projection_epoch,
+                owner_cursor=plan.reference.owner_cursor,
+                owner_id=plan.reference.owner_item_id,
+                field=plan.reference.field,
+                generation=plan.reference.generation,
+                revision_cursor=plan.reference.revision_cursor,
+                present=True,
+                chunk_count=chunk_count,
+                content_bytes=text_bytes if plan.replaced else plan.prefix_bytes + text_bytes,
+            )
+        )
+        if chunk_count > plan.prefix_chunks:
+            session.add(
+                ConversationPayloadChunk(
+                    thread_id=thread_id,
+                    source_id=plan.reference.source_id,
+                    projection_epoch=plan.reference.projection_epoch,
+                    owner_cursor=plan.reference.owner_cursor,
+                    owner_id=plan.reference.owner_item_id,
+                    field=plan.reference.field,
+                    generation=plan.reference.generation,
+                    chunk_index=plan.prefix_chunks,
+                    text=plan.text,
+                )
+            )
+
+
+def _payload_manifest_key(
+    thread_id: UUID, reference: conversation_projection.PayloadRef
+) -> tuple[UUID, str, str, int, str, str, int, int]:
+    return (
+        thread_id,
+        reference.source_id,
+        reference.projection_epoch,
+        reference.owner_cursor,
+        reference.owner_item_id,
+        reference.field,
+        reference.generation,
+        reference.revision_cursor,
+    )
+
+
+def _conversation_entities(thread_id: UUID, result: conversation_projection.ProjectionBatch) -> list[dict[str, object]]:
+    entities = [_view_state_entity(thread_id, result.state)]
+    entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
+    entities.extend(_confirmed_input_entity(thread_id, value) for value in result.confirmed_input_upserts)
+    entities.extend(_lifecycle_entity(thread_id, value) for value in result.lifecycle_upserts)
+    entities.extend(_command_entity(thread_id, value) for value in result.command_upserts)
+    return entities
+
+
+def _entity_values(
+    thread_id: UUID,
+    source_id: str,
+    projection_epoch: str,
+    entity_kind: str,
+    entity_id: str,
+    cursor: int,
+    revision_cursor: int,
+    state: dict[str, object],
+    *,
+    turn_id: str | None = None,
+    text_ref: conversation_projection.FieldValue | None = None,
+    arguments_ref: conversation_projection.FieldValue | None = None,
+    output_ref: conversation_projection.FieldValue | None = None,
+    input_ref: conversation_projection.FieldValue | None = None,
+) -> dict[str, object]:
+    return {
+        "thread_id": thread_id,
+        "source_id": source_id,
+        "projection_epoch": projection_epoch,
+        "entity_kind": entity_kind,
+        "entity_id": entity_id,
+        "cursor": cursor,
+        "revision_cursor": revision_cursor,
+        "turn_id": turn_id,
+        "state": state,
+        "text_ref": _payload_ref_json(text_ref),
+        "arguments_ref": _payload_ref_json(arguments_ref),
+        "output_ref": _payload_ref_json(output_ref),
+        "input_ref": _payload_ref_json(input_ref),
+    }
+
+
+def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState) -> dict[str, object]:
+    return _entity_values(
+        thread_id,
+        state.position.source_id,
+        state.position.projection_epoch,
+        "view_state",
+        "current",
+        state.position.through_cursor,
+        state.position.through_cursor,
+        {
+            "controls": {
+                "applied_model": state.controls.applied_model,
+                "active_turn_id": state.controls.active_turn_id,
+                "harness_state": state.controls.harness_state,
+            },
+            "unresolved_count": state.unresolved_count,
+        },
+    )
+
+
+def _item_entity(thread_id: UUID, item: conversation_projection.ConversationItem) -> dict[str, object]:
+    return _entity_values(
+        thread_id,
+        item.source_id,
+        item.projection_epoch,
+        "item",
+        item.item_id,
+        item.cursor,
+        item.revision_cursor,
+        {
+            "kind": item.kind,
+            "tool_name": item.tool_name,
+            "completion": item.completion,
+            "tool_succeeded": item.tool_succeeded,
+        },
+        turn_id=item.turn_id,
+        text_ref=item.text,
+        arguments_ref=item.arguments,
+        output_ref=item.output,
+    )
+
+
+def _confirmed_input_entity(thread_id: UUID, value: conversation_projection.ConfirmedInput) -> dict[str, object]:
+    return _entity_values(
+        thread_id,
+        value.source_id,
+        value.projection_epoch,
+        "confirmed_input",
+        str(value.cursor),
+        value.cursor,
+        value.revision_cursor,
+        {"harness_message_id": value.harness_message_id, "origin_command_ids": list(value.origin_command_ids)},
+        turn_id=value.turn_id,
+        input_ref=value.text,
+    )
+
+
+def _lifecycle_entity(thread_id: UUID, value: conversation_projection.LifecycleSegment) -> dict[str, object]:
+    return _entity_values(
+        thread_id,
+        value.source_id,
+        value.projection_epoch,
+        "lifecycle",
+        str(value.cursor),
+        value.cursor,
+        value.revision_cursor,
+        {"observation": value.observation, "event": MessageToDict(value.event)},
+    )
+
+
+def _command_entity(thread_id: UUID, value: conversation_projection.CommandSummary) -> dict[str, object]:
+    return _entity_values(
+        thread_id,
+        value.source_id,
+        value.projection_epoch,
+        "command",
+        value.command_id,
+        value.admission_cursor,
+        value.outcome_cursor or value.admission_cursor,
+        {
+            "operation": value.operation,
+            "outcome": value.outcome,
+            "outcome_cursor": str(value.outcome_cursor) if value.outcome_cursor is not None else None,
+            "outcome_reason": value.outcome_reason,
+        },
+        input_ref=value.input,
+    )
+
+
+def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[str, str] | None:
+    if value is None:
+        return None
+    reference = value.reference
+    return {
+        "source_id": reference.source_id,
+        "projection_epoch": reference.projection_epoch,
+        "owner_cursor": str(reference.owner_cursor),
+        "owner_item_id": reference.owner_item_id,
+        "field": reference.field,
+        "revision_cursor": str(reference.revision_cursor),
+        "generation": str(reference.generation),
+    }
 
 
 def _positive_duration(duration: timedelta) -> None:

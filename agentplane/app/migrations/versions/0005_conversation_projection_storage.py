@@ -89,9 +89,23 @@ def upgrade() -> None:
         sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("source_sequence", sa.BigInteger(), primary_key=True),
     )
+    synced_tables = (
+        "conversation_projection_checkpoint",
+        "conversation_entity",
+        "conversation_payload_manifest",
+        "conversation_payload_chunk",
+        "conversation_projection_evidence",
+        "event",
+    )
+    for table in synced_tables:
+        op.execute(f'ALTER TABLE "{table}" REPLICA IDENTITY FULL')
+    op.execute("GRANT USAGE ON SCHEMA public TO electric")
+    op.execute(f"GRANT SELECT ON {', '.join(synced_tables)} TO electric")
+    op.execute(f"CREATE PUBLICATION agentplane_conversation FOR TABLE {', '.join(synced_tables)}")
 
 
 def downgrade() -> None:
+    op.execute("DROP PUBLICATION IF EXISTS agentplane_conversation")
     op.drop_table("conversation_projection_evidence")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
