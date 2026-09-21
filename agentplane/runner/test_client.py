@@ -8,6 +8,7 @@ import grpc
 import pytest
 import pytest_bazel
 
+from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment
 
@@ -20,13 +21,14 @@ class FakeAttachmentCall:
         self.writes: list[protocol_pb2.ClientMessage] = []
         self.reads = 0
         self.cancelled = False
+        self.events: list[protocol_pb2.ServerMessage] = []
 
     async def write(self, message: protocol_pb2.ClientMessage) -> None:
         self.writes.append(message)
 
     async def read(self) -> object:
         self.reads += 1
-        return grpc.aio.EOF
+        return self.events.pop(0) if self.events else grpc.aio.EOF
 
     def cancel(self) -> bool:
         self.cancelled = True
@@ -71,6 +73,26 @@ async def test_cancel_remains_the_explicit_lost_connection_operation() -> None:
     attachment(call).cancel()
 
     assert call.cancelled
+
+
+async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
+    for capture in (False, True):
+        call = FakeAttachmentCall()
+        call.events = [
+            protocol_pb2.ServerMessage(event_entry=event_log_pb2.EventEntry(cursor=cursor)) for cursor in range(41, 45)
+        ]
+        attached = Attachment(
+            cast(grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage], call),
+            protocol_pb2.Attached(session_id="test-session"),
+            after_cursor=40,
+            capture_history=capture,
+        )
+        assert attached.cursor == 40
+        await attached.drain_until_end()
+        assert attached.cursor == 44
+        assert len(attached.seen) == (4 if capture else 0)
+        attached.seen.clear()
+        assert attached.cursor == 44
 
 
 if __name__ == "__main__":
