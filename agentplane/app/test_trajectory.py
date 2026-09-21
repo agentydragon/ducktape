@@ -349,7 +349,12 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
     captured: list[tuple[str, Any]] = []
 
     def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and "conversation_entity" in statement and "pending" in statement:
+        if (
+            statement.lstrip().startswith("SELECT")
+            and "conversation_entity" in statement
+            and "ORDER BY conversation_entity.cursor DESC" in statement
+            and "LIMIT" in statement
+        ):
             captured.append((statement, parameters))
 
     event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)

@@ -93,6 +93,9 @@ including a same-count replacement; text deltas do not advance it. A runner `Att
 snapshot can be ahead of the archive and must not seed event-derived controls.
 An HTTP admission receipt likewise does not advance projection or subscription progress.
 
+The projection schema is experimental staging state. An incompatible stored view change resets
+and recreates that materialization; it does not retain a tolerant reader or a data backfill path.
+
 A body is either included whole at its reference or explicitly omitted. Included empty
 content, content not yet observed, omitted content, and unavailable content are different
 states. An actively streaming value is complete **at its current revision**; it is not
