@@ -6,8 +6,10 @@ from contextlib import suppress
 from uuid import UUID
 
 import httpx
+import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
 from agentplane.app.electric import ElectricProxy, router
@@ -133,7 +135,8 @@ async def test_payload_shape_uses_server_verified_exact_revision() -> None:
     assert forwarded["params[8]"] == "3"
 
 
-async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response() -> None:
+@pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
+async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(disconnect: str) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
             self.reads = 0
@@ -153,7 +156,12 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         return httpx.Response(200, stream=chunks)
 
     app, electric = make_app(httpx.MockTransport(upstream))
-    scope = {"type": "http", "asgi": {"spec_version": "2.4"}, "query_string": b"offset=-1", "headers": []}
+    scope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},
+        "query_string": b"offset=-1",
+        "headers": [],
+    }
     response = await app.state.electric.entities(
         Request(scope), thread_id=THREAD, anchor_cursor=99, tail_from=70, window_from=None, window_before=None
     )
@@ -161,6 +169,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     release = asyncio.Event()
     second = asyncio.Event()
     blocked = asyncio.Event()
+    disconnected = asyncio.Event()
 
     async def send(message: Message) -> None:
         if message["type"] != "http.response.body":
@@ -171,9 +180,12 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         else:
             second.set()
             await blocked.wait()
+            raise OSError("downstream disconnected")
 
     async def receive() -> Message:
-        raise AssertionError("ASGI 2.4 response should detect disconnect through send")
+        assert disconnect == "receive"
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
 
     delivery = asyncio.create_task(response(scope, receive, send))
     try:
@@ -183,9 +195,17 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
             release.set()
             await second.wait()
             assert chunks.reads == 2
+            if disconnect == "cancel":
+                delivery.cancel()
+            elif disconnect == "send":
+                blocked.set()
+            else:
+                disconnected.set()
+            with suppress(asyncio.CancelledError, ClientDisconnect):
+                await delivery
     finally:
         delivery.cancel()
-        with suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError, ClientDisconnect):
             await delivery
         await electric.aclose()
     assert chunks.closed
