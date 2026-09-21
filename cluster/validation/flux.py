@@ -97,13 +97,35 @@ class FluxKustomizationSpec(BaseModel):
     decryption: Decryption | None = None
     post_build: PostBuild | None = None
 
-    def local_dir(self, k8s_dir: Path, k8s_subpath: str = "cluster/k8s") -> Path | None:
-        """Resolve spec.path to a local directory under k8s_dir, or None if external."""
-        rel = self.path.removeprefix("./")
+    def local_dir(
+        self,
+        k8s_dir: Path,
+        k8s_subpath: str = "cluster/k8s",
+        artifact_source_paths: dict[tuple[str, str], dict[str, str]] | None = None,
+    ) -> Path | None:
+        """Resolve spec.path to local source, including root-based ExternalArtifacts, or None if external."""
+        rel = self.path.removeprefix("./").strip("/")
         prefix = k8s_subpath + "/"
-        if not rel.startswith(prefix):
+        if rel.startswith(prefix):
+            return (k8s_dir / rel[len(prefix) :]).resolve()
+
+        source_ref = self.source_ref
+        if source_ref is None or source_ref.kind != EXTERNAL_ARTIFACT_KIND or artifact_source_paths is None:
             return None
-        return (k8s_dir / rel[len(prefix) :]).resolve()
+
+        artifact_key = (source_ref.namespace or self.namespace, source_ref.name)
+        for artifact_path, source_path in artifact_source_paths.get(artifact_key, {}).items():
+            if artifact_path:
+                if rel == artifact_path:
+                    suffix = ""
+                elif rel.startswith(artifact_path + "/"):
+                    suffix = rel[len(artifact_path) + 1 :]
+                else:
+                    continue
+            else:
+                suffix = rel
+            return (k8s_dir / source_path / suffix).resolve()
+        return None
 
 
 class InventoryEntry(BaseModel):

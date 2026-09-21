@@ -411,7 +411,7 @@ def ntfy(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

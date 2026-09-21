@@ -29,7 +29,7 @@ def cli_proxy_api(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/cli-proxy-api",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

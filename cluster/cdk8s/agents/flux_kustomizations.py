@@ -32,7 +32,7 @@ def claude_rbac(chart: Chart, kyverno_policies: Kustomization) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/agent-rbac-base",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -57,7 +57,7 @@ def agent_sandbox_controller(chart: Chart) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/agent-sandbox/controller",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -95,7 +95,7 @@ def agent_workspaces_app(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/agent-sandbox/workspaces",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -141,7 +141,7 @@ def airlock(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/agents/airlock",
+            path="./",
             prune=True,
             wait=True,
             decryption=KustomizationSpecDecryption(
@@ -169,7 +169,7 @@ def alloy_otlp_bearer(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/alloy-otlp-bearer",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -205,7 +205,7 @@ def authentik_jwt_rotation(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/agents/authentik-jwt-rotation",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -241,7 +241,7 @@ def claude_sandbox_secrets(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/agents/claude-sandbox-secrets",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -280,7 +280,7 @@ def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/coinbase-read",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -305,7 +305,7 @@ def forgejo_token_rotation(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/forgejo-token-rotation",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -335,7 +335,7 @@ def haku_egress_proxy(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/haku-egress-proxy",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
@@ -368,7 +368,7 @@ def haku_openclaw_spike_app(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/agents/haku-openclaw-spike/app",
+            path="./",
             prune=True,
             # Safety net for a planned cdk8s conversion of this directory that may move which
             # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
@@ -431,7 +431,7 @@ def haku_openclaw_spike_backup(
             retry_interval="1m",
             timeout="5m",
             wait=True,
-            path="./cluster/k8s/agents/haku-openclaw-spike/backup",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -467,7 +467,7 @@ def haku_openclaw_spike_namespace(chart: Chart) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="1h",
-            path="./cluster/k8s/agents/haku-openclaw-spike/namespace",
+            path="./",
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -492,7 +492,7 @@ def kubectl_passthrough_mcp(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/agents/kubectl-passthrough-mcp/app",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[
@@ -523,7 +523,7 @@ def loki_read_proxy(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/loki-read-proxy",
+            path="./",
             prune=True,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
@@ -554,7 +554,7 @@ def agent_machine_access_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/agents/machine-access-tf",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -616,7 +616,7 @@ def plaid_mcp(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/agents/plaid-mcp",
+            path="./",
             prune=True,
             wait=True,
             decryption=KustomizationSpecDecryption(
@@ -664,7 +664,7 @@ def public_coder_agent_app(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/public-coder-agent/app",
+            path="./",
             # Temporary ownership-transfer safeguard while the proxy Kustomization takes over
             # external-creds-reader. Restore pruning after the proxy inventory is verified.
             prune=False,
@@ -717,7 +717,7 @@ def public_coder_agent_backup(
             retry_interval="1m",
             timeout="5m",
             wait=True,
-            path="./cluster/k8s/agents/public-coder-agent/backup",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -776,7 +776,7 @@ def public_coder_agent_devbox(
             interval="10m",
             retry_interval="1m",
             timeout="30m",
-            path="./cluster/k8s/agents/public-coder-agent/devbox",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -827,7 +827,7 @@ def public_coder_agent_namespace(chart: Chart) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="1h",
-            path="./cluster/k8s/agents/public-coder-agent/namespace",
+            path="./",
             prune=False,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -858,7 +858,7 @@ def public_coder_agent_proxy(
         spec=KustomizationSpec(
             interval="1h",
             retry_interval="1m",
-            path="./cluster/k8s/agents/public-coder-agent/proxy",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -928,7 +928,7 @@ def public_coder_agent_sshpiper(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/agents/public-coder-agent/sshpiper",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -972,7 +972,7 @@ def agent_shared_rbac(chart: Chart, claude_rbac: Kustomization, kyverno_policies
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/shared-rbac",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -995,7 +995,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/shared-secrets",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -1031,7 +1031,7 @@ def tana_mcp(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/agents/tana-mcp",
+            path="./",
             prune=True,
             wait=True,
             decryption=KustomizationSpecDecryption(

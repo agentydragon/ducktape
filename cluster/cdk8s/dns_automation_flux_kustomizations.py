@@ -27,7 +27,7 @@ def dns_automation(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/dns-automation",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

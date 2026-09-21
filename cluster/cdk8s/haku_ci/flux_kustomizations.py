@@ -23,7 +23,7 @@ def haku_ci(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku-ci",
+            path="./",
             prune=True,
             # The runner pod stays pending until its registration-token Secret
             # (haku-ci-runner-token) is provisioned during paving — don't block on health.

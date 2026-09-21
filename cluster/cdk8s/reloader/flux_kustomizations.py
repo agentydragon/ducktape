@@ -21,7 +21,7 @@ def reloader(chart: Chart, kyverno: Kustomization) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/reloader",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

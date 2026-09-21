@@ -21,7 +21,7 @@ def talos_cloud_controller_manager(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="30m",
-            path="./cluster/k8s/talos-cloud-controller-manager",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

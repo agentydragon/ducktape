@@ -20,7 +20,7 @@ def kube_system(chart: Chart, goldilocks: Kustomization) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kube-system",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

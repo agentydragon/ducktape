@@ -33,7 +33,7 @@ def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/forgejo-tea",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
@@ -71,7 +71,7 @@ def haku_mailbox(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/mailbox",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
@@ -109,7 +109,7 @@ def haku_namespace(chart: Chart) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/namespace",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -126,7 +126,7 @@ def haku_rbac(chart: Chart, haku_namespace: Kustomization) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/rbac",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -144,7 +144,7 @@ def haku_ui_image_webhook(chart: Chart, haku_state: Kustomization) -> Kustomizat
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/ui-image-webhook",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -167,7 +167,7 @@ def haku_workloads(chart: Chart, haku_state: Kustomization) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/workloads",
+            path="./",
             prune=True,
             # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
             # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
@@ -203,7 +203,7 @@ def haku_workspaces(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/haku/workspaces/app",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

@@ -51,7 +51,7 @@ def ssh_mcp(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path=f"./{_OUTPUT_DIR}",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,

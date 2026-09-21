@@ -28,7 +28,7 @@ def atuin(chart: Chart, cert_manager_issuer_config: Kustomization, cnpg: Kustomi
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/atuin",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
@@ -51,7 +51,7 @@ def atuin_user_provisioner(chart: Chart, atuin: Kustomization, user_agentydragon
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/atuin/user-provisioner",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

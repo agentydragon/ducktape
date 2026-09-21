@@ -25,7 +25,7 @@ def reflector(chart: Chart) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/reflector",
+            path="./",
             prune=True,
             wait=True,
             # Health check ensures Reflector is ready before secrets can be mirrored

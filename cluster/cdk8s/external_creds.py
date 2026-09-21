@@ -201,7 +201,7 @@ def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) ->
         "external-creds",
         spec=KustomizationSpec(
             interval="10m",
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             decryption=sops_decryption(resources),
             source_ref=KustomizationSpecSourceRef(

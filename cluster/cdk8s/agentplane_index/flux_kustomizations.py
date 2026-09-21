@@ -30,7 +30,7 @@ def agentplane_index(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/agentplane-index",
+            path="./",
             prune=True,
             # haku-state's Terraform Kustomization depends on this aggregate to create
             # the target Namespace, then reflects haku-forgejo-git into it. Waiting for

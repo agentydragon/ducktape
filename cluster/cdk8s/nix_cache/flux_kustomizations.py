@@ -37,7 +37,7 @@ def nix_cache(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/nix-cache",
+            path="./",
             prune=True,
             wait=True,
             decryption=KustomizationSpecDecryption(

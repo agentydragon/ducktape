@@ -288,7 +288,7 @@ def agentplane_staging(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path=f"./cluster/k8s/{ENV.namespace}",
+            path="./",
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.

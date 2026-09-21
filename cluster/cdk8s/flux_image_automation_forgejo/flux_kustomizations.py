@@ -22,7 +22,7 @@ def flux_image_automation_forgejo(
         spec=KustomizationSpec(
             depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
             interval="10m",
-            path="./cluster/k8s/flux-image-automation-forgejo",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

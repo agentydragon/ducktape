@@ -21,7 +21,7 @@ def kyverno(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/kyverno/app",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -83,7 +83,7 @@ def kyverno_policies(chart: Chart, kyverno: Kustomization) -> Kustomization:
                 flux_kustomization_depends_on(kyverno)
             ],
             interval="5m",
-            path="./cluster/k8s/kyverno/policies",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

@@ -26,7 +26,7 @@ def kubevirt(chart: Chart, kubevirt_operator: Kustomization) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/app",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -57,7 +57,7 @@ def cdi_operator(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/cdi-operator",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
@@ -83,7 +83,7 @@ def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kusto
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/cdi",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -114,7 +114,7 @@ def kubevirt_operator(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/operator",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

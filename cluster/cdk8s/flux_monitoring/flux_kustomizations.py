@@ -22,7 +22,7 @@ def flux_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomizati
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path="./cluster/k8s/flux-monitoring",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

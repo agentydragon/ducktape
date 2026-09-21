@@ -26,7 +26,7 @@ def cpap_sync(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/cpap-sync",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

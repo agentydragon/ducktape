@@ -25,7 +25,7 @@ def infra_drift(chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kus
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path="./cluster/k8s/infra-drift",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

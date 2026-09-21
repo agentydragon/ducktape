@@ -25,7 +25,7 @@ def proxmox_proxy(chart: Chart, gateway: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/proxmox-proxy",
+            path="./",
             prune=True,
             wait=True,
             depends_on=[flux_kustomization_depends_on(gateway)],

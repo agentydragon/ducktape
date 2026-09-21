@@ -25,7 +25,7 @@ def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomizati
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="headlamp-app", namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/headlamp",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[

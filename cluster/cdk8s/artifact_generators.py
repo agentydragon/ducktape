@@ -35,8 +35,8 @@ _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
 )
 
 # name -> source directories copied into the output artifact, in copy order.
-# The first path is the consumer's Kustomization directory; following paths are
-# shared bases that its Kustomization references.
+# Single-directory artifacts place that directory's contents at the artifact root;
+# the multi-directory entries preserve paths so their Kustomizations can read shared bases.
 _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agentplane-staging", ("cluster/k8s/agentplane-staging",)),
     ("monitoring-stack", ("cluster/k8s/monitoring/stack",)),
@@ -224,14 +224,20 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _FLUX_SYSTEM_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (("external-creds", ("cluster/k8s/external-creds",)),)
 
 
-def _copy_operation(source_path: str) -> ArtifactGeneratorSpecArtifactsCopy:
-    return ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source_path}/**", to=f"@artifact/{source_path}/")
+def _copy_operation(source_path: str, artifact_path: str) -> ArtifactGeneratorSpecArtifactsCopy:
+    destination = f"@artifact/{artifact_path}/" if artifact_path else "@artifact/"
+    return ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source_path}/**", to=destination)
 
 
 def _artifacts(definitions: tuple[tuple[str, tuple[str, ...]], ...]) -> list[ArtifactGeneratorSpecArtifacts]:
     return [
         ArtifactGeneratorSpecArtifacts(
-            name=name, origin_revision="@repo", copy=[_copy_operation(path) for path in source_paths]
+            name=name,
+            origin_revision="@repo",
+            copy=[
+                _copy_operation(path, "" if len(source_paths) == 1 and path.startswith("cluster/k8s/") else path)
+                for path in source_paths
+            ],
         )
         for name, source_paths in definitions
     ]

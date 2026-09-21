@@ -126,7 +126,7 @@ def etcd_monitoring(
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-etcd", namespace=FLUX_NAMESPACE

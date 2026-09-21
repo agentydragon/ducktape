@@ -35,7 +35,7 @@ def home_assistant(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/home-assistant",
+            path="./",
             prune=True,
             wait=True,
             health_checks=[

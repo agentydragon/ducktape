@@ -22,7 +22,7 @@ def keda(chart: Chart, kyverno: Kustomization) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/keda",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

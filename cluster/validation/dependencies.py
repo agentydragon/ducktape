@@ -134,7 +134,7 @@ def _external_artifact_errors(
             f"{declared}); an ExternalArtifact exists only as a generator's output."
         ]
     path = spec.path.removeprefix("./").strip("/")
-    if path and not any(path == d or path.startswith(d + "/") for d in carried):
+    if "" not in carried and not any(path == d or path.startswith(d + "/") for d in carried):
         return [
             f"{name} (ns={spec.namespace}) path '{spec.path}' is not inside what ExternalArtifact "
             f"'{artifact}' carries ({sorted(carried)}); point the generator's copy at it."

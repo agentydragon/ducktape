@@ -75,8 +75,9 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         for artifact in generator["spec"]["artifacts"]
     }
 
-    # The conventional parked tree keeps consumer declarations without packaging them.
-    consumers: dict[str, list[tuple[Path, dict]]] = {}
+    # Parked consumers retain their sourceRef but are outside the active packaging graph.
+    consumers: dict[str, list[dict]] = {}
+    parked_consumers: set[str] = set()
     flux_chart = root / "flux/kustomizations.k8s.yaml"
     for document in yaml.safe_load_all(flux_chart.read_text()):
         if not isinstance(document, dict) or document.get("kind") != "Kustomization":
@@ -84,33 +85,39 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         source = document["spec"].get("sourceRef", {})
         if source.get("kind") != "ExternalArtifact":
             continue
-        relative = document["spec"]["path"].removeprefix("./")
-        consumer_dir = (repository_root / relative).resolve()
-        if Path(relative).parts[:3] == ("cluster", "k8s", "parked"):
+        if source["name"] not in generated_artifacts:
             continue
-        consumers.setdefault(source["name"], []).append((consumer_dir, document))
-    assert set(consumers) == set(generated_artifacts)
+        if document.get("metadata", {}).get("annotations", {}).get("ducktape.org/parked") == "true":
+            parked_consumers.add(source["name"])
+            continue
+        consumers.setdefault(source["name"], []).append(document)
+    assert set(consumers) | parked_consumers == set(generated_artifacts)
 
     for artifact_name, (generator, artifact) in generated_artifacts.items():
-        consumer_dir, consumer = one(consumers[artifact_name])
-        relative = consumer["spec"]["path"].removeprefix("./")
-        assert consumer_dir == (repository_root / relative).resolve()
+        if artifact_name in parked_consumers:
+            continue
+        consumer = one(consumers[artifact_name])
+        consumer_path = consumer["spec"]["path"].removeprefix("./").strip("/")
         aliases = {source["alias"] for source in generator["spec"]["sources"]}
         assert consumer["spec"]["sourceRef"] == {
             "kind": "ExternalArtifact",
             "name": artifact_name,
             "namespace": generator["metadata"]["namespace"],
         }
-        assert consumer["spec"]["path"] == f"./{relative}"
+        assert consumer["spec"]["path"] == (f"./{consumer_path}" if consumer_path else "./")
         assert "revision" not in artifact  # Content-derived, not the monorepo revision.
         alias = artifact["originRevision"].removeprefix("@")
         assert alias in aliases
         primary_operation = one(
-            operation for operation in artifact["copy"] if operation["to"] == f"@artifact/{relative}/"
+            operation
+            for operation in artifact["copy"]
+            if operation["to"] == (f"@artifact/{consumer_path}/" if consumer_path else "@artifact/")
         )
-        assert primary_operation == {"from": f"@{alias}/{relative}/**", "to": f"@artifact/{relative}/"}
+        source_path = primary_operation["from"].removeprefix(f"@{alias}/").removesuffix("/**")
+        source_dir = repository_root / source_path
+        assert primary_operation["to"] == (f"@artifact/{consumer_path}/" if consumer_path else "@artifact/")
         packaged_root = tmp_path / artifact_name
-        packaged = packaged_root / relative
+        packaged = packaged_root / consumer_path
         for operation in artifact["copy"]:
             copy_alias, _, copy_path = operation["from"].removeprefix("@").partition("/")
             assert copy_alias in aliases, f"{artifact_name}: unknown copy source alias {copy_alias}"
@@ -128,7 +135,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
                 operation_source, operation_target, ignore=shutil.ignore_patterns(*operation.get("exclude", []))
             )
         assert not (packaged / "flux-kustomization.yaml").exists()
-        original = subprocess.run([kustomize, "build", str(consumer_dir)], check=True, capture_output=True, text=True)
+        original = subprocess.run([kustomize, "build", str(source_dir)], check=True, capture_output=True, text=True)
         rebuilt = subprocess.run([kustomize, "build", str(packaged)], check=True, capture_output=True, text=True)
         assert list(yaml.safe_load_all(rebuilt.stdout)) == list(yaml.safe_load_all(original.stdout))
 

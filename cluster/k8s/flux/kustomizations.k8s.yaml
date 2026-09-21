@@ -7,7 +7,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/agentplane-crds
+  path: ./
   prune: false
   retryInterval: 1m
   sourceRef:
@@ -31,7 +31,7 @@ spec:
       name: agent-sandbox-controller
       namespace: agent-sandbox-system
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/controller
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -48,7 +48,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 1h
-  path: ./cluster/k8s/agents/haku-openclaw-spike/namespace
+  path: ./
   prune: false
   sourceRef:
     kind: ExternalArtifact
@@ -63,7 +63,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 1h
-  path: ./cluster/k8s/agents/public-coder-agent/namespace
+  path: ./
   prune: false
   sourceRef:
     kind: ExternalArtifact
@@ -97,7 +97,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/cert-manager/issuer-config
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -114,7 +114,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m0s
-  path: ./cluster/k8s/coredns-custom
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -131,7 +131,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/evidence
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -165,7 +165,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-ghcr
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -179,7 +179,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 1h
-  path: ./cluster/k8s/forgejo/budget-namespace
+  path: ./
   prune: false
   sourceRef:
     kind: ExternalArtifact
@@ -194,7 +194,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/haku/namespace
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -209,7 +209,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/hubble-ui
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -233,7 +233,7 @@ spec:
       name: kubeapi-allegedly-works
       namespace: default
   interval: 10m
-  path: ./cluster/k8s/kube-api-proxy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -253,7 +253,7 @@ spec:
       name: cdi-operator
       namespace: cdi
   interval: 10m
-  path: ./cluster/k8s/kubevirt/cdi-operator
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -275,7 +275,7 @@ spec:
       name: virt-operator
       namespace: kubevirt
   interval: 10m
-  path: ./cluster/k8s/kubevirt/operator
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -297,7 +297,7 @@ spec:
       name: generic-device-plugin
       namespace: kvm-device-plugin
   interval: 10m
-  path: ./cluster/k8s/kvm-device-plugin
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -330,7 +330,7 @@ spec:
       name: kyverno-resource-validating-webhook-cfg
       namespace: ""
   interval: 10m0s
-  path: ./cluster/k8s/kyverno/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -356,7 +356,7 @@ spec:
       name: local-path-provisioner
       namespace: local-path-storage
   interval: 10m
-  path: ./cluster/k8s/local-path-provisioner
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -390,7 +390,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-helmrepository
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -412,7 +412,7 @@ spec:
       kind: Namespace
       name: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/namespace
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -433,7 +433,7 @@ spec:
       name: nfd
       namespace: node-feature-discovery
   interval: 10m
-  path: ./cluster/k8s/node-feature-discovery
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -452,7 +452,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/nvidia-runtimeclass
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -473,7 +473,7 @@ spec:
       name: openebs-lvm-localpv
       namespace: openebs
   interval: 10m
-  path: ./cluster/k8s/openebs-lvm
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -548,7 +548,7 @@ spec:
       name: reflector
       namespace: reflector-system
   interval: 10m
-  path: ./cluster/k8s/reflector
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -565,7 +565,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/namespace
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -621,7 +621,7 @@ spec:
       name: talos-cloud-controller-manager
       namespace: kube-system
   interval: 30m
-  path: ./cluster/k8s/talos-cloud-controller-manager
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -642,7 +642,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   interval: 10m
-  path: ./cluster/k8s/user-agentydragon
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -663,7 +663,7 @@ spec:
       name: redis-operator
       namespace: valkey-system
   interval: 10m
-  path: ./cluster/k8s/valkey
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -703,7 +703,7 @@ spec:
     - name: haku-namespace
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/rbac
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -734,7 +734,7 @@ spec:
       name: virt-handler
       namespace: kubevirt
   interval: 10m
-  path: ./cluster/k8s/kubevirt/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -759,7 +759,7 @@ spec:
       name: descheduler
       namespace: kube-system
   interval: 10m
-  path: ./cluster/k8s/descheduler
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -784,7 +784,7 @@ spec:
       name: keda
       namespace: keda
   interval: 10m
-  path: ./cluster/k8s/keda
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -804,7 +804,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 5m
-  path: ./cluster/k8s/kyverno/policies
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -829,7 +829,7 @@ spec:
       name: metrics-server
       namespace: kube-system
   interval: 10m
-  path: ./cluster/k8s/metrics-server
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -854,7 +854,7 @@ spec:
       name: reloader
       namespace: kube-system
   interval: 10m0s
-  path: ./cluster/k8s/reloader
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -889,7 +889,7 @@ spec:
       name: cdi-uploadproxy
       namespace: cdi
   interval: 10m
-  path: ./cluster/k8s/kubevirt/cdi
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -944,7 +944,7 @@ spec:
       name: ducktape
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/flux-monitoring
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -973,7 +973,7 @@ spec:
       name: hubble
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/cilium
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -998,7 +998,7 @@ spec:
       name: talos-etcd
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/etcd
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1018,7 +1018,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/monitoring/rules
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1040,7 +1040,7 @@ spec:
       name: grafana-operator
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-operator
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1066,7 +1066,7 @@ spec:
       name: nvidia
       namespace: nvidia-device-plugin
   interval: 10m
-  path: ./cluster/k8s/nvidia-device-plugin
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1103,7 +1103,7 @@ spec:
       name: cert-manager-webhook
       namespace: cert-manager
   interval: 10m
-  path: ./cluster/k8s/cert-manager/app
+  path: ./
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1132,7 +1132,7 @@ spec:
       name: seaweedfs-operator
       namespace: seaweedfs
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/operator
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1204,7 +1204,7 @@ spec:
       name: public-coder-agent-sshpiper
       namespace: public-coder-agent
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/sshpiper
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1226,7 +1226,7 @@ spec:
     - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/forgejo/cache
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1252,7 +1252,7 @@ spec:
     - name: haku-rbac
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/forgejo-tea
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1278,7 +1278,7 @@ spec:
       kind: Namespace
       name: claude-sandbox
   interval: 10m
-  path: ./cluster/k8s/agents/agent-rbac-base
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1303,7 +1303,7 @@ spec:
       name: vpa
       namespace: kube-system
   interval: 10m
-  path: ./cluster/k8s/vpa
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1347,7 +1347,7 @@ spec:
       name: clickhouse
       namespace: clickhouse
   interval: 10m
-  path: ./cluster/k8s/clickhouse/cluster
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1374,7 +1374,7 @@ spec:
       name: dcgm-exporter
       namespace: dcgm-exporter
   interval: 10m
-  path: ./cluster/k8s/dcgm-exporter
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1401,7 +1401,7 @@ spec:
       name: trust-manager
       namespace: cert-manager
   interval: 10m
-  path: ./cluster/k8s/cert-manager/trust
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1434,7 +1434,7 @@ spec:
       name: plugin-barman-cloud
       namespace: cnpg-system
   interval: 10m
-  path: ./cluster/k8s/cnpg
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1475,7 +1475,7 @@ spec:
       kind: ValidatingWebhookConfiguration
       name: secretstore-validate
   interval: 10m0s
-  path: ./cluster/k8s/external-secrets/operator
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1499,7 +1499,7 @@ spec:
       kind: ClusterSecretStore
       name: kubernetes-flux-system-secret-store
   interval: 10m0s
-  path: ./cluster/k8s/external-secrets/config
+  path: ./
   prune: true
   retryInterval: 30s
   sourceRef:
@@ -1528,7 +1528,7 @@ spec:
       name: cluster-gateway
       namespace: gateway-system
   interval: 10m
-  path: ./cluster/k8s/gateway
+  path: ./
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1563,7 +1563,7 @@ spec:
       name: terraforms.infra.contrib.fluxcd.io
       namespace: ""
   interval: 10m0s
-  path: ./cluster/k8s/tofu-controller
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1592,7 +1592,7 @@ spec:
       name: volsync
       namespace: volsync-system
   interval: 10m
-  path: ./cluster/k8s/volsync
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1616,7 +1616,7 @@ spec:
     - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/shared-rbac
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1638,7 +1638,7 @@ spec:
     - name: claude-rbac
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/shared-secrets
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1660,7 +1660,7 @@ spec:
     - name: claude-rbac
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/external-creds
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1680,7 +1680,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/coinbase-read
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1703,7 +1703,7 @@ spec:
       name: goldilocks
       namespace: goldilocks
   interval: 10m
-  path: ./cluster/k8s/goldilocks
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1728,7 +1728,7 @@ spec:
       name: clickhouse-aiquota-schema-v10
       namespace: clickhouse
   interval: 10m
-  path: ./cluster/k8s/clickhouse/schema
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1795,7 +1795,7 @@ spec:
     - name: cnpg
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/db
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1824,7 +1824,7 @@ spec:
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
       kind: Database
   interval: 10m
-  path: ./cluster/k8s/tofu-state
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1850,7 +1850,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/secrets
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1868,7 +1868,7 @@ spec:
     - name: gateway
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/proxmox-proxy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1889,7 +1889,7 @@ spec:
     - name: gateway
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/website
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1909,7 +1909,7 @@ spec:
     - name: goldilocks
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/kube-system
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1979,7 +1979,7 @@ spec:
     - name: cnpg
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/atuin
+  path: ./
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -2023,7 +2023,7 @@ spec:
       name: authentik-worker
       namespace: authentik
   interval: 10m0s
-  path: ./cluster/k8s/authentik
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2054,7 +2054,7 @@ spec:
       name: dns-records
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/dns-automation
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2079,7 +2079,7 @@ spec:
       name: forgejo-agentydragon
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/agentydragon
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2110,7 +2110,7 @@ spec:
       name: infra-drift
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/infra-drift
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2137,7 +2137,7 @@ spec:
     - name: haku-rbac
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/alloy-otlp-bearer
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -2170,7 +2170,7 @@ spec:
       name: buildbuddy-api-key
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/github-secrets-sync/secrets
+  path: ./
   prune: false
   retryInterval: 1m
   sourceRef:
@@ -2232,7 +2232,7 @@ spec:
       name: ntfy
       namespace: ntfy
   interval: 10m
-  path: ./cluster/k8s/ntfy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2267,7 +2267,7 @@ spec:
       name: ollama-direct-token
       namespace: ollama
   interval: 10m
-  path: ./cluster/k8s/ollama
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2292,7 +2292,7 @@ spec:
     - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/cluster
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -2314,7 +2314,7 @@ spec:
     - name: user-agentydragon
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/atuin/user-provisioner
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -2340,7 +2340,7 @@ spec:
       name: agent-machine-access
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/agents/machine-access-tf
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2368,7 +2368,7 @@ spec:
       name: sso-providers
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/authentik/sso-providers-tf
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2396,7 +2396,7 @@ spec:
       name: gatus-sso
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/gatus/sso-tf
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2424,7 +2424,7 @@ spec:
       name: flux-webhook-token
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/flux-webhook-token
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2453,7 +2453,7 @@ spec:
       name: github-branch-protection
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/github-branch-protection
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2496,7 +2496,7 @@ spec:
       name: kube-prometheus-stack
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/stack
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2536,7 +2536,7 @@ spec:
       name: buildbuddy-api-key
       namespace: claude-sandbox
   interval: 10m
-  path: ./cluster/k8s/agents/claude-sandbox-secrets
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2568,7 +2568,7 @@ spec:
     - name: volsync
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/haku-openclaw-spike/backup
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2609,7 +2609,7 @@ spec:
       name: authentik-db-ovh
       namespace: authentik
   interval: 10m
-  path: ./cluster/k8s/authentik/db-backups
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2648,7 +2648,7 @@ spec:
       name: loki
       namespace: loki
   interval: 10m
-  path: ./cluster/k8s/monitoring/loki
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2692,7 +2692,7 @@ spec:
       name: mimir
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/mimir
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2733,7 +2733,7 @@ spec:
       name: tempo
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/tempo
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2758,7 +2758,7 @@ spec:
       name: drivefs-artifacts
       namespace: seaweedfs
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/drivefs-artifacts-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2786,7 +2786,7 @@ spec:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/external-credentials
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2811,7 +2811,7 @@ spec:
       name: forgejo
       namespace: seaweedfs
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/forgejo-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2836,7 +2836,7 @@ spec:
       name: loom-gym
       namespace: seaweedfs
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/loom-gym-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2858,7 +2858,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/monitoring
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -2885,7 +2885,7 @@ spec:
       name: pr-visuals-writer
       namespace: flux-system
   interval: 1h
-  path: ./cluster/k8s/seaweedfs/pr-visuals-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2905,7 +2905,7 @@ spec:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/public-coder-agent-backups-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2934,7 +2934,7 @@ spec:
       name: registry-cache
       namespace: oci-cache
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/registry-cache-bucket
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2959,7 +2959,7 @@ spec:
       name: seaweedfs-csi-driver
       namespace: seaweedfs-csi-system
   interval: 10m
-  path: ./cluster/k8s/seaweedfs-csi
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3000,7 +3000,7 @@ spec:
       name: vm-images-publisher
       namespace: vm-images-publisher
   interval: 10m
-  path: ./cluster/k8s/vm-images-publisher
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3027,7 +3027,7 @@ spec:
       name: kubectl-passthrough-mcp
       namespace: kubectl-passthrough-mcp
   interval: 10m
-  path: ./cluster/k8s/agents/kubectl-passthrough-mcp/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3072,7 +3072,7 @@ spec:
       name: forgejo
       namespace: forgejo
   interval: 10m
-  path: ./cluster/k8s/forgejo
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3102,7 +3102,7 @@ spec:
       name: headlamp
       namespace: headlamp
   interval: 10m
-  path: ./cluster/k8s/headlamp
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3132,7 +3132,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3164,7 +3164,7 @@ spec:
       name: grafana-deployment
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3191,7 +3191,7 @@ spec:
       name: gatus
       namespace: gatus
   interval: 10m
-  path: ./cluster/k8s/gatus
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3221,7 +3221,7 @@ spec:
     - name: gateway
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/flux-webhook
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -3253,7 +3253,7 @@ spec:
       name: langfuse
       namespace: langfuse
   interval: 10m
-  path: ./cluster/k8s/langfuse
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3279,7 +3279,7 @@ spec:
       name: vector-talos-logs
       namespace: vector-talos-logs
   interval: 10m
-  path: ./cluster/k8s/vector-talos-logs
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3306,7 +3306,7 @@ spec:
       name: alloy
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/alloy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3348,7 +3348,7 @@ spec:
       name: public-coder-agent-state-v2-restic
       namespace: public-coder-agent
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/backup
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3384,7 +3384,7 @@ spec:
       name: zot
       namespace: oci-cache
   interval: 10m
-  path: ./cluster/k8s/oci-cache
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3455,7 +3455,7 @@ spec:
       name: claude-reader-buckets
       namespace: seaweedfs
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/public-s3
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3522,7 +3522,7 @@ spec:
       name: forgejo-agentydragon-repos
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/agentydragon-repos
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3553,7 +3553,7 @@ spec:
       name: budget-ledger
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/budget-ledger
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3584,7 +3584,7 @@ spec:
       name: forgejo-claude
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/claude
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3621,7 +3621,7 @@ spec:
       name: forgejo-images
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo-images
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3647,7 +3647,7 @@ spec:
     - name: haku-forgejo-tea
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku-ci
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3708,7 +3708,7 @@ spec:
       name: flux-notifications
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/flux-grafana-secrets
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3729,7 +3729,7 @@ spec:
     - name: grafana-instance
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grafana
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3858,7 +3858,7 @@ spec:
     - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/activitywatch
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3904,7 +3904,7 @@ spec:
       name: ducktape
       namespace: agentplane-index
   interval: 10m
-  path: ./cluster/k8s/agentplane-index
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3943,7 +3943,7 @@ spec:
       name: airlock
       namespace: airlock
   interval: 10m
-  path: ./cluster/k8s/agents/airlock
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3975,7 +3975,7 @@ spec:
       name: github-secrets-sync-pat
       namespace: agents-infra
   interval: 10m
-  path: ./cluster/k8s/agents/authentik-jwt-rotation
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4003,7 +4003,7 @@ spec:
       name: loki-read-proxy
       namespace: loki-read-proxy
   interval: 10m
-  path: ./cluster/k8s/agents/loki-read-proxy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4056,7 +4056,7 @@ spec:
       name: plaid-db-mcp
       namespace: plaid-mcp
   interval: 10m
-  path: ./cluster/k8s/agents/plaid-mcp
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4101,7 +4101,7 @@ spec:
       name: tana-mcp-facade
       namespace: tana-mcp
   interval: 10m
-  path: ./cluster/k8s/agents/tana-mcp
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4133,7 +4133,7 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/cli-proxy-api
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -4165,7 +4165,7 @@ spec:
       name: cpap-gateway
       namespace: cpap-sync
   interval: 10m
-  path: ./cluster/k8s/cpap-sync
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4189,7 +4189,7 @@ spec:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-forgejo
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -4217,7 +4217,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/github-api-proxy
+  path: ./
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -4270,7 +4270,7 @@ spec:
       name: github-exporter-agentydragon-agent
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/github-exporter
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4303,7 +4303,7 @@ spec:
       name: github-secrets-sync
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/github-secrets-sync
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4394,7 +4394,7 @@ spec:
     - name: cert-manager-issuer-config
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/mailbox
+  path: ./
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -4451,7 +4451,7 @@ spec:
       name: home-assistant-config-restic-tenant
       namespace: home-assistant
   interval: 10m
-  path: ./cluster/k8s/home-assistant
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4480,7 +4480,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix/user-provisioner
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4524,7 +4524,7 @@ spec:
       name: github-secrets-sync-pat
       namespace: nix-cache
   interval: 10m
-  path: ./cluster/k8s/nix-cache
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4580,7 +4580,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/ssh-mcp
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4612,7 +4612,7 @@ spec:
       name: study-casino
       namespace: study-casino
   interval: 10m
-  path: ./cluster/k8s/study-casino
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4646,7 +4646,7 @@ spec:
       name: haku-state
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/haku-state
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4675,7 +4675,7 @@ spec:
       name: alloy-otlp-bearer-token
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/monitoring/alloy-otlp-bearer-token-tf
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4703,7 +4703,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/litellm
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4741,7 +4741,7 @@ spec:
     - name: reflector
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/aiquota
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4772,7 +4772,7 @@ spec:
       name: cpap-data
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/forgejo/cpap-data
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4939,7 +4939,7 @@ spec:
       name: ha-mcp
       namespace: ha-mcp
   interval: 10m
-  path: ./cluster/k8s/agents/ha-mcp/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4967,7 +4967,7 @@ spec:
     - name: forgejo-agentydragon-repos
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/forgejo-token-rotation
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -4994,7 +4994,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/haku-egress-proxy
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -5012,7 +5012,7 @@ spec:
     - name: haku-state
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/ui-image-webhook
+  path: ./
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -5029,7 +5029,7 @@ spec:
     - name: haku-state
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workloads
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5062,7 +5062,7 @@ spec:
       name: litellm-keys
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/litellm/keys-tf
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5108,7 +5108,7 @@ spec:
       name: haku-openclaw-spike
       namespace: haku-openclaw-spike
   interval: 10m
-  path: ./cluster/k8s/agents/haku-openclaw-spike/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5142,7 +5142,7 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workspaces/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5302,7 +5302,7 @@ spec:
       name: agentplane-testing-egress-upstream-ca
       namespace: agentplane-testing
   interval: 10m
-  path: ./cluster/k8s/agentplane-testing
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5335,7 +5335,7 @@ spec:
       kind: Namespace
       name: agent-workspaces
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5390,7 +5390,7 @@ spec:
       name: brave-search-api-key
       namespace: public-coder-agent
   interval: 1h
-  path: ./cluster/k8s/agents/public-coder-agent/proxy
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5533,7 +5533,7 @@ spec:
       name: public-coder-agent
       namespace: public-coder-agent
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/app
+  path: ./
   prune: false
   retryInterval: 1m
   sourceRef:
@@ -5581,7 +5581,7 @@ spec:
       name: buildbuddy-api-key
       namespace: public-coder-agent
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/devbox
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5697,7 +5697,7 @@ spec:
       name: agentplane-staging-egress-upstream-ca
       namespace: agentplane-staging
   interval: 10m
-  path: ./cluster/k8s/agentplane-staging
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:

@@ -365,7 +365,7 @@ def aiquota(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
             ),
-            path=f"./{OUTPUT_DIR}",
+            path="./",
             prune=True,
             wait=True,
             # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.

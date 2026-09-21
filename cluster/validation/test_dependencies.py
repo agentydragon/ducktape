@@ -304,6 +304,38 @@ class TestCrossNamespaceReferences:
         )
         assert check_cross_namespace_references(cluster) == []
 
+    def test_external_artifact_ref_resolves_at_artifact_root(self) -> None:
+        """A copy operation targeting `@artifact/` carries a root-path consumer."""
+        cluster = _cluster(
+            {
+                "activitywatch": FluxKustomizationSpec(
+                    namespace="ducktape-flux",
+                    path="./",
+                    source_ref=SourceRef(kind="ExternalArtifact", name="activitywatch"),
+                )
+            },
+            flux_sources={("ExternalArtifact", "ducktape-flux", "activitywatch")},
+            artifact_paths={("ducktape-flux", "activitywatch"): {""}},
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_external_artifact_root_path_requires_root_copy(self) -> None:
+        """A root-path consumer cannot resolve an artifact copied into a subdirectory."""
+        cluster = _cluster(
+            {
+                "activitywatch": FluxKustomizationSpec(
+                    namespace="ducktape-flux",
+                    path="./",
+                    source_ref=SourceRef(kind="ExternalArtifact", name="activitywatch"),
+                )
+            },
+            flux_sources={("ExternalArtifact", "ducktape-flux", "activitywatch")},
+            artifact_paths={("ducktape-flux", "activitywatch"): {"cluster/k8s/activitywatch"}},
+        )
+        errors = check_cross_namespace_references(cluster)
+        assert len(errors) == 1
+        assert "path './'" in errors[0]
+
     def test_external_artifact_must_carry_the_consumer_path(self) -> None:
         """A consumer whose path the artifact does not carry would reconcile an empty tree."""
         cluster = _cluster(

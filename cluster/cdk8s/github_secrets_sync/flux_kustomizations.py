@@ -31,7 +31,7 @@ def github_secrets_sync(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/github-secrets-sync",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -70,7 +70,7 @@ def github_secrets_sync_secrets(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/github-secrets-sync/secrets",
+            path="./",
             # CLEANUP: restore pruning after ESO owns flux-system/github-secrets-sync-pat
             # and the old SOPS inventory entry has been retired safely.
             prune=False,

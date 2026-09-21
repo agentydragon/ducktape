@@ -29,7 +29,7 @@ def github_exporter(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/github-exporter",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

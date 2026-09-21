@@ -56,7 +56,11 @@ def k8s_dir() -> Path:
 
 def _local_flux_kust_names(parsed: ParsedCluster, k8s_dir: Path) -> set[str]:
     """Active flux kustomization names whose spec.path points into the local cluster/k8s tree."""
-    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(k8s_dir)}
+    return {
+        name
+        for name, spec in parsed.active_flux_kustomizations.items()
+        if spec.local_dir(k8s_dir, artifact_source_paths=parsed.artifact_source_paths)
+    }
 
 
 @pytest.fixture(scope="session")
@@ -66,7 +70,11 @@ def cluster(k8s_dir: Path) -> ParsedCluster:
 
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
-    local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(k8s_dir))}
+    local_dirs = {
+        d
+        for spec in parsed.flux_kustomizations.values()
+        if (d := spec.local_dir(k8s_dir, artifact_source_paths=parsed.artifact_source_paths))
+    }
     kust_files = [k for k in parsed.kustomize_files if k.parent.resolve() in local_dirs]
 
     async def _build_all() -> list[KustomizeBuildResult]:

@@ -21,7 +21,7 @@ def tofu_controller(chart: Chart, cert_manager: Kustomization, kyverno: Kustomiz
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/tofu-controller",
+            path="./",
             prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"

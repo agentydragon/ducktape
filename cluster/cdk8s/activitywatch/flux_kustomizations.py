@@ -36,7 +36,7 @@ def activitywatch(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/activitywatch",
+            path="./",
             prune=True,
             wait=True,
             decryption=KustomizationSpecDecryption(
