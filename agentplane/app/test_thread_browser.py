@@ -335,6 +335,68 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
             await store.close()
 
 
+@pytest.mark.parametrize("phone", [False, True])
+async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
+    thread_browser: ThreadBrowser, phone: bool
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    if phone:
+        await page.set_viewport_size({"width": 390, "height": 844})
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+    for index in range(65):
+        source.append(event_pb2.Event(native=event_pb2.Native(line=f"Unlinked packet {index}")))
+    stderr = source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text="Debug stderr retained")))
+    checkpoint = source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="Debug checkpoint")))
+    last = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and debug ready"))
+    )
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
+    draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await draft.fill("Draft survives debug inspection")
+    assert not any("/conversation/observations" in url for url in requests)
+    await page.get_by_role("button", name="Debug history", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Chronological debug")
+    observations = dialog.locator("[data-debug-observation]")
+    await expect(observations).to_have_count(30)
+    await expect(observations.first).to_have_attribute("data-debug-observation", str(last.cursor - 29))
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    assert await dialog.locator("pre").count() == 0
+    for entry in (source.entries[-4], stderr, checkpoint, last):
+        record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
+        await record.locator("summary").click()
+        await expect(record.locator("pre")).to_be_visible()
+        assert json_format.Parse(await record.locator("pre").inner_text(), event_log_pb2.EventEntry()) == entry
+    await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
+    await dialog.get_by_role("button", name="Older observations", exact=True).click()
+    await expect(observations).to_have_count(30)
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor - 30))
+    await expect(dialog.locator("pre")).to_have_count(0)
+    await dialog.get_by_role("button", name="Newer observations", exact=True).click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    await page.keyboard.press("Escape")
+    await expect(dialog).to_have_count(0)
+    await expect(page.locator("[data-debug-observation]")).to_have_count(0)
+    await expect(draft).to_have_value("Draft survives debug inspection")
+
+    # Follow the exact semantic observation back into the original archive, including packets
+    # that have no item association. The context query ends at the selected observation.
+    card = page.locator('[data-conversation-anchor="3"]')
+    await card.locator("summary", has_text="Evidence").click()
+    await card.get_by_role("button", name="Inspect chronological context").first.click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", "3")
+    assert parse_qs(urlsplit([url for url in requests if "/conversation/observations" in url][-1]).query)[
+        "before_cursor"
+    ] == ["4"]
+    await dialog.get_by_role("button", name="Latest observations", exact=True).click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    await page.keyboard.press("Escape")
+    await expect(dialog).to_have_count(0)
+    await expect(draft).to_have_value("Draft survives debug inspection")
+    await expect(card.locator("details").first).to_have_attribute("open", "")
+
+
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
