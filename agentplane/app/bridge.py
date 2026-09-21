@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.changes import Changes
+from agentplane.app.ingestion import event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
@@ -32,7 +33,7 @@ from agentplane.app.trajectory import (
 )
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import Attachment, RunnerClient, RunnerError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -119,11 +120,9 @@ class Feed:
                     attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.store.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
-                while True:
-                    entry = await attachment.next_entry()
-                    await self.store.record(thread_id, [entry], lease=self.lease)
-                    attachment.seen.clear()
-            except StreamClosedError:
+                async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:
+                    async for batch in batches:
+                        await self.store.record(thread_id, batch, lease=self.lease)
                 copied = await self.store.last_cursor(thread_id)
                 await self.store.end_feed(
                     thread_id,
@@ -278,8 +277,12 @@ class RunnerBridge:
     async def open_session(
         self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
     ) -> protocol_pb2.Attached:
-        async with await (await self._client(sandbox)).attach(session_id, spec=spec) as attachment:
+        attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
+        try:
             attached = attachment.attached
+        finally:
+            # Open has completed when Attached arrives. This caller needs no history replay.
+            attachment.cancel()
         thread_id = await self._store.thread(sandbox, session_id, attached.spec)
         await self.start([sandbox])
         # In particular, do not return a resumed session while the database still says its
