@@ -38,6 +38,7 @@ export type ConversationStoredEntity = components["schemas"]["ConversationStored
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
+export type ObservationPage = components["schemas"]["ObservationPage"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -67,6 +68,27 @@ export async function reconcileCommands(
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
     body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationObservations(
+  threadId: string,
+  cursor: { before?: string; after?: string },
+  signal?: AbortSignal
+): Promise<ObservationPage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations", {
+    params: {
+      path: { thread_id: threadId },
+      query: {
+        // openapi-fetch serializes query values without converting them to JS numbers.
+        before_cursor: cursor.before as unknown as number | undefined,
+        after_cursor: cursor.after as unknown as number | undefined,
+        limit: 30,
+      },
+    },
     signal,
   });
   if (error) throw new Error(displayableError(error));

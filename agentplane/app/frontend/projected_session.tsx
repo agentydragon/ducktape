@@ -30,6 +30,7 @@ import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./l
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
+import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 const LIFECYCLE_LABELS: Record<string, string> = {
@@ -232,20 +233,23 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {page?.observations.map((observation) =>
-        observation.has_native ? (
-          <EvidenceFrames
-            key={observation.observation_cursor}
-            threadId={threadId}
-            entity={entity}
-            observationCursor={observation.observation_cursor}
-          />
-        ) : (
-          <Text size="xs" key={observation.observation_cursor}>
-            Observation {observation.observation_cursor} has no native frame
-          </Text>
-        )
-      )}
+      {page?.observations.map((observation) => (
+        <Stack gap="xs" key={observation.observation_cursor}>
+          {observation.has_native ? (
+            <EvidenceFrames
+              key={observation.observation_cursor}
+              threadId={threadId}
+              entity={entity}
+              observationCursor={observation.observation_cursor}
+            />
+          ) : (
+            <Text size="xs" key={observation.observation_cursor}>
+              Observation {observation.observation_cursor} has no native frame
+            </Text>
+          )}
+          <ChronologicalDebugLink observationCursor={observation.observation_cursor} />
+        </Stack>
+      ))}
       {page?.next_after_cursor && (
         <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
           Load more evidence
@@ -936,58 +940,61 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
     );
   }, [threadId]);
   return (
-    <Stack style={{ flex: 1, minHeight: 0 }}>
-      <Group>
-        <Button variant="subtle" onClick={onBack}>
-          ← Threads
-        </Button>
-        <TextInput
-          aria-label="Thread name"
-          value={name}
-          placeholder={threadId}
-          onChange={(event) => setName(event.currentTarget.value)}
-          onBlur={() =>
-            void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
-              setError(displayableError(reason))
-            )
-          }
-        />
-      </Group>
-      {error && (
-        <Text role="alert" c="red">
-          {error}
-        </Text>
-      )}
-      {thread && (
-        <Text size="xs" c="dimmed">
-          {thread.sandbox}
-        </Text>
-      )}
-      {thread?.archived && (
-        <Text role="status" c="dimmed">
-          Thread archived. Showing retained conversation history; controls are disabled.
-        </Text>
-      )}
-      {thread &&
-        environment.snapshot &&
-        !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
-          <Text role="status" c="dimmed">
-            Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+    <ChronologicalDebugProvider key={threadId} threadId={threadId}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
+        <Group>
+          <Button variant="subtle" onClick={onBack}>
+            ← Threads
+          </Button>
+          <ChronologicalDebugLink />
+          <TextInput
+            aria-label="Thread name"
+            value={name}
+            placeholder={threadId}
+            onChange={(event) => setName(event.currentTarget.value)}
+            onBlur={() =>
+              void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
+                setError(displayableError(reason))
+              )
+            }
+          />
+        </Group>
+        {error && (
+          <Text role="alert" c="red">
+            {error}
           </Text>
         )}
-      {thread && (
-        <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
-          {(rows) => (
-            <ProjectedSessionBody
-              threadId={threadId}
-              entities={rows}
-              thread={thread}
-              onLoadOlder={setBefore}
-              available={sandboxAvailable}
-            />
+        {thread && (
+          <Text size="xs" c="dimmed">
+            {thread.sandbox}
+          </Text>
+        )}
+        {thread?.archived && (
+          <Text role="status" c="dimmed">
+            Thread archived. Showing retained conversation history; controls are disabled.
+          </Text>
+        )}
+        {thread &&
+          environment.snapshot &&
+          !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
+            <Text role="status" c="dimmed">
+              Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+            </Text>
           )}
-        </ConversationCollection>
-      )}
-    </Stack>
+        {thread && (
+          <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
+            {(rows) => (
+              <ProjectedSessionBody
+                threadId={threadId}
+                entities={rows}
+                thread={thread}
+                onLoadOlder={setBefore}
+                available={sandboxAvailable}
+              />
+            )}
+          </ConversationCollection>
+        )}
+      </Stack>
+    </ChronologicalDebugProvider>
   );
 }

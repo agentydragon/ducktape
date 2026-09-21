@@ -697,6 +697,19 @@ ts_library(
 )
 
 ts_library(
+    name = "chronological_debug",
+    srcs = ["chronological_debug.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
@@ -704,6 +717,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":chronological_debug",
         ":client",
         ":conversation_store",
         ":live",
