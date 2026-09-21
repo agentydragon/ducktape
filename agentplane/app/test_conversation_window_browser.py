@@ -1,12 +1,14 @@
 """Real-browser acceptance for bounded projected conversation window rotation."""
 
 import asyncio
+import json
 
 import pytest_bazel
 from playwright.async_api import Request, expect
 
 from agentplane.app.test_thread_browser import ThreadBrowser
 from agentplane.protocol import event_pb2
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("agentplane.app.test_thread_browser",)
 
@@ -26,6 +28,10 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
             interest_seen.set()
 
     page.on("request", observe_request)
+    await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
+    cdp = await page.context.new_cdp_session(page)
+    await cdp.send("HeapProfiler.collectGarbage")
+    heap_before = await cdp.send("Runtime.getHeapUsage")
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
@@ -82,6 +88,11 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     async with asyncio.timeout(10):
         await interest_seen.wait()
     history = page.get_by_role("region", name="Thread history", exact=True)
+    await page.wait_for_function(
+        """() => window.__agentplaneConversationCollectionTrace?.some(event =>
+            event.kind === 'query' && event.role === 'active' && event.ready && !event.id.endsWith(':tail')
+        )"""
+    )
     interest_seen.clear()
     anchor = await history.evaluate(
         """area => {
@@ -115,6 +126,22 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained across shape rotation")
+    await page.wait_for_function(
+        """() => window.__agentplaneConversationCollectionTrace?.some(event =>
+            event.kind === 'collected' && event.status === 'cleaned-up' && event.size === 0 &&
+            event.subscriberCount === 0
+        )"""
+    )
+    await cdp.send("HeapProfiler.collectGarbage")
+    heap_after = await cdp.send("Runtime.getHeapUsage")
+    trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
+    (undeclared_outputs_dir() / "conversation-window-resources.json").write_text(
+        json.dumps({"collections": trace, "heap_before": heap_before, "heap_after": heap_after}, indent=2)
+    )
+    ready = [event for event in trace if event["kind"] == "query" and event["ready"]]
+    assert ready
+    assert max(event["size"] for event in ready) <= 61
+    assert all(event["subscriberCount"] >= 1 for event in ready)
 
 
 if __name__ == "__main__":
