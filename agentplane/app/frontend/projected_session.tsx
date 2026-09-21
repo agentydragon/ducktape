@@ -674,7 +674,8 @@ function VirtualizedHistory({
         );
         scrollTrace("scroll-capture", {
           scrollTop: element.scrollTop,
-          virtual: first && firstEntity ? { key: `${firstEntity.entityKind}:${firstEntity.entityId}`, ...first } : null,
+          virtual:
+            first && firstEntity ? { entityKey: `${firstEntity.entityKind}:${firstEntity.entityId}`, ...first } : null,
           dom: domFirst
             ? {
                 key: domFirst.dataset.conversationAnchor,
