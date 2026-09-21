@@ -488,13 +488,6 @@ def generate_manifests(root: Path) -> None:
     haku_ci_flux_kustomizations.haku_ci(
         flux_chart, forgejo_kustomization, keda_kustomization, reflector_kustomization, haku_forgejo_tea_kustomization
     )
-    parked_flux_kustomizations.augur_evidence(
-        flux_chart,
-        forgejo_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
-        budget_namespace_kustomization,
-    )
     flux_grafana_secrets_flux_kustomizations.flux_grafana_secrets(
         flux_chart, grafana_instance_kustomization, grafana_operator_kustomization
     )
