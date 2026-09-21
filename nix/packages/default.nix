@@ -286,6 +286,7 @@ in
 rec {
   inherit ducktape-util;
   inherit ducktape-git-hooks;
+  inherit ducktape-claude-api;
   inherit aiquota;
 
   bbr = mkWheel {
