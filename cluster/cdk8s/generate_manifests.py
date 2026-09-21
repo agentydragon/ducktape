@@ -201,7 +201,7 @@ def generate_manifests(root: Path) -> None:
     keda_kustomization = keda_flux_kustomizations.keda(flux_chart, kyverno_kustomization)
     kyverno_policies_kustomization = kyverno_flux_kustomizations.kyverno_policies(flux_chart, kyverno_kustomization)
     metrics_server_kustomization = metrics_server_flux_kustomizations.metrics_server(flux_chart, kyverno_kustomization)
-    reloader_kustomization = reloader_flux_kustomizations.reloader(flux_chart, kyverno_kustomization)
+    reloader_flux_kustomizations.reloader(flux_chart, kyverno_kustomization)
     cdi_kustomization = kubevirt_flux_kustomizations.cdi(
         flux_chart, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
@@ -294,9 +294,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_environment_kustomization,
         cert_manager_trust_kustomization,
         reflector_kustomization,
-    )
-    github_api_proxy_identity_kustomization = github_api_proxy_flux_kustomizations.github_api_proxy_identity(
-        flux_chart, cert_manager_environment_kustomization, cert_manager_issuer_config_kustomization
     )
     parked_flux_kustomizations.docker_ci(flux_chart, cert_manager_environment_kustomization, claude_rbac_kustomization)
     atuin_kustomization = atuin_flux_kustomizations.atuin(
@@ -619,13 +616,10 @@ def generate_manifests(root: Path) -> None:
     )
     github_api_proxy_flux_kustomizations.github_api_proxy(
         flux_chart,
-        external_secrets_config_kustomization,
-        github_api_proxy_identity_kustomization,
-        forgejo_images_kustomization,
-        seaweedfs_csi_kustomization,
+        external_secrets_operator_kustomization,
+        cert_manager_kustomization,
+        cert_manager_issuer_config_kustomization,
         monitoring_crds_kustomization,
-        gateway_kustomization,
-        reloader_kustomization,
     )
     github_exporter_flux_kustomizations.github_exporter(
         flux_chart,

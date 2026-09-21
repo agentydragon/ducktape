@@ -2042,33 +2042,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-api-proxy-identity
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/github-api-proxy/identity
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-api-proxy-identity
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     ducktape.org/parked: "true"
   name: docker-ci
@@ -4400,23 +4373,22 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: github-api-proxy-identity
+    - name: cert-manager
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: seaweedfs-csi
+    - name: cert-manager-issuer-config
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: reloader
-      namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/github-api-proxy/app
+  path: ./cluster/k8s/github-api-proxy
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
