@@ -8,7 +8,9 @@
   ...
 }:
 let
-  codexClaude = import ../../claude_code/codex-claude.nix { inherit pkgs config; };
+  codexClaude = import ../../../../../../nix/home/claude_code/codex-claude.nix {
+    inherit pkgs config;
+  };
 in
 {
   imports = [
@@ -18,11 +20,11 @@ in
       gitName = "codex";
       gitEmail = "codex@allegedly.works";
       kubeconfigUser = "agent-box-codex";
-      forgejoKeySopsFile = ../../../../ssh_keys/agent-box-codex-forgejo.sops.key;
-      forgejoTeaSopsFile = ../../../../secrets/agent-box-codex-forgejo-tea-token.yaml;
-      kubeJwtSopsFile = ../../../../secrets/agent-box-codex-k8s-jwt.yaml;
+      forgejoKeySopsFile = ../../../../../../ssh_keys/agent-box-codex-forgejo.sops.key;
+      forgejoTeaSopsFile = ../../../../../../secrets/agent-box-codex-forgejo-tea-token.yaml;
+      kubeJwtSopsFile = ../../../../../../secrets/agent-box-codex-k8s-jwt.yaml;
     })
-    ../../codex # OpenAI Codex CLI + config
+    ../../../../../../nix/home/codex # OpenAI Codex CLI + config
   ];
 
   # Isolated agent VM: run Codex fully unattended — no prompts, no sandbox.
@@ -35,7 +37,7 @@ in
   # as workstations and codex-pod (reflected kubernetes_secret); the agent-box codex
   # identity is an explicit SOPS recipient of the pinned-key file.
   sops.secrets.litellm_codex_key = {
-    sopsFile = ../../../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
+    sopsFile = ../../../../../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
     key = "litellm_codex_key";
   };
 

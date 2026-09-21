@@ -516,11 +516,12 @@
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
+          hostModule = ./cluster/k8s/parked/agent-box/nix/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/agent-box/codex.nix;
+            module = ./cluster/k8s/parked/agent-box/nix/home/codex.nix;
           };
         };
 

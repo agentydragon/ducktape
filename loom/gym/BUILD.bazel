@@ -187,7 +187,7 @@ py_test(
 py_test(
     name = "test_market_seed_tasks",
     srcs = ["test_market_seed_tasks.py"],
-    data = ["//cluster/k8s:market_roster_yaml"],
+    data = ["//finance/scraper:market-roster.yaml"],
     deps = [
         ":market_seed_tasks",
         ":model_cutoffs",

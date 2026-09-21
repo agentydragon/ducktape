@@ -479,11 +479,6 @@ spec:
       name: dns-automation
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/evidence/**"
-          to: "@artifact/cluster/k8s/evidence/"
-      name: evidence-market-roster
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/flux-grafana-secrets/**"
           to: "@artifact/cluster/k8s/flux-grafana-secrets/"
       name: flux-grafana-secrets
