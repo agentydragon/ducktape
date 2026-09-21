@@ -771,7 +771,7 @@ spec:
       containers:
         - args:
             - --rules-namespace=agentplane-staging
-            - --credentials-namespace=agentplane-egress-credentials
+            - --credentials-namespace=agentplane-staging-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
             - --agent-api-port=8082
