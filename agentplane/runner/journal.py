@@ -11,8 +11,9 @@ from pathlib import Path
 
 from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import StaticPool
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.observation import Observation, observation_event
@@ -113,9 +114,8 @@ class JournalStorageError(OSError):
 
 
 class Journal:
-    def __init__(self, connection: AsyncConnection, engine: AsyncEngine, source_id: str, state: RecoveryState) -> None:
+    def __init__(self, connection: AsyncConnection, source_id: str, state: RecoveryState) -> None:
         self._connection = connection
-        self._engine = engine
         self.source_id = source_id
         self._state = state
         self._lock = asyncio.Lock()
@@ -125,9 +125,10 @@ class Journal:
     @classmethod
     @asynccontextmanager
     async def open(cls, path: Path, source_id: str) -> AsyncIterator[Journal]:
-        # A reader uses a separate connection so it cannot see an uncommitted append.
+        # One journal lock owns both transactions and bounded replay reads. This avoids
+        # holding a rollback-journal reader while a native callback commits an Event.
         engine = create_async_engine(
-            f"sqlite+aiosqlite:///{path}", connect_args={"isolation_level": None}, pool_size=2, max_overflow=0
+            f"sqlite+aiosqlite:///{path}", poolclass=StaticPool, connect_args={"isolation_level": None}
         )
         try:
             async with engine.connect() as connection:
@@ -163,7 +164,7 @@ class Journal:
                     state = RecoveryState(
                         checkpoint.through_cursor, checkpoint.harness_running, checkpoint.active_turn_id
                     )
-                yield cls(connection, engine, source_id, state)
+                yield cls(connection, source_id, state)
         finally:
             await engine.dispose()
 
@@ -186,23 +187,33 @@ class Journal:
         through_cursor = self.last_cursor
         if not 0 <= after_cursor <= through_cursor or limit < 1:
             raise ValueError("replay requires an existing cursor and a positive page size")
-        async with AsyncSession(self._engine) as session:
-            rows = (
-                await session.execute(
-                    select(EventEntry.cursor, EventEntry.payload)
-                    .where(EventEntry.cursor > after_cursor, EventEntry.cursor <= through_cursor)
-                    .order_by(EventEntry.cursor)
-                    .limit(limit)
-                )
-            ).all()
+        async with self._lock:
+            task = asyncio.create_task(self._read_page(after_cursor, through_cursor, limit))
+            try:
+                rows = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # The bounded database read finishes and closes its session before this
+                # cancellation releases the journal lock to a writer.
+                await task
+                raise
         result = []
-        for expected, row in enumerate(rows, start=after_cursor + 1):
-            if row.cursor != expected:
+        for expected, (cursor, payload) in enumerate(rows, start=after_cursor + 1):
+            if cursor != expected:
                 raise ValueError("gap in stored runner EventEntry prefix")
-            result.append(self._decode(row.payload, self.source_id, expected))
+            result.append(self._decode(payload, self.source_id, expected))
         if len(result) != min(limit, through_cursor - after_cursor):
             raise ValueError("incomplete stored runner EventEntry prefix")
         return result
+
+    async def _read_page(self, after_cursor: int, through_cursor: int, limit: int) -> list[tuple[int, bytes]]:
+        async with AsyncSession(self._connection) as session:
+            rows = await session.execute(
+                select(EventEntry.cursor, EventEntry.payload)
+                .where(EventEntry.cursor > after_cursor, EventEntry.cursor <= through_cursor)
+                .order_by(EventEntry.cursor)
+                .limit(limit)
+            )
+            return [(row.cursor, row.payload) for row in rows]
 
     async def reached_checkpoint(self, name: str, command_id: str) -> bool:
         async with self._lock, AsyncSession(self._connection) as session:

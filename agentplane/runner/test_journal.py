@@ -9,6 +9,7 @@ import sqlite3
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 import pytest
@@ -81,10 +82,18 @@ async def test_publication_waits_for_committed_replay(
     commit_gate.armed = True
     append = asyncio.create_task(journal.append(observation))
     await commit_gate.reached.wait()
-    assert (await journal.since(0, limit=128)) == [first]
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'journal.sqlite'}")
+    try:
+        async with AsyncSession(engine) as reader:
+            assert [
+                Journal._decode(payload, "test-source", cursor)
+                for cursor, payload in (
+                    await reader.execute(select(EventEntry.cursor, EventEntry.payload).order_by(EventEntry.cursor))
+                ).all()
+            ] == [first]
+    finally:
+        await engine.dispose()
     assert not follower.done()
-    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as reader:
-        assert (await reader.since(0, limit=128)) == [first]
     commit_gate.release.set()
     published = await append
     await follower
@@ -174,6 +183,35 @@ async def test_concurrent_admission_has_one_identity_and_contiguous_publication(
     await asyncio.gather(*(journal.append(event_pb2.TextDelta(item_id="test-item", text=str(i))) for i in range(8)))
     assert [entry.cursor for entry in (await journal.since(0, limit=128))] == list(range(1, 10))
     assert (await journal.since(0, limit=128))[0].event.command_admitted.command == command
+
+
+async def test_cancelled_replay_closes_before_the_next_append(
+    journal: Journal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancelled Attach must not leave a rollback-journal read open for a writer."""
+    await journal.append(event_pb2.Native(line="published"))
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    execute = AsyncSession.execute
+
+    async def paused_execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        result = await execute(self, statement, *args, **kwargs)
+        if "event_entry.payload" in str(statement):
+            entered.set()
+            await release.wait()
+        return result
+
+    monkeypatch.setattr(AsyncSession, "execute", paused_execute)
+    replay = asyncio.create_task(journal.since(0, limit=128))
+    await entered.wait()
+    append = asyncio.create_task(journal.append(event_pb2.Native(line="after cancellation")))
+    await asyncio.sleep(0)
+    assert not append.done()
+    replay.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await replay
+    assert (await append).cursor == 2
 
 
 async def test_cancelled_commit_requires_recovery_even_if_sqlite_committed(

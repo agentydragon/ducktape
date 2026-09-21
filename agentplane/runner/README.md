@@ -81,8 +81,10 @@ JSONL reader or old-data migration.
 
 The SQLite journal stores a recovery checkpoint in the same transaction as each event.
 Opening a session reads that checkpoint and validates the last event, without decoding
-historical frames. Attachments query exclusive-cursor pages of 128 events on a separate
-read connection, limited to the published cursor. A slow attachment retains one page.
+historical frames. Attachments query exclusive-cursor pages of 128 events on the retained journal
+connection under its transaction lock, limited to the published cursor. A cancelled attachment
+waits for its read session to close before releasing that lock to a native callback. A slow
+attachment retains one page.
 Completed command IDs and debug checkpoint identities are looked up by their indexed
 keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
 
