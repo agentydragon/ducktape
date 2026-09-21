@@ -970,3 +970,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_conversation_sync",
+    size = "medium",
+    srcs = ["test_conversation_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
