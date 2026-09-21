@@ -297,6 +297,7 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":changes",
+        ":ingestion",
         ":inventory",
         ":live",
         ":presets",
