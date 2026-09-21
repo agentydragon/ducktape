@@ -66,7 +66,13 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.trajectory import CommandIdConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
+from agentplane.app.trajectory import (
+    CommandIdConflictError,
+    ConversationScopeResetError,
+    ThreadNotFoundError,
+    ThreadView,
+    TrajectoryStore,
+)
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -483,6 +489,29 @@ class ThreadRename(BaseModel):
         return value
 
 
+class CommandReconciliationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    projection_epoch: str
+    command_ids: list[str] = Field(max_length=128)
+
+
+class CommandReconciliationEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command_id: str
+    outcome: str | None
+
+
+class CommandReconciliationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    projection_epoch: str
+    commands: list[CommandReconciliationEntry]
+
+
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -523,6 +552,24 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     if view is None:
         raise ThreadNotFoundError(thread_id)
     return view
+
+
+@threads.post("/{thread_id}/commands/reconcile")
+async def reconcile_commands(
+    store: Store, thread_id: UUID, body: CommandReconciliationRequest
+) -> CommandReconciliationResponse:
+    try:
+        outcomes = await store.command_outcomes(thread_id, body.source_id, body.projection_epoch, body.command_ids)
+    except ConversationScopeResetError as error:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
+    return CommandReconciliationResponse(
+        source_id=body.source_id,
+        projection_epoch=body.projection_epoch,
+        commands=[
+            CommandReconciliationEntry(command_id=command_id, outcome=outcome)
+            for command_id, outcome in outcomes.items()
+        ],
+    )
 
 
 @threads.patch("/{thread_id}")

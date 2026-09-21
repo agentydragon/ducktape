@@ -12,10 +12,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -261,6 +262,10 @@ class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
 
 
+class ConversationScopeResetError(ValueError):
+    """A browser's retained projection source or epoch is no longer current."""
+
+
 class CommandIdConflictError(ValueError):
     """A Thread command id was already admitted with a different immutable Command."""
 
@@ -286,6 +291,105 @@ class ConversationScope:
     source_id: str
     projection_epoch: str
     through_cursor: int
+
+
+class ConversationPayloadReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    projection_epoch: str
+    owner_cursor: str
+    owner_item_id: str
+    field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
+    revision_cursor: str
+    generation: str
+
+
+class ConversationControlsState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applied_model: str | None
+    active_turn_id: str | None
+    harness_state: str | None
+
+
+class ConversationViewState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    controls: ConversationControlsState
+    unresolved_count: int
+
+
+class ConversationItemState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: int
+    tool_name: str
+    completion: str | None
+    tool_succeeded: bool | None
+
+
+class ConversationConfirmedInputState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    harness_message_id: str
+    origin_command_ids: list[str]
+
+
+class ConversationLifecycleState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str
+    event: JsonValue
+
+
+class ConversationCommandState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: str
+    outcome: Literal["pending", "effected", "failed", "noop"]
+    outcome_cursor: str | None
+    outcome_reason: str | None
+
+
+class ConversationStoredEntity(BaseModel):
+    """The generated client contract for a synchronized current conversation row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: UUID
+    source_id: str
+    projection_epoch: str
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"]
+    entity_id: str
+    cursor: int
+    revision_cursor: int
+    pending: bool
+    turn_id: str | None
+    state: (
+        ConversationViewState
+        | ConversationItemState
+        | ConversationConfirmedInputState
+        | ConversationLifecycleState
+        | ConversationCommandState
+    )
+    text_ref: ConversationPayloadReference | None
+    arguments_ref: ConversationPayloadReference | None
+    output_ref: ConversationPayloadReference | None
+    input_ref: ConversationPayloadReference | None
+
+    @model_validator(mode="after")
+    def _state_matches_kind(self) -> Self:
+        expected = {
+            "view_state": ConversationViewState,
+            "item": ConversationItemState,
+            "confirmed_input": ConversationConfirmedInputState,
+            "lifecycle": ConversationLifecycleState,
+            "command": ConversationCommandState,
+        }[self.entity_kind]
+        if not isinstance(self.state, expected):
+            raise ValueError(f"conversation state does not match {self.entity_kind}")
+        return self
 
 
 class ThreadView(BaseModel):
@@ -492,6 +596,32 @@ class TrajectoryStore:
                 ],
                 next_after_sequence=str(rows[limit - 1][0]) if len(rows) > limit else None,
             )
+
+    async def command_outcomes(
+        self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
+    ) -> dict[str, str | None]:
+        """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
+        requested = tuple(dict.fromkeys(command_ids))
+        async with self._sessions() as session:
+            if await session.get(Thread, thread_id) is None:
+                raise ThreadNotFoundError(thread_id)
+            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            if checkpoint is None or (checkpoint.source_id, checkpoint.projection_epoch) != (
+                source_id,
+                projection_epoch,
+            ):
+                raise ConversationScopeResetError("conversation projection scope was reset")
+            rows = await session.scalars(
+                select(ConversationEntity).where(
+                    ConversationEntity.thread_id == thread_id,
+                    ConversationEntity.source_id == source_id,
+                    ConversationEntity.projection_epoch == projection_epoch,
+                    ConversationEntity.entity_kind == "command",
+                    ConversationEntity.entity_id.in_(requested),
+                )
+            )
+            outcomes = {row.entity_id: _json_str(row.state, "outcome") for row in rows}
+            return {command_id: outcomes.get(command_id) for command_id in requested}
 
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
@@ -709,24 +839,30 @@ class TrajectoryStore:
         async with self._sessions() as session:
             if await session.get(Thread, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
-            payloads = await session.scalars(
-                select(Event.payload)
-                .where(
-                    Event.thread_id == thread_id,
-                    Event.kind == "command_admitted",
-                    Event.payload["event"]["commandAdmitted"]["command"]["commandId"].as_string() == command.command_id,
-                )
-                .order_by(Event.cursor)
+            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            if checkpoint is None:
+                return None
+            summary = await session.get(
+                ConversationEntity,
+                (thread_id, checkpoint.source_id, checkpoint.projection_epoch, "command", command.command_id),
             )
-            for payload in payloads:
-                entry = ParseDict(payload, event_log_pb2.EventEntry())
-                admitted = entry.event.command_admitted.command
-                if admitted == command:
-                    return entry
-                raise CommandIdConflictError(
-                    f"command id {command.command_id!r} was already admitted with different work"
-                )
-            return None
+            if summary is None:
+                return None
+            payload = await session.scalar(
+                select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == summary.cursor)
+            )
+            if payload is None:
+                raise ValueError("command summary has no archived admission")
+            entry = ParseDict(payload, event_log_pb2.EventEntry())
+            if (
+                not entry.event.HasField("command_admitted")
+                or entry.event.command_admitted.command.command_id != command.command_id
+            ):
+                raise ValueError("command summary does not point to its archived admission")
+            admitted = entry.event.command_admitted.command
+            if admitted == command:
+                return entry
+            raise CommandIdConflictError(f"command id {command.command_id!r} was already admitted with different work")
 
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
@@ -1085,7 +1221,7 @@ def _entity_values(
     thread_id: UUID,
     source_id: str,
     projection_epoch: str,
-    entity_kind: str,
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"],
     entity_id: str,
     cursor: int,
     revision_cursor: int,
@@ -1098,22 +1234,22 @@ def _entity_values(
     output_ref: conversation_projection.FieldValue | None = None,
     input_ref: conversation_projection.FieldValue | None = None,
 ) -> dict[str, object]:
-    return {
-        "thread_id": thread_id,
-        "source_id": source_id,
-        "projection_epoch": projection_epoch,
-        "entity_kind": entity_kind,
-        "entity_id": entity_id,
-        "cursor": cursor,
-        "revision_cursor": revision_cursor,
-        "pending": pending,
-        "turn_id": turn_id,
-        "state": state,
-        "text_ref": _payload_ref_json(text_ref),
-        "arguments_ref": _payload_ref_json(arguments_ref),
-        "output_ref": _payload_ref_json(output_ref),
-        "input_ref": _payload_ref_json(input_ref),
-    }
+    return ConversationStoredEntity(
+        thread_id=thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        cursor=cursor,
+        revision_cursor=revision_cursor,
+        pending=pending,
+        turn_id=turn_id,
+        state=state,
+        text_ref=_payload_ref_json(text_ref),
+        arguments_ref=_payload_ref_json(arguments_ref),
+        output_ref=_payload_ref_json(output_ref),
+        input_ref=_payload_ref_json(input_ref),
+    ).model_dump(mode="json")
 
 
 def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState) -> dict[str, object]:
