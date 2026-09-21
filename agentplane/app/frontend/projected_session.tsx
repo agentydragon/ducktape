@@ -576,10 +576,14 @@ function VirtualizedHistory({
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
       if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
-      if (correctRestoration() !== null) {
-        restorationSize.current = null;
-        restoringAnchor.current = null;
-      }
+      restorationSize.current = null;
+      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+      restorationFrame.current = requestAnimationFrame(() => {
+        restorationFrame.current = null;
+        if (correctRestoration() !== null) {
+          restoringAnchor.current = null;
+        }
+      });
     },
   });
   // ResizeObserver below preserves the first visible row explicitly. This is an
