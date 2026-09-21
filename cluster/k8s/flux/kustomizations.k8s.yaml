@@ -2870,6 +2870,10 @@ spec:
       kind: ExternalSecret
       name: github-secrets-sync-pat
       namespace: flux-system
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: buildbuddy-api-key
+      namespace: flux-system
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync/secrets
   prune: false
@@ -5255,8 +5259,6 @@ spec:
     - name: tofu-state-db
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
-      namespace: ducktape-flux
-    - name: claude-sandbox-secrets
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux

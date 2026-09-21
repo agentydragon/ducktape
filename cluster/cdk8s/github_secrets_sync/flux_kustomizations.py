@@ -21,7 +21,6 @@ def github_secrets_sync(
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
     github_secrets_sync_secrets: Kustomization,
-    claude_sandbox_secrets: Kustomization,
     forgejo_images: Kustomization,
     seaweedfs_pr_visuals_bucket: Kustomization,
 ) -> Kustomization:
@@ -51,9 +50,6 @@ def github_secrets_sync(
                 tofu_controller,
                 tofu_state_db,
                 github_secrets_sync_secrets,
-                # The Terraform data source reads the BuildBuddy API key from this
-                # namespace after claude-sandbox-secrets has synced it through ESO.
-                claude_sandbox_secrets,
                 # The Terraform module reads the canonical ducktape-ci registry credential
                 # from forgejo-images before publishing it to gaffer-private's GitHub Actions
                 # secrets.
@@ -89,7 +85,13 @@ def github_secrets_sync_secrets(
                     kind="ExternalSecret",
                     name="github-secrets-sync-pat",
                     namespace="flux-system",
-                )
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="buildbuddy-api-key",
+                    namespace="flux-system",
+                ),
             ],
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
