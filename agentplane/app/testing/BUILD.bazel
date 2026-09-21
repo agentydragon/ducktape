@@ -32,6 +32,7 @@ py_library(
         "//agentplane/app:bridge",
         "//agentplane/app:decisions",
         "//agentplane/app:egress",
+        "//agentplane/app:electric",
         "//agentplane/app:identity",
         "//agentplane/app:inventory",
         "//agentplane/app:live",
@@ -45,6 +46,22 @@ py_library(
         "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "electric_service",
+    srcs = ["electric_service.py"],
+    deps = [
+        "//agentplane/app:database_migrate",
+        "//third_party/containers:electric_1_8_1",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//testcontainers",
     ],
 )
 
