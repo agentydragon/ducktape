@@ -630,7 +630,8 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
             )
         )
     )
-    await expect(page.get_by_text("Turn completed", exact=True)).to_have_count(2)
+    await expect(page.get_by_text("Turn completed", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Turn failed", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
     await expect(error_text).to_have_count(1)
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
