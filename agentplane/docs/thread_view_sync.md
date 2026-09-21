@@ -86,8 +86,10 @@ Three positions have distinct meanings:
 Electric offsets, shape handles and transaction snapshot metadata are engine-owned. They
 must not be compared with runner cursors or replaced by a maximum observed item revision.
 
-`ViewState` carries the committed projection position, controls and unresolved command
-count. That count covers all commands, not merely the loaded page. A runner `Attached`
+`ViewState` carries the committed projection position, controls, unresolved command
+count and `command_revision_cursor`. The count covers all commands, not merely the
+loaded page. The command revision advances when command summaries are admitted or settled,
+including a same-count replacement; text deltas do not advance it. A runner `Attached`
 snapshot can be ahead of the archive and must not seed event-derived controls.
 An HTTP admission receipt likewise does not advance projection or subscription progress.
 
@@ -127,6 +129,21 @@ returns only existing requested items and marks its result exhausted; absent IDs
 absent at the sampled position. A minimum processed cursor is a lag precondition, not a
 filter or a subscription token. Missed deadlines report lag rather than stale success.
 
+`GET /threads/{id}/sync/pending-interest?before_cursor=…` samples one short database
+snapshot. It returns the current `source_id`, `projection_epoch`, `through_cursor`,
+`command_revision_cursor`, persisted `unresolved_count`, at most 30 pending
+`command_ids`, and an exclusive `next_before_cursor` when another page exists. The
+browser opens a fixed-ID changes-only command shape for each returned page. It keeps one
+current page and one explicitly older page; automatic refresh replaces only the current
+page after the visible ViewState has reached that page's `through_cursor` in the same
+scope. The local command-ID selection is separately capped at 128 IDs and retains its
+own selected outcomes.
+
+App interest expiry or a source/epoch mismatch is HTTP 410: discard that app selection and
+obtain a fresh scope. HTTP 409 remains Electric's engine-owned must-refetch response and is
+not an application interest signal. A page is hidden until its fixed-ID collection is ready
+and the matching ViewState revision is at least its `through_cursor`.
+
 ## Reuse the synchronization engine
 
 **Selected integration: Electric with its TanStack DB collection.** Agentplane
@@ -145,7 +162,8 @@ pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
 Mutable entity and command collections use changes-only logs and TanStack's on-demand
 snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
-reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
+reading window, or explicitly selected command IDs. Pending membership comes from a
+count-limited keyset interest, never from a dynamic all-pending entity predicate. Bootstrap takes a
 current snapshot of that entire bounded shape; it does not replay earlier item revisions.
 The proxy accepts only a whole-shape subset query and owns all selection predicates.
 Payload shapes select one content field and generation. A pinned reference limits its
@@ -317,6 +335,8 @@ For expired history or excessive catch-up, discard the affected subscription gen
 and obtain fresh limited subsets. Restore an old reading position with by-ID and before/after
 queries. Preserve drafts, disclosure state and reading position. Do not download the items
 between that position and the tail. Ignore late callbacks from superseded subscriptions.
+An expired scoped pending-command shape follows the same 410 refresh path; an Electric 409
+is left to Electric's own handle recovery.
 
 ### Expand content during streaming
 
@@ -371,6 +391,12 @@ Keep a limited tail and reading window; evict the middle. Virtualization limits 
 independently of network/cache limits. Unloaded bodies, fetch failures, empty bodies and
 incomplete harness output must look different. New output follows the bottom only while
 the reader is already there.
+
+Pending commands have one current keyset page and at most one older fixed-ID page, each no
+larger than 30 rows. A current-page refresh can stop rendering settled rows that no longer
+belong to pending membership. An explicitly older page and the bounded local-ID selection
+continue receiving outcomes for their chosen IDs; this does not retain outcomes for every
+historical command.
 
 ### Retained browser state
 
