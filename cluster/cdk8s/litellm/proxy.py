@@ -145,18 +145,14 @@ class ProxySpec:
         return self.config.namespace
 
 
-def _literal_env(name: str, value: str) -> _EnvEntry:
-    return _LiteralEnv(name, value)
-
-
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (_literal_env("HOST", "0.0.0.0"), _literal_env("PORT", "4000"), *entries)
+    return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", "4000"), *entries)
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
-        _literal_env("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
+        _LiteralEnv("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
         _SecretEnv("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
         _SecretEnv("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
     )
