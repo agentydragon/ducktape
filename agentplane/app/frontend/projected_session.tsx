@@ -574,6 +574,11 @@ function VirtualizedHistory({
     onChange: (instance, sync) => {
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
+      if (atBottom.current) {
+        restorationSize.current = null;
+        restoringAnchor.current = null;
+        return;
+      }
       if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
       restorationSize.current = null;
       if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
@@ -757,8 +762,10 @@ function VirtualizedHistory({
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
-        else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+          atBottom.current = true;
+          cancelRestoration();
+        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
