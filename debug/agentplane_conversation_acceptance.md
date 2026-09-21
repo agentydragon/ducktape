@@ -126,6 +126,14 @@ passed desktop-normal but failed desktop-raw and both phone variants at the firs
 reading-anchor check. Disabling competing virtualizer size adjustments alone does not
 resolve the drift. The worker is tracing saved anchors against actual DOM geometry.
 
+At `ba15d83115`, the input-intent capture candidate (`a1556e1f7b` plus `d1dc7ce03b`)
+failed all four variants at that same first reading-anchor boundary:
+[564517b4](https://app.buildbuddy.io/invocation/564517b4-45d0-492e-b2df-53424e01f1b9).
+All expected rows remained mounted. Desktop cursor 36 moved from offsets -116.59/-42
+to about -303; phone cursor 38 moved from -56.47/-292.875 to -341.875. This is anchor
+drift rather than eviction and requires an instrumented trace of capture/restoration;
+the input-intent heuristic is not accepted as a working solution.
+
 Screenshots of expanded/reloaded/reconnected content, exact native-frame disclosure,
 terminal failed/noop cards, failed-turn desktop/phone layouts, and resumed scrolling
 have been downloaded and inspected. The intentionally expanded message in the scroll
