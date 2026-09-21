@@ -189,8 +189,6 @@ def generate_manifests(root: Path) -> None:
     node_feature_discovery_kustomization = node_feature_discovery_flux_kustomizations.node_feature_discovery(flux_chart)
     nvidia_runtimeclass_kustomization = nvidia_runtimeclass_flux_kustomizations.nvidia_runtimeclass(flux_chart)
     openebs_lvm_flux_kustomizations.openebs_lvm(flux_chart)
-    browsertrix_namespace_kustomization = parked_flux_kustomizations.browsertrix_namespace(flux_chart)
-    parked_flux_kustomizations.browsertrix_retained(flux_chart)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
     inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
@@ -467,9 +465,6 @@ def generate_manifests(root: Path) -> None:
     monitoring_flux_kustomizations.tempo(
         flux_chart, monitoring_crds_kustomization, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
     )
-    seaweedfs_browsertrix_bucket_kustomization = parked_flux_kustomizations.seaweedfs_browsertrix_bucket(
-        flux_chart, seaweedfs_cluster_kustomization, seaweedfs_secrets_kustomization
-    )
     seaweedfs_drivefs_artifacts_bucket_kustomization = seaweedfs_flux_kustomizations.seaweedfs_drivefs_artifacts_bucket(
         flux_chart, seaweedfs_cluster_kustomization
     )
@@ -542,15 +537,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, valkey_kustomization, seaweedfs_registry_cache_bucket_kustomization, monitoring_crds_kustomization
     )
     parked_flux_kustomizations.archivebox(flux_chart, seaweedfs_csi_kustomization, local_path_provisioner_kustomization)
-    parked_flux_kustomizations.browsertrix(
-        flux_chart,
-        browsertrix_namespace_kustomization,
-        seaweedfs_browsertrix_bucket_kustomization,
-        seaweedfs_secrets_kustomization,
-        reflector_kustomization,
-        local_path_provisioner_kustomization,
-        seaweedfs_csi_kustomization,
-    )
     seaweedfs_public_s3_kustomization = seaweedfs_flux_kustomizations.seaweedfs_public_s3(
         flux_chart,
         seaweedfs_external_credentials_kustomization,
