@@ -180,8 +180,7 @@ async def _postgres_recovery_state(service: ElectricService) -> dict[str, object
         slot = await _slot_state(connection)
         replication = await connection.fetch(
             """
-            SELECT application_name, state, sent_lsn::text, write_lsn::text, flush_lsn::text, replay_lsn::text,
-                   wait_event_type, wait_event
+            SELECT application_name, state, sent_lsn::text, write_lsn::text, flush_lsn::text, replay_lsn::text
             FROM pg_stat_replication
             """
         )
