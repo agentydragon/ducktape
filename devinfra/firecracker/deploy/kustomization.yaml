@@ -5,6 +5,7 @@ resources:
   - auth-token-eso.yaml
   - deployment.yaml
   - service.yaml
+  - kvm-device-plugin
 configMapGenerator:
   - name: firecracker-manager-config
     namespace: claude-sandbox

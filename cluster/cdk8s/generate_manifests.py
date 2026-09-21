@@ -71,7 +71,6 @@ from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
-from cluster.cdk8s.kvm_device_plugin import flux_kustomizations as kvm_device_plugin_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
@@ -166,7 +165,6 @@ def generate_manifests(root: Path) -> None:
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
     cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart)
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(flux_chart)
-    kvm_device_plugin_flux_kustomizations.kvm_device_plugin(flux_chart)
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
