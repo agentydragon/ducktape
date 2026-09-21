@@ -804,7 +804,10 @@ function standardRows(threadId: string): Record<string, unknown>[] {
     lifecycle(
       31,
       "harness_stderr",
-      { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } },
+      toJson(
+        EventSchema,
+        create(EventSchema, { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } })
+      ) as Record<string, unknown>,
       threadId
     ),
     item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
