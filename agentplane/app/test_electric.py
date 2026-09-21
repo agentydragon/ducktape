@@ -159,7 +159,7 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
             [*params, ("command_id", "")],
             [*params, *[("command_id", str(n)) for n in range(129)]],
         ]:
-            assert (await client.get(f"/threads/{THREAD}/sync/commands", params=invalid)).status_code == 422
+            assert (await client.get(f"/threads/{THREAD}/sync/commands", params=tuple(invalid))).status_code == 422
         stale = [(key, "old" if key == "projection_epoch" else value) for key, value in params]
         assert (
             await client.get(f"/threads/{THREAD}/sync/commands", params=[*stale, ("command_id", "failed")])

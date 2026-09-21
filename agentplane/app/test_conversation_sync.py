@@ -12,7 +12,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.trajectory import IngestionLease, TrajectoryStore
-from agentplane.protocol import event_pb2
+from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -165,6 +165,62 @@ async def _cross_replica_sync(
         stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
         await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
+        await _selected_command_outcome(client_one, client_two, path, store, source, thread, lease)
+
+
+async def _selected_command_outcome(
+    client_one: httpx.AsyncClient,
+    client_two: httpx.AsyncClient,
+    path: str,
+    store: TrajectoryStore,
+    source: ReplicationSource,
+    thread: UUID,
+    lease: IngestionLease,
+) -> None:
+    scope = await store.current_conversation_scope(thread)
+    assert scope is not None
+    params = {
+        "source_id": scope.source_id,
+        "projection_epoch": scope.projection_epoch,
+        "command_id": "selected-command",
+    }
+    snapshot = await client_one.get(f"{path}/commands", params=params | {"offset": "-1"})
+    snapshot.raise_for_status()
+    assert not [message for message in snapshot.json() if "value" in message]
+    start = len(source.entries)
+    for command_id in ("selected-command", "unselected-command"):
+        source.append(
+            event_pb2.Event(
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id=command_id, submit_input=command_pb2.SubmitInput(text="Private command body")
+                    )
+                )
+            )
+        )
+        source.append(
+            event_pb2.Event(
+                command_failed=event_pb2.CommandFailed(command_id=command_id, reason="Harness rejected input")
+            )
+        )
+    # Admission and failure may coalesce before the browser observes any pending row.
+    await store.record(thread, source.entries[start:], lease=lease)
+    offset = snapshot.headers["electric-offset"]
+    while True:
+        update = await client_two.get(
+            f"{path}/commands",
+            params=params | {"offset": offset, "handle": snapshot.headers["electric-handle"], "live": "true"},
+        )
+        update.raise_for_status()
+        offset = update.headers["electric-offset"]
+        rows = [message["value"] for message in update.json() if "value" in message]
+        if rows:
+            assert {row["entity_id"] for row in rows} == {"selected-command"}
+            state = json.loads(rows[-1]["state"]) if isinstance(rows[-1]["state"], str) else rows[-1]["state"]
+            assert state["outcome"] == "failed"
+            assert state["outcome_reason"] == "Harness rejected input"
+            assert "Private command body" not in update.text
+            break
 
 
 async def _history_windows(
