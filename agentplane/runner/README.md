@@ -89,3 +89,9 @@ keys rather than retained in process-lifetime sets. Outstanding commands remain 
 This changes the disposable journal schema: recreate old staging runner state rather than
 replaying it into a compatibility checkpoint. The native harness's own history and memory
 usage are separate from the runner journal's bounds.
+
+Historical adapter item identities and Claude per-message block counts use connection-local
+SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache. Each adapter
+instance has its own scope, preserving reset-on-new-harness behavior. These lookup tables are
+scratch state: they disappear when the journal connection closes and are not recovery evidence.
+The current Claude message's block map and unconfirmed inputs remain in memory.

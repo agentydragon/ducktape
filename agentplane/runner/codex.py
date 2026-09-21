@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from agentplane.native.codex import facade, scenarios, wire
 from agentplane.protocol import event_pb2
@@ -42,7 +43,7 @@ class CodexAdapter(HarnessAdapter):
         self.launch = launch
         self._thread_id = session.record.native_session_id or ""
         self.harness = facade.CodexHarness(session, request_prefix="agentplane")
-        self._items: set[str] = set()
+        self._adapter_id = str(uuid4())
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
         self._pending_model_changes: list[tuple[str, str]] = []
@@ -172,9 +173,10 @@ class CodexAdapter(HarnessAdapter):
                 await self.session.emit(event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta))
 
     async def _item_started(self, item: wire.Item) -> None:
-        if isinstance(item, wire.UserMessageItem) or item.id in self._items:
+        if isinstance(item, wire.UserMessageItem):
             return
-        self._items.add(item.id)
+        if not await self.session.journal.remember_adapter_item(self._adapter_id, item.id):
+            return
         match item:
             case wire.AgentMessageItem():
                 await self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))

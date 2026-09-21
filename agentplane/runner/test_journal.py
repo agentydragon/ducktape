@@ -285,5 +285,24 @@ async def test_replay_rejects_invalid_page(journal: Journal, after: int, limit: 
         await journal.since(after, limit=limit)
 
 
+async def test_adapter_history_spills_to_scoped_scratch_and_resets_on_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "scratch.sqlite"
+    async with Journal.open(path, "source") as journal:
+        assert await journal.remember_adapter_item("first", "old-item")
+        assert not await journal.remember_adapter_item("first", "old-item")
+        assert await journal.has_adapter_item("first", "old-item")
+        assert not await journal.has_adapter_item("second", "old-item")
+        for expected in range(3):
+            assert await journal.next_adapter_block("first", "message") == expected
+        assert await journal.next_adapter_block("second", "message") == 0
+        assert journal.last_cursor == 0
+        assert (await journal._connection.execute(text("PRAGMA temp_store"))).scalar_one() == 1
+        assert (await journal._connection.execute(text("PRAGMA temp.cache_size"))).scalar_one() == -2048
+        await journal._connection.rollback()
+    async with Journal.open(path, "source") as reopened:
+        assert not await reopened.has_adapter_item("first", "old-item")
+        assert await reopened.next_adapter_block("first", "message") == 0
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

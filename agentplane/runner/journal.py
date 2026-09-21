@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 
 from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -62,6 +63,27 @@ class DebugCheckpoint(Base):
     command_id: Mapped[str] = mapped_column(primary_key=True)
 
 
+class ScratchBase(DeclarativeBase):
+    pass
+
+
+class AdapterItem(ScratchBase):
+    __tablename__ = "adapter_item"
+    __table_args__: ClassVar[dict[str, list[str]]] = {"prefixes": ["TEMPORARY"]}
+
+    adapter_id: Mapped[str] = mapped_column(primary_key=True)
+    item_id: Mapped[str] = mapped_column(primary_key=True)
+
+
+class AdapterMessage(ScratchBase):
+    __tablename__ = "adapter_message"
+    __table_args__: ClassVar[dict[str, list[str]]] = {"prefixes": ["TEMPORARY"]}
+
+    adapter_id: Mapped[str] = mapped_column(primary_key=True)
+    message_id: Mapped[str] = mapped_column(primary_key=True)
+    next_block: Mapped[int]
+
+
 @dataclass(frozen=True)
 class RecoveryState:
     through_cursor: int
@@ -114,9 +136,14 @@ class Journal:
                 await connection.execute(text("PRAGMA journal_mode=DELETE"))
                 await connection.execute(text("PRAGMA synchronous=EXTRA"))
                 await connection.execute(text("PRAGMA foreign_keys=ON"))
+                # Historical adapter lookup keys spill to a connection-local scratch file.
+                # Its bounded page cache is separate from durable journal storage.
+                await connection.execute(text("PRAGMA temp_store=FILE"))
+                await connection.execute(text("PRAGMA temp.cache_size=-2048"))
                 await connection.commit()
                 async with connection.begin():
                     await connection.run_sync(Base.metadata.create_all)
+                    await connection.run_sync(ScratchBase.metadata.create_all)
                 async with AsyncSession(connection, expire_on_commit=False) as session, session.begin():
                     await session.execute(text("BEGIN"))
                     last = await session.scalar(select(EventEntry).order_by(EventEntry.cursor.desc()).limit(1))
@@ -182,6 +209,30 @@ class Journal:
         async with self._lock, AsyncSession(self._connection) as session:
             self._check_writable()
             return await session.get(DebugCheckpoint, (name, command_id)) is not None
+
+    async def has_adapter_item(self, adapter_id: str, item_id: str) -> bool:
+        async with self._lock, AsyncSession(self._connection) as session:
+            self._check_writable()
+            return await session.get(AdapterItem, (adapter_id, item_id)) is not None
+
+    async def remember_adapter_item(self, adapter_id: str, item_id: str) -> bool:
+        """Record a process-local item identity; return whether this is its first appearance."""
+        async with self._transaction() as (session, _):
+            if await session.get(AdapterItem, (adapter_id, item_id)) is not None:
+                return False
+            session.add(AdapterItem(adapter_id=adapter_id, item_id=item_id))
+        return True
+
+    async def next_adapter_block(self, adapter_id: str, message_id: str) -> int:
+        """Allocate the next block index for a native message in this adapter instance."""
+        async with self._transaction() as (session, _):
+            message = await session.get(AdapterMessage, (adapter_id, message_id))
+            if message is None:
+                session.add(AdapterMessage(adapter_id=adapter_id, message_id=message_id, next_block=1))
+                return 0
+            index = message.next_block
+            message.next_block += 1
+            return index
 
     def _check_writable(self) -> None:
         if self._failure is not None:
