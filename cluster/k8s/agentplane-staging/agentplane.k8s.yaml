@@ -355,6 +355,9 @@ spec:
         replication: true
   monitoring:
     enablePodMonitor: true
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: 512MB
   probes:
     liveness:
       isolationCheck:
@@ -516,6 +519,14 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 18
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 10
           volumeMounts:
             - mountPath: /var/lib/electric
               name: pvc-agentplane-electric-storage
