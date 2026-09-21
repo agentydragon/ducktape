@@ -55,6 +55,16 @@ frontend unit tests passed at `3aa75798db`
 The latter include exact before/after query serialization above JavaScript's integer
 precision limit.
 
+At `478f3352f0`, evidence and nested raw-frame disclosures use the shared bounded
+disclosure store. Their loaded pages are keyed by source, projection epoch, entity
+and observation so a replacement scope cannot reuse a mounted page from the old
+scope. The real browser streaming/lazy-content scenario and all 116 frontend unit
+tests passed [e900bca3](https://app.buildbuddy.io/invocation/e900bca3-8dde-46b0-80b2-6b632f895274).
+The browser verifies closing evidence removes its raw body and reopening restores
+the selected original frame; its PNG was downloaded and inspected. The unit test
+checks eviction after 129 disclosure choices and isolation of a replacement source.
+Actual history eviction/revisit and source-reset browser coverage remain separate.
+
 ## Native harness measurements
 
 Independent draft #7562 adds a controlled-upstream experiment above runner #7535.

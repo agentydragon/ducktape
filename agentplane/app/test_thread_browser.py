@@ -229,6 +229,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress}/#/threads/{threads[0]}")
+        await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
         async with page.expect_request(lambda request: "/sync/interest?before_cursor=" in request.url):
             await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
@@ -239,6 +240,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
+            await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
             await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "conversation-thread-navigation.png")
 
