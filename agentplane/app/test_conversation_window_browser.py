@@ -6,7 +6,7 @@ import json
 import pytest_bazel
 from playwright.async_api import Request, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser
+from agentplane.app.test_thread_browser import ThreadBrowser, db_url  # noqa: F401
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -29,12 +29,12 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
 
     page.on("request", observe_request)
     await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
-    cdp = await page.context.new_cdp_session(page)
-    await cdp.send("HeapProfiler.collectGarbage")
-    heap_before = await cdp.send("Runtime.getHeapUsage")
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    cdp = await page.context.new_cdp_session(page)
+    await cdp.send("HeapProfiler.collectGarbage")
+    heap_before = await cdp.send("Runtime.getHeapUsage")
     initial_entity_url = await page.evaluate(
         """() => performance.getEntriesByType('resource')
             .map(entry => entry.name).find(name => name.includes('/sync/entities?'))"""

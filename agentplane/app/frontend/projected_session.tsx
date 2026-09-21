@@ -33,6 +33,12 @@ import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_discl
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+
+export function pruneCommandErrors(errors: Map<string, string>, commandIds: ReadonlySet<string>): Map<string, string> {
+  if (Array.from(errors.keys()).every((id) => commandIds.has(id))) return errors;
+  return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
+}
+
 const LIFECYCLE_LABELS: Record<string, string> = {
   turn_started: "Turn started",
   turn_completed: "Turn completed",
@@ -364,13 +370,9 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
   useEffect(() => {
-    setErrors((previous) => {
-      if (Array.from(previous.keys()).every((id) => local.commands.some((command) => command.command.commandId === id)))
-        return previous;
-      return new Map(
-        Array.from(previous).filter(([id]) => local.commands.some((command) => command.command.commandId === id))
-      );
-    });
+    setErrors((previous) =>
+      pruneCommandErrors(previous, new Set(local.commands.map((command) => command.command.commandId)))
+    );
   }, [local.commands]);
   const effectedCommandIds = useMemo(
     () =>
@@ -543,14 +545,26 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
-  const captureExpiry = useRef<number | null>(null);
+  const captureFrame = useRef<number | null>(null);
+  const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
+  const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
+  function correctRestoration(): number | null {
+    const anchor = readingAnchor.current;
+    const element = viewport.current;
+    if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
+    const row = element.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+    if (!row) return null;
+    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    element.scrollTop += correction;
+    return correction;
+  }
   const virtualizer = useVirtualizer({
     count: segments.length,
     getScrollElement: () => viewport.current,
@@ -558,6 +572,19 @@ function VirtualizedHistory({
     getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
+    onChange: (instance, sync) => {
+      // A card can resize before virtual-core applies its measured transform. Wait for
+      // that measurement rather than guessing how many animation frames it requires.
+      if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
+      restorationSize.current = null;
+      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+      restorationFrame.current = requestAnimationFrame(() => {
+        restorationFrame.current = null;
+        if (correctRestoration() !== null) {
+          restoringAnchor.current = null;
+        }
+      });
+    },
   });
   // ResizeObserver below preserves the first visible row explicitly. This is an
   // instance hook in the pinned virtual-core version, rather than an option.
@@ -565,30 +592,54 @@ function VirtualizedHistory({
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
+    restorationSize.current = null;
     restoringAnchor.current = null;
   };
   const expectUserScroll = () => {
     captureNextScroll.current = true;
-    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
-    captureExpiry.current = window.setTimeout(() => {
-      captureNextScroll.current = false;
-      captureExpiry.current = null;
-    }, 100);
+    scrolledSinceInput.current = false;
+    if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
+    captureFrame.current = requestAnimationFrame(() => {
+      if (!scrolledSinceInput.current) captureNextScroll.current = false;
+      captureFrame.current = null;
+    });
   };
-  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
+  const captureReadingAnchor = (element: HTMLDivElement) => {
+    const viewportTop = element.getBoundingClientRect().top;
+    const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+      (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
+    );
+    const firstEntity = first
+      ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
+      : undefined;
+    if (first && firstEntity) {
+      readingAnchor.current = {
+        key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
+        cursor: firstEntity.cursor.toString(),
+        offset: first.getBoundingClientRect().top - viewportTop,
+      };
+    }
+  };
+  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }, awaitMeasurement = false) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
-    const correctFromDom = (): boolean => {
+    const correctFromDom = (): number | null => {
       const element = viewport.current;
       const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
-      if (!element || !row) return false;
+      if (!element || !row) return null;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-      element.scrollTop += currentOffset - anchor.offset;
-      return true;
+      const correction = currentOffset - anchor.offset;
+      element.scrollTop += correction;
+      return correction;
     };
-    if (!correctFromDom()) virtualizer.scrollToIndex(index, { align: "start" });
+    const correction = correctFromDom();
+    if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
+    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
+      restorationSize.current = virtualizer.getTotalSize();
+      return;
+    }
     restorationFrame.current = requestAnimationFrame(() => {
       if (restoringAnchor.current === anchor.key) correctFromDom();
       restorationFrame.current = requestAnimationFrame(() => {
@@ -630,17 +681,35 @@ function VirtualizedHistory({
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
-      else if (readingAnchor.current && restoringAnchor.current === null) restoreAnchor(readingAnchor.current);
+      // Content can resize while a wheel, touch, or key scroll is still settling. Its
+      // measured rows do not describe the reader's final position yet; scrollend will
+      // capture that position before a later resize restoration is eligible.
+      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+      if (captureFrame.current !== null) {
+        cancelAnimationFrame(captureFrame.current);
+        captureFrame.current = null;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
+      }
       cancelRestoration();
     };
   }, [segments, virtualizer]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const onScrollEnd = () => {
+      if (restoringAnchor.current !== null || !captureNextScroll.current) return;
+      captureReadingAnchor(element);
+      captureNextScroll.current = false;
+    };
+    element.addEventListener("scrollend", onScrollEnd);
+    return () => element.removeEventListener("scrollend", onScrollEnd);
+  }, [segments]);
   return (
     <div
       ref={viewport}
@@ -661,6 +730,7 @@ function VirtualizedHistory({
       onPointerDown={() => {
         cancelRestoration();
         pointerScrolling.current = true;
+        expectUserScroll();
       }}
       onPointerUp={() => {
         pointerScrolling.current = false;
@@ -688,21 +758,8 @@ function VirtualizedHistory({
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
-        captureNextScroll.current = false;
-        const viewportTop = element.getBoundingClientRect().top;
-        const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
-          (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
-        );
-        const firstEntity = first
-          ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
-          : undefined;
-        if (first && firstEntity) {
-          readingAnchor.current = {
-            key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-            cursor: firstEntity.cursor.toString(),
-            offset: first.getBoundingClientRect().top - viewportTop,
-          };
-        }
+        captureNextScroll.current = true;
+        scrolledSinceInput.current = true;
         // Retain one segment across adjacent reading windows so the virtualizer can restore
         // the same measured item and pixel offset after the old collection is evicted.
         const boundary = (segments[1] ?? segments[0])?.cursor.toString();

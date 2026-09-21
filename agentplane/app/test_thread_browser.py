@@ -742,6 +742,24 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
+    expansion_before = await page.evaluate(
+        """anchor => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const top = area.getBoundingClientRect().top;
+            const message = area.querySelector('.agentplane-markdown');
+            const row = message?.closest('[data-conversation-anchor]');
+            const anchored = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            return {
+                expanded_cursor: row?.dataset.conversationAnchor,
+                expanded_offset: row?.getBoundingClientRect().top - top,
+                anchor_cursor: anchor.cursor,
+                anchor_offset: anchored?.getBoundingClientRect().top - top,
+                scroll_top: area.scrollTop,
+                bottom: area.scrollHeight - area.clientHeight,
+            };
+        }""",
+        reading_anchor,
+    )
     await history.locator(".agentplane-markdown").first.evaluate(
         """message => {
             const area = message.closest('[aria-label="Thread history"]');
@@ -749,6 +767,27 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    expansion_after = await page.evaluate(
+        """anchor => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const top = area.getBoundingClientRect().top;
+            const message = area.querySelector('.agentplane-markdown');
+            const row = message?.closest('[data-conversation-anchor]');
+            const anchored = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            return {
+                expanded_cursor: row?.dataset.conversationAnchor,
+                expanded_offset: row?.getBoundingClientRect().top - top,
+                anchor_cursor: anchor.cursor,
+                anchor_offset: anchored?.getBoundingClientRect().top - top,
+                scroll_top: area.scrollTop,
+                bottom: area.scrollHeight - area.clientHeight,
+            };
+        }""",
+        reading_anchor,
+    )
+    (undeclared_outputs_dir() / f"{request.node.name}-late-expansion.json").write_text(
+        json.dumps({"before": expansion_before, "after": expansion_after}, indent=2)
+    )
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
     await expect_reading_anchor(page, reading_anchor)
     assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
