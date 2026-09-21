@@ -726,9 +726,10 @@ metadata:
   name: tofu-state-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/k8s/tofu-state/namespace
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: tofu-state-namespace
