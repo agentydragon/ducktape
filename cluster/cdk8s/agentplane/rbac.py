@@ -172,9 +172,19 @@ class NamespaceQuota(Construct):
 
 
 class AgentRbac(Construct):
-    """The operator Role/RoleBinding an agent needs to drive Agentplane without a
-    human: Sandbox lifecycle, exec/port-forward into runner Pods, and the token used
-    to call the app's own API.
+    """The operator Role/RoleBinding an agent needs to drive Agentplane **testing**
+    without a human: Sandbox lifecycle, exec/port-forward into runner Pods, and the
+    token used to call the app's own API.
+
+    **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake OAuth and
+    credentialless MCP fixtures -- nothing here reaches a real account. `agentplane-staging`
+    is the opposite: real Authentik-federated operator login, real GitHub/Kubernetes MCP
+    OAuth linkage, and `claude-ai` Sandboxes carry the real Gmail/Calendar-scoped
+    `google-readonly` egress credential (`egress.py`). An agent identity holding this
+    Role there could stamp a Sandbox under that ServiceAccount and reach the operator's
+    real external accounts with no human in the loop -- the opposite of what "testing"
+    fixtures are for. So only `testing.chart` instantiates this construct; `staging.chart`
+    (via the shared `chart.environment_chart`) must not.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
@@ -184,13 +194,13 @@ class AgentRbac(Construct):
             rules.append(_ACTION_POLICY_RULE)
         rules.append(_TOKEN_RULE)
 
-        Role(self, "role", metadata=metadata("agentplane-operator", env.namespace), rules=rules)
+        Role(self, "role", metadata=metadata("agentplane-testing-operator", env.namespace), rules=rules)
 
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata("agent-agentplane-operator", env.namespace),
-            role=Role.from_role_name(self, "role-ref", "agentplane-operator"),
+            metadata=metadata("agent-agentplane-testing-operator", env.namespace),
+            role=Role.from_role_name(self, "role-ref", "agentplane-testing-operator"),
         ).add_subjects(
             # Haku and public-coder agent identities plus the interactive
             # kubectl-sandbox group. public-coder is listed explicitly because this

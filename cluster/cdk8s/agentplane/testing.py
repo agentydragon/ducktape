@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, dex, testing_config
+from cluster.cdk8s.agentplane import actions, dex, rbac, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -147,6 +147,9 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
+    # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
+    rbac.AgentRbac(chart, "rbac", ENV)
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(
