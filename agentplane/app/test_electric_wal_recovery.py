@@ -106,7 +106,11 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     await service.stop()
                     await _drop_slot(service)
                     await asyncio.to_thread(_reset_state_dir, Path(state_dir))
-                    await service.start()
+                    try:
+                        await service.start()
+                    except TimeoutError:
+                        _write_artifact("reset-restart.log", await service.logs())
+                        raise
                     stale = await client.get(
                         "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
                     )
