@@ -650,14 +650,21 @@ function VirtualizedHistory({
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
-      else if (readingAnchor.current && restoringAnchor.current === null) restoreAnchor(readingAnchor.current);
+      // Content can resize while a wheel, touch, or key scroll is still settling. Its
+      // measured rows do not describe the reader's final position yet; scrollend will
+      // capture that position before a later resize restoration is eligible.
+      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current);
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
+      if (captureFrame.current !== null) {
+        cancelAnimationFrame(captureFrame.current);
+        captureFrame.current = null;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
+      }
       cancelRestoration();
     };
   }, [segments, virtualizer]);
