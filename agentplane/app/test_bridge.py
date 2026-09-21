@@ -322,7 +322,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    client = RunnerClient(runner.target)
+    client = RunnerClient(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -556,7 +556,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
     runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
 ) -> None:
-    client = RunnerClient(runner.target)
+    client = RunnerClient(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -585,7 +585,7 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
 async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
     runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = RunnerClient(runner.target)
+    client = RunnerClient(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -677,7 +677,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         return list(running)
 
     bridge = RunnerBridge(address_of=address_of, store=store, discover_sandboxes=discover, sandbox_changes=changes)
-    client = RunnerClient(runner.target)
+    client = RunnerClient(runner.target, capture_history=True)
     try:
         async with await client.attach(SESSION, spec=spec):
             pass

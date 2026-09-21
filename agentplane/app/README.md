@@ -448,3 +448,16 @@ Deployment must configure the Action Service's VAPID identity and exact push-ser
 before enrollment can work. Browser permission is requested only from an explicit registration
 click. Real browser/OS push-service delivery still needs operator acceptance; transport and
 service-worker tests do not establish that production experience.
+
+### Ingestion batching and client memory
+
+The runner feed commits batches of at most 128 events, flushing a partial batch after
+25 ms or stream end. It keeps one pending transport read across flush deadlines and
+at most one event of read-ahead while PostgreSQL is writing. A slow database applies
+backpressure; a failed batch is retried from the committed cursor on reconnect.
+
+Runner clients do not retain received history by default. Tests and explicit debug
+consumers can opt into `capture_history`; the resume cursor is independent of that
+capture. Explicit session Open cancels its observer after `Attached`, avoiding a
+full-history drain. The leased ingestion connection remains responsible for copying
+runner events into PostgreSQL.

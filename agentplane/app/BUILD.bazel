@@ -265,6 +265,7 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":changes",
+        ":ingestion",
         ":inventory",
         ":live",
         ":presets",
@@ -912,5 +913,29 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "ingestion",
+    srcs = ["ingestion.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_ingestion",
+    srcs = ["test_ingestion.py"],
+    deps = [
+        ":conftest",
+        ":ingestion",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
     ],
 )
