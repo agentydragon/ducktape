@@ -53,9 +53,10 @@ async def current_scope(thread_id: UUID) -> ConversationScope | None:
 async def pending_interest(
     thread_id: UUID, before_cursor: int | None, page_size: int
 ) -> ConversationPendingInterest | None:
-    assert thread_id == THREAD
+    if thread_id != THREAD:
+        return None
     assert page_size == 30
-    if before_cursor is not None and before_cursor < 10:
+    if before_cursor is not None and before_cursor <= 61:
         return ConversationPendingInterest(SCOPE, 95, 33, (), None)
     return ConversationPendingInterest(
         SCOPE,
