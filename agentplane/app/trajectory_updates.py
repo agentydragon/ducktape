@@ -31,6 +31,10 @@ class TrajectoryUpdates:
         # otherwise be told the listener is live whenever asyncpg has yet to flip `is_closed()`.
         return not self._lost.is_set() and self._connection is not None and not self._connection.is_closed()
 
+    async def wait_until_disconnected(self) -> None:
+        """Wait for the termination callback to mark the listener unavailable."""
+        await self._lost.wait()
+
     async def start(self) -> None:
         if self._task is not None:
             raise RuntimeError("trajectory update listener already started")

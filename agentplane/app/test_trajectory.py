@@ -842,8 +842,9 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
                         "WHERE datname = current_database() AND application_name = 'agentplane-trajectory-updates'"
                     )
                 )
-            # The termination callback wakes local consumers before the reconnect attempt.
-            await asyncio.wait_for(changed.wait(), timeout=5)
+            # Wait on the termination callback itself, rather than an untagged Changes wakeup:
+            # a previous database notification can arrive after the subscription starts.
+            await asyncio.wait_for(replica._updates.wait_until_disconnected(), timeout=5)
             assert not replica.updates_connected
             changed.clear()
             await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
