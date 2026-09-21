@@ -4,17 +4,19 @@ without a runner."""
 from __future__ import annotations
 
 import asyncio
+import gc
+import tracemalloc
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from agentplane.app import trajectory
+from agentplane.app import conversation_projection, trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
@@ -53,7 +55,7 @@ async def lease(store: TrajectoryStore) -> IngestionLease:
 
 def _event(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
     at = Timestamp()
-    at.FromDatetime(datetime(2026, 9, 2, 12, 0, cursor, tzinfo=UTC))
+    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
     event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
     return event_log_pb2.EventEntry(
         cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
@@ -111,6 +113,117 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
         )
     with pytest.raises(ThreadNotFoundError):
         await store.admitted_command(UUID(int=0), command)
+
+
+@pytest.mark.parametrize("history_size", [100, 10_000], ids=["one-hundred", "ten-thousand"])
+async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
+    store: TrajectoryStore, lease: IngestionLease, history_size: int
+) -> None:
+    """The same primary-key plans and bounded Python allocations hold across two orders of history."""
+    thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
+    command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
+    admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
+    await store.record(thread, [admitted], lease=lease)
+
+    scope = await store.current_conversation_scope(thread)
+    assert scope is not None
+    async with store._sessions.begin() as session:
+        for start in range(2, history_size + 2, 100):
+            stop = min(start + 100, history_size + 2)
+            await session.execute(
+                insert(trajectory.Event),
+                [
+                    {
+                        "thread_id": thread,
+                        "cursor": cursor,
+                        "origin_source_id": "test-runner",
+                        "origin_sequence": cursor,
+                        "at": datetime(2026, 9, 2, 12, tzinfo=UTC) + timedelta(seconds=cursor),
+                        "kind": "native",
+                        "payload": {},
+                    }
+                    for cursor in range(start, stop)
+                ],
+            )
+            await session.execute(
+                insert(ConversationEntity),
+                [
+                    {
+                        "thread_id": thread,
+                        "source_id": scope.source_id,
+                        "projection_epoch": scope.projection_epoch,
+                        "entity_kind": "item",
+                        "entity_id": f"historical-{cursor}",
+                        "cursor": cursor,
+                        "revision_cursor": cursor,
+                        "pending": False,
+                        "turn_id": None,
+                        "state": {},
+                        "text_ref": None,
+                        "arguments_ref": None,
+                        "output_ref": None,
+                        "input_ref": None,
+                    }
+                    for cursor in range(start, stop)
+                ],
+            )
+
+    batch = conversation_projection.EventBatch(
+        scope.source_id,
+        scope.through_cursor,
+        (_event(history_size + 2, command_failed=event_pb2.CommandFailed(command_id="admission", reason="test")),),
+    )
+    # Warm the driver and Python caches before taking its allocation profile.
+    async with store._sessions() as session:
+        warmed = await trajectory._prior_conversation_entities(session, thread, batch)
+    assert warmed.commands["admission"] is not None
+    gc.collect()
+    tracemalloc.start()
+    try:
+        assert await store.admitted_command(thread, command) == admitted
+        assert await store.command_outcomes(
+            thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]
+        ) == {"admission": "pending", "absent": None}
+        async with store._sessions() as session:
+            prior = await trajectory._prior_conversation_entities(session, thread, batch)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert prior.commands["admission"] is not None
+    assert peak < 1_000_000, f"indexed reads retained {peak} bytes for {history_size} historical rows"
+
+    async with store._sessions() as session:
+        await session.execute(text("SET LOCAL enable_seqscan = false"))
+        command_plan = (
+            await session.scalars(
+                text(
+                    "EXPLAIN (COSTS OFF) SELECT state FROM conversation_entity "
+                    "WHERE thread_id = :thread AND source_id = :source AND projection_epoch = :epoch "
+                    "AND entity_kind = 'command' AND entity_id IN ('admission', 'absent')"
+                ),
+                {"thread": thread, "source": scope.source_id, "epoch": scope.projection_epoch},
+            )
+        ).all()
+        archive_plan = (
+            await session.scalars(
+                text("EXPLAIN (COSTS OFF) SELECT payload FROM event WHERE thread_id = :thread AND cursor = 1"),
+                {"thread": thread},
+            )
+        ).all()
+        preload_plan = (
+            await session.scalars(
+                text(
+                    "EXPLAIN (COSTS OFF) SELECT state FROM conversation_entity "
+                    "WHERE thread_id = :thread AND source_id = :source AND projection_epoch = :epoch "
+                    "AND ((entity_kind = 'item' AND entity_id = 'not-present') "
+                    "OR (entity_kind = 'command' AND entity_id = 'admission'))"
+                ),
+                {"thread": thread, "source": scope.source_id, "epoch": scope.projection_epoch},
+            )
+        ).all()
+    for plan in (command_plan, archive_plan, preload_plan):
+        assert any("Index" in line for line in plan), plan
+        assert all("Seq Scan" not in line for line in plan), plan
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:

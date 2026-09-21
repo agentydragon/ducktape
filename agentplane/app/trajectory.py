@@ -254,6 +254,9 @@ class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
 
 
+CommandOutcomeValue = Literal["pending", "effected", "failed", "noop"]
+
+
 class ConversationScopeResetError(ValueError):
     """A browser's retained projection source or epoch is no longer current."""
 
@@ -339,7 +342,7 @@ class ConversationCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
-    outcome: Literal["pending", "effected", "failed", "noop"]
+    outcome: CommandOutcomeValue
     outcome_cursor: str | None
     outcome_reason: str | None
 
@@ -477,7 +480,7 @@ class TrajectoryStore:
 
     async def command_outcomes(
         self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, str | None]:
+    ) -> dict[str, CommandOutcomeValue | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:
@@ -498,7 +501,7 @@ class TrajectoryStore:
                     ConversationEntity.entity_id.in_(requested),
                 )
             )
-            outcomes = {row.entity_id: _json_str(row.state, "outcome") for row in rows}
+            outcomes = {row.entity_id: ConversationCommandState.model_validate(row.state).outcome for row in rows}
             return {command_id: outcomes.get(command_id) for command_id in requested}
 
     async def record(

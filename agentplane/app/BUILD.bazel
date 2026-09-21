@@ -251,6 +251,9 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:kubernetes",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -470,6 +473,7 @@ py_test(
     srcs = ["test_trajectory.py"],
     deps = [
         ":conftest",
+        ":conversation_projection",
         ":presets",
         ":trajectory",
         "//:conftest",

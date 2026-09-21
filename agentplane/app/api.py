@@ -62,6 +62,7 @@ from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, Sandb
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.trajectory import (
     CommandIdConflictError,
+    CommandOutcomeValue,
     ConversationScopeResetError,
     ThreadNotFoundError,
     ThreadView,
@@ -495,7 +496,7 @@ class CommandReconciliationEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command_id: str
-    outcome: str | None
+    outcome: CommandOutcomeValue | None
 
 
 class CommandReconciliationResponse(BaseModel):
