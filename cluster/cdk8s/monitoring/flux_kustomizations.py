@@ -139,33 +139,6 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     )
 
 
-def grafana_db(chart: Chart, monitoring_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "grafana-db",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path="./cluster/k8s/monitoring/grafana-db",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-grafana-db",
-                namespace="ducktape-flux",
-            ),
-            timeout="5m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(monitoring_namespace, cnpg),
-        ),
-    )
-
-
 def grafana_helmrepository(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -186,9 +159,7 @@ def grafana_helmrepository(chart: Chart) -> Kustomization:
     )
 
 
-def grafana_instance(
-    chart: Chart, grafana_operator: Kustomization, grafana_db: Kustomization, sso_providers_tf: Kustomization
-) -> Kustomization:
+def grafana_instance(chart: Chart, grafana_operator: Kustomization, cnpg: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-instance",
@@ -197,6 +168,7 @@ def grafana_instance(
             interval="10m",
             path="./cluster/k8s/monitoring/grafana-instance",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
                 name="grafana-instance",
@@ -204,11 +176,14 @@ def grafana_instance(
             ),
             health_checks=[
                 KustomizationSpecHealthChecks(
+                    api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
+                ),
+                KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="grafana-deployment", namespace="monitoring"
-                )
+                ),
             ],
             timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(grafana_operator, grafana_db, sso_providers_tf),
+            depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
         ),
     )
 

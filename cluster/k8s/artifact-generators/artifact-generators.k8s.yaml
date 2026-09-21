@@ -237,6 +237,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
           to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
+        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
       name: grafana-instance
       originRevision: "@repo"
     - copy:
@@ -816,11 +818,6 @@ spec:
         - from: "@repo/cluster/k8s/monitoring/etcd/**"
           to: "@artifact/cluster/k8s/monitoring/etcd/"
       name: monitoring-etcd
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
-      name: monitoring-grafana-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/monitoring/loki/**"

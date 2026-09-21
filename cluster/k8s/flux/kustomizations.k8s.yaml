@@ -2032,34 +2032,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: grafana-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: grafana-db-ovh
-      namespace: monitoring
-  interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-grafana-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     ducktape.org/parked: "true"
   name: inventree-db
@@ -3599,14 +3571,17 @@ metadata:
   name: grafana-instance
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: grafana-operator
       namespace: ducktape-flux
-    - name: grafana-db
-      namespace: ducktape-flux
-    - name: sso-providers-tf
+    - name: cnpg
       namespace: ducktape-flux
   healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: grafana-db-ovh
+      namespace: monitoring
     - apiVersion: apps/v1
       kind: Deployment
       name: grafana-deployment

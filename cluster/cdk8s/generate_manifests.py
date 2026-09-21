@@ -295,9 +295,6 @@ def generate_manifests(root: Path) -> None:
     litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
         flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
-    grafana_db_kustomization = monitoring_flux_kustomizations.grafana_db(
-        flux_chart, monitoring_namespace_kustomization, cnpg_kustomization
-    )
     inventree_db_kustomization = parked_flux_kustomizations.inventree_db(
         flux_chart, inventree_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
@@ -498,7 +495,7 @@ def generate_manifests(root: Path) -> None:
     headlamp_flux_kustomizations.headlamp(flux_chart, gateway_kustomization, sso_providers_tf_kustomization)
     matrix_kustomization = matrix_flux_kustomizations.matrix(flux_chart, cnpg_kustomization)
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
-        flux_chart, grafana_operator_kustomization, grafana_db_kustomization, sso_providers_tf_kustomization
+        flux_chart, grafana_operator_kustomization, cnpg_kustomization
     )
     gatus_flux_kustomizations.gatus(flux_chart, cnpg_kustomization, monitoring_crds_kustomization)
     flux_webhook_flux_kustomizations.flux_webhook(
