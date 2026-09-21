@@ -77,20 +77,6 @@ class TanaChatResult:
     raw: Any | None = None
 
 
-class _ChatClient(Protocol):
-    async def chat_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-    ) -> TanaChatResult: ...
-
-    def stream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-    ) -> Iterator[GenericStreamingChunk]: ...
-
-    def astream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-    ) -> AsyncIterator[GenericStreamingChunk]: ...
-
-
 class _CredentialAwareChatClient(Protocol):
     async def chat_completion(
         self,
@@ -437,14 +423,14 @@ class TanaProxyClient:
 
 
 class TanaLiteLLM(CustomLLM):
-    def __init__(self, client: _ChatClient | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self._base_config = TanaProxyConfig.from_env(include_refresh_token=False)
-        self._client = client or TanaProxyClient(self._base_config)
-        self._injected_client = client is not None
         self._clients_by_config: OrderedDict[TanaProxyConfig, _CredentialAwareChatClient] = OrderedDict()
-        if isinstance(self._client, TanaProxyClient):
-            self._clients_by_config[self._base_config] = cast(_CredentialAwareChatClient, self._client)
+
+    def _make_client(self, config: TanaProxyConfig) -> _CredentialAwareChatClient:
+        """Build the Tana transport for one resolved model configuration."""
+        return TanaProxyClient(config)
 
     def _client_for_request(
         self, optional_params: Mapping[str, Any], *, api_base: Any = None, timeout: Any = None
@@ -452,23 +438,9 @@ class TanaLiteLLM(CustomLLM):
         config, provider_options = _litellm_request_config(
             self._base_config, optional_params, api_base=api_base, timeout=timeout
         )
-        if not isinstance(self._client, TanaProxyClient):
-            return cast(_CredentialAwareChatClient, self._client), provider_options
-
         client = self._clients_by_config.get(config)
         if client is None:
-            injected_client = self._client if self._injected_client else None
-            client = TanaProxyClient(
-                config,
-                http_client=injected_client._http_client if injected_client is not None else None,
-                sync_http_client=injected_client._sync_http_client if injected_client is not None else None,
-                refresh_token_reader=(
-                    injected_client._refresh_token_reader
-                    if injected_client is not None
-                    else read_refresh_token_from_config
-                ),
-                now=injected_client._now if injected_client is not None else time.time,
-            )
+            client = self._make_client(config)
             self._clients_by_config[config] = client
             if len(self._clients_by_config) > 16:
                 self._clients_by_config.popitem(last=False)
@@ -539,8 +511,8 @@ class TanaLiteLLM(CustomLLM):
                 break
 
 
-def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
-    custom_handler = handler or TanaLiteLLM()
+def register_litellm_provider(handler: TanaLiteLLM) -> TanaLiteLLM:
+    custom_handler = handler
     litellm.custom_provider_map = [
         item for item in litellm.custom_provider_map if item.get("provider") != TANA_PROVIDER
     ]

@@ -55,6 +55,20 @@ def isolated_litellm_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(litellm, "model_list_set", set(litellm.model_list_set))
 
 
+class _TanaLiteLLMWithTestClient(TanaLiteLLM):
+    def __init__(self, client: Any) -> None:
+        super().__init__()
+        self._test_client = client
+
+    def _make_client(self, config: TanaProxyConfig) -> Any:
+        del config
+        return self._test_client
+
+
+def _handler_with_test_client(client: Any) -> TanaLiteLLM:
+    return _TanaLiteLLMWithTestClient(client)
+
+
 def test_client_maps_basic_chat_request() -> None:
     seen_requests: list[httpx.Request] = []
     seen_bodies: list[dict[str, Any]] = []
@@ -612,7 +626,7 @@ def test_anthropic_messages_stream_has_single_merged_tool_block(isolated_litellm
     async def collect_events() -> list[dict[str, Any]]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(TanaLiteLLM(client))
+            register_litellm_provider(_handler_with_test_client(client))
             stream = await litellm.anthropic.messages.acreate(
                 model="tana/claude-test",
                 api_key="refresh-1",
@@ -691,7 +705,7 @@ def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta(i
     async def collect_events() -> list[dict[str, Any]]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(TanaLiteLLM(client))
+            register_litellm_provider(_handler_with_test_client(client))
             stream = await litellm.anthropic.messages.acreate(
                 model="tana/claude-test",
                 api_key="refresh-1",
@@ -794,7 +808,7 @@ def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(isolate
             )
 
     async def collect_events() -> list[dict[str, Any]]:
-        register_litellm_provider(TanaLiteLLM(FakeClient()))
+        register_litellm_provider(_handler_with_test_client(FakeClient()))
         stream = await litellm.anthropic.messages.acreate(
             model="tana/claude-test",
             api_key="refresh-1",
@@ -966,7 +980,7 @@ def test_litellm_handler_returns_model_response() -> None:
             assert optional_params == {"temperature": 0.0}
             return TanaChatResult(text="pong", usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2})
 
-    handler = TanaLiteLLM(FakeClient())
+    handler = _handler_with_test_client(FakeClient())
     response = asyncio.run(
         handler.acompletion(
             model="claude-test",
@@ -1007,7 +1021,7 @@ def test_litellm_handler_returns_tool_calls() -> None:
                 usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             )
 
-    handler = TanaLiteLLM(FakeClient())
+    handler = _handler_with_test_client(FakeClient())
     response = asyncio.run(
         handler.acompletion(
             model="claude-test",
@@ -1061,7 +1075,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
             raise AssertionError("sync streaming test should not call astream_completion")
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
-    register_litellm_provider(TanaLiteLLM(FakeClient()))
+    register_litellm_provider(_handler_with_test_client(FakeClient()))
     stream = litellm.completion(
         model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1", stream=True
     )
@@ -1094,7 +1108,7 @@ def test_litellm_handler_astreaming_yields_chunks() -> None:
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
     async def collect_chunks() -> list[GenericStreamingChunk]:
-        handler = TanaLiteLLM(FakeClient())
+        handler = _handler_with_test_client(FakeClient())
         stream = handler.astreaming(
             model="claude-test",
             messages=[{"role": "user", "content": "hi"}],
@@ -1140,7 +1154,7 @@ def test_litellm_routes_async_streaming_to_custom_provider() -> None:
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
     async def collect_chunks() -> list[Any]:
-        register_litellm_provider(TanaLiteLLM(FakeClient()))
+        register_litellm_provider(_handler_with_test_client(FakeClient()))
         stream = await litellm.acompletion(
             model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1", stream=True
         )
@@ -1179,7 +1193,7 @@ def test_registered_tana_provider_handles_async_litellm_completion(isolated_lite
     litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
     litellm.model_list_set.discard("tana")
 
-    register_litellm_provider(TanaLiteLLM(FakeClient()))
+    register_litellm_provider(_handler_with_test_client(FakeClient()))
 
     response = asyncio.run(
         litellm.acompletion(model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1")
@@ -1272,7 +1286,7 @@ def test_429_surfaces_through_litellm_acompletion_as_rate_limit_error(isolated_l
     async def run() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(TanaLiteLLM(client))
+            register_litellm_provider(_handler_with_test_client(client))
             await litellm.acompletion(
                 model="tana/claude-test",
                 messages=[{"role": "user", "content": "hi"}],
