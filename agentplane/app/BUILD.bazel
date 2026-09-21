@@ -976,6 +976,7 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",

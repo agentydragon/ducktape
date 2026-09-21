@@ -42,6 +42,7 @@ from agentplane.app.conversation_debug import (
     ConversationScopeChangedError,
     EvidencePage,
     NativeFramePage,
+    ObservationPage,
 )
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
@@ -669,6 +670,26 @@ async def conversation_native_frames(
         observation_cursor=observation_cursor,
         after_sequence=after_sequence,
         limit=limit,
+    )
+
+
+@threads.get("/{thread_id}/conversation/observations")
+async def conversation_observations(
+    thread_id: UUID,
+    store: Store,
+    before_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    after_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 30,
+) -> ObservationPage:
+    """Original chronological observations; default to the tail, including unlinked debug data."""
+    if before_cursor is not None and after_cursor is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="select either before_cursor or after_cursor"
+        )
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    return await store.conversation_observations(
+        thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
     )
 
 
