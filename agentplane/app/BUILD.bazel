@@ -976,6 +976,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 

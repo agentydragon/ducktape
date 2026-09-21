@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import suppress
 from uuid import UUID
 
 import httpx
 import pytest_bazel
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from starlette.types import Message
 
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, ConversationScope
@@ -127,6 +131,65 @@ async def test_payload_shape_uses_server_verified_exact_revision() -> None:
     assert forwarded["table"] == "conversation_payload_chunk"
     assert "chunk_index < $8" in forwarded["where"]
     assert forwarded["params[8]"] == "3"
+
+
+async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response() -> None:
+    class Chunks(httpx.AsyncByteStream):
+        def __init__(self) -> None:
+            self.reads = 0
+            self.closed = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            for _ in range(10_000):
+                self.reads += 1
+                yield b"x" * 8192
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    chunks = Chunks()
+
+    async def upstream(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=chunks)
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    scope = {"type": "http", "asgi": {"spec_version": "2.4"}, "query_string": b"offset=-1", "headers": []}
+    response = await app.state.electric.entities(
+        Request(scope), thread_id=THREAD, anchor_cursor=99, tail_from=70, window_from=None, window_before=None
+    )
+    first = asyncio.Event()
+    release = asyncio.Event()
+    second = asyncio.Event()
+    blocked = asyncio.Event()
+
+    async def send(message: Message) -> None:
+        if message["type"] != "http.response.body":
+            return
+        if not first.is_set():
+            first.set()
+            await release.wait()
+        else:
+            second.set()
+            await blocked.wait()
+
+    async def receive() -> Message:
+        raise AssertionError("ASGI 2.4 response should detect disconnect through send")
+
+    delivery = asyncio.create_task(response(scope, receive, send))
+    try:
+        async with asyncio.timeout(10):
+            await first.wait()
+            assert chunks.reads == 1
+            release.set()
+            await second.wait()
+            assert chunks.reads == 2
+    finally:
+        delivery.cancel()
+        with suppress(asyncio.CancelledError):
+            await delivery
+        await electric.aclose()
+    assert chunks.closed
+    assert chunks.reads == 2
 
 
 if __name__ == "__main__":
