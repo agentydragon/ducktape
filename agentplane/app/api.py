@@ -37,6 +37,12 @@ from agentplane.app.consent import (
     decide_enrollment,
     preview_enrollment,
 )
+from agentplane.app.conversation_debug import (
+    ConversationEvidenceNotFoundError,
+    ConversationScopeChangedError,
+    EvidencePage,
+    NativeFramePage,
+)
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
     BindingNotFoundError,
@@ -572,6 +578,52 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
+@threads.get("/{thread_id}/conversation/evidence")
+async def conversation_evidence(
+    thread_id: UUID,
+    store: Store,
+    source_id: str,
+    projection_epoch: str,
+    entity_kind: str,
+    entity_id: str,
+    after_cursor: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 30,
+) -> EvidencePage:
+    return await store.conversation_evidence(
+        thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        after_cursor=after_cursor,
+        limit=limit,
+    )
+
+
+@threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
+async def conversation_native_frames(
+    thread_id: UUID,
+    observation_cursor: int,
+    store: Store,
+    source_id: str,
+    projection_epoch: str,
+    entity_kind: str,
+    entity_id: str,
+    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 30,
+) -> NativeFramePage:
+    return await store.conversation_native_frames(
+        thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        observation_cursor=observation_cursor,
+        after_sequence=after_sequence,
+        limit=limit,
+    )
+
+
 @threads.get("/{thread_id}/events")
 async def thread_events(
     store: Store,
@@ -675,6 +727,16 @@ def create_app(
         app.include_router(auth_routes.router)
     # Outermost, so a request the drain refuses touches nothing below it.
     app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
+
+    @app.exception_handler(ConversationScopeChangedError)
+    async def _conversation_scope_changed(_request: Request, error: ConversationScopeChangedError) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=status.HTTP_410_GONE)
+
+    @app.exception_handler(ConversationEvidenceNotFoundError)
+    async def _conversation_evidence_missing(
+        _request: Request, error: ConversationEvidenceNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
