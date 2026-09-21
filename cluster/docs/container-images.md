@@ -58,7 +58,7 @@ to the old path.
 
 The default for a new in-cluster image: a **private** package in our own registry (no
 GHCR "make public" toil, credential provisioned in code). Historical reference:
-`codex-pod` (<../k8s/parked/codex-pod/README.md>); its automatic build/publish and
+`codex-pod` (<../../x/codex_pod_image/deploy/README.md>); its automatic build/publish and
 Flux image scan are retired.
 
 1. **Tenant + credential** — `cluster/k8s/forgejo-images/` provisions the

@@ -1,4 +1,4 @@
-# Parked Nix-built OCI image experiment (see cluster/k8s/parked/codex-pod/README.md).
+# Parked Nix-built OCI image experiment (see deploy/README.md).
 # The flake output is retained; automatic publication was retired with the pod.
 #
 # Two parts, both from Nix — no runtime bootstrap script:

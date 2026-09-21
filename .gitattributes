@@ -102,6 +102,8 @@ nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 # Parked manifests are retained for possible revival but are not active cluster config.
 cluster/k8s/parked/** cluster-manifest-ignored=true
+# The retired Codex pod's manifests are kept beside their source, not active cluster config.
+x/codex_pod_image/deploy/** cluster-manifest-ignored=true
 cluster/k8s/evidence/market-roster/market-roster.yaml cluster-manifest-ignored=true
 # rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
