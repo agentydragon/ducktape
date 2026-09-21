@@ -10,7 +10,7 @@
 export type Route = [
   method: string,
   pattern: RegExp,
-  answer: (match: RegExpMatchArray, query: URLSearchParams) => unknown,
+  answer: (match: RegExpMatchArray, query: URLSearchParams, signal: AbortSignal | undefined) => unknown,
 ];
 
 export const routes: Route[] = [];
@@ -95,10 +95,29 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
  * A valid live response whose body has not received a change yet. Fetch itself settles, while
  * Electric's body reader waits until the collection cancels it during teardown.
  */
-export function electricLongPoll(handle: string, relation?: string): Response {
+export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
   const schema = ELECTRIC_SCHEMAS[relation ?? "conversation_entity"];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
-  return new Response(new ReadableStream<Uint8Array>({ cancel() {} }), { headers: shapeHeaders(handle, schema) });
+  let onAbort: (() => void) | undefined;
+  const removeAbortListener = () => {
+    if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);
+    onAbort = undefined;
+  };
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (signal === undefined) return;
+      onAbort = () => {
+        removeAbortListener();
+        controller.error(new DOMException("The live Shape request was aborted", "AbortError"));
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    },
+    cancel() {
+      removeAbortListener();
+    },
+  });
+  return new Response(body, { headers: shapeHeaders(handle, schema) });
 }
 
 /**
@@ -147,13 +166,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     "http://harness"
   );
   const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+  const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
   const key = `${method} ${url.pathname}${url.search}`;
   ledger.pending.push(key);
   try {
     for (const [routeMethod, pattern, answer] of routes) {
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
-      const body = answer(match, url.searchParams);
+      const body = answer(match, url.searchParams, signal);
       if (body instanceof Response) return body;
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);

@@ -1191,10 +1191,10 @@ routes.push(
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
-    (match, query) => {
+    (match, query, signal) => {
       const subset = currentSubset(query);
       if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`);
+        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`, undefined, signal);
         return electricShape([], `visual-entities-${match[1]}`);
       }
       if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
@@ -1211,10 +1211,10 @@ routes.push(
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
-    (match, query) => {
+    (match, query, signal) => {
       const subset = currentSubset(query);
       if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`);
+        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`, undefined, signal);
         return electricShape([], `visual-commands-${match[1]}`);
       }
       if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
@@ -1255,7 +1255,7 @@ routes.push(
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/payload-chunks$/,
-    (match, query) => {
+    (match, query, signal) => {
       const ownerCursor = query.get("owner_cursor") ?? "0";
       const ownerId = query.get("owner_id") ?? "";
       const field = query.get("field") ?? "";
@@ -1281,7 +1281,11 @@ routes.push(
                 }),
               ];
       if (query.get("live") === "true" && query.get("offset") !== "-1")
-        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "conversation_payload_chunk");
+        return electricLongPoll(
+          `visual-payload-${ownerCursor}-${ownerId}-${field}`,
+          "conversation_payload_chunk",
+          signal
+        );
       return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
     },
   ],
