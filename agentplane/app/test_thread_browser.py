@@ -669,6 +669,47 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     ]
 
 
+@pytest.mark.parametrize("outcome", ["failed", "noop"])
+async def test_settled_command_reason_survives_history_eviction_and_reload(
+    thread_browser: ThreadBrowser, outcome: str
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    submitted = "Test input whose outcome must remain visible"
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill(submitted)
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    reason = f"Test command {outcome} after admission"
+    if outcome == "failed":
+        source.append(
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command.command_id, reason=reason))
+        )
+    else:
+        source.append(event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id=command.command_id, reason=reason)))
+    for index in range(40):
+        item_id = f"after-command-{index}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
+        )
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.reload()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    assert source.commands.empty()
+
+
 async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
