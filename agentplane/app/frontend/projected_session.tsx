@@ -27,6 +27,7 @@ import {
   type PayloadRef,
 } from "./conversation_store";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
+import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -229,7 +230,7 @@ function EntityCard({
   if (entity.entityKind === "confirmed_input") {
     return (
       <Group justify="flex-end" data-conversation-anchor={entity.cursor.toString()}>
-        <Paper p="sm" withBorder maw="80%">
+        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
           <Body threadId={threadId} reference={entity.inputRef} follow={false} />
           <Evidence threadId={threadId} entity={entity} />
         </Paper>
@@ -282,9 +283,14 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [errors, setErrors] = useState(new Map<string, string>());
   const active = useRef(new Set<string>());
   const commandIds = useMemo(
-    () => new Set(entities.filter((row) => row.entityKind === "command").map((row) => row.entityId)),
+    () =>
+      new Set([
+        ...entities.filter((row) => row.entityKind === "command").map((row) => row.entityId),
+        ...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : [])),
+      ]),
     [entities]
   );
+  const [reconcileAttempt, setReconcileAttempt] = useState(0);
   const localCommandKey = local.commands
     .slice(0, 128)
     .map((value) => value.command.commandId)
@@ -302,6 +308,9 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
           store.observeCommandIds(
             new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
           );
+          if (result.commands.some((value) => value.outcome === null) && reconcileAttempt < 5) {
+            window.setTimeout(() => setReconcileAttempt((value) => value + 1), 250 * 2 ** reconcileAttempt);
+          }
         }
       },
       (reason: unknown) => {
@@ -310,7 +319,7 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
       }
     );
     return () => controller.abort();
-  }, [localCommandKey, projectionEpoch, sourceId, store, threadId]);
+  }, [localCommandKey, projectionEpoch, reconcileAttempt, sourceId, store, threadId]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -434,17 +443,19 @@ function ProjectedSessionBody({
   entities,
   thread,
   onLoadOlder,
+  available,
 }: {
   threadId: string;
   entities: ConversationEntity[];
   thread: ThreadView;
   onLoadOlder: (cursor: string) => void;
+  available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const running = !thread.archived && controls?.harness_state === "running";
+  const running = available && !thread.archived && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   useEffect(() => {
@@ -589,6 +600,13 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [before, setBefore] = useState<string | undefined>();
   const [name, setName] = useState("");
+  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
+  const sandboxAvailable =
+    environment.connection === "connected" &&
+    environment.health?.fresh === true &&
+    environment.snapshot?.sandboxes.some(
+      (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
+    ) === true;
   useEffect(() => {
     void getThread(threadId).then((value) => {
       setThread(value);
@@ -619,10 +637,23 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
           Thread archived. Showing retained conversation history; controls are disabled.
         </Text>
       )}
+      {thread &&
+        environment.snapshot &&
+        !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
+          <Text role="status" c="dimmed">
+            Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+          </Text>
+        )}
       {thread && (
         <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
           {(rows) => (
-            <ProjectedSessionBody threadId={threadId} entities={rows} thread={thread} onLoadOlder={setBefore} />
+            <ProjectedSessionBody
+              threadId={threadId}
+              entities={rows}
+              thread={thread}
+              onLoadOlder={setBefore}
+              available={sandboxAvailable}
+            />
           )}
         </ConversationCollection>
       )}
