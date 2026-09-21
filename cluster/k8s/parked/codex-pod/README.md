@@ -38,8 +38,9 @@ flake output is retained, but its current evaluation failure is noted above.
   _activation_ script that never runs in this activation-less image.
 - **Former CI**: see [Historical image build workflow](#historical-image-build-workflow).
 - **Former auto-roll**: the `ImageRepository` and `ImagePolicy` have been removed from
-  `cluster/k8s/flux-image-automation-forgejo/`; the archived Deployment's image marker
-  is no longer updated.
+  `cluster/k8s/flux-image-automation-forgejo/`. The archived Deployment keeps its last
+  published image tag without an automation marker; restore the marker and policy when
+  reactivating the experiment.
 - **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
   `ducktape-ci` Forgejo user (Terraform) and a `forgejo-images-creds` Secret
   reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).
