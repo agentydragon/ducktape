@@ -965,6 +965,31 @@ py_test(
 )
 
 py_test(
+    name = "test_pending_command_browser",
+    size = "medium",
+    srcs = ["test_pending_command_browser.py"],
+    args = ["--ignore=agentplane/app/test_thread_browser.py"],
+    data = [
+        "//agentplane/app/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    main = "test_pending_command_browser.py",
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":test_thread_browser",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_action_federation",
     srcs = ["test_action_federation.py"],
     deps = [
