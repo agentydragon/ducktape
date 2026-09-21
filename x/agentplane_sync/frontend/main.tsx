@@ -200,13 +200,13 @@ function payloadGeneration(row: ViewRow | undefined, field: PayloadField): strin
   if (!row) return null;
   switch (field) {
     case "text":
-      return row.textGenerationId;
+      return row.textGenerationId === null ? null : String(row.textGenerationId);
     case "arguments":
-      return row.argumentsGenerationId;
+      return row.argumentsGenerationId === null ? null : String(row.argumentsGenerationId);
     case "output":
-      return row.outputGenerationId;
+      return row.outputGenerationId === null ? null : String(row.outputGenerationId);
     case "reasoning":
-      return row.reasoningGenerationId;
+      return row.reasoningGenerationId === null ? null : String(row.reasoningGenerationId);
   }
 }
 
@@ -339,7 +339,10 @@ function PayloadPanel({
             ])
         );
         if (Object.keys(mismatch).length > 0) {
-          throw new Error(`Payload manifest does not match selected row revision: ${JSON.stringify(mismatch)}`);
+          const details = JSON.stringify(mismatch, (_key, fieldValue: unknown) =>
+            typeof fieldValue === "bigint" ? fieldValue.toString() : fieldValue
+          );
+          throw new Error(`Payload manifest does not match selected row revision: ${details}`);
         }
         setManifest(value);
         setManifestState("ready");
@@ -373,7 +376,7 @@ function PayloadPanel({
             chunk.itemId === selection.itemId &&
             chunk.fieldName === selection.field &&
             chunk.sourceId === manifest.sourceId &&
-            chunk.generationId === manifest.generationId &&
+            String(chunk.generationId) === manifest.generationId &&
             chunk.chunkIndex < manifest.chunkCount &&
             chunk.sourceCursor <= manifest.sourceCursor
         )
