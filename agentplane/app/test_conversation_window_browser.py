@@ -91,9 +91,11 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
         await interest_seen.wait()
     history = page.get_by_role("region", name="Thread history", exact=True)
     interest_seen.clear()
+    await history.evaluate("area => { area.scrollTop = 0; }")
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await expect(history.locator("[data-conversation-anchor]").first).to_be_attached()
     anchor = await history.evaluate(
         """area => {
-            area.scrollTop = 0;
             const row = [...area.querySelectorAll('[data-conversation-anchor]')]
                 .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
             return { cursor: row.dataset.conversationAnchor, top: row.getBoundingClientRect().top };
