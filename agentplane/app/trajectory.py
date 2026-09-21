@@ -77,12 +77,16 @@ class Thread(Base):
 
 class Event(Base):
     __tablename__ = "event"
-    __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
+    __table_args__ = (
+        Index("ix_event_thread_at", "thread_id", "at"),
+        Index("ix_event_thread_origin_sequence", "thread_id", "origin_sequence"),
+    )
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
@@ -207,6 +211,18 @@ class ConversationPayloadChunk(Base):
 
 class ConversationProjectionEvidence(Base):
     __tablename__ = "conversation_projection_evidence"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+
+class ConversationProjectionNativeLink(Base):
+    __tablename__ = "conversation_projection_native_link"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -398,6 +414,7 @@ class TrajectoryStore:
                     Event(
                         thread_id=thread_id,
                         cursor=entry.cursor,
+                        origin_sequence=entry.origin.sequence,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
                         payload=payload,
@@ -669,17 +686,18 @@ async def _record_conversation_projection(
             )
         )
     for evidence in result.evidence_upserts:
+        values = {
+            "thread_id": thread_id,
+            "source_id": evidence.source_id,
+            "projection_epoch": evidence.projection_epoch,
+            "item_cursor": evidence.item_cursor,
+            "observation_cursor": evidence.observation_cursor,
+        }
+        await session.execute(insert(ConversationProjectionEvidence).values(**values).on_conflict_do_nothing())
         for source_sequence in evidence.source_sequences:
             await session.execute(
-                insert(ConversationProjectionEvidence)
-                .values(
-                    thread_id=thread_id,
-                    source_id=evidence.source_id,
-                    projection_epoch=evidence.projection_epoch,
-                    item_cursor=evidence.item_cursor,
-                    observation_cursor=evidence.observation_cursor,
-                    source_sequence=source_sequence,
-                )
+                insert(ConversationProjectionNativeLink)
+                .values(**values, source_sequence=source_sequence)
                 .on_conflict_do_nothing()
             )
     checkpoint_values = {

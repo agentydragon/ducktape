@@ -23,6 +23,7 @@ from agentplane.app.trajectory import (
     ConversationPayloadManifest,
     ConversationProjectionError,
     ConversationProjectionEvidence,
+    ConversationProjectionNativeLink,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -640,6 +641,11 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
                 select(ConversationProjectionEvidence).where(ConversationProjectionEvidence.thread_id == thread)
             )
         ).all()
+        native_links = (
+            await session.scalars(
+                select(ConversationProjectionNativeLink).where(ConversationProjectionNativeLink.thread_id == thread)
+            )
+        ).all()
     assert item is not None
     assert item.text_ref == {
         "source_id": "test-runner",
@@ -655,7 +661,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         (3, 1, 2),
     ]
     assert [chunk.text for chunk in chunks] == ["hello world", "!"]
-    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in evidence] == [(1, 1, 9007)]
+    assert [(row.item_cursor, row.observation_cursor) for row in evidence] == [(1, 1)]
+    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
     await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
     async with store._sessions() as session:
