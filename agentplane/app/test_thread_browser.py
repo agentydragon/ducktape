@@ -441,7 +441,15 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_position = await history.evaluate("area => area.scrollTop")
+    reading_anchor = await history.evaluate(
+        """area => {
+            const top = area.getBoundingClientRect().top;
+            const item = [...area.querySelectorAll('[data-conversation-anchor]')].find(
+                item => item.getBoundingClientRect().bottom > top
+            );
+            return {cursor: item.dataset.conversationAnchor, offset: item.getBoundingClientRect().top - top};
+        }"""
+    )
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -462,10 +470,10 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
@@ -500,6 +508,19 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
+    await page.wait_for_function(
+        """anchor => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const item = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            return item !== null && Math.abs(
+                item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
+            ) <= 2;
+        }""",
+        arg=anchor,
+    )
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:
