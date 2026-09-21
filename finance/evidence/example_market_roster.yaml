@@ -1,9 +1,9 @@
 # Example mirror roster (schema: finance.evidence.markets.MarketRoster).
 #
-# The deployed scraper reads roster files like this from a ConfigMap mount
-# (`--roster /etc/.../roster.yaml`) and unions them with the markets referenced by
-# calibration catalogs (`--catalog`). `deep: true` (Manifold only) also captures the
-# full bet + comment history; snapshot-only entries just track `market.json`.
+# The scraper accepts roster files like this via `--roster` and unions them with
+# markets referenced by calibration catalogs (`--catalog`). `deep: true` (Manifold
+# only) also captures the full bet + comment history; snapshot-only entries just
+# track `market.json`.
 #
 # The three markets below were verified end-to-end in loom/plans/market_harvest.md
 # and double as the loader test fixtures' provenance.

@@ -7,9 +7,9 @@ vocabulary: which platforms exist, what a roster entry is, and where a market's 
 live in a checkout. Read-side consumers (augur calibration, loom) and the write-side
 scraper both resolve paths through the helpers here.
 
-The roster itself is deployment configuration, not code: the scraper reads it from
-YAML roster files (`--roster`, mounted from a ConfigMap in the CronJob deployment) and
-unions in the markets referenced by calibration catalogs (`--catalog`). See
+The roster itself is configuration, not code: the scraper reads YAML roster files
+passed with `--roster` and unions in markets referenced by calibration catalogs
+(`--catalog`). Deployments provide roster files at those paths. See
 `example_market_roster.yaml` for the file format.
 """
 
@@ -64,7 +64,7 @@ class MarketEntry(BaseModel):
 
 
 class MarketRoster(BaseModel):
-    """Schema of a roster YAML file (deployed as a ConfigMap, mounted into the scraper)."""
+    """Schema of one scraper roster YAML file."""
 
     model_config = ConfigDict(extra="forbid")
 

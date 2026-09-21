@@ -12,7 +12,6 @@ on:
       - "openai_utils/testing/testing.bzl"
       - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
-      - "nix/nixos/hosts/bazel-test/**"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
   push:
@@ -27,7 +26,6 @@ on:
       - "openai_utils/testing/testing.bzl"
       - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
-      - "nix/nixos/hosts/bazel-test/**"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
   workflow_dispatch:
