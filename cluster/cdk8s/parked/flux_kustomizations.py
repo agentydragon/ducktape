@@ -562,35 +562,6 @@ def gecko_namespace(chart: Chart) -> Kustomization:
     )
 
 
-def google_workspace_mcp(
-    chart: Chart, airlock: Kustomization, local_path_provisioner: Kustomization, reflector: Kustomization
-) -> Kustomization:
-    name = "google-workspace-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/google-workspace-mcp",
-            prune=True,
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(
-                # google-client-credentials (Reflector mirrors it here)
-                airlock,
-                local_path_provisioner,
-                reflector,
-            ),
-        ),
-    )
-
-
 def haku_dispatch(
     chart: Chart,
     cnpg: Kustomization,
