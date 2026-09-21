@@ -19,10 +19,40 @@ export const routes: Route[] = [];
 export interface ElectricShapeMessage {
   headers:
     | { relation: ["public", string]; operation: "insert" | "update" | "delete" }
-    | { control: "up-to-date" | "must-refetch" };
+    | { control: "snapshot-end" | "up-to-date" | "must-refetch" };
   key?: string;
   value?: Record<string, unknown>;
 }
+
+const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
+  conversation_entity: {
+    arguments_ref: { type: "jsonb" },
+    cursor: { type: "int8", not_null: true },
+    entity_id: { type: "text", not_null: true, pk_index: 4 },
+    entity_kind: { type: "text", not_null: true, pk_index: 3 },
+    input_ref: { type: "jsonb" },
+    output_ref: { type: "jsonb" },
+    pending: { type: "bool", not_null: true },
+    projection_epoch: { type: "text", not_null: true, pk_index: 2 },
+    revision_cursor: { type: "int8", not_null: true },
+    source_id: { type: "text", not_null: true, pk_index: 1 },
+    state: { type: "jsonb", not_null: true },
+    text_ref: { type: "jsonb" },
+    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
+    turn_id: { type: "text" },
+  },
+  conversation_payload_chunk: {
+    chunk_index: { type: "int8", not_null: true, pk_index: 7 },
+    field: { type: "text", not_null: true, pk_index: 5 },
+    generation: { type: "int8", not_null: true, pk_index: 6 },
+    owner_cursor: { type: "int8", not_null: true, pk_index: 3 },
+    owner_id: { type: "text", not_null: true, pk_index: 4 },
+    projection_epoch: { type: "text", not_null: true, pk_index: 2 },
+    source_id: { type: "text", not_null: true, pk_index: 1 },
+    text: { type: "text", not_null: true },
+    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
+  },
+};
 
 /**
  * Build the same JSON and protocol headers consumed by `electricCollectionOptions` in production.
@@ -30,15 +60,23 @@ export interface ElectricShapeMessage {
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
 export function electricShape(rows: readonly ElectricShapeMessage[], handle: string): Response {
-  return new Response(JSON.stringify([...rows, { headers: { control: "up-to-date" } }]), {
-    headers: {
-      "content-type": "application/json",
-      "electric-handle": handle,
-      "electric-offset": "0_0",
-      "electric-schema": "public",
-      "electric-up-to-date": "true",
-    },
-  });
+  const relation =
+    rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : "conversation_entity";
+  const schema = ELECTRIC_SCHEMAS[relation];
+  if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
+  return new Response(
+    JSON.stringify([...rows, { headers: { control: "snapshot-end" } }, { headers: { control: "up-to-date" } }]),
+    {
+      headers: {
+        "content-type": "application/json",
+        "electric-handle": handle,
+        "electric-offset": "0_0",
+        "electric-schema": JSON.stringify(schema),
+        "electric-has-data": "true",
+        "electric-up-to-date": "",
+      },
+    }
+  );
 }
 
 interface Ledger {

@@ -1076,16 +1076,31 @@ routes.push(
 );
 
 function shapeEntity(row: Record<string, unknown>): Record<string, unknown> {
-  // Electric's decoded shape rows retain JSONB as JSON values at this collection boundary. The
-  // database-facing wire serializer owns JSON text, while this browser fixture starts after that
-  // decoder so Zod receives the same object-valued row the app consumes.
-  return { ...row };
+  const value = { ...row };
+  for (const field of ["state", "text_ref", "arguments_ref", "output_ref", "input_ref"] as const) {
+    if (value[field] !== null) value[field] = JSON.stringify(value[field]);
+  }
+  value.pending = String(value.pending);
+  return value;
 }
 
-function shapeRow(relation: string, key: string, value: Record<string, unknown>) {
+function shapeRow(relation: string, value: Record<string, unknown>) {
+  const identity =
+    relation === "conversation_entity"
+      ? [value.thread_id, value.source_id, value.projection_epoch, value.entity_kind, value.entity_id]
+      : [
+          value.thread_id,
+          value.source_id,
+          value.projection_epoch,
+          value.owner_cursor,
+          value.owner_id,
+          value.field,
+          value.generation,
+          value.chunk_index,
+        ];
   return {
     headers: { relation: ["public", relation] as ["public", string], operation: "insert" as const },
-    key,
+    key: `"public"."${relation}"/${identity.map((part) => JSON.stringify(String(part))).join("/")}`,
     value,
   };
 }
@@ -1136,7 +1151,7 @@ routes.push(
         return { ...row, revision_cursor: "8" };
       });
       return electricShape(
-        rows.map((row) => shapeRow("conversation_entity", `${row.entity_kind}:${row.entity_id}`, row)),
+        rows.map((row) => shapeRow("conversation_entity", row)),
         `visual-entities-${match[1]}`
       );
     },
@@ -1150,7 +1165,7 @@ routes.push(
         (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
       );
       return electricShape(
-        rows.map((row) => shapeRow("conversation_entity", `command:${row.entity_id}`, row)),
+        rows.map((row) => shapeRow("conversation_entity", row)),
         `visual-commands-${match[1]}`
       );
     },
@@ -1193,7 +1208,7 @@ routes.push(
         body === undefined
           ? []
           : [
-              shapeRow("conversation_payload_chunk", `${ownerCursor}:${ownerId}:${field}:0`, {
+              shapeRow("conversation_payload_chunk", {
                 thread_id: match[1],
                 source_id: CONVERSATION_SOURCE,
                 projection_epoch: CONVERSATION_EPOCH,
