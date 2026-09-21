@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from itertools import pairwise
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import asyncpg
@@ -50,8 +50,7 @@ SENSITIVE = (
 
 def _entry(source_id: str, cursor: int, field: str, value: Message) -> event_log_pb2.EventEntry:
     entry = event_log_pb2.EventEntry(
-        cursor=cursor,
-        origin=event_log_pb2.EventOrigin(source_id=source_id, sequence=cursor),
+        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id=source_id, sequence=cursor)
     )
     getattr(entry.event, field).CopyFrom(value)
     return entry
@@ -84,11 +83,111 @@ async def _seed_conversation(pool: asyncpg.Pool, conversation_id: str, *, count:
 async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
     base = HIGH_CURSOR + LARGE_COUNT + 100
     rows = [
-        ("alpha-large", "item:live-item", "item", base - 4, base - 4, "live-item", event_pb2.ITEM_KIND_ASSISTANT_TEXT, None, base - 4, 0, 0, 0, 8, 0, 0, 0, "streaming", None, None),
-        ("alpha-large", "item:tool-row", "item", base - 3, base - 3, "tool-row", event_pb2.ITEM_KIND_TOOL_CALL, "read_file", 0, base - 3, base - 3, 0, 0, 0, 24, 0, "streaming", None, None),
-        ("alpha-large", "item:reasoning-row", "item", base - 2, base - 2, "reasoning-row", event_pb2.ITEM_KIND_REASONING, None, 0, 0, 0, base - 2, 0, 0, 0, 30, "complete", None, None),
-        ("alpha-large", "control:model", "control", base - 1, base - 1, None, None, None, 0, 0, 0, 0, 0, 0, 0, 0, "current", "model-v1", None),
-        ("alpha-large", "command:sync-command", "command", base, base, None, None, None, 0, 0, 0, 0, 0, 0, 0, 0, "pending", None, "sync-command"),
+        (
+            "alpha-large",
+            "item:live-item",
+            "item",
+            base - 4,
+            base - 4,
+            "live-item",
+            event_pb2.ITEM_KIND_ASSISTANT_TEXT,
+            None,
+            base - 4,
+            0,
+            0,
+            0,
+            8,
+            0,
+            0,
+            0,
+            "streaming",
+            None,
+            None,
+        ),
+        (
+            "alpha-large",
+            "item:tool-row",
+            "item",
+            base - 3,
+            base - 3,
+            "tool-row",
+            event_pb2.ITEM_KIND_TOOL_CALL,
+            "read_file",
+            0,
+            base - 3,
+            base - 3,
+            0,
+            0,
+            0,
+            24,
+            0,
+            "streaming",
+            None,
+            None,
+        ),
+        (
+            "alpha-large",
+            "item:reasoning-row",
+            "item",
+            base - 2,
+            base - 2,
+            "reasoning-row",
+            event_pb2.ITEM_KIND_REASONING,
+            None,
+            0,
+            0,
+            0,
+            base - 2,
+            0,
+            0,
+            0,
+            30,
+            "complete",
+            None,
+            None,
+        ),
+        (
+            "alpha-large",
+            "control:model",
+            "control",
+            base - 1,
+            base - 1,
+            None,
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "current",
+            "model-v1",
+            None,
+        ),
+        (
+            "alpha-large",
+            "command:sync-command",
+            "command",
+            base,
+            base,
+            None,
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "pending",
+            None,
+            "sync-command",
+        ),
     ]
     columns = (
         "conversation_id,row_key,entity_kind,anchor,revision,item_id,item_kind,tool_name,"
@@ -96,8 +195,7 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
         "text_bytes,arguments_bytes,output_bytes,reasoning_bytes,status,model,command_id"
     )
     await pool.executemany(
-        f"INSERT INTO sync_view_row ({columns}) VALUES (" + ",".join(f"${index}" for index in range(1, 20)) + ")",
-        rows,
+        f"INSERT INTO sync_view_row ({columns}) VALUES (" + ",".join(f"${index}" for index in range(1, 20)) + ")", rows
     )
     await pool.executemany(
         """INSERT INTO projected_payload_part
@@ -134,7 +232,11 @@ def _messages(body: bytes) -> list[dict[str, Any]]:
                 continue
             result.extend(parsed if isinstance(parsed, list) else [parsed])
         return result
-    return decoded if isinstance(decoded, list) else [decoded]
+    if isinstance(decoded, list):
+        return decoded
+    if isinstance(decoded, dict) and isinstance(decoded.get("data"), list):
+        return cast(list[dict[str, Any]], decoded["data"])
+    return [decoded]
 
 
 def _parse_body(body: bytes) -> dict[str, Any]:
@@ -223,12 +325,7 @@ async def _check_projector_retry_and_race(pool: asyncpg.Pool) -> dict[str, Any]:
     assert int(after_failure["through_cursor"]) == 2
     assert dict(after_failure_row) == dict(before)
     assert after_failure_payloads == payloads_before
-    retried = await apply_batch(
-        pool,
-        conversation_id="race-thread",
-        source_id="runner-race",
-        entries=[failed_batch[0]],
-    )
+    retried = await apply_batch(pool, conversation_id="race-thread", source_id="runner-race", entries=[failed_batch[0]])
     assert retried.through_cursor == 3
     assert retried.row_writes == 1
     assert retried.payload_parts == 1
@@ -245,7 +342,7 @@ async def _check_projector_retry_and_race(pool: asyncpg.Pool) -> dict[str, Any]:
 async def _serve(app: Any) -> AsyncIterator[str]:
     sock = bind_free_port()
     host, port = sock.getsockname()
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="on"))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
     task = asyncio.create_task(server.serve(sockets=[sock]))
     deadline = asyncio.get_running_loop().time() + 15
     try:
@@ -259,7 +356,14 @@ async def _serve(app: Any) -> AsyncIterator[str]:
         yield f"http://{host}:{port}"
     finally:
         server.should_exit = True
-        await asyncio.wait_for(task, timeout=10)
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=10)
+        except TimeoutError:
+            # Electric keeps long-poll requests open while the test tears down.
+            # Cancel only this test server after the graceful drain window so
+            # shutdown does not hide the original assertion or browser error.
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 async def _connect_postgres_when_ready(dsn: str) -> asyncpg.Pool:
@@ -299,7 +403,12 @@ def _capture_electric(
     records: list[dict[str, Any]],
     tasks: set[asyncio.Task[Any]],
     network_events: list[dict[str, Any]],
+    journal_path: Path,
+    page_errors: list[str],
 ) -> None:
+    def write_journal() -> None:
+        _write_browser_journal(journal_path, network_events, records, page_errors)
+
     async def capture(response: Response) -> None:
         request = response.request
         if "/api/electric/" not in response.url:
@@ -308,6 +417,7 @@ def _capture_electric(
             body = await response.body()
         except Exception as error:
             records.append({"page": page_name, "url": response.url, "error": str(error)})
+            write_journal()
             return
         request_parts = urlsplit(request.url)
         query = parse_qs(request_parts.query)
@@ -334,6 +444,7 @@ def _capture_electric(
             "gatewayDispatch": response.headers.get("x-gateway-dispatch"),
         }
         records.append(record)
+        write_journal()
 
     def on_response(response: Response) -> None:
         if "/api/electric/" in response.url:
@@ -348,6 +459,7 @@ def _capture_electric(
                     "postData": response.request.post_data,
                 }
             )
+            write_journal()
         task = asyncio.create_task(capture(response))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
@@ -363,6 +475,7 @@ def _capture_electric(
                     "postData": request.post_data,
                 }
             )
+            write_journal()
 
     def on_request_failed(request: Request) -> None:
         if "/api/electric/" in request.url:
@@ -375,6 +488,7 @@ def _capture_electric(
                     "failure": request.failure,
                 }
             )
+            write_journal()
 
     page.on("request", on_request)
     page.on("requestfailed", on_request_failed)
@@ -389,14 +503,19 @@ async def _wait_ready(page: Page, *, exact_bigint: bool = False) -> None:
     )
     if exact_bigint:
         await page.wait_for_function(
-            "document.querySelector('[data-testid=exact-bigint]')?.textContent?.trim() === 'exact'",
-            timeout=30_000,
+            "document.querySelector('[data-testid=exact-bigint]')?.textContent?.trim() === 'exact'", timeout=30_000
         )
 
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True, default=str) + "\n")
+
+
+def _write_browser_journal(
+    path: Path, network_events: list[dict[str, Any]], records: list[dict[str, Any]], page_errors: list[str]
+) -> None:
+    _write_json(path, {"events": network_events, "records": records, "pageErrors": page_errors})
 
 
 async def test_electric_end_to_end() -> None:
@@ -435,8 +554,12 @@ async def test_electric_end_to_end() -> None:
                 projector_evidence = await _check_projector_retry_and_race(pool)
                 diagnostics["projector"] = projector_evidence
                 diagnostics["seededRows"] = {
-                    "alpha-small": await pool.fetchval("SELECT count(*) FROM sync_view_row WHERE conversation_id='alpha-small'"),
-                    "alpha-large": await pool.fetchval("SELECT count(*) FROM sync_view_row WHERE conversation_id='alpha-large'"),
+                    "alpha-small": await pool.fetchval(
+                        "SELECT count(*) FROM sync_view_row WHERE conversation_id='alpha-small'"
+                    ),
+                    "alpha-large": await pool.fetchval(
+                        "SELECT count(*) FROM sync_view_row WHERE conversation_id='alpha-large'"
+                    ),
                 }
                 plans = {
                     "smallTail": await _query_plan(pool, "alpha-small"),
@@ -498,8 +621,7 @@ async def test_electric_end_to_end() -> None:
                             denied = await api.get("/api/electric/not-authorized?offset=now", headers=AUTH)
                             assert denied.status_code == 403, denied.text
                             get_override = await api.get(
-                                "/api/electric/alpha-large?offset=now&table=pg_class",
-                                headers=AUTH,
+                                "/api/electric/alpha-large?offset=now&table=pg_class", headers=AUTH
                             )
                             assert get_override.status_code == 400, get_override.text
                             post_override = await api.post(
@@ -524,9 +646,7 @@ async def test_electric_end_to_end() -> None:
                         route_control: dict[str, Any] = {"badHandle": False, "badHandleRequest": None}
                         async with async_playwright() as playwright:
                             browser = await playwright.chromium.launch(
-                                headless=True,
-                                executable_path=chromium_executable(),
-                                args=CONTAINER_BASE_BROWSER_ARGS,
+                                headless=True, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS
                             )
                             context: BrowserContext = await browser.new_context(
                                 viewport={"width": 1280, "height": 900},
@@ -549,18 +669,44 @@ async def test_electric_end_to_end() -> None:
                                         new_query = "&".join(
                                             f"{key}={value}" for key, values in changed.items() for value in values
                                         )
-                                        url = urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+                                        url = urlunsplit(
+                                            (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+                                        )
                                         route_control["badHandle"] = False
-                                        route_control["badHandleRequest"] = {"url": request.url, "method": request.method}
+                                        route_control["badHandleRequest"] = {
+                                            "url": request.url,
+                                            "method": request.method,
+                                        }
                                         await route.continue_(url=url)
                                         return
                                 await route.continue_()
 
                             await context.route("**/api/electric/**", route_request)
+                            journal_path = outputs / "browser-network-journal.json"
+
+                            def record_page_error(error: Any) -> None:
+                                page_errors.append(str(error))
+                                _write_browser_journal(journal_path, network_events, response_records, page_errors)
+
+                            def record_console_error(message: Any) -> None:
+                                if message.type == "error":
+                                    network_events.append(
+                                        {"event": "console", "type": message.type, "text": message.text}
+                                    )
+                                    _write_browser_journal(journal_path, network_events, response_records, page_errors)
+
                             page = await context.new_page()
-                            _capture_electric(page, "page-1", response_records, response_tasks, network_events)
-                            page.on("pageerror", lambda error: page_errors.append(str(error)))
-                            page.on("console", lambda message: network_events.append({"event": "console", "type": message.type, "text": message.text}) if message.type == "error" else None)
+                            _capture_electric(
+                                page,
+                                "page-1",
+                                response_records,
+                                response_tasks,
+                                network_events,
+                                journal_path,
+                                page_errors,
+                            )
+                            page.on("pageerror", record_page_error)
+                            page.on("console", record_console_error)
                             await page.goto(f"{app_url}/?conversation=alpha-small", wait_until="domcontentloaded")
                             try:
                                 await _wait_ready(page, exact_bigint=True)
@@ -581,7 +727,11 @@ async def test_electric_end_to_end() -> None:
                                 raise
                             await page.screenshot(path=outputs / "alpha-small-tail.png", full_page=True)
                             await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
-                            small_records = [record for record in response_records if record.get("path") == "/api/electric/alpha-small"]
+                            small_records = [
+                                record
+                                for record in response_records
+                                if record.get("path") == "/api/electric/alpha-small"
+                            ]
                             small_rows = sum(record.get("rowCount", 0) for record in small_records)
                             small_bytes = sum(record.get("responseBytes", 0) for record in small_records)
                             assert small_rows <= 30, small_records
@@ -593,20 +743,32 @@ async def test_electric_end_to_end() -> None:
                                 "elements => elements.map(element => ({key: element.dataset.rowKey, anchor: element.dataset.anchor, kind: element.dataset.kind}))"
                             )
                             initial_keys = {row["key"] for row in initial_tail}
-                            large_records = [record for record in response_records if record.get("path") == "/api/electric/alpha-large"]
+                            large_records = [
+                                record
+                                for record in response_records
+                                if record.get("path") == "/api/electric/alpha-large"
+                            ]
                             large_rows = sum(record.get("rowCount", 0) for record in large_records)
                             large_bytes = sum(record.get("responseBytes", 0) for record in large_records)
                             assert len(initial_tail) == 30
                             assert large_rows <= 30, large_records
-                            assert large_bytes <= max(small_bytes * 2, 4096), {"small": small_bytes, "large": large_bytes}
+                            assert large_bytes <= max(small_bytes * 2, 4096), {
+                                "small": small_bytes,
+                                "large": large_bytes,
+                            }
                             assert all(not record.get("containsSensitivePayload") for record in large_records)
                             assert all(
-                                not (set(record.get("fields", [])) & {"text", "arguments", "output", "reasoning", "content"})
+                                not (
+                                    set(record.get("fields", []))
+                                    & {"text", "arguments", "output", "reasoning", "content"}
+                                )
                                 for record in large_records
                             ), large_records
                             await page.screenshot(path=outputs / "alpha-large-tail.png", full_page=True)
 
-                            min_history_anchor = min(int(row["anchor"]) for row in initial_tail if row["kind"] == "item")
+                            min_history_anchor = min(
+                                int(row["anchor"]) for row in initial_tail if row["kind"] == "item"
+                            )
                             subset_gate.active = True
                             await page.get_by_role("button", name="Load older").click()
                             await asyncio.wait_for(subset_gate.arrived.wait(), timeout=30)
@@ -631,10 +793,7 @@ async def test_electric_end_to_end() -> None:
                                 ),
                             ]
                             gate_result = await apply_batch(
-                                pool,
-                                conversation_id="alpha-large",
-                                source_id=SOURCE,
-                                entries=gate_update,
+                                pool, conversation_id="alpha-large", source_id=SOURCE, entries=gate_update
                             )
                             assert gate_result.row_writes == 2
                             assert gate_result.payload_parts == 2
@@ -644,11 +803,13 @@ async def test_electric_end_to_end() -> None:
                                 timeout=45_000,
                             )
                             await page.wait_for_function(
-                                """(key, revision) => {
-                                  const row = [...document.querySelectorAll('[data-row-key]')].find(node => node.dataset.rowKey === key)
-                                  return row?.dataset.revision === revision && row.dataset.status === 'complete'
+                                """(expected) => {
+                                  const row = [...document.querySelectorAll('[data-row-key]')]
+                                    .find(node => node.dataset.rowKey === expected.key)
+                                  if (!row) return false
+                                  return row.dataset.revision === expected.revision && row.dataset.status === 'complete'
                                 }""",
-                                arg=[target_key, str(base_cursor + 2)],
+                                arg={"key": target_key, "revision": str(base_cursor + 2)},
                                 timeout=45_000,
                             )
                             history_rows = await page.locator("[data-testid=row]").evaluate_all(
@@ -662,6 +823,9 @@ async def test_electric_end_to_end() -> None:
                             await page.get_by_role("button", name="Load older").click()
                             await page.wait_for_function("window.__syncEvidence.scroll.length > 0", timeout=45_000)
                             scroll_evidence = await page.evaluate("window.__syncEvidence.scroll.at(-1)")
+                            _write_json(outputs / "scroll-evidence.json", scroll_evidence)
+                            await page.screenshot(path=outputs / "alpha-large-scroll-anchor.png", full_page=True)
+                            assert abs(scroll_evidence["correctionPx"]) > 1, scroll_evidence
                             assert abs(scroll_evidence["delta"]) <= 1, scroll_evidence
                             await page.wait_for_function(
                                 "document.querySelector('[data-testid=history-count]')?.textContent?.trim() === '60'",
@@ -670,8 +834,17 @@ async def test_electric_end_to_end() -> None:
                             await page.screenshot(path=outputs / "alpha-large-history.png", full_page=True)
 
                             page_two = await context.new_page()
-                            _capture_electric(page_two, "page-2", response_records, response_tasks, network_events)
-                            page_two.on("pageerror", lambda error: page_errors.append(str(error)))
+                            _capture_electric(
+                                page_two,
+                                "page-2",
+                                response_records,
+                                response_tasks,
+                                network_events,
+                                journal_path,
+                                page_errors,
+                            )
+                            page_two.on("pageerror", record_page_error)
+                            page_two.on("console", record_console_error)
                             await page_two.goto(f"{app_url}/?conversation=alpha-large", wait_until="domcontentloaded")
                             await _wait_ready(page_two)
                             await page_two.wait_for_function(
@@ -684,7 +857,9 @@ async def test_electric_end_to_end() -> None:
                                 "document.querySelector('[data-testid=payload-body]')?.textContent === 'seed text +during-history'",
                                 timeout=30_000,
                             )
-                            payload_requests = (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()["payloadRequests"]
+                            payload_requests = (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
+                                "payloadRequests"
+                            ]
                             assert [request["field"] for request in payload_requests] == ["text"]
 
                             main_batch = [
@@ -713,17 +888,12 @@ async def test_electric_end_to_end() -> None:
                                     base_cursor + 8,
                                     "model_changed",
                                     event_pb2.ModelChanged(
-                                        command_id="sync-command",
-                                        previous_model="model-v1",
-                                        model="model-v2",
+                                        command_id="sync-command", previous_model="model-v1", model="model-v2"
                                     ),
                                 ),
                             ]
                             main_result = await apply_batch(
-                                pool,
-                                conversation_id="alpha-large",
-                                source_id=SOURCE,
-                                entries=main_batch,
+                                pool, conversation_id="alpha-large", source_id=SOURCE, entries=main_batch
                             )
                             assert main_result == ApplyResult(base_cursor + 8, 0, 4, 5), main_result
                             expected_atomic = f"{base_cursor + 6}|model-v2|applied"
@@ -756,7 +926,13 @@ async def test_electric_end_to_end() -> None:
                             )
                             await page.get_by_role("button", name="Close payload").click()
                             output_requests_before_close = len(
-                                [request for request in (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()["payloadRequests"] if request["field"] == "output"]
+                                [
+                                    request
+                                    for request in (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
+                                        "payloadRequests"
+                                    ]
+                                    if request["field"] == "output"
+                                ]
                             )
 
                             closed_interest_batch = [
@@ -769,10 +945,7 @@ async def test_electric_end_to_end() -> None:
                                 ),
                             ]
                             closed_result = await apply_batch(
-                                pool,
-                                conversation_id="alpha-large",
-                                source_id=SOURCE,
-                                entries=closed_interest_batch,
+                                pool, conversation_id="alpha-large", source_id=SOURCE, entries=closed_interest_batch
                             )
                             assert closed_result.row_writes == 2
                             assert closed_result.payload_parts == 2
@@ -781,8 +954,13 @@ async def test_electric_end_to_end() -> None:
                                 arg=str(base_cursor + 9),
                                 timeout=45_000,
                             )
-                            payload_after_close = (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()["payloadRequests"]
-                            assert len([request for request in payload_after_close if request["field"] == "output"]) == output_requests_before_close
+                            payload_after_close = (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
+                                "payloadRequests"
+                            ]
+                            assert (
+                                len([request for request in payload_after_close if request["field"] == "output"])
+                                == output_requests_before_close
+                            )
                             assert await page.get_by_test_id("payload-body").inner_text() == ""
                             await page.screenshot(path=outputs / "alpha-large-updated.png", full_page=True)
 
@@ -796,7 +974,9 @@ async def test_electric_end_to_end() -> None:
                                         SOURCE,
                                         head_cursor,
                                         "item_started",
-                                        event_pb2.ItemStarted(item_id="head-arrival", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT),
+                                        event_pb2.ItemStarted(
+                                            item_id="head-arrival", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
+                                        ),
                                     )
                                 ],
                             )
@@ -807,17 +987,29 @@ async def test_electric_end_to_end() -> None:
                                     timeout=45_000,
                                 )
                             retained = await page.locator(f"[data-row-key='{target_key}']").count()
-                            assert retained == 1, "A loaded older item left the collection after tail membership changed"
+                            assert retained == 1, (
+                                "A loaded older item left the collection after tail membership changed"
+                            )
                             assert await page.get_by_test_id("history-count").inner_text() == "60"
 
                             before_disconnect_records = len(response_records)
-                            previous_page1_records = [record for record in response_records if record.get("page") == "page-1"]
+                            previous_page1_records = [
+                                record for record in response_records if record.get("page") == "page-1"
+                            ]
                             prior_handle = next(
-                                (record["electricHandle"] for record in reversed(previous_page1_records) if record.get("electricHandle")),
+                                (
+                                    record["electricHandle"]
+                                    for record in reversed(previous_page1_records)
+                                    if record.get("electricHandle")
+                                ),
                                 None,
                             )
                             prior_offset = next(
-                                (record["electricOffset"] for record in reversed(previous_page1_records) if record.get("electricOffset")),
+                                (
+                                    record["electricOffset"]
+                                    for record in reversed(previous_page1_records)
+                                    if record.get("electricOffset")
+                                ),
                                 None,
                             )
                             assert prior_handle is not None, previous_page1_records[-10:]
@@ -829,10 +1021,7 @@ async def test_electric_end_to_end() -> None:
                                 _text_entry(SOURCE, base_cursor + 13, target_item_id, " +older-offline"),
                             ]
                             await apply_batch(
-                                pool,
-                                conversation_id="alpha-large",
-                                source_id=SOURCE,
-                                entries=offline_batch,
+                                pool, conversation_id="alpha-large", source_id=SOURCE, entries=offline_batch
                             )
                             await context.set_offline(False)
                             for opened in (page, page_two):
@@ -842,8 +1031,8 @@ async def test_electric_end_to_end() -> None:
                                     timeout=60_000,
                                 )
                             await page.wait_for_function(
-                                "(key, revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === key && node.dataset.revision === revision)",
-                                arg=[target_key, str(base_cursor + 13)],
+                                "(expected) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === expected.key && node.dataset.revision === expected.revision)",
+                                arg={"key": target_key, "revision": str(base_cursor + 13)},
                                 timeout=60_000,
                             )
                             resumed_records = response_records[before_disconnect_records:]
@@ -886,15 +1075,16 @@ async def test_electric_end_to_end() -> None:
                                 arg=str(rotation_cursor),
                                 timeout=60_000,
                             )
-                            assert route_control["badHandleRequest"] is not None, "No resumable Electric request was altered"
+                            assert route_control["badHandleRequest"] is not None, (
+                                "No resumable Electric request was altered"
+                            )
                             await page.screenshot(path=outputs / "alpha-large-stale-handle.png", full_page=True)
                             stale_records = [record for record in response_records if record.get("status") == 409]
                             assert stale_records, response_records[-20:]
                             reset_rows = sum(
                                 record.get("rowCount", 0)
                                 for record in response_records
-                                if record.get("page") == "page-1"
-                                and record.get("path") == "/api/electric/alpha-large"
+                                if record.get("page") == "page-1" and record.get("path") == "/api/electric/alpha-large"
                             )
                             diagnostics["mustRefetch"] = {
                                 "forcedRequest": route_control["badHandleRequest"],
@@ -910,11 +1100,16 @@ async def test_electric_end_to_end() -> None:
                                 .with_network(network)
                                 .with_network_aliases("electric")
                                 .with_exposed_ports(3000)
-                                .with_env("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/postgres?sslmode=disable")
+                                .with_env(
+                                    "DATABASE_URL",
+                                    "postgresql://postgres:postgres@postgres:5432/postgres?sslmode=disable",
+                                )
                                 .with_env("ELECTRIC_INSECURE", "true")
                             )
                             with restarted:
-                                restarted_url = f"http://{restarted.get_container_host_ip()}:{restarted.get_exposed_port(3000)}"
+                                restarted_url = (
+                                    f"http://{restarted.get_container_host_ip()}:{restarted.get_exposed_port(3000)}"
+                                )
                                 await _wait_electric(restarted_url)
                                 proxy_one.state.electric_url = f"{restarted_url}/v1/shape"
                                 proxy_two.state.electric_url = f"{restarted_url}/v1/shape"
@@ -935,7 +1130,9 @@ async def test_electric_end_to_end() -> None:
                                     arg=str(restart_cursor),
                                     timeout=60_000,
                                 )
-                                await page.screenshot(path=outputs / "alpha-large-electric-restarted.png", full_page=True)
+                                await page.screenshot(
+                                    path=outputs / "alpha-large-electric-restarted.png", full_page=True
+                                )
                                 diagnostics["restart"] = {
                                     "completed": True,
                                     "page1Responses": response_records[old_electric_request_records:],
@@ -961,7 +1158,9 @@ async def test_electric_end_to_end() -> None:
                                 pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE((SELECT min(restart_lsn) FROM pg_replication_slots WHERE slot_type='logical'), pg_current_wal_lsn()))::bigint AS retained_wal_bytes""")
                             assert wal_state is not None
                             diagnostics["postgresReplication"] = dict(wal_state)
-                            diagnostics["postgresReplication"]["retained_wal_bytes"] = int(wal_state["retained_wal_bytes"])
+                            diagnostics["postgresReplication"]["retained_wal_bytes"] = int(
+                                wal_state["retained_wal_bytes"]
+                            )
                             assert wal_state["wal_level"] == "logical"
                             assert int(wal_state["logical_slots"]) >= 1
                             assert int(wal_state["active_slots"]) >= 1
@@ -970,9 +1169,7 @@ async def test_electric_end_to_end() -> None:
                             dispatches = gateway_dispatches.json()["dispatches"]
                             assert dispatches.count("proxy-1") > 0
                             assert dispatches.count("proxy-2") > 0
-                            assert all(
-                                left != right for left, right in pairwise(dispatches)
-                            ), dispatches
+                            assert all(left != right for left, right in pairwise(dispatches)), dispatches
                             diagnostics["proxy"] = {
                                 "dispatches": dispatches,
                                 "proxy1RequestCount": proxy_one.state.request_count,
@@ -991,7 +1188,8 @@ async def test_electric_end_to_end() -> None:
                                 "largeBootstrapRows": large_rows,
                                 "largeBootstrapBytes": large_bytes,
                                 "firstHistoryCursor": min_history_anchor,
-                                "exclusiveBeforeProof": max(int(row["anchor"]) for row in new_history) < min_history_anchor,
+                                "exclusiveBeforeProof": max(int(row["anchor"]) for row in new_history)
+                                < min_history_anchor,
                                 "scrollAnchor": scroll_evidence,
                                 "pageErrors": page_errors,
                             }

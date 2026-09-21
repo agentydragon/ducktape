@@ -39,7 +39,14 @@ declare global {
       revisions: Record<string, string[]>;
       rowKeys: string[];
       exactBigint: boolean;
-      scroll: Array<{ key: string; beforeTop: number; afterTop: number; delta: number }>;
+      scroll: Array<{
+        key: string;
+        beforeTop: number;
+        preCorrectionTop: number;
+        afterTop: number;
+        correctionPx: number;
+        delta: number;
+      }>;
       pageErrors: string[];
     };
   }
@@ -176,10 +183,19 @@ function App() {
       (element) => element.dataset.rowKey === pending.key
     );
     if (!anchor) return;
+    const preCorrectionTop = anchor.getBoundingClientRect().top;
+    const correctionPx = preCorrectionTop - pending.top;
+    scroller.scrollTop += correctionPx;
     const afterTop = anchor.getBoundingClientRect().top;
     const delta = afterTop - pending.top;
-    scroller.scrollTop += delta;
-    window.__syncEvidence.scroll.push({ key: pending.key, beforeTop: pending.top, afterTop, delta });
+    window.__syncEvidence.scroll.push({
+      key: pending.key,
+      beforeTop: pending.top,
+      preCorrectionTop,
+      afterTop,
+      correctionPx,
+      delta,
+    });
     pendingScroll.current = null;
   }, [allRows]);
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import Annotated, Any
 
 import asyncpg
 import httpx
@@ -47,7 +47,18 @@ _WHERE_COMPARISON = re.compile(
 _WHERE_JOIN = re.compile(r"\s+(?:AND|OR)\s+", re.IGNORECASE)
 _ORDER_BY = re.compile(r"\s*\"?anchor\"?\s+(?:ASC|DESC)(?:\s+NULLS\s+(?:FIRST|LAST))?\s*", re.IGNORECASE)
 _INTEGER = re.compile(r"(?:0|[1-9][0-9]*)\Z")
-_HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length", "content-encoding"}
+_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+    "content-encoding",
+}
 
 
 def _scope(authorization: str | None, conversation_id: str) -> None:
@@ -173,7 +184,11 @@ async def _forward_electric(request: Request, electric_url: str, instance_name: 
         "table": "sync_view_row",
         "where": f"conversation_id = '{conversation_id}'",
         "columns": _ALLOWED_COLUMNS,
-        "queryable_columns": "anchor,entity_kind,row_key",
+        # Electric requires primary-key columns in queryable_columns and only
+        # permits projected `columns` from that allow-list. The proxy's subset
+        # grammar still rejects caller-supplied conversation_id predicates,
+        # while the fixed shape WHERE remains the auth boundary.
+        "queryable_columns": _ALLOWED_COLUMNS,
     }
     if "log" not in incoming:
         incoming["log"] = "changes_only"
@@ -210,8 +225,9 @@ def create_electric_proxy(electric_url: str, instance_name: str) -> FastAPI:
         app.state.request_count += 1
         response = await _forward_electric(request, app.state.electric_url, instance_name)
         gate: SubsetGate | None = app.state.subset_gate
-        if request.method == "POST" and gate is not None and gate.active:
-            gate.response_body = response.body
+        is_subset = request.method == "POST" or any(key.startswith("subset__") for key in request.query_params)
+        if is_subset and gate is not None and gate.active:
+            gate.response_body = bytes(response.body)
             gate.arrived.set()
             await gate.release.wait()
             gate.active = False
@@ -268,7 +284,8 @@ def _public_row(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
 def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_directory: Path | None = None) -> FastAPI:
     app = FastAPI()
     app.state.round_robin = RoundRobin(electric_backends)
-    app.state.payload_requests: list[dict[str, Any]] = []
+    payload_requests: list[dict[str, Any]] = []
+    app.state.payload_requests = payload_requests
 
     @app.api_route("/api/electric/{conversation_id}", methods=["GET", "POST"])
     async def gateway_shape(conversation_id: str, request: Request) -> Response:
@@ -295,8 +312,8 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
     async def history_page(
         conversation_id: str,
         request: Request,
-        before: str | None = Query(default=None),
-        limit: int = Query(default=MAX_PAGE_SIZE),
+        before: Annotated[str | None, Query()] = None,
+        limit: Annotated[int, Query()] = MAX_PAGE_SIZE,
     ) -> dict[str, Any]:
         _scope(request.headers.get("authorization"), conversation_id)
         if not 1 <= limit <= MAX_PAGE_SIZE:
@@ -320,11 +337,7 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
 
     @app.get("/api/payloads/{conversation_id}/{item_id}/{field_name}")
     async def read_payload(
-        conversation_id: str,
-        item_id: str,
-        field_name: str,
-        request: Request,
-        after: str = Query(default="0"),
+        conversation_id: str, item_id: str, field_name: str, request: Request, after: Annotated[str, Query()] = "0"
     ) -> dict[str, Any]:
         _scope(request.headers.get("authorization"), conversation_id)
         if field_name not in {"text", "arguments", "output", "reasoning"}:
@@ -339,9 +352,22 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
             field_name,
             after_cursor,
         )
-        rows = [{"sourceCursor": str(record["source_cursor"]), "operation": record["operation"], "content": record["content"]} for record in records]
+        rows = [
+            {
+                "sourceCursor": str(record["source_cursor"]),
+                "operation": record["operation"],
+                "content": record["content"],
+            }
+            for record in records
+        ]
         app.state.payload_requests.append(
-            {"conversationId": conversation_id, "itemId": item_id, "field": field_name, "after": str(after_cursor), "count": len(rows)}
+            {
+                "conversationId": conversation_id,
+                "itemId": item_id,
+                "field": field_name,
+                "after": str(after_cursor),
+                "count": len(rows),
+            }
         )
         return {"rows": rows}
 
@@ -349,15 +375,14 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
     async def get_checkpoint(conversation_id: str, request: Request) -> dict[str, str]:
         _scope(request.headers.get("authorization"), conversation_id)
         record = await pool.fetchrow(
-            "SELECT source_id, through_cursor FROM projection_checkpoint WHERE conversation_id = $1",
-            conversation_id,
+            "SELECT source_id, through_cursor FROM projection_checkpoint WHERE conversation_id = $1", conversation_id
         )
         if record is None:
             raise HTTPException(status_code=404, detail="No projection checkpoint")
         return {"sourceId": record["source_id"], "throughCursor": str(record["through_cursor"])}
 
     @app.get("/api/proxy-metrics")
-    async def proxy_metrics(request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    async def proxy_metrics(request: Request, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
         _scope(authorization, "alpha-large")
         return {
             "dispatches": list(app.state.round_robin.dispatches),
