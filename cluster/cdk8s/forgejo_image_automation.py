@@ -92,7 +92,6 @@ IMAGES = (
     "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
-    "postscanmail-mcp-server",
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
