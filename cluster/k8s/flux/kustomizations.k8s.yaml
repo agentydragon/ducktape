@@ -47,6 +47,7 @@ metadata:
   name: haku-egress-proxy-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/agents/haku-egress-proxy-namespace
   prune: false
