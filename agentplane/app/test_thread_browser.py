@@ -192,6 +192,57 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         assert await store.events(thread_id, limit=100) == thread_source.entries
 
 
+async def test_switching_threads_starts_at_each_threads_tail(
+    page: Page, db_url: str, store: TrajectoryStore, electric: ElectricService, certificate: BrowserCertificate
+) -> None:
+    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    assert lease is not None
+    threads: list[str] = []
+    for number in range(2):
+        source = ReplicationSource()
+        source.attached.session_id = f"test-navigation-session-{number}"
+        source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+        source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
+        for index in range(80):
+            item_id = f"test-navigation-item-{index}"
+            source.append(
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                )
+            )
+            source.append(
+                event_pb2.Event(
+                    item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
+                )
+            )
+        thread = await store.thread(SANDBOX, source.attached.session_id, source.attached.spec)
+        await store.set_attached(thread, source.attached, lease=lease)
+        await store.record(thread, source.entries, lease=lease)
+        await store.rename(thread, f"Test navigation thread {number}")
+        threads.append(thread)
+    await store.release_ingestion(lease)
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with (
+        app_process(
+            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        await page.goto(f"{ingress}/#/threads/{threads[0]}")
+        await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        async with page.expect_request(lambda request: "/sync/interest?before_cursor=" in request.url):
+            await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
+        for number in (1, 0):
+            async with page.expect_request(f"**/threads/{threads[number]}/sync/interest*") as selected:
+                await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+            assert "before_cursor" not in parse_qs(urlsplit((await selected.value).url).query)
+            await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
+                f"Test navigation thread {number}"
+            )
+            await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
+        await page.screenshot(path=undeclared_outputs_dir() / "conversation-thread-navigation.png")
+
+
 async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page: Page, certificate: BrowserCertificate
 ) -> None:
