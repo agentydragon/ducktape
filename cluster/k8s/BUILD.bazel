@@ -253,11 +253,3 @@ filegroup(
     ] + glob(["authentik/app/blueprints/*.yaml"]),
     visibility = ["//cluster/validation:__pkg__"],
 )
-
-# The production mirror roster, consumed by loom/gym's panel-coverage test (the gym
-# panel and the deployed roster must not drift).
-filegroup(
-    name = "market_roster_yaml",
-    srcs = ["evidence/market-roster.yaml"],
-    visibility = ["//loom/gym:__pkg__"],
-)
