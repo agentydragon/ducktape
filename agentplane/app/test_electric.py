@@ -41,10 +41,14 @@ async def payload(
     return ConversationPayloadSelection(SCOPE, 12, "item-1", "text", 2, 18, True, 3, 17)
 
 
+async def current_scope(thread_id: UUID) -> ConversationScope | None:
+    return SCOPE if thread_id == THREAD else None
+
+
 def make_app(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, entities, payload)
+    app.state.electric = ElectricProxy(electric, entities, payload, current_scope)
     app.include_router(router)
     return app, electric
 
@@ -133,6 +137,49 @@ async def test_payload_shape_uses_server_verified_exact_revision() -> None:
     assert forwarded["table"] == "conversation_payload_chunk"
     assert "chunk_index < $8" in forwarded["where"]
     assert forwarded["params[8]"] == "3"
+
+
+async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids() -> None:
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    params = [("source_id", SCOPE.source_id), ("projection_epoch", SCOPE.projection_epoch), ("offset", "-1")]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(
+            f"/threads/{THREAD}/sync/commands",
+            params=[*params, ("command_id", "future"), ("command_id", "failed"), ("command_id", "failed")],
+        )
+        assert response.status_code == 200
+        for invalid in [
+            params,
+            [*params, ("command_id", "")],
+            [*params, *[("command_id", str(n)) for n in range(129)]],
+        ]:
+            assert (await client.get(f"/threads/{THREAD}/sync/commands", params=tuple(invalid))).status_code == 422
+        stale = [(key, "old" if key == "projection_epoch" else value) for key, value in params]
+        assert (
+            await client.get(f"/threads/{THREAD}/sync/commands", params=[*stale, ("command_id", "failed")])
+        ).status_code == 410
+        assert (
+            await client.get(f"/threads/{UUID(int=0)}/sync/commands", params=[*params, ("command_id", "failed")])
+        ).status_code == 410
+    await electric.aclose()
+    assert len(seen) == 1
+    query = httpx.QueryParams(seen[0].url.query)
+    assert query["where"] == (
+        "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
+        "entity_kind = 'command' AND entity_id IN ($4,$5)"
+    )
+    assert query["params[1]"] == str(THREAD)
+    assert query["params[2]"] == SCOPE.source_id
+    assert query["params[3]"] == SCOPE.projection_epoch
+    assert query["params[4]"] == "failed"
+    assert query["params[5]"] == "future"
+    assert "command_id" not in query
 
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])

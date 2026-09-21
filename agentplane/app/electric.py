@@ -17,6 +17,7 @@ from agentplane.app.trajectory import (
     ConversationEntityInterest,
     ConversationInterestExpiredError,
     ConversationPayloadSelection,
+    ConversationScope,
 )
 
 _PAGE_SIZE = 30
@@ -41,6 +42,7 @@ _INTEREST_QUERY = frozenset(
         "generation",
         "revision_cursor",
         "follow",
+        "command_id",
     }
 )
 _RESPONSE_HEADERS = frozenset(
@@ -64,6 +66,7 @@ _RESPONSE_HEADERS = frozenset(
 
 EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
 PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
+ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
 
 
 class EntityInterestResponse(BaseModel):
@@ -106,11 +109,39 @@ class ElectricStreamingResponse(StreamingResponse):
 
 class ElectricProxy:
     def __init__(
-        self, client: httpx.AsyncClient, resolve_entities: EntityInterestResolver, resolve_payload: PayloadResolver
+        self,
+        client: httpx.AsyncClient,
+        resolve_entities: EntityInterestResolver,
+        resolve_payload: PayloadResolver,
+        resolve_scope: ScopeResolver,
     ) -> None:
         self._client = client
         self._resolve_entities = resolve_entities
         self._resolve_payload = resolve_payload
+        self._resolve_scope = resolve_scope
+
+    async def commands(
+        self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
+    ) -> StreamingResponse:
+        if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
+        scope = await self._resolve_scope(thread_id)
+        if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
+            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+        params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
+        selected = sorted(set(command_ids))
+        params.update({str(index): command_id for index, command_id in enumerate(selected, start=4)})
+        placeholders = ",".join(f"${index}" for index in range(4, 4 + len(selected)))
+        return await self._forward(
+            request,
+            table="conversation_entity",
+            columns=_ENTITY_COLUMNS,
+            where=(
+                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
+                f"entity_kind = 'command' AND entity_id IN ({placeholders})"
+            ),
+            params=params,
+        )
 
     async def entity_interest(
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
@@ -325,6 +356,17 @@ async def get_payload_interest(
         chunk_count=str(selection.chunk_count),
         content_bytes=str(selection.content_bytes),
     )
+
+
+@router.get("/commands")
+async def get_commands(
+    request: Request,
+    thread_id: UUID,
+    source_id: str,
+    projection_epoch: str,
+    command_id: Annotated[list[str], Query(min_length=1, max_length=128)],
+) -> StreamingResponse:
+    return await _proxy(request).commands(request, thread_id, source_id, projection_epoch, command_id)
 
 
 @router.get("/payload-chunks")

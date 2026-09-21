@@ -305,7 +305,7 @@ async def async_main(settings: Settings) -> None:
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
             electric=(
-                ElectricProxy(electric_http, resolve_entity_interest, resolve_payload)
+                ElectricProxy(electric_http, resolve_entity_interest, resolve_payload, store.current_conversation_scope)
                 if settings.electric_url is not None
                 else None
             ),
