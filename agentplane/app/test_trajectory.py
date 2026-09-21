@@ -304,6 +304,99 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
     )
 
 
+async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_selected_outcomes_live(
+    store: TrajectoryStore, lease: IngestionLease, request: pytest.FixtureRequest
+) -> None:
+    """A command page remains 30 rows after a large settled history and refreshes selected outcomes."""
+    assert await store.renew_ingestion(lease, timedelta(minutes=10))
+    thread = await store.thread("sb-1", "pending-command-pages", SPEC)
+    cursor = 1
+    for batch_start in range(0, 1_000, 50):
+        batch: list[event_log_pb2.EventEntry] = []
+        for index in range(batch_start, batch_start + 50):
+            command_id = f"settled-{index}"
+            batch.extend(
+                [
+                    _event(
+                        cursor,
+                        command_admitted=event_pb2.CommandAdmitted(
+                            command=command_pb2.Command(
+                                command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
+                            )
+                        ),
+                    ),
+                    _event(cursor + 1, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")),
+                ]
+            )
+            cursor += 2
+        await store.record(thread, batch, lease=lease)
+    pending: list[event_log_pb2.EventEntry] = []
+    for index in range(61):
+        pending.append(
+            _event(
+                cursor,
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id=f"pending-{index}", submit_input=command_pb2.SubmitInput(text="saved")
+                    )
+                ),
+            )
+        )
+        cursor += 1
+    await store.record(thread, pending, lease=lease)
+
+    captured: list[tuple[str, Any]] = []
+
+    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
+        if statement.lstrip().startswith("SELECT") and "conversation_entity" in statement and "pending" in statement:
+            captured.append((statement, parameters))
+
+    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    try:
+        first = await store.pending_command_interest(thread)
+    finally:
+        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    assert first is not None
+    assert first.unresolved_count == 61
+    assert first.command_revision_cursor == cursor - 1
+    assert first.command_ids == tuple(f"pending-{index}" for index in range(60, 30, -1))
+    assert first.next_before_cursor == 2_032
+    second = await store.pending_command_interest(thread, before_cursor=first.next_before_cursor)
+    assert second is not None
+    assert second.command_ids == tuple(f"pending-{index}" for index in range(30, 0, -1))
+    assert second.next_before_cursor == 2_002
+    last = await store.pending_command_interest(thread, before_cursor=second.next_before_cursor)
+    assert last is not None
+    assert last.command_ids == ("pending-0",)
+    assert last.next_before_cursor is None
+
+    await store.record(
+        thread,
+        [_event(cursor, command_noop=event_pb2.CommandNoop(command_id="pending-60", reason="completed"))],
+        lease=lease,
+    )
+    assert await store.command_outcomes(
+        thread, first.scope.source_id, first.scope.projection_epoch, ["pending-60"]
+    ) == {"pending-60": "noop"}
+    refreshed = await store.pending_command_interest(thread)
+    assert refreshed is not None
+    assert refreshed.unresolved_count == 60
+    assert refreshed.command_revision_cursor == cursor
+    assert "pending-60" not in refreshed.command_ids
+
+    assert len(captured) == 1
+    async with store._engine.connect() as connection:
+        await connection.exec_driver_sql("ANALYZE conversation_entity")
+        statement, parameters = captured[0]
+        result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
+        plan = "\n".join(row[0] for row in result)
+    assert "ix_conversation_entity_pending_command_cursor" in plan
+    assert "Rows Removed by Filter" not in plan
+    (undeclared_outputs_dir() / f"{request.node.name}-pending-command-profile.txt").write_text(
+        f"settled_command_count=1000\npending_command_count=61\n{plan}\n"
+    )
+
+
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     empty = await store.thread(

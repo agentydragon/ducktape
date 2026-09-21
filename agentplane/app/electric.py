@@ -18,6 +18,7 @@ from agentplane.app.trajectory import (
     ConversationEntityInterest,
     ConversationInterestExpiredError,
     ConversationPayloadSelection,
+    ConversationPendingInterest,
     ConversationScope,
 )
 
@@ -69,6 +70,7 @@ _RESPONSE_HEADERS = frozenset(
 EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
 PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
 ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
+PendingInterestResolver = Callable[[UUID, int | None, int], Awaitable[ConversationPendingInterest | None]]
 
 
 class EntityInterestResponse(BaseModel):
@@ -94,6 +96,16 @@ class PayloadInterestResponse(BaseModel):
     content_bytes: str
 
 
+class PendingCommandInterestResponse(BaseModel):
+    source_id: str
+    projection_epoch: str
+    through_cursor: str
+    command_revision_cursor: str
+    unresolved_count: int
+    command_ids: list[str]
+    next_before_cursor: str | None
+
+
 class ElectricStreamingResponse(StreamingResponse):
     def __init__(self, upstream: httpx.Response, headers: dict[str, str]) -> None:
         super().__init__(upstream.aiter_raw(), status_code=upstream.status_code, headers=headers)
@@ -116,11 +128,13 @@ class ElectricProxy:
         resolve_entities: EntityInterestResolver,
         resolve_payload: PayloadResolver,
         resolve_scope: ScopeResolver,
+        resolve_pending_interest: PendingInterestResolver,
     ) -> None:
         self._client = client
         self._resolve_entities = resolve_entities
         self._resolve_payload = resolve_payload
         self._resolve_scope = resolve_scope
+        self._resolve_pending_interest = resolve_pending_interest
 
     async def commands(
         self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
@@ -153,6 +167,15 @@ class ElectricProxy:
         except ConversationInterestExpiredError as error:
             # Electric owns 409/must-refetch; an expired app interest needs new bounds.
             raise HTTPException(status.HTTP_410_GONE, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+        if interest is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no conversation for thread {thread_id}")
+        return interest
+
+    async def pending_command_interest(self, thread_id: UUID, before_cursor: int | None) -> ConversationPendingInterest:
+        try:
+            interest = await self._resolve_pending_interest(thread_id, before_cursor, _PAGE_SIZE)
         except ValueError as error:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
         if interest is None:
@@ -215,8 +238,7 @@ class ElectricProxy:
             params.update({"5": str(window_from), "6": str(window_before)})
         where = (
             "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND ("
-            f"{segment} OR entity_kind IN ('view_state','controls') OR "
-            "(entity_kind = 'command' AND pending = TRUE))"
+            f"{segment} OR entity_kind IN ('view_state','controls'))"
         )
         return await self._forward(
             request, table="conversation_entity", columns=_ENTITY_COLUMNS, where=where, params=params
@@ -339,6 +361,22 @@ async def get_interest(
         tail_from=str(interest.tail_from),
         window_from=str(interest.window_from) if interest.window_from is not None else None,
         window_before=str(interest.window_before) if interest.window_before is not None else None,
+    )
+
+
+@router.get("/pending-interest")
+async def get_pending_interest(
+    request: Request, thread_id: UUID, before_cursor: Annotated[int | None, Query(ge=0)] = None
+) -> PendingCommandInterestResponse:
+    interest = await _proxy(request).pending_command_interest(thread_id, before_cursor)
+    return PendingCommandInterestResponse(
+        source_id=interest.scope.source_id,
+        projection_epoch=interest.scope.projection_epoch,
+        through_cursor=str(interest.scope.through_cursor),
+        command_revision_cursor=str(interest.command_revision_cursor),
+        unresolved_count=interest.unresolved_count,
+        command_ids=list(interest.command_ids),
+        next_before_cursor=(str(interest.next_before_cursor) if interest.next_before_cursor is not None else None),
     )
 
 
