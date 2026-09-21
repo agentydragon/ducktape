@@ -102,16 +102,17 @@ completion facts. Reasoning and tool outputs can remain omitted until requested.
 These logical operations map to sync-engine queries or existing app HTTP calls. They do
 not mandate a second wire protocol beside the engine.
 
-| Operation                   | Meaning                                                        |
-| --------------------------- | -------------------------------------------------------------- |
-| List segments, no direction | Latest N segments; return in conversation order.               |
-| List before cursor          | Closest N earlier segments, excluding the cursor.              |
-| List after cursor           | Closest N later segments, excluding the cursor.                |
-| Get segments by cursor      | Exact identities, even outside loaded windows.                 |
-| Read payload                | Whole immutable selected content, or typed unavailability.     |
-| List pending commands       | Keyset page by admission cursor.                               |
-| Get commands by ID          | Reconcile admitted and settled commands after a lost response. |
-| Submit                      | Existing runner-first command admission; no app queue.         |
+| Operation                   | Meaning                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.                                      |
+| List before cursor          | Closest N earlier segments, excluding the cursor.                                     |
+| List after cursor           | Closest N later segments, excluding the cursor.                                       |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                                        |
+| Read payload                | Whole immutable selected content, or typed unavailability.                            |
+| List pending commands       | Keyset page by admission cursor.                                                      |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                        |
+| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes. |
+| Submit                      | Existing runner-first command admission; no app queue.                                |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
 Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
@@ -142,8 +143,11 @@ and [shape definitions](https://electric-sql.com/docs/guides/shapes). The
 provides the existing client integration. These are capabilities to exercise against
 pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
-The implementation uses a fixed eager shape limited by indexed predicates to a tail and
-an optional reading window, rather than a whole-Thread shape with a limited initial subset.
+Mutable entity and command collections use changes-only logs and TanStack's on-demand
+snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
+reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
+current snapshot of that entire bounded shape; it does not replay earlier item revisions.
+The proxy accepts only a whole-shape subset query and owns all selection predicates.
 Payload shapes select one content field and generation. A pinned reference limits its
 chunk prefix; a following selection receives later chunks in that generation. A generation
 replacement selects a new shape. There is no persistent browser cache initially.

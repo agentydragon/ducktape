@@ -1,27 +1,24 @@
 import { snakeCamelMapper } from "@electric-sql/client";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import { createCollection, useLiveQuery } from "@tanstack/react-db";
-import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
 import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 const RefreshConversation = createContext<() => void>(() => undefined);
+declare global {
+  interface Window {
+    __agentplaneConversationCollectionTrace?: unknown[];
+  }
+}
 type Decimal = z.output<typeof decimal>;
 export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-const payloadRefSchema = z.object({
-  source_id: z.string(),
-  projection_epoch: z.string(),
-  owner_cursor: z.string(),
-  owner_item_id: z.string(),
-  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
-  revision_cursor: z.string(),
-  generation: z.string(),
-});
+type ConversationState = ConversationStoredEntity["state"];
 
 export interface ConversationEntity {
   threadId: string;
@@ -33,12 +30,22 @@ export interface ConversationEntity {
   revisionCursor: Decimal;
   pending: boolean;
   turnId: string | null;
-  state: ConversationStoredEntity["state"];
+  state: ConversationState;
   textRef: PayloadRef | null;
   argumentsRef: PayloadRef | null;
   outputRef: PayloadRef | null;
   inputRef: PayloadRef | null;
 }
+const payloadRefSchema = z.object({
+  source_id: z.string(),
+  projection_epoch: z.string(),
+  owner_cursor: z.string(),
+  owner_item_id: z.string(),
+  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
+  revision_cursor: z.string(),
+  generation: z.string(),
+});
+
 const stateSchema = z.union([
   z.object({
     controls: z.object({
@@ -111,39 +118,138 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
 function entityCollection(threadId: string, interest: EntityInterest) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-conversation:${threadId}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      id: `agentplane-conversation:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
-      syncMode: "eager",
+      syncMode: "on-demand",
       shapeOptions: {
         url: entityUrl(threadId, interest),
+        params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
       },
     })
   );
 }
 
+function traceEntityCollection(
+  kind: string,
+  role: "active" | "pending",
+  collection: ReturnType<typeof entityCollection>
+): boolean {
+  const trace = window.__agentplaneConversationCollectionTrace;
+  if (!trace) return false;
+  trace.push({
+    kind,
+    role,
+    id: collection.id,
+    size: collection.size,
+    subscriberCount: collection.subscriberCount,
+    status: collection.status,
+    ready: collection.isReady(),
+  });
+  if (trace.length > 256) trace.splice(0, trace.length - 256);
+  return true;
+}
+
+function commandUrl(
+  threadId: string,
+  sourceId: string,
+  projectionEpoch: string,
+  commandIds: readonly string[]
+): string {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/commands`, window.location.href);
+  url.searchParams.set("source_id", sourceId);
+  url.searchParams.set("projection_epoch", projectionEpoch);
+  for (const id of [...new Set(commandIds)].sort()) url.searchParams.append("command_id", id);
+  return url.toString();
+}
+
+function commandCollection(threadId: string, sourceId: string, projectionEpoch: string, commandIds: readonly string[]) {
+  const selected = [...new Set(commandIds)].sort();
+  return createCollection(
+    electricCollectionOptions({
+      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}`,
+      gcTime: 1_000,
+      schema: entitySchema,
+      getKey: (row) => row.entityId,
+      syncMode: "on-demand",
+      shapeOptions: {
+        url: commandUrl(threadId, sourceId, projectionEpoch, selected),
+        params: { log: "changes_only" },
+        columnMapper: snakeCamelMapper(),
+      },
+    })
+  );
+}
+
+export function CommandSelection({
+  threadId,
+  sourceId,
+  projectionEpoch,
+  commandIds,
+  children,
+}: {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  commandIds: readonly string[];
+  children: (rows: ConversationEntity[]) => JSX.Element;
+}): JSX.Element {
+  const key = [...new Set(commandIds)].sort().join("\u0000");
+  const collection = useMemo(
+    () => commandCollection(threadId, sourceId, projectionEpoch, key.split("\u0000")),
+    [key, projectionEpoch, sourceId, threadId]
+  );
+  const query = useLiveQuery((q) => q.from({ command: collection }), [collection]);
+  return (
+    <>
+      {query.isError && (
+        <p role="alert">Command synchronization stopped. Retained commands remain available to retry.</p>
+      )}
+      {children(query.data ?? [])}
+    </>
+  );
+}
+
 function ActiveConversation({
   threadId,
   interest,
+  collection,
   onRows,
   onRotate,
+  onCaughtUp,
+  role,
 }: {
   threadId: string;
   interest: EntityInterest;
+  collection: ReturnType<typeof entityCollection>;
   onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
+  onCaughtUp?: () => void;
+  role: "active" | "pending";
 }): JSX.Element {
-  const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
   const rows = query.data ?? [];
   const view = rows.find((row) => row.entityKind === "view_state");
   const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
   const segmentCount = rows.filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind)).length;
   useEffect(() => {
+    traceEntityCollection("subscribed", role, collection);
+    return () => {
+      if (traceEntityCollection("unsubscribed", role, collection))
+        window.setTimeout(() => traceEntityCollection("collected", role, collection), 1_100);
+    };
+  }, [collection, role]);
+  useEffect(() => {
+    traceEntityCollection("query", role, collection);
+  }, [collection, query.isError, rows, role]);
+  useEffect(() => {
     if (segmentCount > 60) onRotate();
   }, [onRotate, segmentCount]);
+  useEffect(() => {
+    if (caughtUp) onCaughtUp?.();
+  }, [caughtUp, onCaughtUp]);
   useEffect(() => {
     if (!query.isError) return;
     const retry = window.setTimeout(onRotate, 1_000);
@@ -167,7 +273,10 @@ export function ConversationCollection({
   beforeCursor?: string;
   children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
 }): JSX.Element {
-  const [interest, setInterest] = useState<EntityInterest | null>(null);
+  type Selection = { interest: EntityInterest; collection: ReturnType<typeof entityCollection> };
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const selectionRef = useRef<Selection | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<Selection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const rotate = useCallback(() => setGeneration((value) => value + 1), []);
@@ -177,13 +286,19 @@ export function ConversationCollection({
     setError(null);
     void conversationInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
-        if (!controller.signal.aborted) setInterest(value);
+        if (!controller.signal.aborted) {
+          const next = { interest: value, collection: entityCollection(threadId, value) };
+          if (selectionRef.current === null) {
+            selectionRef.current = next;
+            setSelection(next);
+          } else setPendingSelection(next);
+        }
       },
       (reason: unknown) => {
         if (controller.signal.aborted) return;
         const message = displayableError(reason);
-        if (message.includes("404")) retry = window.setTimeout(() => setGeneration((value) => value + 1), 1000);
-        else setError(message);
+        if (!message.includes("404")) setError(message);
+        retry = window.setTimeout(() => setGeneration((value) => value + 1), 1_000);
       }
     );
     return () => {
@@ -191,9 +306,40 @@ export function ConversationCollection({
       if (retry !== undefined) window.clearTimeout(retry);
     };
   }, [beforeCursor, generation, threadId]);
-  if (error) return <p role="alert">Conversation sync failed: {error}</p>;
-  if (!interest) return <p role="status">Loading conversation…</p>;
-  return <ActiveConversation threadId={threadId} interest={interest} onRows={children} onRotate={rotate} />;
+  if (!selection) {
+    if (error) return <p role="alert">Conversation sync failed: {error}</p>;
+    return <p role="status">Loading conversation…</p>;
+  }
+  return (
+    <>
+      {error && <p role="alert">Conversation sync failed: {error}; showing the current window and retrying.</p>}
+      <ActiveConversation
+        threadId={threadId}
+        interest={selection.interest}
+        collection={selection.collection}
+        onRows={children}
+        onRotate={rotate}
+        role="active"
+      />
+      {pendingSelection && (
+        <div hidden>
+          <ActiveConversation
+            threadId={threadId}
+            interest={pendingSelection.interest}
+            collection={pendingSelection.collection}
+            onRows={() => <></>}
+            onRotate={rotate}
+            role="pending"
+            onCaughtUp={() => {
+              selectionRef.current = pendingSelection;
+              setSelection(pendingSelection);
+              setPendingSelection(null);
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
 }
 
 function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
@@ -212,7 +358,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
 function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow}`,
+      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),

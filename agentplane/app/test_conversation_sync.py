@@ -12,7 +12,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.trajectory import IngestionLease, TrajectoryStore
-from agentplane.protocol import event_pb2
+from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -80,6 +80,28 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
             await store.close()
 
 
+async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[str, str]) -> httpx.Response:
+    start = await client.get(path, params=params | {"offset": "now"})
+    start.raise_for_status()
+    snapshot = await client.get(
+        path,
+        params=params
+        | {
+            "offset": start.headers["electric-offset"],
+            "handle": start.headers["electric-handle"],
+            "subset__where": "true = true",
+        },
+    )
+    snapshot.raise_for_status()
+    assert isinstance(snapshot.json()["data"], list), snapshot.text
+    assert isinstance(snapshot.json()["metadata"], dict), snapshot.text
+    # These tests serialize writes after snapshot completion. The browser tests
+    # exercise TanStack's transaction-aware snapshot/live reconciliation.
+    snapshot.headers["electric-offset"] = start.headers["electric-offset"]
+    snapshot.headers["electric-handle"] = start.headers["electric-handle"]
+    return snapshot
+
+
 async def _cross_replica_sync(
     service: ElectricService, store: TrajectoryStore, source: ReplicationSource, thread: UUID, lease: IngestionLease
 ) -> None:
@@ -95,9 +117,9 @@ async def _cross_replica_sync(
         interest.raise_for_status()
         selection = interest.json()
         entity_params = {"anchor_cursor": selection["anchor_cursor"], "tail_from": selection["tail_from"]}
-        initial = await client_one.get(f"{path}/entities", params=entity_params | {"offset": "-1"})
+        initial = await _current_snapshot(client_one, f"{path}/entities", entity_params)
         assert initial.status_code == 200, initial.text
-        rows = [message["value"] for message in initial.json() if "value" in message]
+        rows = [message["value"] for message in initial.json()["data"] if "value" in message]
         first_item = next(row for row in rows if row["entity_id"] == "first")
         raw_ref = first_item["text_ref"]
         reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
@@ -165,6 +187,62 @@ async def _cross_replica_sync(
         stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
         await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
+        await _selected_command_outcome(client_one, client_two, path, store, source, thread, lease)
+
+
+async def _selected_command_outcome(
+    client_one: httpx.AsyncClient,
+    client_two: httpx.AsyncClient,
+    path: str,
+    store: TrajectoryStore,
+    source: ReplicationSource,
+    thread: UUID,
+    lease: IngestionLease,
+) -> None:
+    scope = await store.current_conversation_scope(thread)
+    assert scope is not None
+    params = {
+        "source_id": scope.source_id,
+        "projection_epoch": scope.projection_epoch,
+        "command_id": "selected-command",
+    }
+    snapshot = await _current_snapshot(client_one, f"{path}/commands", params)
+    snapshot.raise_for_status()
+    assert not [message for message in snapshot.json()["data"] if "value" in message]
+    start = len(source.entries)
+    for command_id in ("selected-command", "unselected-command"):
+        source.append(
+            event_pb2.Event(
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id=command_id, submit_input=command_pb2.SubmitInput(text="Private command body")
+                    )
+                )
+            )
+        )
+        source.append(
+            event_pb2.Event(
+                command_failed=event_pb2.CommandFailed(command_id=command_id, reason="Harness rejected input")
+            )
+        )
+    # Admission and failure may coalesce before the browser observes any pending row.
+    await store.record(thread, source.entries[start:], lease=lease)
+    offset = snapshot.headers["electric-offset"]
+    while True:
+        update = await client_two.get(
+            f"{path}/commands",
+            params=params | {"offset": offset, "handle": snapshot.headers["electric-handle"], "live": "true"},
+        )
+        update.raise_for_status()
+        offset = update.headers["electric-offset"]
+        rows = [message["value"] for message in update.json() if "value" in message]
+        if rows:
+            assert {row["entity_id"] for row in rows} == {"selected-command"}
+            state = json.loads(rows[-1]["state"]) if isinstance(rows[-1]["state"], str) else rows[-1]["state"]
+            assert state["outcome"] == "failed"
+            assert state["outcome_reason"] == "Harness rejected input"
+            assert "Private command body" not in update.text
+            break
 
 
 async def _history_windows(
@@ -198,10 +276,10 @@ async def _history_windows(
     tail.raise_for_status()
     tail_interest = tail.json()
     tail_params = {"anchor_cursor": tail_interest["anchor_cursor"], "tail_from": tail_interest["tail_from"]}
-    snapshot = await client_two.get(f"{path}/entities", params=tail_params | {"offset": "-1"})
+    snapshot = await _current_snapshot(client_two, f"{path}/entities", tail_params)
     snapshot.raise_for_status()
     assert snapshot.headers["cache-control"] == "private, no-store"
-    rows = [message["value"] for message in snapshot.json() if "value" in message]
+    rows = [message["value"] for message in snapshot.json()["data"] if "value" in message]
     assert {row["entity_id"] for row in rows if row["entity_kind"] == "item"} == {
         f"history-{index:03}" for index in range(65, 95)
     }
@@ -214,9 +292,9 @@ async def _history_windows(
         selected.raise_for_status()
         interest = selected.json()
         window_params = {key: interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
-        page = await client_two.get(f"{path}/entities", params=window_params | {"offset": "-1"})
+        page = await _current_snapshot(client_two, f"{path}/entities", window_params)
         page.raise_for_status()
-        page_rows = [message["value"] for message in page.json() if "value" in message]
+        page_rows = [message["value"] for message in page.json()["data"] if "value" in message]
         assert {row["entity_id"] for row in page_rows if row["entity_kind"] == "item"} == {
             f"history-{index:03}" for index in (*range(lower, lower + 30), *range(65, 95))
         }
@@ -264,27 +342,15 @@ async def _history_windows(
     revisit_params = {
         key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")
     }
-    revisit_page = await client_one.get(f"{path}/entities", params=revisit_params | {"offset": "-1"})
-    # Existing shape logs can contain the old snapshot followed by newer row versions.
-    while True:
-        revisit_page.raise_for_status()
-        versions = [
-            message["value"]
-            for message in revisit_page.json()
-            if message.get("value", {}).get("entity_id") == "history-040"
-        ]
-        if versions and str(versions[-1]["revision_cursor"]) == str(hidden.cursor):
-            item = versions[-1]
-            break
-        revisit_page = await client_one.get(
-            f"{path}/entities",
-            params=revisit_params
-            | {
-                "offset": revisit_page.headers["electric-offset"],
-                "handle": revisit_page.headers["electric-handle"],
-                "live": "true",
-            },
-        )
+    revisit_page = await _current_snapshot(client_one, f"{path}/entities", revisit_params)
+    versions = [
+        message["value"]
+        for message in revisit_page.json()["data"]
+        if message.get("value", {}).get("entity_id") == "history-040"
+    ]
+    assert len(versions) == 1
+    item = versions[0]
+    assert str(item["revision_cursor"]) == str(hidden.cursor)
     raw_ref = item["text_ref"]
     reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
     selected = await client_one.get(

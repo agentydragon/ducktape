@@ -57,7 +57,14 @@ def upgrade() -> None:
     op.create_index(
         "ix_conversation_entity_scope_pending_cursor",
         "conversation_entity",
-        ["thread_id", "source_id", "projection_epoch", "pending", "cursor", "entity_kind", "entity_id"],
+        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
+        postgresql_where=sa.text("pending"),
+    )
+    op.create_index(
+        "ix_conversation_entity_scope_segment_cursor",
+        "conversation_entity",
+        ["thread_id", "source_id", "projection_epoch", "cursor"],
+        postgresql_where=sa.text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
     )
     op.create_table(
         "conversation_payload_manifest",
@@ -129,6 +136,7 @@ def downgrade() -> None:
     op.drop_table("conversation_projection_native_link")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
+    op.drop_index("ix_conversation_entity_scope_segment_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_pending_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")

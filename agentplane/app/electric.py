@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+import json
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
+import anyio
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from starlette.types import Receive, Scope, Send
 
 from agentplane.app.trajectory import (
     ConversationEntityInterest,
     ConversationInterestExpiredError,
     ConversationPayloadSelection,
+    ConversationScope,
 )
 
 _PAGE_SIZE = 30
@@ -25,6 +29,7 @@ _ENTITY_COLUMNS = (
 )
 _CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 _PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log"})
+_SUBSET_QUERY = frozenset({"subset__where", "subset__params"})
 _INTEREST_QUERY = frozenset(
     {
         "anchor_cursor",
@@ -39,6 +44,7 @@ _INTEREST_QUERY = frozenset(
         "generation",
         "revision_cursor",
         "follow",
+        "command_id",
     }
 )
 _RESPONSE_HEADERS = frozenset(
@@ -62,6 +68,7 @@ _RESPONSE_HEADERS = frozenset(
 
 EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
 PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
+ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
 
 
 class EntityInterestResponse(BaseModel):
@@ -87,13 +94,56 @@ class PayloadInterestResponse(BaseModel):
     content_bytes: str
 
 
+class ElectricStreamingResponse(StreamingResponse):
+    def __init__(self, upstream: httpx.Response, headers: dict[str, str]) -> None:
+        super().__init__(upstream.aiter_raw(), status_code=upstream.status_code, headers=headers)
+        self._upstream = upstream
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # Disconnect can interrupt send while the body iterator is suspended at yield.
+            # Own cleanup at the response boundary, including AnyIO cancellation scopes.
+            with anyio.CancelScope(shield=True):
+                await self._upstream.aclose()
+
+
 class ElectricProxy:
     def __init__(
-        self, client: httpx.AsyncClient, resolve_entities: EntityInterestResolver, resolve_payload: PayloadResolver
+        self,
+        client: httpx.AsyncClient,
+        resolve_entities: EntityInterestResolver,
+        resolve_payload: PayloadResolver,
+        resolve_scope: ScopeResolver,
     ) -> None:
         self._client = client
         self._resolve_entities = resolve_entities
         self._resolve_payload = resolve_payload
+        self._resolve_scope = resolve_scope
+
+    async def commands(
+        self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
+    ) -> StreamingResponse:
+        if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
+        scope = await self._resolve_scope(thread_id)
+        if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
+            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+        params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
+        selected = sorted(set(command_ids))
+        params.update({str(index): command_id for index, command_id in enumerate(selected, start=4)})
+        placeholders = ",".join(f"${index}" for index in range(4, 4 + len(selected)))
+        return await self._forward(
+            request,
+            table="conversation_entity",
+            columns=_ENTITY_COLUMNS,
+            where=(
+                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
+                f"entity_kind = 'command' AND entity_id IN ({placeholders})"
+            ),
+            params=params,
+        )
 
     async def entity_interest(
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
@@ -205,36 +255,54 @@ class ElectricProxy:
     async def _forward(
         self, request: Request, *, table: str, columns: str, where: str, params: dict[str, str]
     ) -> StreamingResponse:
-        if rejected := set(request.query_params) - _PASSTHROUGH_QUERY - _INTEREST_QUERY:
+        # Mutable rows bootstrap from a current snapshot. Replaying a full shape log
+        # would make reload cost proportional to the number of past revisions.
+        log_mode = "changes_only" if table == "conversation_entity" else "full"
+        subset_keys = _SUBSET_QUERY if log_mode == "changes_only" else frozenset()
+        allowed = _PASSTHROUGH_QUERY | subset_keys
+        if rejected := set(request.query_params) - allowed - _INTEREST_QUERY:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported sync parameters: {sorted(rejected)}")
-        if (log := request.query_params.get("log")) is not None and log != "full":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "the conversation sync log must be full")
+        for key in allowed:
+            if len(request.query_params.getlist(key)) > 1:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"duplicate sync parameter: {key}")
+        if (log := request.query_params.get("log")) is not None and log != log_mode:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"the selected sync log must be {log_mode}")
+        if (
+            "subset__where" in request.query_params
+            and request.query_params["subset__where"].strip().casefold() != "true = true"
+        ):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "snapshots must select the whole fixed interest")
+        if "subset__params" in request.query_params:
+            try:
+                subset_params = json.loads(request.query_params["subset__params"])
+            except json.JSONDecodeError as error:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "subset parameters must be JSON") from error
+            if subset_params not in ({}, []):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "snapshots do not accept caller parameters")
         query: list[tuple[str, str | int | float | bool | None]] = [
-            (key, value) for key, value in request.query_params.multi_items() if key in _PASSTHROUGH_QUERY
+            (key, value) for key, value in request.query_params.multi_items() if key in allowed and key != "log"
         ]
-        query.extend([("table", table), ("columns", columns), ("where", where), ("replica", "full")])
+        query.extend([("table", table), ("columns", columns), ("where", where), ("replica", "full"), ("log", log_mode)])
+        if log_mode == "changes_only":
+            query.append(("queryable_columns", columns))
         query.extend((f"params[{index}]", value) for index, value in params.items())
         upstream = self._client.build_request(
             "GET",
             "/v1/shape",
             params=httpx.QueryParams(query),
-            headers={"accept": request.headers.get("accept", "application/json")},
+            headers={
+                "accept": request.headers.get("accept", "application/json"),
+                **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
+            },
         )
         try:
             response = await self._client.send(upstream, stream=True)
         except httpx.RequestError as error:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
 
-        async def body() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in response.aiter_raw():
-                    yield chunk
-            finally:
-                await response.aclose()
-
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
         headers["cache-control"] = "private, no-store"
-        return StreamingResponse(body(), status_code=response.status_code, headers=headers)
+        return ElectricStreamingResponse(response, headers)
 
 
 router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["conversation-sync"])
@@ -315,6 +383,17 @@ async def get_payload_interest(
         chunk_count=str(selection.chunk_count),
         content_bytes=str(selection.content_bytes),
     )
+
+
+@router.get("/commands")
+async def get_commands(
+    request: Request,
+    thread_id: UUID,
+    source_id: str,
+    projection_epoch: str,
+    command_id: Annotated[list[str], Query(min_length=1, max_length=128)],
+) -> StreamingResponse:
+    return await _proxy(request).commands(request, thread_id, source_id, projection_epoch, command_id)
 
 
 @router.get("/payload-chunks")

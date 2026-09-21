@@ -1,11 +1,11 @@
 import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { ItemKind } from "../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import {
   command,
   conversationEvidence,
@@ -13,7 +13,6 @@ import {
   displayableError,
   getThread,
   models,
-  reconcileCommands,
   renameThread,
   type EvidencePage,
   type NativeFramePage,
@@ -21,6 +20,7 @@ import {
 } from "./client";
 import {
   ConversationCollection,
+  CommandSelection,
   decimalBigInt,
   PayloadBody,
   type ConversationEntity,
@@ -30,6 +30,7 @@ import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./l
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
+import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 const LIFECYCLE_LABELS: Record<string, string> = {
@@ -40,6 +41,15 @@ const LIFECYCLE_LABELS: Record<string, string> = {
   harness_exited: "Harness exited",
   harness_lost: "Harness connection lost",
 };
+
+function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
+  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
+  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
+  const diagnostic = completed?.error || null;
+  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
+  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
+  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+}
 
 function Body({
   threadId,
@@ -173,12 +183,12 @@ function EvidenceFrames(props: {
   entity: ConversationEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const { entity } = props;
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Observation {props.observationCursor} raw frames</summary>
-      {open && <EvidenceFramesPage {...props} />}
-    </details>
+    <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
+      <EvidenceFramesPage key={id} {...props} />
+    </RetainedDisclosure>
   );
 }
 
@@ -223,20 +233,23 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {page?.observations.map((observation) =>
-        observation.has_native ? (
-          <EvidenceFrames
-            key={observation.observation_cursor}
-            threadId={threadId}
-            entity={entity}
-            observationCursor={observation.observation_cursor}
-          />
-        ) : (
-          <Text size="xs" key={observation.observation_cursor}>
-            Observation {observation.observation_cursor} has no native frame
-          </Text>
-        )
-      )}
+      {page?.observations.map((observation) => (
+        <Stack gap="xs" key={observation.observation_cursor}>
+          {observation.has_native ? (
+            <EvidenceFrames
+              key={observation.observation_cursor}
+              threadId={threadId}
+              entity={entity}
+              observationCursor={observation.observation_cursor}
+            />
+          ) : (
+            <Text size="xs" key={observation.observation_cursor}>
+              Observation {observation.observation_cursor} has no native frame
+            </Text>
+          )}
+          <ChronologicalDebugLink observationCursor={observation.observation_cursor} />
+        </Stack>
+      ))}
       {page?.next_after_cursor && (
         <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
           Load more evidence
@@ -252,12 +265,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
 }
 
 function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Evidence</summary>
-      {open && <EvidencePageView threadId={threadId} entity={entity} />}
-    </details>
+    <RetainedDisclosure id={id} summary="Evidence">
+      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+    </RetainedDisclosure>
   );
 }
 
@@ -282,11 +294,18 @@ function EntityCard({
   }
   if (entity.entityKind === "lifecycle") {
     const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
+    const event = "event" in entity.state ? entity.state.event : null;
+    const presentation = lifecyclePresentation(observation, event);
     return (
       <Stack gap="xs" data-conversation-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={observation === "harness_lost" ? "red" : "dimmed"}>
-          {LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " ")}
+        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
+          {presentation.label}
         </Text>
+        {presentation.diagnostic && (
+          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {presentation.diagnostic}
+          </Text>
+        )}
         {"event" in entity.state && (
           <details>
             <summary>Lifecycle details</summary>
@@ -342,59 +361,23 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, string>());
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
-  const commandIds = useMemo(
+  useEffect(() => {
+    setErrors((previous) => {
+      if (Array.from(previous.keys()).every((id) => local.commands.some((command) => command.command.commandId === id)))
+        return previous;
+      return new Map(
+        Array.from(previous).filter(([id]) => local.commands.some((command) => command.command.commandId === id))
+      );
+    });
+  }, [local.commands]);
+  const effectedCommandIds = useMemo(
     () =>
-      new Set([
-        ...entities.filter((row) => row.entityKind === "command").map((row) => row.entityId),
-        ...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : [])),
-      ]),
+      new Set([...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))]),
     [entities]
   );
-  const [reconcileAttempt, setReconcileAttempt] = useState(0);
-  const localCommandKey = local.commands
-    .slice(0, 128)
-    .map((value) => value.command.commandId)
-    .join("\u0000");
-  useEffect(() => store.observeCommandIds(commandIds), [commandIds, store]);
-  const scope = entities.find((row) => row.entityKind === "view_state");
-  const sourceId = scope?.sourceId;
-  const projectionEpoch = scope?.projectionEpoch;
-  useEffect(() => setReconcileAttempt(0), [localCommandKey, projectionEpoch, sourceId]);
-  useEffect(() => {
-    if (!sourceId || !projectionEpoch || !localCommandKey) return;
-    const controller = new AbortController();
-    let retry: number | undefined;
-    void reconcileCommands(
-      threadId,
-      sourceId,
-      projectionEpoch,
-      localCommandKey.split("\u0000"),
-      controller.signal
-    ).then(
-      (result) => {
-        if (!controller.signal.aborted) {
-          store.observeCommandIds(
-            new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
-          );
-          if (result.commands.some((value) => value.outcome === null)) {
-            retry = window.setTimeout(
-              () => setReconcileAttempt((value) => value + 1),
-              Math.min(5_000, 250 * 2 ** reconcileAttempt)
-            );
-          }
-        }
-      },
-      (reason: unknown) => {
-        if (!controller.signal.aborted)
-          setErrors((previous) => new Map(previous).set("reconciliation", displayableError(reason)));
-      }
-    );
-    return () => {
-      controller.abort();
-      if (retry !== undefined) window.clearTimeout(retry);
-    };
-  }, [localCommandKey, projectionEpoch, reconcileAttempt, sourceId, store, threadId]);
+  useEffect(() => store.observeCommandIds(effectedCommandIds), [effectedCommandIds, store]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -402,8 +385,15 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
     active.current.add(id);
     try {
       store.acknowledge(value.command, await command(threadId, value.command));
+      setErrors((previous) => {
+        if (!previous.has(id)) return previous;
+        const next = new Map(previous);
+        next.delete(id);
+        return next;
+      });
     } catch (reason) {
-      setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+      if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+        setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
     } finally {
       active.current.delete(id);
     }
@@ -411,13 +401,125 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   function submit(value: Command): boolean {
     try {
       void deliver(store.remember(value));
+      setSubmissionError(null);
       return true;
     } catch (reason) {
-      setErrors((previous) => new Map(previous).set(value.commandId, displayableError(reason)));
+      setSubmissionError(displayableError(reason));
       return false;
     }
   }
-  return { local, errors, submit, deliver };
+  return { local, errors, submissionError, submit, deliver, store };
+}
+
+function SelectedCommandOutcomes({
+  threadId,
+  sourceId,
+  projectionEpoch,
+  commands,
+  store,
+  errors,
+  deliver,
+}: {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  commands: LocalCommand[];
+  store: LocalCommands;
+  errors: ReadonlyMap<string, string>;
+  deliver: (value: LocalCommand) => Promise<void>;
+}): JSX.Element {
+  const ids = commands.slice(0, 128).map((value) => value.command.commandId);
+  return (
+    <CommandSelection threadId={threadId} sourceId={sourceId} projectionEpoch={projectionEpoch} commandIds={ids}>
+      {(rows) => (
+        <SelectedCommandRows
+          threadId={threadId}
+          rows={rows}
+          commands={commands}
+          store={store}
+          errors={errors}
+          deliver={deliver}
+        />
+      )}
+    </CommandSelection>
+  );
+}
+
+function SelectedCommandRows({
+  threadId,
+  rows,
+  commands,
+  store,
+  errors,
+  deliver,
+}: {
+  threadId: string;
+  rows: ConversationEntity[];
+  commands: LocalCommand[];
+  store: LocalCommands;
+  errors: ReadonlyMap<string, string>;
+  deliver: (value: LocalCommand) => Promise<void>;
+}): JSX.Element {
+  useEffect(() => {
+    for (const row of rows) {
+      if ("outcome" in row.state && row.state.outcome === "effected") store.dismiss(row.entityId);
+    }
+  }, [rows, store]);
+  const byId = new Map(rows.map((row) => [row.entityId, row]));
+  return (
+    <Stack role="region" aria-label="Pending commands" gap="xs">
+      {commands.map((value) => {
+        const row = byId.get(value.command.commandId);
+        const admitted = row !== undefined || value.admission !== null;
+        const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+        return (
+          <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+            {terminal && row && "outcome" in row.state ? (
+              <>
+                <Text c={row.state.outcome === "failed" ? "red" : undefined}>
+                  {commandOutcomeLabel(row.state.operation, row.state.outcome)}
+                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                </Text>
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
+                  Dismiss
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
+                {value.command.operation.case === "submitInput" && (
+                  <Markdown source={value.command.operation.value.text} />
+                )}
+                {value.command.operation.case === "changeModel" && (
+                  <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "interruptTurn" && (
+                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+                )}
+                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+                {!admitted && errors.get(value.command.commandId) && (
+                  <Text c="red">{errors.get(value.command.commandId)}</Text>
+                )}
+                {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
+              </>
+            )}
+          </Paper>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function commandOutcomeLabel(operation: string, outcome: string): string {
+  const subject =
+    {
+      submit_input: "Input",
+      change_model: "Model change",
+      interrupt_turn: "Interrupt",
+      stop_runner_session: "Harness shutdown",
+    }[operation] ?? "Command";
+  return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
 function VirtualizedHistory({
@@ -436,9 +538,18 @@ function VirtualizedHistory({
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const previousScrollTop = useRef(0);
+  const previousScrollHeight = useRef(0);
+  const previousClientHeight = useRef(0);
+  const pointerScrolling = useRef(false);
+  const captureNextScroll = useRef(false);
+  const captureExpiry = useRef<number | null>(null);
+  const touchY = useRef<number | null>(null);
+  const restorationFrame = useRef<number | null>(null);
+  const restoringAnchor = useRef<string | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
   const virtualizer = useVirtualizer({
     count: segments.length,
@@ -448,6 +559,44 @@ function VirtualizedHistory({
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
   });
+  // ResizeObserver below preserves the first visible row explicitly. This is an
+  // instance hook in the pinned virtual-core version, rather than an option.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+  const cancelRestoration = () => {
+    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+    restorationFrame.current = null;
+    restoringAnchor.current = null;
+  };
+  const expectUserScroll = () => {
+    captureNextScroll.current = true;
+    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+    captureExpiry.current = window.setTimeout(() => {
+      captureNextScroll.current = false;
+      captureExpiry.current = null;
+    }, 100);
+  };
+  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
+    const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+    if (index < 0) return;
+    cancelRestoration();
+    restoringAnchor.current = anchor.key;
+    const correctFromDom = (): boolean => {
+      const element = viewport.current;
+      const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+      if (!element || !row) return false;
+      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      element.scrollTop += currentOffset - anchor.offset;
+      return true;
+    };
+    if (!correctFromDom()) virtualizer.scrollToIndex(index, { align: "start" });
+    restorationFrame.current = requestAnimationFrame(() => {
+      if (restoringAnchor.current === anchor.key) correctFromDom();
+      restorationFrame.current = requestAnimationFrame(() => {
+        if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
+        restorationFrame.current = null;
+      });
+    });
+  };
   useLayoutEffect(() => {
     const element = viewport.current;
     const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
@@ -463,12 +612,7 @@ function VirtualizedHistory({
       const index = segments.findIndex(
         (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
       );
-      if (index >= 0) {
-        virtualizer.scrollToIndex(index, { align: "start" });
-        requestAnimationFrame(() => {
-          if (viewport.current && readingAnchor.current) viewport.current.scrollTop += readingAnchor.current.offset;
-        });
-      }
+      if (index >= 0) restoreAnchor(readingAnchor.current);
     }
     previousCount.current = segments.length;
     previousFirstKey.current = firstKey;
@@ -477,27 +621,86 @@ function VirtualizedHistory({
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return;
+    previousScrollHeight.current = element.scrollHeight;
+    previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
+      // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
+      // that grows the last card, before the browser dispatches its scroll event. Preserve that
+      // user choice across the resize without interpreting arbitrary layout movement as intent.
+      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
+      if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
+      else if (readingAnchor.current && restoringAnchor.current === null) restoreAnchor(readingAnchor.current);
+      previousScrollHeight.current = element.scrollHeight;
+      previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      observer.disconnect();
+      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+      cancelRestoration();
+    };
+  }, [segments, virtualizer]);
   return (
     <div
       ref={viewport}
       role="region"
       aria-label="Thread history"
-      style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
+      tabIndex={0}
+      style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
+      onWheel={(event) => {
+        cancelRestoration();
+        expectUserScroll();
+        if (event.deltaY < 0) atBottom.current = false;
+      }}
+      onKeyDown={(event) => {
+        cancelRestoration();
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
+      }}
+      onPointerDown={() => {
+        cancelRestoration();
+        pointerScrolling.current = true;
+      }}
+      onPointerUp={() => {
+        pointerScrolling.current = false;
+      }}
+      onPointerCancel={() => {
+        pointerScrolling.current = false;
+      }}
+      onTouchStart={(event) => {
+        cancelRestoration();
+        touchY.current = event.touches[0]?.clientY ?? null;
+      }}
+      onTouchMove={(event) => {
+        const next = event.touches[0]?.clientY;
+        expectUserScroll();
+        if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
+        touchY.current = next ?? null;
+      }}
+      onTouchEnd={() => {
+        touchY.current = null;
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
-        const first = virtualizer.getVirtualItems()[0];
-        const firstEntity = first ? segments[first.index] : undefined;
+        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
+        else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        previousScrollTop.current = element.scrollTop;
+        if (restoringAnchor.current !== null) return;
+        if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
+        captureNextScroll.current = false;
+        const viewportTop = element.getBoundingClientRect().top;
+        const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+          (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
+        );
+        const firstEntity = first
+          ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
+          : undefined;
         if (first && firstEntity) {
           readingAnchor.current = {
             key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-            offset: element.scrollTop - first.start,
+            cursor: firstEntity.cursor.toString(),
+            offset: first.getBoundingClientRect().top - viewportTop,
           };
         }
         // Retain one segment across adjacent reading windows so the virtualizer can restore
@@ -552,13 +755,7 @@ function ProjectedSessionBody({
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const operational =
-    view && "controls" in view.state && "operational" in view.state
-      ? (view.state.operational as {
-          status: "active" | "ended" | "failed";
-          feed_error: { cursor: string; message: string } | null;
-        })
-      : null;
+  const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
     available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
@@ -587,11 +784,13 @@ function ProjectedSessionBody({
           ? 1
           : 0
     );
+  const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ConversationEntity & { state: Extract<ConversationEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" && "outcome" in row.state
+      row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
   );
-  const hasPendingCommands = projectedCommands.length > 0 || commands.local.commands.length > 0;
+  const hasPendingCommands = projectedCommands.length > 0;
+  const selectedCommandIds = commands.local.commands.slice(0, 128);
 
   function submit(): void {
     if (!draft.trim() || !running) return;
@@ -632,44 +831,50 @@ function ProjectedSessionBody({
                 <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
                   {row.state.outcome === "pending"
                     ? "Saved · awaiting effect"
-                    : `${row.state.operation.replaceAll("_", " ")} · ${row.state.outcome}`}
+                    : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
                 {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
                 <Evidence threadId={threadId} entity={row} />
               </Paper>
             ))}
-            {commands.local.commands.map((value) => (
-              <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-                <Text size="sm">
-                  {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
-                </Text>
-                {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
-                )}
-                {value.command.operation.case === "changeModel" && (
-                  <Text>Change model to {value.command.operation.value.model}</Text>
-                )}
-                {value.command.operation.case === "interruptTurn" && (
-                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-                )}
-                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {commands.errors.get(value.command.commandId) && (
-                  <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
-                )}
-                {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
-              </Paper>
-            ))}
           </Stack>
+        )}
+        {view && selectedCommandIds.length > 0 && (
+          <SelectedCommandOutcomes
+            threadId={threadId}
+            sourceId={view.sourceId}
+            projectionEpoch={view.projectionEpoch}
+            commands={selectedCommandIds}
+            store={commands.store}
+            errors={commands.errors}
+            deliver={commands.deliver}
+          />
+        )}
+        {!view && selectedCommandIds.length > 0 && (
+          <SelectedCommandRows
+            threadId={threadId}
+            rows={[]}
+            commands={selectedCommandIds}
+            store={commands.store}
+            errors={commands.errors}
+            deliver={commands.deliver}
+          />
         )}
         {operational?.feed_error && (
           <Text role="alert" c="red">
-            Conversation feed stopped at cursor {operational.feed_error.cursor}: {operational.feed_error.message}
+            Rejected event {operational.feed_error.cursor}: {operational.feed_error.message}. Showing verified history
+            through event {operational.last_verified_cursor}.
           </Text>
         )}
         {modelError && (
           <Text role="alert" c="red">
             {modelError}
+          </Text>
+        )}
+        {commands.submissionError && (
+          <Text role="alert" c="red">
+            {commands.submissionError}
           </Text>
         )}
         <Textarea
@@ -766,58 +971,61 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
     );
   }, [threadId]);
   return (
-    <Stack style={{ flex: 1, minHeight: 0 }}>
-      <Group>
-        <Button variant="subtle" onClick={onBack}>
-          ← Threads
-        </Button>
-        <TextInput
-          aria-label="Thread name"
-          value={name}
-          placeholder={threadId}
-          onChange={(event) => setName(event.currentTarget.value)}
-          onBlur={() =>
-            void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
-              setError(displayableError(reason))
-            )
-          }
-        />
-      </Group>
-      {error && (
-        <Text role="alert" c="red">
-          {error}
-        </Text>
-      )}
-      {thread && (
-        <Text size="xs" c="dimmed">
-          {thread.sandbox}
-        </Text>
-      )}
-      {thread?.archived && (
-        <Text role="status" c="dimmed">
-          Thread archived. Showing retained conversation history; controls are disabled.
-        </Text>
-      )}
-      {thread &&
-        environment.snapshot &&
-        !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
-          <Text role="status" c="dimmed">
-            Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+    <ChronologicalDebugProvider key={threadId} threadId={threadId}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
+        <Group>
+          <Button variant="subtle" onClick={onBack}>
+            ← Threads
+          </Button>
+          <ChronologicalDebugLink />
+          <TextInput
+            aria-label="Thread name"
+            value={name}
+            placeholder={threadId}
+            onChange={(event) => setName(event.currentTarget.value)}
+            onBlur={() =>
+              void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
+                setError(displayableError(reason))
+              )
+            }
+          />
+        </Group>
+        {error && (
+          <Text role="alert" c="red">
+            {error}
           </Text>
         )}
-      {thread && (
-        <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
-          {(rows) => (
-            <ProjectedSessionBody
-              threadId={threadId}
-              entities={rows}
-              thread={thread}
-              onLoadOlder={setBefore}
-              available={sandboxAvailable}
-            />
+        {thread && (
+          <Text size="xs" c="dimmed">
+            {thread.sandbox}
+          </Text>
+        )}
+        {thread?.archived && (
+          <Text role="status" c="dimmed">
+            Thread archived. Showing retained conversation history; controls are disabled.
+          </Text>
+        )}
+        {thread &&
+          environment.snapshot &&
+          !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
+            <Text role="status" c="dimmed">
+              Sandbox no longer exists. Showing archived Thread history; controls are disabled.
+            </Text>
           )}
-        </ConversationCollection>
-      )}
-    </Stack>
+        {thread && (
+          <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
+            {(rows) => (
+              <ProjectedSessionBody
+                threadId={threadId}
+                entities={rows}
+                thread={thread}
+                onLoadOlder={setBefore}
+                available={sandboxAvailable}
+              />
+            )}
+          </ConversationCollection>
+        )}
+      </Stack>
+    </ChronologicalDebugProvider>
   );
 }

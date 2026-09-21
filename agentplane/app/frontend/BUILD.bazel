@@ -282,13 +282,6 @@ ts_library(
 )
 
 ts_library(
-    name = "events",
-    srcs = ["events.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//agentplane/runner:protocol_pb"],
-)
-
-ts_library(
     name = "launch_presets",
     srcs = ["launch_presets.ts"],
     tsconfig = TSCONFIG,
@@ -306,78 +299,12 @@ ts_library(
 )
 
 ts_library(
-    name = "events_test",
-    srcs = ["events.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":events",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "event_stream",
-    srcs = ["event_stream.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":events",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "event_stream_test",
-    testonly = True,
-    srcs = ["event_stream.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":event_stream",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
     name = "command_state",
     srcs = ["command_state.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_log_pb",
-    ],
-)
-
-ts_library(
-    name = "command_submission",
-    srcs = ["command_submission.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":command_state",
-        ":event_stream",
-        ":live",
-        ":local_commands",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/protocol:command_pb",
-    ],
-)
-
-ts_library(
-    name = "pending_commands",
-    srcs = ["pending_commands.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":command_state",
-        ":command_submission",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/protocol:command_pb",
     ],
 )
 
@@ -649,7 +576,7 @@ js_library(
 )
 
 # The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
-# (actions.tsx, actions_history.tsx, session.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+# (actions.tsx, actions_history.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
 ts_library(
     name = "json_view",
     srcs = [
@@ -729,23 +656,6 @@ ts_library(
     ],
 )
 
-# session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
-js_library(
-    name = "session_css",
-    srcs = ["session.css"],
-)
-
-ts_library(
-    name = "conversation_scroll",
-    srcs = ["conversation_scroll.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
 ts_library(
     name = "conversation_store",
     srcs = ["conversation_store.tsx"],
@@ -787,6 +697,19 @@ ts_library(
 )
 
 ts_library(
+    name = "chronological_debug",
+    srcs = ["chronological_debug.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
@@ -794,6 +717,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":chronological_debug",
         ":client",
         ":conversation_store",
         ":live",
@@ -808,62 +732,6 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_pb",
-    ],
-)
-
-ts_library(
-    name = "session",
-    srcs = [
-        "session.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-        # The ambient declaration for the @tabler/icons-react subpaths session.tsx imports; see the
-        # note in the file itself.
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":command_submission",
-        ":conversation_scroll",
-        ":event_stream",
-        ":events",
-        ":frame",
-        ":json_view",
-        ":live",
-        ":markdown",
-        ":pending_commands",
-        ":session_css",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_pb",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "session_test",
-    testonly = True,
-    srcs = ["session.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":session",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/runner:protocol_pb",
     ],
 )
 
@@ -967,8 +835,6 @@ vitest_bin.vitest_test(
         ":command_state_test",
         ":connections_test",
         ":consent_test",
-        ":event_stream_test",
-        ":events_test",
         ":frame_test",
         ":json_view_test",
         ":launch_presets_test",
@@ -978,7 +844,6 @@ vitest_bin.vitest_test(
         ":retained_disclosures_test",
         ":sandbox_page_test",
         ":sandboxes_test",
-        ":session_test",
         ":settings_test",
         ":sidebar_test",
         ":thread_groups_test",

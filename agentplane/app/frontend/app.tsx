@@ -65,7 +65,7 @@ function SandboxRoute(): JSX.Element {
 function ThreadRoute(): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
   const navigate = useNavigate();
-  return <ProjectedSession threadId={threadId} onBack={() => void navigate("/")} />;
+  return <ProjectedSession key={threadId} threadId={threadId} onBack={() => void navigate("/")} />;
 }
 
 function AppRoutes(): JSX.Element {

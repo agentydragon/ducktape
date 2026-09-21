@@ -1,10 +1,10 @@
 """Behavioral coverage for the bounded conversation-projection fold."""
 
 from dataclasses import dataclass, field
-from typing import cast
 
 import pytest
 import pytest_bazel
+from google.protobuf import json_format
 
 from agentplane.app.conversation_projection import (
     AppendPayload,
@@ -215,8 +215,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     store.apply(
         [entry(1, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="streamed")))]
     )
-    assert store.items["tool"].output is not None
-    streamed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    streamed = output.reference
     store.apply(
         [
             entry(
@@ -229,8 +230,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
             )
         ]
     )
-    assert store.items["tool"].output is not None
-    completed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    completed = output.reference
     assert store.payloads[completed] == ""
     assert completed.generation == completed.revision_cursor == 2
     assert completed.generation != streamed.generation
@@ -244,6 +246,39 @@ def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
     assert store.commands["model-1"].outcome is CommandOutcome.EFFECTED
     assert store.state.controls.applied_model == "model-b"
     assert store.state.controls.active_turn_id is None
+    assert [(e.entity_cursor, e.observation_cursor) for e in store.evidence if e.entity_cursor in (1, 2, 15)] == [
+        (1, 1),
+        (2, 2),
+        (1, 3),
+        (2, 3),
+        (15, 15),
+        (15, 16),
+    ]
+
+
+def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
+    observed = [
+        admitted(1, "failed", command_pb2.SubmitInput(text="first")),
+        admitted(2, "noop", command_pb2.ChangeModel(model="same")),
+        entry(
+            3,
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="failed", reason="rejected")),
+            source_sequences=[9],
+        ),
+        entry(
+            4,
+            event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id="noop", reason="unchanged")),
+            source_sequences=[10],
+        ),
+    ]
+    store = replay(observed, [2, 1, 1])
+    assert [(e.entity_cursor, e.observation_cursor, e.source_sequences) for e in store.evidence] == [
+        (1, 1, ()),
+        (2, 2, ()),
+        (1, 3, (9,)),
+        (2, 4, (10,)),
+    ]
+    assert replay(observed, [4]) == store
 
 
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:
@@ -270,9 +305,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(ValueError, match="owner revision"):
         advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}))
-    unknown = entry(
-        2, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="other", kind=cast(event_pb2.ItemKind, 99)))
-    )
+    unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
     with pytest.raises(ObservationNotUnderstoodError):
         advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}))

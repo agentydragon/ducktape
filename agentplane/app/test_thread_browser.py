@@ -15,7 +15,15 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
-from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
+from playwright.async_api import (
+    APIResponse,
+    Page,
+    Request,
+    Route,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+    expect,
+)
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
@@ -184,6 +192,59 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         assert await store.events(thread_id, limit=100) == thread_source.entries
 
 
+async def test_switching_threads_starts_at_each_threads_tail(
+    page: Page, db_url: str, store: TrajectoryStore, electric: ElectricService, certificate: BrowserCertificate
+) -> None:
+    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    assert lease is not None
+    threads: list[str] = []
+    for number in range(2):
+        source = ReplicationSource()
+        source.attached.session_id = f"test-navigation-session-{number}"
+        source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+        source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
+        for index in range(80):
+            item_id = f"test-navigation-item-{index}"
+            source.append(
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                )
+            )
+            source.append(
+                event_pb2.Event(
+                    item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
+                )
+            )
+        thread = await store.thread(SANDBOX, source.attached.session_id, source.attached.spec)
+        await store.set_attached(thread, source.attached, lease=lease)
+        await store.record(thread, source.entries, lease=lease)
+        await store.rename(thread, f"Test navigation thread {number}")
+        threads.append(str(thread))
+    await store.release_ingestion(lease)
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with (
+        app_process(
+            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        await page.goto(f"{ingress}/#/threads/{threads[0]}")
+        await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        async with page.expect_request(lambda request: "/sync/interest?before_cursor=" in request.url):
+            await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
+        for number in (1, 0):
+            async with page.expect_request(f"**/threads/{threads[number]}/sync/interest*") as selected:
+                await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+            assert "before_cursor" not in parse_qs(urlsplit((await selected.value).url).query)
+            await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
+                f"Test navigation thread {number}"
+            )
+            await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
+            await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
+        await page.screenshot(path=undeclared_outputs_dir() / "conversation-thread-navigation.png")
+
+
 async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page: Page, certificate: BrowserCertificate
 ) -> None:
@@ -268,6 +329,12 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await first_card.locator("summary", has_text="Evidence").click()
+                await expect(frame).to_have_count(0)
+                await first_card.locator("summary", has_text="Evidence").click()
+                await expect(frame).to_contain_text("test-text-delta")
+                assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
+                await first_card.locator("summary", has_text="Evidence").click()
                 tool_card = page.locator(f'[data-conversation-anchor="{tool.cursor}"]')
                 await tool_card.locator("summary", has_text="Arguments").click()
                 await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
@@ -325,6 +392,102 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reconnected.png")
         finally:
             await store.close()
+
+
+@pytest.mark.parametrize("phone", [False, True])
+async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
+    thread_browser: ThreadBrowser, phone: bool
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    if phone:
+        await page.set_viewport_size({"width": 390, "height": 844})
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+    for index in range(65):
+        source.append(event_pb2.Event(native=event_pb2.Native(line=f"Unlinked packet {index}")))
+    stderr = source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text="Debug stderr retained")))
+    checkpoint = source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="Debug checkpoint")))
+    last = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and debug ready"))
+    )
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
+    draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await draft.fill("Draft survives debug inspection")
+    assert not any("/conversation/observations" in url for url in requests)
+    await page.get_by_role("button", name="Debug history", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Chronological debug")
+    observations = dialog.locator("[data-debug-observation]")
+    await expect(observations).to_have_count(30)
+    await expect(observations.first).to_have_attribute("data-debug-observation", str(last.cursor - 29))
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    assert await dialog.locator("pre").count() == 0
+    for entry in (source.entries[-4], stderr, checkpoint, last):
+        record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
+        await record.locator("summary").click()
+        await expect(record.locator("pre")).to_be_visible()
+        assert json_format.Parse(await record.locator("pre").inner_text(), event_log_pb2.EventEntry()) == entry
+    await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
+    await dialog.get_by_role("button", name="Older observations", exact=True).click()
+    await expect(observations).to_have_count(30)
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor - 30))
+    await expect(dialog.locator("pre")).to_have_count(0)
+    await dialog.get_by_role("button", name="Newer observations", exact=True).click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    await page.keyboard.press("Escape")
+    await expect(dialog).to_have_count(0)
+    await expect(page.locator("[data-debug-observation]")).to_have_count(0)
+    await expect(draft).to_have_value("Draft survives debug inspection")
+
+    # Follow the exact semantic observation back into the original archive, including packets
+    # that have no item association. The context query ends at the selected observation.
+    card = page.locator('[data-conversation-anchor="3"]')
+    await card.locator("summary", has_text="Evidence").click()
+    await card.get_by_role("button", name="Inspect chronological context").first.click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", "3")
+    assert parse_qs(urlsplit([url for url in requests if "/conversation/observations" in url][-1]).query)[
+        "before_cursor"
+    ] == ["4"]
+    await dialog.get_by_role("button", name="Latest observations", exact=True).click()
+    await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    await page.keyboard.press("Escape")
+    await expect(dialog).to_have_count(0)
+    await expect(draft).to_have_value("Draft survives debug inspection")
+    await expect(card.locator("details").first).to_have_attribute("open", "")
+
+    # Closing the drawer cancels an in-flight real archive response. A response released
+    # afterwards must not repopulate the closed view or disturb the conversation draft.
+    response_ready = asyncio.Event()
+    release_response = asyncio.Event()
+    response_finished = asyncio.Event()
+
+    async def hold_debug_response(route: Route) -> None:
+        response = await route.fetch()
+        response_ready.set()
+        await release_response.wait()
+        try:
+            await route.fulfill(response=response)
+        finally:
+            response_finished.set()
+
+    await page.route("**/conversation/observations?*", hold_debug_response)
+    try:
+        await page.get_by_role("button", name="Debug history", exact=True).click()
+        async with asyncio.timeout(10):
+            await response_ready.wait()
+        async with page.expect_event(
+            "requestfailed", predicate=lambda request: "/conversation/observations" in request.url
+        ):
+            await page.keyboard.press("Escape")
+            release_response.set()
+        async with asyncio.timeout(10):
+            await response_finished.wait()
+        await expect(dialog).to_have_count(0)
+        await expect(page.locator("[data-debug-observation]")).to_have_count(0)
+        await expect(draft).to_have_value("Draft survives debug inspection")
+    finally:
+        release_response.set()
+        await page.unroute("**/conversation/observations?*", hold_debug_response)
 
 
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
@@ -441,7 +604,15 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_position = await history.evaluate("area => area.scrollTop")
+    reading_anchor = await history.evaluate(
+        """area => {
+            const top = area.getBoundingClientRect().top;
+            const item = [...area.querySelectorAll('[data-conversation-anchor]')].find(
+                item => item.getBoundingClientRect().bottom > top
+            );
+            return {cursor: item.dataset.conversationAnchor, offset: item.getBoundingClientRect().top - top};
+        }"""
+    )
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -462,10 +633,10 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
@@ -477,7 +648,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
-    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 400
+    await expect_reading_anchor(page, reading_anchor)
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
     # Scroll events are queued. Grow a rendered item in the same task as returning to the
@@ -486,8 +658,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await history.evaluate(
         """area => {
             area.scrollTo({ top: area.scrollHeight });
-            const message = area.querySelector('.agentplane-markdown:last-of-type');
-            message.style.minHeight = '240px';
+            const message = [...area.querySelectorAll('.agentplane-markdown')].at(-1);
+            message.style.minHeight = `${message.offsetHeight + 240}px`;
         }"""
     )
     await expect_history_bottom(page)
@@ -500,6 +672,43 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
+    try:
+        await page.wait_for_function(
+            """anchor => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const item = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            return item !== null && Math.abs(
+                item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
+            ) <= 2;
+        }""",
+            arg=anchor,
+        )
+    except PlaywrightTimeoutError:
+        geometry = await page.evaluate(
+            """expected => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                const top = area.getBoundingClientRect().top;
+                return {
+                    expected,
+                    scrollTop: area.scrollTop,
+                    scrollHeight: area.scrollHeight,
+                    viewportHeight: area.clientHeight,
+                    viewportWidth: area.clientWidth,
+                    rows: [...area.querySelectorAll('[data-conversation-anchor]')].map(item => ({
+                        cursor: item.dataset.conversationAnchor,
+                        offset: item.getBoundingClientRect().top - top,
+                        height: item.getBoundingClientRect().height,
+                    })),
+                };
+            }""",
+            anchor,
+        )
+        thread_id = urlsplit(page.url).fragment.split("/")[-1]
+        (undeclared_outputs_dir() / f"reading-anchor-{thread_id}.json").write_text(json.dumps(geometry, indent=2))
+        raise
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:
@@ -590,8 +799,9 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     if raw:
         lifecycle = page.locator(f'[data-conversation-anchor="{failed.cursor}"]')
         await lifecycle.locator("summary", has_text="Evidence").click()
-        await lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames").click()
-        frame = lifecycle.locator("pre")
+        raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
+        await raw_frames.click()
+        frame = raw_frames.locator("..").locator("pre")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
         await lifecycle.locator("summary", has_text="Evidence").click()
@@ -646,6 +856,55 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         command,
         following,
     ]
+
+
+@pytest.mark.parametrize("outcome", ["failed", "noop"])
+async def test_settled_command_reason_survives_history_eviction_and_reload(
+    thread_browser: ThreadBrowser, outcome: str
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    submitted = "Test input whose outcome must remain visible"
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill(submitted)
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    reason = f"Test command {outcome} after admission"
+    if outcome == "failed":
+        source.append(
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command.command_id, reason=reason))
+        )
+    else:
+        source.append(event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id=command.command_id, reason=reason)))
+    for index in range(40):
+        item_id = f"after-command-{index}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
+        )
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.reload()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
+    await page.get_by_role("button", name="Dismiss", exact=True).click()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
+    await page.reload()
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
+    assert source.commands.empty()
 
 
 async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
@@ -727,13 +986,19 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
+    reply_started = asyncio.Event()
+    reply_finished = asyncio.Event()
 
     async def hold_reply(route: Route) -> None:
         # This is a real response from the app after PostgreSQL admission commit. Only its
         # delivery to this browser is withheld; independent Electric synchronization continues.
-        replies.put_nowait(await route.fetch())
-        await drop_reply.wait()
-        await route.abort()
+        reply_started.set()
+        try:
+            replies.put_nowait(await route.fetch())
+            await drop_reply.wait()
+            await route.abort()
+        finally:
+            reply_finished.set()
 
     await page.route("**/threads/*/commands", hold_reply, times=1)
     try:
@@ -762,6 +1027,9 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
+        if reply_started.is_set():
+            async with asyncio.timeout(15):
+                await reply_finished.wait()
         await page.unroute_all(behavior="wait")
 
 

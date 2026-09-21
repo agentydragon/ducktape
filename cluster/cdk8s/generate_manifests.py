@@ -38,7 +38,6 @@ from cluster.cdk8s.clickhouse import flux_kustomizations as clickhouse_flux_kust
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
-from cluster.cdk8s.evidence import flux_kustomizations as evidence_flux_kustomizations
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
@@ -154,7 +153,6 @@ def generate_manifests(root: Path) -> None:
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
-    evidence_flux_kustomizations.evidence_market_roster(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_kustomization = (
         flux_image_automation_ghcr_flux_kustomizations.flux_image_automation_ghcr(flux_chart)

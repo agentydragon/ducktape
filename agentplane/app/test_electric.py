@@ -6,8 +6,10 @@ from contextlib import suppress
 from uuid import UUID
 
 import httpx
+import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
 from agentplane.app.electric import ElectricProxy, router
@@ -39,10 +41,14 @@ async def payload(
     return ConversationPayloadSelection(SCOPE, 12, "item-1", "text", 2, 18, True, 3, 17)
 
 
+async def current_scope(thread_id: UUID) -> ConversationScope | None:
+    return SCOPE if thread_id == THREAD else None
+
+
 def make_app(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, entities, payload)
+    app.state.electric = ElectricProxy(electric, entities, payload, current_scope)
     app.include_router(router)
     return app, electric
 
@@ -62,7 +68,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=full"
+            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=changes_only"
         )
     await electric.aclose()
 
@@ -74,7 +80,8 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
     assert query["table"] == "conversation_entity"
-    assert query["log"] == "full"
+    assert query["log"] == "changes_only"
+    assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
     assert "cursor >= $4" in query["where"]
     assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
@@ -93,12 +100,71 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         stale_tail = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=0&offset=-1")
         arbitrary = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&table=event")
-        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=changes_only")
+        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=full")
     await electric.aclose()
 
     assert stale_tail.status_code == 409
     assert arbitrary.status_code == 400
     assert bad_log.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "subset",
+    [
+        {"subset__where": "true = true"},
+        {"subset__where": "TRUE = TRUE", "subset__params": "{}"},
+        {"subset__where": "true = true", "subset__params": "[]"},
+    ],
+)
+async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]) -> None:
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(
+            f"/threads/{THREAD}/sync/entities",
+            params={"anchor_cursor": "99", "tail_from": "70", "offset": "0_0", "handle": "fixed", **subset},
+            headers={"electric-protocol-version": "1.0"},
+        )
+    await electric.aclose()
+    assert response.status_code == 200
+    forwarded = seen[0].url.params
+    assert forwarded["log"] == "changes_only"
+    assert "cursor >= $4" in forwarded["where"]
+    assert forwarded["params[4]"] == "70"
+    assert seen[0].headers["electric-protocol-version"] == "1.0"
+    for key, value in subset.items():
+        assert forwarded[key] == value
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "subset__where=entity_id+%3D+'other'",
+        "subset__params=%7B%221%22%3A%22other%22%7D",
+        "subset__params=invalid-json",
+        "subset__params=null",
+        "subset__limit=1",
+        "subset__offset=1",
+        "subset__order_by=cursor",
+        "subset__where=true+%3D+true&subset__where=false",
+        "offset=now&offset=-1",
+        "queryable_columns=state",
+    ],
+)
+async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(query: str) -> None:
+    async def unexpected(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("rejected snapshots must not reach Electric")
+
+    app, electric = make_app(httpx.MockTransport(unexpected))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&{query}")
+    await electric.aclose()
+    assert response.status_code == 400
 
 
 async def test_payload_shape_uses_server_verified_exact_revision() -> None:
@@ -133,7 +199,51 @@ async def test_payload_shape_uses_server_verified_exact_revision() -> None:
     assert forwarded["params[8]"] == "3"
 
 
-async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response() -> None:
+async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids() -> None:
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    params = [("source_id", SCOPE.source_id), ("projection_epoch", SCOPE.projection_epoch), ("offset", "-1")]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(
+            f"/threads/{THREAD}/sync/commands",
+            params=[*params, ("command_id", "future"), ("command_id", "failed"), ("command_id", "failed")],
+        )
+        assert response.status_code == 200
+        for invalid in [
+            params,
+            [*params, ("command_id", "")],
+            [*params, *[("command_id", str(n)) for n in range(129)]],
+        ]:
+            assert (await client.get(f"/threads/{THREAD}/sync/commands", params=tuple(invalid))).status_code == 422
+        stale = [(key, "old" if key == "projection_epoch" else value) for key, value in params]
+        assert (
+            await client.get(f"/threads/{THREAD}/sync/commands", params=[*stale, ("command_id", "failed")])
+        ).status_code == 410
+        assert (
+            await client.get(f"/threads/{UUID(int=0)}/sync/commands", params=[*params, ("command_id", "failed")])
+        ).status_code == 410
+    await electric.aclose()
+    assert len(seen) == 1
+    query = httpx.QueryParams(seen[0].url.query)
+    assert query["where"] == (
+        "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
+        "entity_kind = 'command' AND entity_id IN ($4,$5)"
+    )
+    assert query["params[1]"] == str(THREAD)
+    assert query["params[2]"] == SCOPE.source_id
+    assert query["params[3]"] == SCOPE.projection_epoch
+    assert query["params[4]"] == "failed"
+    assert query["params[5]"] == "future"
+    assert "command_id" not in query
+
+
+@pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
+async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(disconnect: str) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
             self.reads = 0
@@ -153,7 +263,12 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         return httpx.Response(200, stream=chunks)
 
     app, electric = make_app(httpx.MockTransport(upstream))
-    scope = {"type": "http", "asgi": {"spec_version": "2.4"}, "query_string": b"offset=-1", "headers": []}
+    scope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},
+        "query_string": b"offset=-1",
+        "headers": [],
+    }
     response = await app.state.electric.entities(
         Request(scope), thread_id=THREAD, anchor_cursor=99, tail_from=70, window_from=None, window_before=None
     )
@@ -161,6 +276,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     release = asyncio.Event()
     second = asyncio.Event()
     blocked = asyncio.Event()
+    disconnected = asyncio.Event()
 
     async def send(message: Message) -> None:
         if message["type"] != "http.response.body":
@@ -171,9 +287,12 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         else:
             second.set()
             await blocked.wait()
+            raise OSError("downstream disconnected")
 
     async def receive() -> Message:
-        raise AssertionError("ASGI 2.4 response should detect disconnect through send")
+        assert disconnect == "receive"
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
 
     delivery = asyncio.create_task(response(scope, receive, send))
     try:
@@ -183,9 +302,17 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
             release.set()
             await second.wait()
             assert chunks.reads == 2
+            if disconnect == "cancel":
+                delivery.cancel()
+            elif disconnect == "send":
+                blocked.set()
+            else:
+                disconnected.set()
+            with suppress(asyncio.CancelledError, ClientDisconnect):
+                await delivery
     finally:
         delivery.cancel()
-        with suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError, ClientDisconnect):
             await delivery
         await electric.aclose()
     assert chunks.closed
