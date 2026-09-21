@@ -194,7 +194,6 @@ def generate_manifests(root: Path) -> None:
     browsertrix_namespace_kustomization = parked_flux_kustomizations.browsertrix_namespace(flux_chart)
     parked_flux_kustomizations.browsertrix_retained(flux_chart)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
-    parked_flux_kustomizations.egress_proxy_rugged(flux_chart)
     firecrawl_namespace_kustomization = parked_flux_kustomizations.firecrawl_namespace(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
     inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)

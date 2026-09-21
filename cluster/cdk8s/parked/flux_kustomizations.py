@@ -415,28 +415,6 @@ def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac
     )
 
 
-def egress_proxy_rugged(chart: Chart) -> Kustomization:
-    name = "egress-proxy-rugged"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # Decommissioned by operator request; keep its configuration but stop reconciliation.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/egress-proxy-rugged",
-            prune=True,
-            wait=True,
-        ),
-    )
-
-
 def firecrawl(
     chart: Chart, firecrawl_namespace: Kustomization, firecrawl_db: Kustomization, gateway: Kustomization
 ) -> Kustomization:
