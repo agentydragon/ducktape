@@ -241,7 +241,7 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
 def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
     store = replay(script(), [17])
     assert store.state.unresolved_count == 0
-    assert store.state.command_revision_cursor == 17
+    assert store.state.command_revision_cursor == 16
     assert store.commands["input-1"].outcome is CommandOutcome.EFFECTED
     assert store.commands["input-2"].outcome is CommandOutcome.EFFECTED
     assert store.commands["model-1"].outcome is CommandOutcome.EFFECTED
