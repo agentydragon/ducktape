@@ -2042,6 +2042,7 @@ metadata:
   name: github-api-proxy-identity
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: cert-manager-environment
       namespace: ducktape-flux
@@ -2053,7 +2054,7 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cert-manager-issuer-config
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

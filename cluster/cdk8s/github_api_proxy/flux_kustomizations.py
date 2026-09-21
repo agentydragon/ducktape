@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -72,7 +73,8 @@ def github_api_proxy_identity(
             retry_interval="1m",
             timeout="5m",
             path="./cluster/k8s/github-api-proxy/identity",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
