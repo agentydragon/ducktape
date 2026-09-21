@@ -4966,11 +4966,7 @@ spec:
       namespace: ducktape-flux
     - name: kyverno-policies
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/workspaces/app
@@ -5141,11 +5137,7 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: agent-sandbox-controller
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
       namespace: ducktape-flux
     - name: kyverno-policies
       namespace: ducktape-flux

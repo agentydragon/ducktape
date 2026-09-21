@@ -718,8 +718,6 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         kyverno_policies_kustomization,
         external_secrets_config_kustomization,
-        external_creds_kustomization,
-        forgejo_images_kustomization,
     )
     parked_flux_kustomizations.haku_managed_agent(
         flux_chart,
@@ -745,9 +743,7 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.agent_workspaces_app(
         flux_chart,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         agent_sandbox_controller_kustomization,
-        litellm_keys_tf_kustomization,
         kyverno_policies_kustomization,
     )
     parked_flux_kustomizations.haku_dispatch(

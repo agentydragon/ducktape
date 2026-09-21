@@ -20,7 +20,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-trust": {"Bundle"},
     "cert-manager-environment": set(),
     "cluster-ca": set(),
-    "kyverno": {"ClusterPolicy", "Policy"},
+    "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),
     "tofu-controller": {"Terraform"},
     # The CRDs, not the HelmRelease: prometheus-operator's only admission webhooks
@@ -83,6 +83,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     "agentplane-crds": {"EgressPolicy", "EgressBinding", "ActionPolicySet", "ActionPolicyBinding"},
+    "agent-sandbox-controller": {"SandboxTemplate", "SandboxWarmPool"},
     "sshpiper-crds": {"Pipe"},
     "seaweedfs-operator": {"Bucket", "S3Identity", "S3Credentials", "ResourceReferenceGrant"},
     # TODO: if non-GHCR image automations are added, add a separate entry here
