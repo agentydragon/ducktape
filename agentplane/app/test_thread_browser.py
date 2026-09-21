@@ -36,7 +36,11 @@ def certificate(tmp_path: Path) -> BrowserCertificate:
 
 
 @pytest.fixture
-async def page(request: pytest.FixtureRequest, certificate: BrowserCertificate) -> AsyncIterator[Page]:
+async def page(
+    request: pytest.FixtureRequest, certificate: BrowserCertificate, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[Page]:
+    # Route.fetch runs in Playwright's Node driver, outside Chromium's SPKI trust setting.
+    monkeypatch.setenv("NODE_EXTRA_CA_CERTS", str(certificate.directory / "certificate.pem"))
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
             headless=True,
