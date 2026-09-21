@@ -163,7 +163,6 @@ def generate_manifests(root: Path) -> None:
     agents_mitmproxy_namespace_kustomization = agents_flux_kustomizations.agents_mitmproxy_namespace(flux_chart)
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
-    authentik_namespace_kustomization = authentik_flux_kustomizations.authentik_namespace(flux_chart)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     clickhouse_namespace_kustomization = clickhouse_flux_kustomizations.clickhouse_namespace(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
@@ -286,9 +285,6 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
-    authentik_db_kustomization = authentik_flux_kustomizations.authentik_db(
-        flux_chart, cnpg_kustomization, authentik_namespace_kustomization, local_path_provisioner_kustomization
-    )
     forgejo_db_kustomization = forgejo_flux_kustomizations.forgejo_db(
         flux_chart, forgejo_namespace_kustomization, cnpg_kustomization
     )
@@ -325,12 +321,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, cert_manager_issuer_config_kustomization, cnpg_kustomization
     )
     authentik_kustomization = authentik_flux_kustomizations.authentik(
-        flux_chart,
-        authentik_namespace_kustomization,
-        authentik_db_kustomization,
-        cert_manager_kustomization,
-        gateway_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, cnpg_kustomization, monitoring_crds_kustomization
     )
     dns_automation_flux_kustomizations.dns_automation(
         flux_chart,
@@ -391,7 +382,6 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access_tf_kustomization = agents_flux_kustomizations.agent_machine_access_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_kustomization
     )
-    authentik_flux_kustomizations.authentik_proxy_routes(flux_chart, gateway_kustomization, authentik_kustomization)
     sso_providers_tf_kustomization = authentik_flux_kustomizations.sso_providers_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_kustomization
     )
@@ -432,13 +422,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         volsync_kustomization,
     )
-    authentik_flux_kustomizations.authentik_db_backups(
-        flux_chart,
-        authentik_db_kustomization,
-        cnpg_kustomization,
-        seaweedfs_cluster_kustomization,
-        authentik_namespace_kustomization,
-    )
+    authentik_flux_kustomizations.authentik_db_backups(flux_chart, cnpg_kustomization, seaweedfs_cluster_kustomization)
     loki_kustomization = monitoring_flux_kustomizations.loki(
         flux_chart, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
     )
