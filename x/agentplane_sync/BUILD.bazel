@@ -123,3 +123,25 @@ py_test(
         "@pypi//testcontainers",
     ],
 )
+
+py_test(
+    name = "shape_stalled_reader_test",
+    size = "large",
+    srcs = ["shape_stalled_reader_test.py"],
+    requires_docker = True,
+    deps = [
+        ":projector",
+        "//:conftest",
+        "//third_party/containers:electric_1_8_1",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane_sync:shape_test_support",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
