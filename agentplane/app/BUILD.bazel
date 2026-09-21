@@ -66,6 +66,7 @@ py_library(
         ":auth_routes",
         ":bridge",
         ":consent",
+        ":conversation_debug",
         ":decisions",
         ":egress",
         ":identity",
@@ -296,7 +297,6 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":changes",
-        ":ingestion",
         ":inventory",
         ":live",
         ":presets",
@@ -454,6 +454,7 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
+        ":conversation_debug",
         ":conversation_projection",
         ":operator_sessions",
         ":presets",
@@ -947,6 +948,39 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "conversation_debug",
+    srcs = ["conversation_debug.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_conversation_debug",
+    size = "medium",
+    srcs = ["test_conversation_debug.py"],
+    requires_docker = True,
+    deps = [
+        ":action_policy",
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
+        ":presets",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
     ],
 )
 
