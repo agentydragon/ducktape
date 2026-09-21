@@ -935,14 +935,14 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       "queued-model",
       "change_model",
       scenario.pendingCommands === "outcomes" ? "failed" : "pending",
-      "Model unavailable"
+      scenario.pendingCommands === "outcomes" ? "Model unavailable" : null
     ),
     command(
       25,
       "queued-interrupt",
       "interrupt_turn",
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
-      "Target turn already ended"
+      scenario.pendingCommands === "outcomes" ? "Target turn already ended" : null
     ),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
