@@ -451,6 +451,7 @@ function SelectedCommandRows({
     <Stack role="region" aria-label="Pending commands" gap="xs">
       {commands.map((value) => {
         const row = byId.get(value.command.commandId);
+        const admitted = row !== undefined || value.admission !== null;
         const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
         return (
           <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
@@ -467,9 +468,7 @@ function SelectedCommandRows({
               </>
             ) : (
               <>
-                <Text size="sm">
-                  {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
-                </Text>
+                <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
                 {value.command.operation.case === "submitInput" && (
                   <Markdown source={value.command.operation.value.text} />
                 )}
@@ -480,8 +479,10 @@ function SelectedCommandRows({
                   <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
                 )}
                 {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {errors.get(value.command.commandId) && <Text c="red">{errors.get(value.command.commandId)}</Text>}
-                {!value.admission && <Button onClick={() => void deliver(value)}>Retry</Button>}
+                {!admitted && errors.get(value.command.commandId) && (
+                  <Text c="red">{errors.get(value.command.commandId)}</Text>
+                )}
+                {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
               </>
             )}
           </Paper>
@@ -756,6 +757,16 @@ function ProjectedSessionBody({
             threadId={threadId}
             sourceId={view.sourceId}
             projectionEpoch={view.projectionEpoch}
+            commands={selectedCommandIds}
+            store={commands.store}
+            errors={commands.errors}
+            deliver={commands.deliver}
+          />
+        )}
+        {!view && selectedCommandIds.length > 0 && (
+          <SelectedCommandRows
+            threadId={threadId}
+            rows={[]}
             commands={selectedCommandIds}
             store={commands.store}
             errors={commands.errors}
