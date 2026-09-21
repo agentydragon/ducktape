@@ -65,6 +65,22 @@ the selected original frame; its PNG was downloaded and inspected. The unit test
 checks eviction after 129 disclosure choices and isolation of a replacement source.
 Actual history eviction/revisit and source-reset browser coverage remain separate.
 
+## Navigation between threads
+
+At `406735fec3`, the real browser navigated between two stored 80-item conversations
+after selecting older history in the first:
+[cf04b70e](https://app.buildbuddy.io/invocation/cf04b70e-ae88-470f-8f85-c19498aec244).
+Both route transitions requested a fresh tail without the previous thread's
+`before_cursor`, displayed the correct name and rendered its newest item. The view
+is keyed by thread ID; older-page selection and asynchronous header state cannot
+carry into another thread. The resulting PNG was downloaded and inspected.
+
+The first run's five-second body assertion expired during initial shape creation;
+its trace shows successful payload responses and the expected rendered tail just
+afterward. The test now waits for the selected metadata row before awaiting its
+lazy body. This test verifies navigation state isolation, not a cold-load latency
+target.
+
 ## Native harness measurements
 
 Independent draft #7562 adds a controlled-upstream experiment above runner #7535.
