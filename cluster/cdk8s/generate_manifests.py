@@ -152,7 +152,6 @@ def generate_manifests(root: Path) -> None:
     flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
-    haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
@@ -362,11 +361,7 @@ def generate_manifests(root: Path) -> None:
         ollama_kustomization,
     )
     agents_flux_kustomizations.haku_openclaw_spike_backup(
-        flux_chart,
-        haku_openclaw_spike_namespace_kustomization,
-        seaweedfs_cluster_kustomization,
-        external_secrets_config_kustomization,
-        volsync_kustomization,
+        flux_chart, external_secrets_operator_kustomization, volsync_kustomization
     )
     authentik_flux_kustomizations.authentik_db_backups(flux_chart, cnpg_kustomization, seaweedfs_cluster_kustomization)
     loki_kustomization = monitoring_flux_kustomizations.loki(
@@ -571,10 +566,8 @@ def generate_manifests(root: Path) -> None:
     cpap_sync_kustomization = cpap_sync_flux_kustomizations.cpap_sync(
         flux_chart, external_secrets_config_kustomization, kubevirt_kustomization, forgejo_images_kustomization
     )
-    flux_image_automation_forgejo_kustomization = (
-        flux_image_automation_forgejo_flux_kustomizations.flux_image_automation_forgejo(
-            flux_chart, forgejo_images_kustomization, flux_image_automation_ghcr_kustomization
-        )
+    flux_image_automation_forgejo_flux_kustomizations.flux_image_automation_forgejo(
+        flux_chart, forgejo_images_kustomization, flux_image_automation_ghcr_kustomization
     )
     github_api_proxy_flux_kustomizations.github_api_proxy(
         flux_chart,
@@ -748,13 +741,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, litellm_kustomization, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     agents_flux_kustomizations.haku_openclaw_spike_app(
-        flux_chart,
-        external_secrets_config_kustomization,
-        haku_openclaw_spike_namespace_kustomization,
-        haku_egress_proxy_kustomization,
-        forgejo_images_kustomization,
-        flux_image_automation_forgejo_kustomization,
-        seaweedfs_cluster_kustomization,
+        flux_chart, external_secrets_operator_kustomization, seaweedfs_operator_kustomization
     )
     haku_flux_kustomizations.haku_workspaces(
         flux_chart,

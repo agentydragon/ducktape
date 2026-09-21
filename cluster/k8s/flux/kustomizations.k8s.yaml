@@ -44,22 +44,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-openclaw-spike-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 1h
-  path: ./cluster/k8s/agents/haku-openclaw-spike/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-openclaw-spike-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: artifact-generators
   namespace: ducktape-flux
 spec:
@@ -2512,11 +2496,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: haku-openclaw-spike-namespace
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
@@ -5001,17 +4981,9 @@ metadata:
 spec:
   deletionPolicy: Orphan
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: haku-openclaw-spike-namespace
-      namespace: ducktape-flux
-    - name: haku-egress-proxy
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: flux-image-automation-forgejo
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1

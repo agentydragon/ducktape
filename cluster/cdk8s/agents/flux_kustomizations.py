@@ -352,13 +352,7 @@ def haku_egress_proxy(
 
 
 def haku_openclaw_spike_app(
-    chart: Chart,
-    external_secrets_config: Kustomization,
-    haku_openclaw_spike_namespace: Kustomization,
-    haku_egress_proxy: Kustomization,
-    forgejo_images: Kustomization,
-    flux_image_automation_forgejo: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, external_secrets_operator: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "haku-openclaw-spike-app"
     return flux_kustomization(
@@ -370,24 +364,12 @@ def haku_openclaw_spike_app(
             timeout="10m",
             path="./cluster/k8s/agents/haku-openclaw-spike/app",
             prune=True,
-            # Safety net for a planned cdk8s conversion of this directory that may move which
-            # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
-            # landing. This directory holds real PVCs (pvc.yaml, pvc-v2.yaml).
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                haku_openclaw_spike_namespace,
-                haku_egress_proxy,
-                # forgejo-images-creds-eso.yaml extracts the source Secret from the
-                # forgejo-images namespace, so it must exist first.
-                forgejo_images,
-                flux_image_automation_forgejo,
-                seaweedfs_cluster,
-            ),
+            depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1",
@@ -416,11 +398,7 @@ def haku_openclaw_spike_app(
 
 
 def haku_openclaw_spike_backup(
-    chart: Chart,
-    haku_openclaw_spike_namespace: Kustomization,
-    seaweedfs_cluster: Kustomization,
-    external_secrets_config: Kustomization,
-    volsync: Kustomization,
+    chart: Chart, external_secrets_operator: Kustomization, volsync: Kustomization
 ) -> Kustomization:
     name = "haku-openclaw-spike-backup"
     return flux_kustomization(
@@ -445,9 +423,7 @@ def haku_openclaw_spike_backup(
                 # The Bucket and S3Credentials remain app-owned, but their readiness is
                 # retried by the ExternalSecret rather than coupling this Kustomization to
                 # the app Deployment health check.
-                haku_openclaw_spike_namespace,
-                seaweedfs_cluster,
-                external_secrets_config,
+                external_secrets_operator,
                 volsync,
             ),
         ),
@@ -456,24 +432,6 @@ def haku_openclaw_spike_backup(
             "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
             "into the optiplex worker PVC that migrates the state off the control "
             "plane."
-        ),
-    )
-
-
-def haku_openclaw_spike_namespace(chart: Chart) -> Kustomization:
-    name = "haku-openclaw-spike-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path="./cluster/k8s/agents/haku-openclaw-spike/namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="2m",
         ),
     )
 

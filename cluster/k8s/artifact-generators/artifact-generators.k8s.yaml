@@ -289,11 +289,6 @@ spec:
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
-      name: haku-openclaw-spike-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/home-assistant/**"
           to: "@artifact/cluster/k8s/home-assistant/"
       name: home-assistant
@@ -341,6 +336,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-app
       originRevision: "@repo"
     - copy:
