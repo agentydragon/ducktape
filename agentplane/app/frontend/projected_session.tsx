@@ -574,19 +574,31 @@ function VirtualizedHistory({
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
+      else if (readingAnchor.current) {
+        const anchor = readingAnchor.current;
+        const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+        if (index >= 0) {
+          virtualizer.scrollToIndex(index, { align: "start" });
+          requestAnimationFrame(() => {
+            if (viewport.current && readingAnchor.current?.key === anchor.key) {
+              viewport.current.scrollTop += anchor.offset;
+            }
+          });
+        }
+      }
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, []);
+  }, [segments, virtualizer]);
   return (
     <div
       ref={viewport}
       role="region"
       aria-label="Thread history"
       tabIndex={0}
-      style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
+      style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         if (event.deltaY < 0) atBottom.current = false;
       }}
