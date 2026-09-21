@@ -56,10 +56,9 @@ class ClaudeAdapter(HarnessAdapter):
         self._message_id = ""
         # Content block index to item id for the message being streamed.
         self._block_items: dict[int, str] = {}
-        # Blocks already completed per message id, so non-streamed `assistant` frames get the same
-        # item ids the stream would have given them.
-        self._blocks_completed: dict[str, int] = {}
-        self._items: set[str] = set()
+        # Historical item identities and per-message block counters live in SQLite scratch
+        # storage, scoped to this adapter's lifetime just like the native attachment.
+        self._adapter_id = str(uuid4())
 
     def command(self) -> list[str]:
         resume_id = self.session.record.native_session_id
@@ -228,10 +227,9 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def _on_assistant(self, message: wire.AssistantMessage) -> None:
         for block in message.content:
-            index = self._blocks_completed.get(message.id, 0)
-            self._blocks_completed[message.id] = index + 1
+            index = await self.session.journal.next_adapter_block(self._adapter_id, message.id)
             item_id = self._item_id(block, index, message.id)
-            if item_id not in self._items:
+            if not await self.session.journal.has_adapter_item(self._adapter_id, item_id):
                 await self._start_item(item_id, block)
             match block:
                 case TextBlock(text=text) | ThinkingBlock(thinking=text):
@@ -346,6 +344,6 @@ class ClaudeAdapter(HarnessAdapter):
                 # Tool results complete items rather than start them; unknown block kinds stay
                 # native evidence only.
                 return
-        self._items.add(item_id)
+        await self.session.journal.remember_adapter_item(self._adapter_id, item_id)
         await self._turn_id()
         await self.session.emit(event_pb2.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
