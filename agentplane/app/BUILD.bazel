@@ -977,3 +977,32 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    deps = [
+        "//agentplane/app:thread_view_pb2",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_projection",
+    srcs = ["test_projection.py"],
+    deps = [
+        ":conftest",
+        ":projection",
+        "//:conftest",
+        "//agentplane/app:thread_view_pb2",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
