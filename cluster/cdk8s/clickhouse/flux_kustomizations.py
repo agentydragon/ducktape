@@ -15,12 +15,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
 def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomization:
@@ -77,30 +72,7 @@ def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomizatio
     )
 
 
-def clickhouse_namespace(chart: Chart) -> Kustomization:
-    name = "clickhouse-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path="./cluster/k8s/clickhouse/namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            wait=True,
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="clickhouse")],
-            depends_on=[],
-        ),
-    )
-
-
-def clickhouse_operator(
-    chart: Chart, clickhouse_namespace: Kustomization, monitoring_crds: Kustomization
-) -> Kustomization:
+def clickhouse_operator(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
     name = "clickhouse-operator"
     return flux_kustomization(
         chart,
@@ -110,6 +82,7 @@ def clickhouse_operator(
             interval="10m",
             path="./cluster/k8s/clickhouse/operator",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
@@ -127,10 +100,7 @@ def clickhouse_operator(
                     namespace="clickhouse",
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(
-                clickhouse_namespace,
-                # the chart's serviceMonitor.enabled
-                monitoring_crds,
-            ),
+            # The chart enables ServiceMonitor resources.
+            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
         ),
     )

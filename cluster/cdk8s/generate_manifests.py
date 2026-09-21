@@ -158,7 +158,6 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
-    clickhouse_namespace_kustomization = clickhouse_flux_kustomizations.clickhouse_namespace(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
     evidence_flux_kustomizations.evidence_market_roster(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
@@ -205,7 +204,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
     clickhouse_operator_kustomization = clickhouse_flux_kustomizations.clickhouse_operator(
-        flux_chart, clickhouse_namespace_kustomization, monitoring_crds_kustomization
+        flux_chart, monitoring_crds_kustomization
     )
     flux_monitoring_flux_kustomizations.flux_monitoring(flux_chart, monitoring_crds_kustomization)
     monitoring_flux_kustomizations.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
