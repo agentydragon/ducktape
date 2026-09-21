@@ -1,5 +1,5 @@
 # bazel-test — minimal NixOS container for testing Bazel compatibility.
-# Not a real host — used by devinfra/nixos_bazel_test/ to build a Docker image.
+# Not a real host — this CI image config lives beside its harness.
 #
 # Imports docker-image.nix which (together with docker-container.nix) provides
 # system.build.tarball — a complete NixOS filesystem tarball for docker import.
@@ -15,13 +15,13 @@ let
       gnugrep
       jq
     ];
-    text = builtins.readFile ../../../../devinfra/nixos_bazel_test/smoke_test.sh;
+    text = builtins.readFile ./smoke_test.sh;
   };
 in
 {
   imports = [
     (modulesPath + "/virtualisation/docker-image.nix")
-    ../../modules/bazel
+    ../../nix/nixos/modules/bazel
   ];
 
   # boot.isContainer is set by docker-container.nix (imported by docker-image.nix)

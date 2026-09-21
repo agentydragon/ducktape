@@ -1,5 +1,6 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant MCP action groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana MCP action
+groups.
 """
 
 from __future__ import annotations
@@ -60,9 +61,11 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
-# The same reflected Secret haku-console's own home_assistant server reads
+_TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
+# The same reflected Secrets haku-console's own home_assistant/tana servers read
 # (cluster/cdk8s/haku/console_config.py), widened to reflect into this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
+_TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -193,6 +196,20 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
+        "tana": {
+            "title": "Tana MCP",
+            "description": "Tana read/write tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _TANA_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/tana-mcp/bearer-token",
+                },
+            },
+        },
     },
 }
 
@@ -231,7 +248,13 @@ ENV = Environment(
     actions=ActionsProps(
         hostname="agentplane-actions-staging.allegedly.works",
         settings=_ACTIONS_SETTINGS,
-        extra_reload_secrets=(_GITHUB_MCP_CLIENT_SECRET, _WEB_PUSH_SECRET, BEARER_SECRET_NAME, _HA_MCP_BEARER_SECRET),
+        extra_reload_secrets=(
+            _GITHUB_MCP_CLIENT_SECRET,
+            _WEB_PUSH_SECRET,
+            BEARER_SECRET_NAME,
+            _HA_MCP_BEARER_SECRET,
+            _TANA_MCP_BEARER_SECRET,
+        ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
         web_push_secret_name=_WEB_PUSH_SECRET,
@@ -239,11 +262,16 @@ ENV = Environment(
         bearer_mcp_mounts=[
             BearerMcpMount(name="ssh-mcp", secret_name=BEARER_SECRET_NAME, secret_key=BEARER_SECRET_KEY),
             BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
+            # The Secret's own key is `token` (it's a Tana personal access token, not a
+            # bearer minted for this purpose); renamed at mount time to the same
+            # `bearer-token` file name every other static-bearer group uses.
+            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token"),
         ],
         extra_egress=[
             cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
             cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
+            cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),

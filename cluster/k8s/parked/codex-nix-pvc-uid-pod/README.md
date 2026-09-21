@@ -138,7 +138,7 @@ nix shell nixpkgs#direnv nixpkgs#nix-direnv nixpkgs#bash nixpkgs#coreutils -c ba
 The next useful step is a Home Manager activation spike:
 
 - add a `nix/home/hosts/codex-pod.nix` host that imports most of
-  `nix/home/hosts/agent-box.nix`;
+  `cluster/k8s/parked/agent-box/nix/home/codex.nix`;
 - run `home-manager switch` or the generated activation package from
   `scripts/start-sshd.sh` before starting `sshd`;
 - confirm whether Home Manager sops-nix can install user secrets without a user
