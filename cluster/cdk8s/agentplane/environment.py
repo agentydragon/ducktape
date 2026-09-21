@@ -13,23 +13,6 @@ from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
-# What every environment's Flux Kustomization waits on.
-DEPENDS_ON = (
-    "agentplane-crds",
-    "agent-sandbox-controller",
-    "cert-manager-environment",
-    "cert-manager-trust",
-    "claude-rbac",
-    "cnpg",
-    "external-creds",
-    "external-secrets-config",
-    "forgejo-images",
-    "gateway",
-    "litellm-keys-tf",
-    "local-path-provisioner",
-    "reflector",
-)
-
 
 @dataclass(frozen=True)
 class ReplicaProfile:
@@ -116,7 +99,6 @@ class Environment:
     # The Namespace's `description` annotation and the Flux Kustomization's.
     description: str
     flux_description: str
-    depends_on: Sequence[str]
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     # Whether the operator Role may manage ActionPolicySet/Binding objects.

@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
-    DEPENDS_ON,
     ActionsProps,
     AppProps,
     BearerMcpMount,
@@ -206,7 +205,6 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console", "ha-mcp", "airlock"),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
@@ -330,18 +328,7 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    litellm_keys_tf: Kustomization,
-    local_path_provisioner: Kustomization,
-    reflector: Kustomization,
-    sso_providers_tf: Kustomization,
-    ssh_mcp: Kustomization,
-    haku_console: Kustomization,
-    ha_mcp: Kustomization,
-    airlock: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -381,18 +368,7 @@ def agentplane_staging(
                 cert_manager_trust,
                 claude_rbac,
                 cnpg,
-                external_creds,
                 external_secrets_config,
-                forgejo_images,
-                gateway,
-                litellm_keys_tf,
-                local_path_provisioner,
-                reflector,
-                sso_providers_tf,
-                ssh_mcp,
-                haku_console,
-                ha_mcp,
-                airlock,
             ),
         ),
     )
