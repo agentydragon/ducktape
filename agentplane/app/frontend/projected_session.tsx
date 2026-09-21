@@ -545,7 +545,8 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
-  const captureExpiry = useRef<number | null>(null);
+  const captureFrame = useRef<number | null>(null);
+  const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -571,11 +572,28 @@ function VirtualizedHistory({
   };
   const expectUserScroll = () => {
     captureNextScroll.current = true;
-    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
-    captureExpiry.current = window.setTimeout(() => {
-      captureNextScroll.current = false;
-      captureExpiry.current = null;
-    }, 100);
+    scrolledSinceInput.current = false;
+    if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
+    captureFrame.current = requestAnimationFrame(() => {
+      if (!scrolledSinceInput.current) captureNextScroll.current = false;
+      captureFrame.current = null;
+    });
+  };
+  const captureReadingAnchor = (element: HTMLDivElement) => {
+    const viewportTop = element.getBoundingClientRect().top;
+    const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+      (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
+    );
+    const firstEntity = first
+      ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
+      : undefined;
+    if (first && firstEntity) {
+      readingAnchor.current = {
+        key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
+        cursor: firstEntity.cursor.toString(),
+        offset: first.getBoundingClientRect().top - viewportTop,
+      };
+    }
   };
   const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
@@ -639,10 +657,21 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+      if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
       cancelRestoration();
     };
   }, [segments, virtualizer]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const onScrollEnd = () => {
+      if (restoringAnchor.current !== null || !captureNextScroll.current) return;
+      captureReadingAnchor(element);
+      captureNextScroll.current = false;
+    };
+    element.addEventListener("scrollend", onScrollEnd);
+    return () => element.removeEventListener("scrollend", onScrollEnd);
+  }, [segments]);
   return (
     <div
       ref={viewport}
@@ -663,6 +692,7 @@ function VirtualizedHistory({
       onPointerDown={() => {
         cancelRestoration();
         pointerScrolling.current = true;
+        expectUserScroll();
       }}
       onPointerUp={() => {
         pointerScrolling.current = false;
@@ -690,21 +720,8 @@ function VirtualizedHistory({
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
-        captureNextScroll.current = false;
-        const viewportTop = element.getBoundingClientRect().top;
-        const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
-          (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
-        );
-        const firstEntity = first
-          ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
-          : undefined;
-        if (first && firstEntity) {
-          readingAnchor.current = {
-            key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-            cursor: firstEntity.cursor.toString(),
-            offset: first.getBoundingClientRect().top - viewportTop,
-          };
-        }
+        captureNextScroll.current = true;
+        scrolledSinceInput.current = true;
         // Retain one segment across adjacent reading windows so the virtualizer can restore
         // the same measured item and pixel offset after the old collection is evicted.
         const boundary = (segments[1] ?? segments[0])?.cursor.toString();
