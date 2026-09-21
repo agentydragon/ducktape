@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
 from typing import Any, cast
 
 import httpx
@@ -37,6 +37,20 @@ from agentplane.app.trajectory import TrajectoryStore
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[object]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Expose the call report to a fixture's teardown without changing test outcomes."""
+    report = yield
+    if call.when == "call":
+        item.stash[_CALL_REPORT] = report
+    return report
+
+
+_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
 @pytest.fixture
