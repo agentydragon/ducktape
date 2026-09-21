@@ -120,7 +120,7 @@ def _shape_params(conversation_id: str) -> dict[str, str]:
         "table": "sync_view_row",
         "where": f"conversation_id = '{conversation_id}'",
         "columns": SHAPE_COLUMNS,
-        "queryable_columns": "conversation_id",
+        "queryable_columns": "conversation_id,row_key",
         "replica": "full",
         "log": "full",
         "live": "false",
