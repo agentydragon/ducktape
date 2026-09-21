@@ -469,6 +469,7 @@ def haku_openclaw_spike_namespace(chart: Chart) -> Kustomization:
             interval="1h",
             path="./cluster/k8s/agents/haku-openclaw-spike/namespace",
             prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
