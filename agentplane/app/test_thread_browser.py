@@ -259,6 +259,8 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 ) -> None:
     page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
     thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread_browser.opened.replay.set()
+    await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives projection replacement")
