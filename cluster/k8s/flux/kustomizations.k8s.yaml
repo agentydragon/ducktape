@@ -671,23 +671,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: paperless-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/parked/paperless/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: paperless-namespace
-    namespace: ducktape-flux
-  suspend: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: reflector
   namespace: ducktape-flux
 spec:
@@ -1430,33 +1413,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    ducktape.org/parked: "true"
-  name: paperless-cache
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: paperless-namespace
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/paperless/cache
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: paperless-cache
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Forgejo API token Reflector mirrors into haku-ci's KEDA scaler. Split out of haku/managed-agent so haku-ci doesn't depend on the (parked) worker.
   name: haku-forgejo-tea
   namespace: ducktape-flux
@@ -2128,33 +2084,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: paperless-db
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: paperless-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/paperless/db
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: paperless-db
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-filer-db
   namespace: ducktape-flux
 spec:
@@ -2444,38 +2373,6 @@ spec:
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: paperless
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: paperless-namespace
-      namespace: ducktape-flux
-    - name: paperless-cache
-      namespace: ducktape-flux
-    - name: paperless-db
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/paperless/app
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: paperless-app
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

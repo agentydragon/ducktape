@@ -192,7 +192,6 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
     inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
-    paperless_namespace_kustomization = parked_flux_kustomizations.paperless_namespace(flux_chart)
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart)
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(flux_chart)
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
@@ -244,9 +243,6 @@ def generate_manifests(root: Path) -> None:
     )
     forgejo_cache_kustomization = forgejo_flux_kustomizations.forgejo_cache(
         flux_chart, forgejo_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
-    )
-    paperless_cache_kustomization = parked_flux_kustomizations.paperless_cache(
-        flux_chart, paperless_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
     )
     haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(flux_chart, kyverno_policies_kustomization)
@@ -305,9 +301,6 @@ def generate_manifests(root: Path) -> None:
     inventree_db_kustomization = parked_flux_kustomizations.inventree_db(
         flux_chart, inventree_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
-    paperless_db_kustomization = parked_flux_kustomizations.paperless_db(
-        flux_chart, paperless_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
@@ -341,13 +334,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         gateway_kustomization,
         monitoring_crds_kustomization,
-    )
-    parked_flux_kustomizations.paperless(
-        flux_chart,
-        paperless_namespace_kustomization,
-        paperless_cache_kustomization,
-        paperless_db_kustomization,
-        gateway_kustomization,
     )
     dns_automation_flux_kustomizations.dns_automation(
         flux_chart,
