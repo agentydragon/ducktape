@@ -32,9 +32,9 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
-  /** Exercise the production interest and Electric shape synchronization boundary. `gap` is an
-   * unresolved interest rejection, unlike a retired ready shape, whose 410 triggers a refresh. */
-  sessionReplay?: "catching-up" | "gap";
+  /** Exercise the production interest and Electric shape synchronization boundary. `unavailable`
+   * is a persistent initial service failure, unlike a retired ready shape, whose 410 triggers a refresh. */
+  sessionReplay?: "catching-up" | "unavailable";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
@@ -430,11 +430,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     sessionReplay: "catching-up",
     readySelectors: ['[role="status"]'],
   },
-  session_replay_gap: {
+  session_sync_unavailable: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
-    sessionReplay: "gap",
+    sessionReplay: "unavailable",
     readySelectors: ['[role="alert"]'],
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little

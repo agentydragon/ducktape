@@ -1181,10 +1181,10 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/interest$/,
     (match) =>
-      scenario.sessionReplay === "gap"
-        ? // An interest cannot be used at all. This is distinct from a ready shape's stale
-          // source/epoch 410, which the production collection intentionally resolves once.
-          Response.json({ detail: "conversation interest expired; refetch the current projection" }, { status: 409 })
+      scenario.sessionReplay === "unavailable"
+        ? // This persistent service failure is distinct from a ready shape's stale source/epoch
+          // 410, which the production collection intentionally resolves once.
+          Response.json({ detail: "conversation projection is temporarily unavailable" }, { status: 503 })
         : conversationInterest(match[1]),
   ],
   [
