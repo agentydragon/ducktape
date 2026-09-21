@@ -35,6 +35,6 @@ inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
 architecture, pending Thread identity continuity, native recovery, and optional
 app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
-owns the proposed reduced read/RPC contract, on-demand Raw, history/catch-up and
+owns the proposed conversation model and sync-engine integration, on-demand Raw, history/catch-up and
 frontend state; it is distinct from the implemented raw-replay API.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
