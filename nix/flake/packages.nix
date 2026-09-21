@@ -123,36 +123,14 @@ ducktapePkgs
   haku-openclaw-spike-image = import ../../haku/openclaw_spike {
     inherit nix-openclaw pkgs ruffLatest;
   };
-  # Full-NixOS container image for the Haku Managed Agents self-hosted
-  # worker (Runtime B, haku/runtime/managed_agent/self_hosted).
+  # Parked full-NixOS container image for the Haku Managed Agents self-hosted
+  # worker (Runtime B). Kept as a manual build output with its recipe beside
+  # the component; automatic build/publish and Attic caching are disabled.
   # Build: nix build .#haku-managed-agent-image
   # Load:  docker import result/tarball/*.tar haku-managed-agent
-  # Emit an UNCOMPRESSED rootfs tar: the CI step `podman import`s it and
-  # compresses the layer once (gzip). The default `pixz -t` xz pass would
-  # just be decompressed and re-gzipped — wasted work — and importing the
-  # `.tar.xz` directly yields an inconsistent layer the node rejects with
-  # "wrong diff id calculated on extraction".
-  haku-managed-agent-image =
-    self.nixosConfigurations.haku-managed-agent.config.system.build.tarball.override
-      {
-        compressCommand = "cat";
-        compressionExtension = "";
-        extraInputs = [ ];
-        # The agent toolset's `bash` tool execs `/bin/bash` at that literal
-        # path (PATH-independent). NixOS activation would create it, but we
-        # run the closure directly without booting, so bake /bin/{bash,sh}
-        # into the rootfs here (-> the system-path bash at the stable /sw).
-        # extraCommands REPLACES the docker-container profile's value (and
-        # must be an executable script, not a string), so the profile's /etc
-        # + /proc/sys/dev fixups are re-applied here too.
-        extraCommands = self.nixosConfigurations.haku-managed-agent.pkgs.writeScript "haku-managed-agent-tarball-extra" ''
-          rm etc
-          mkdir -p proc sys dev etc bin
-          chmod u+w bin
-          ln -sf /sw/bin/bash bin/bash
-          ln -sf /sw/bin/sh bin/sh
-        '';
-      };
+  haku-managed-agent-image = import ../../haku/runtime/managed_agent/self_hosted/image.nix {
+    inherit self;
+  };
   # Pre-built UEFI qcow2 VM images for Proxmox deployment.
   # Build: nix build .#wyrm2-image
   # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).

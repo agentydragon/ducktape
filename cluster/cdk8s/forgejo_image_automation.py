@@ -80,7 +80,6 @@ IMAGES = (
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",
-    "haku-managed-agent",
     "haku-openclaw-spike",
     # The trailing `-image` is in the repository path too, unlike every other entry.
     "haku-sandbox-image",

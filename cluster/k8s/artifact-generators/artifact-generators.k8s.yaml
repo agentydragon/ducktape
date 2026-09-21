@@ -371,6 +371,11 @@ spec:
       name: haku-openclaw-spike-backup
       originRevision: "@repo"
     - copy:
+        - from: "@repo/haku/runtime/managed_agent/self_hosted/deploy/**"
+          to: "@artifact/haku/runtime/managed_agent/self_hosted/deploy/"
+      name: haku-managed-agent
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/app/**"
           to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/app/"
       name: kubectl-passthrough-mcp
