@@ -1094,11 +1094,12 @@ function currentSubset(query: URLSearchParams): boolean {
   if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
     throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
   }
-  if (query.get("offset") !== "now") throw new Error("current Electric snapshots must start the stream at offset now");
   if (query.get("source_id") !== CONVERSATION_SOURCE || query.get("projection_epoch") !== CONVERSATION_EPOCH) {
     throw new Error("current Electric shapes must select the resolved conversation source and projection epoch");
   }
-  return true;
+  // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
+  // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
+  return query.get("offset") === "now";
 }
 
 function shapeRow(relation: string, value: Record<string, unknown>) {

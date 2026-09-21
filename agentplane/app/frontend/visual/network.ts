@@ -69,6 +69,7 @@ function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "conve
 function shapeHeaders(handle: string, schema: Record<string, Record<string, string | boolean | number>>): HeadersInit {
   return {
     "content-type": "application/json",
+    "electric-cursor": "1674440",
     "electric-handle": handle,
     "electric-offset": "0_0",
     "electric-schema": JSON.stringify(schema),
