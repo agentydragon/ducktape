@@ -26,10 +26,7 @@ py_binary(
 
 py_package(
     name = "claude_statusline_pkg",
-    packages = [
-        "devinfra.claude",
-        "devinfra.claude.statusline",
-    ],
+    packages = ["devinfra.claude.statusline"],
     deps = [":statusline"],
 )
 
@@ -58,7 +55,12 @@ py_wheel(
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],
-    deps = [":claude_statusline_pkg"],
+    deps = [
+        ":claude_statusline_pkg",
+        # Pack only this parent-package module; selecting `devinfra.claude` in
+        # py_package would also include the nested claude_api package.
+        "//devinfra/claude:session_paths",
+    ],
 )
 
 py_test(
