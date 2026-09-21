@@ -29,6 +29,7 @@ from agentplane.app.trajectory import (
     ConversationProjectionError,
     ConversationProjectionEvidence,
     ConversationProjectionNativeLink,
+    ConversationViewState,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -372,7 +373,17 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
 
     await store.record(
         thread,
-        [_event(cursor, command_noop=event_pb2.CommandNoop(command_id="pending-60", reason="completed"))],
+        [
+            _event(cursor, command_noop=event_pb2.CommandNoop(command_id="pending-60", reason="completed")),
+            _event(
+                cursor + 1,
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id="replacement", submit_input=command_pb2.SubmitInput(text="saved")
+                    )
+                ),
+            ),
+        ],
         lease=lease,
     )
     assert await store.command_outcomes(
@@ -380,9 +391,23 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
     ) == {"pending-60": "noop"}
     refreshed = await store.pending_command_interest(thread)
     assert refreshed is not None
-    assert refreshed.unresolved_count == 60
-    assert refreshed.command_revision_cursor == cursor
+    assert refreshed.unresolved_count == 61
+    assert refreshed.command_revision_cursor == cursor + 1
     assert "pending-60" not in refreshed.command_ids
+    assert refreshed.command_ids[0] == "replacement"
+    # The page and its summary were selected in the same short read snapshot; a same-count
+    # settlement/admission swap cannot pair the old page with a stale command revision.
+    async with store._sessions() as session:
+        view_row = await session.get(
+            ConversationEntity,
+            (thread, refreshed.scope.source_id, refreshed.scope.projection_epoch, "view_state", "current"),
+        )
+    assert view_row is not None
+    view = ConversationViewState.model_validate(view_row.state)
+    assert (str(refreshed.command_revision_cursor), refreshed.unresolved_count) == (
+        view.command_revision_cursor,
+        view.unresolved_count,
+    )
 
     assert len(captured) == 1
     async with store._engine.connect() as connection:
