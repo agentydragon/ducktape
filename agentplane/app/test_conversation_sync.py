@@ -93,6 +93,8 @@ async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[s
         },
     )
     snapshot.raise_for_status()
+    assert isinstance(snapshot.json()["data"], list), snapshot.text
+    assert isinstance(snapshot.json()["metadata"], dict), snapshot.text
     # These tests serialize writes after snapshot completion. The browser tests
     # exercise TanStack's transaction-aware snapshot/live reconciliation.
     snapshot.headers["electric-offset"] = start.headers["electric-offset"]
@@ -114,10 +116,10 @@ async def _cross_replica_sync(
         interest = await client_one.get(f"{path}/interest")
         interest.raise_for_status()
         selection = interest.json()
-        entity_params = {"anchor_cursor": selection["anchor_cursor"], "tail_from": selection["tail_from"]}
+        entity_params = {key: selection[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
         initial = await _current_snapshot(client_one, f"{path}/entities", entity_params)
         assert initial.status_code == 200, initial.text
-        rows = [message["value"] for message in initial.json() if "value" in message]
+        rows = [message["value"] for message in initial.json()["data"] if "value" in message]
         first_item = next(row for row in rows if row["entity_id"] == "first")
         raw_ref = first_item["text_ref"]
         reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
@@ -206,7 +208,7 @@ async def _selected_command_outcome(
     }
     snapshot = await _current_snapshot(client_one, f"{path}/commands", params)
     snapshot.raise_for_status()
-    assert not [message for message in snapshot.json() if "value" in message]
+    assert not [message for message in snapshot.json()["data"] if "value" in message]
     start = len(source.entries)
     for command_id in ("selected-command", "unselected-command"):
         source.append(
@@ -273,11 +275,11 @@ async def _history_windows(
     tail = await client_two.get(f"{path}/interest")
     tail.raise_for_status()
     tail_interest = tail.json()
-    tail_params = {"anchor_cursor": tail_interest["anchor_cursor"], "tail_from": tail_interest["tail_from"]}
+    tail_params = {key: tail_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
     snapshot = await _current_snapshot(client_two, f"{path}/entities", tail_params)
     snapshot.raise_for_status()
     assert snapshot.headers["cache-control"] == "private, no-store"
-    rows = [message["value"] for message in snapshot.json() if "value" in message]
+    rows = [message["value"] for message in snapshot.json()["data"] if "value" in message]
     assert {row["entity_id"] for row in rows if row["entity_kind"] == "item"} == {
         f"history-{index:03}" for index in range(65, 95)
     }
@@ -289,10 +291,13 @@ async def _history_windows(
         selected = await client_one.get(f"{path}/interest", params={"before_cursor": before})
         selected.raise_for_status()
         interest = selected.json()
-        window_params = {key: interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
+        window_params = {
+            key: interest[key]
+            for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
+        }
         page = await _current_snapshot(client_two, f"{path}/entities", window_params)
         page.raise_for_status()
-        page_rows = [message["value"] for message in page.json() if "value" in message]
+        page_rows = [message["value"] for message in page.json()["data"] if "value" in message]
         assert {row["entity_id"] for row in page_rows if row["entity_kind"] == "item"} == {
             f"history-{index:03}" for index in (*range(lower, lower + 30), *range(65, 95))
         }
@@ -338,12 +343,13 @@ async def _history_windows(
     revisit.raise_for_status()
     revisit_interest = revisit.json()
     revisit_params = {
-        key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")
+        key: revisit_interest[key]
+        for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
     }
     revisit_page = await _current_snapshot(client_one, f"{path}/entities", revisit_params)
     versions = [
         message["value"]
-        for message in revisit_page.json()
+        for message in revisit_page.json()["data"]
         if message.get("value", {}).get("entity_id") == "history-040"
     ]
     assert len(versions) == 1

@@ -108,6 +108,8 @@ type PayloadChunk = z.output<typeof chunkSchema>;
 
 function entityUrl(threadId: string, interest: EntityInterest): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
+  url.searchParams.set("source_id", interest.source_id);
+  url.searchParams.set("projection_epoch", interest.projection_epoch);
   url.searchParams.set("anchor_cursor", interest.anchor_cursor);
   url.searchParams.set("tail_from", interest.tail_from);
   if (interest.window_from !== null) url.searchParams.set("window_from", interest.window_from);
