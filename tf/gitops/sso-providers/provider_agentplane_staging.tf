@@ -63,7 +63,7 @@ resource "kubernetes_secret" "agentplane_staging_oidc" {
   }
 
   data = {
-    client-id      = authentik_provider_oauth2.agentplane_staging.client_id
-    client-secret  = authentik_provider_oauth2.agentplane_staging.client_secret
+    client-id     = authentik_provider_oauth2.agentplane_staging.client_id
+    client-secret = authentik_provider_oauth2.agentplane_staging.client_secret
   }
 }
