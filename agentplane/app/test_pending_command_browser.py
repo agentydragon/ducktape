@@ -220,7 +220,7 @@ async def test_pending_command_pages_bound_selection_refresh_and_cleanup(thread_
 
 
 async def test_pending_command_pages_recover_after_offline_updates(thread_browser: ThreadBrowser) -> None:
-    page, source = thread_browser.page, thread_browser.source
+    page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
     await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
     for index in range(62):
         source.append(pending_command(index))
@@ -232,6 +232,7 @@ async def test_pending_command_pages_recover_after_offline_updates(thread_browse
     await expect(updates).to_contain_text("62 pending")
     await expect(updates.locator("[data-command-id]")).to_have_count(30)
     current_id = await await_command_query(page, "command-current")
+    (thread,) = await store.list_threads()
     await composer.fill("Draft retained across pending-page offline recovery")
     reader_before = await reader_layout(page)
 
@@ -256,7 +257,7 @@ async def test_pending_command_pages_recover_after_offline_updates(thread_browse
                 command_noop=event_pb2.CommandNoop(command_id="pending-page-061", reason="offline current completed")
             )
         )
-        source.append(
+        latest = source.append(
             event_pb2.Event(
                 command_admitted=event_pb2.CommandAdmitted(
                     command=command_pb2.Command(
@@ -266,6 +267,18 @@ async def test_pending_command_pages_recover_after_offline_updates(thread_browse
                 )
             )
         )
+        async with asyncio.timeout(15):
+            while True:
+                scope = await store.current_conversation_scope(thread.id)
+                if scope is not None and scope.through_cursor >= latest.cursor:
+                    break
+                await asyncio.sleep(0.01)
+        # The app has committed the replacement while Chromium remains disconnected. Its old
+        # current and older fixed-ID pages cannot observe either update until the real reconnect.
+        await expect(updates).to_contain_text("62 pending")
+        await expect(updates.locator('[data-command-id="pending-page-061"]')).to_have_count(1)
+        await expect(updates.locator('[data-command-id="pending-page-offline-replacement"]')).to_have_count(0)
+        await expect(updates.locator('[data-command-id="pending-page-002"]')).to_contain_text("Saved · awaiting effect")
         async with page.expect_response(
             lambda response: "/sync/pending-interest" in response.url and response.status == 200
         ):
