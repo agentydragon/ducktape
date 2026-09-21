@@ -428,7 +428,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Command updates"]', '[data-conversation-anchor="19"]'],
+    readySelectors: [
+      '[aria-label="Pending commands"]',
+      '[data-command-id="queued-model"]',
+      '[data-command-id="queued-interrupt"]',
+      "text=Model unavailable",
+      "text=Target turn already ended",
+      '[data-conversation-anchor="19"]',
+    ],
     captureViewport: true,
   },
   session_catching_up: {
