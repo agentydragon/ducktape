@@ -97,7 +97,6 @@ class Feed:
 
     async def run(self) -> None:
         attachment: Attachment | None = None
-        entry: event_log_pb2.EventEntry | None = None
         try:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
@@ -136,12 +135,7 @@ class Feed:
                 )
             except EventReplicationError as error:
                 logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-                await self.store.end_feed(
-                    thread_id,
-                    lease=self.lease,
-                    error=str(error),
-                    error_cursor=entry.cursor if entry is not None else None,
-                )
+                await self.store.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
         except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
@@ -289,6 +283,11 @@ class RunnerBridge:
     async def open_session(
         self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
     ) -> protocol_pb2.Attached:
+        existing = await self._store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=True)
+        if existing:
+            snapshot = await self._store.feed_state(existing[0].id)
+            if snapshot is not None and isinstance(snapshot.end, FeedError):
+                raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
         try:
             attached = attachment.attached
@@ -316,6 +315,9 @@ class RunnerBridge:
         thread = await self._store.get_thread(thread_id)
         if thread is None:
             raise ThreadNotFoundError(thread_id)
+        snapshot = await self._store.feed_state(thread_id)
+        if snapshot is not None and isinstance(snapshot.end, FeedError):
+            raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # A runner rejection can still have followed earlier events the archive has not copied.
         # Start its feed before relaying so the rejection path cannot strand that prefix.
         await self.start([thread.sandbox])

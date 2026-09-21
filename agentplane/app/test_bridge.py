@@ -34,10 +34,16 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import FeedError, TrajectoryStore
+from agentplane.app.trajectory import (
+    ConversationEntity,
+    ConversationOperationalState,
+    ConversationProjectionCheckpoint,
+    FeedError,
+    TrajectoryStore,
+)
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
-from agentplane.runner.client import Attachment, RunnerClient, StreamClosedError
+from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -583,7 +589,11 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
 
 
 async def test_semantic_feed_failure_survives_replica_reconcile(
-    runner: RunnerHandle, store: TrajectoryStore, db_url: str, spec: protocol_pb2.SessionSpec
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    db_url: str,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
 
@@ -609,6 +619,17 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             failed = await replica_store.feed_state(thread)
             assert failed is not None
             assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+            async with replica_store._sessions() as session:
+                checkpoint = await session.get(ConversationProjectionCheckpoint, thread)
+                assert checkpoint is not None
+                view = await session.get(
+                    ConversationEntity,
+                    (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current"),
+                )
+                assert view is not None
+                operational = ConversationOperationalState.model_validate(view.state["operational"])
+            assert operational.feed_error is not None
+            assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
             await store.release_ingestion(lease)
         finally:
             attachment.cancel()
@@ -619,6 +640,35 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             await survivor.reconcile()
             assert not survivor._feeds
             assert await replica_store.feed_state(thread) == failed
+
+            dispatched = False
+
+            async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
+                nonlocal dispatched
+                dispatched = True
+
+            monkeypatch.setattr(survivor, "_command", reject_dispatch)
+            with pytest.raises(RunnerError, match="runner history is rejected"):
+                await survivor.command(
+                    thread,
+                    command_pb2.Command(
+                        command_id="must-not-reach-rejected-runner",
+                        submit_input=command_pb2.SubmitInput(text="must not dispatch"),
+                    ),
+                )
+            assert not dispatched
+
+            contacted_runner = False
+
+            async def reject_client(_sandbox: str) -> RunnerClient:
+                nonlocal contacted_runner
+                contacted_runner = True
+                raise AssertionError("a rejected feed must refuse reopen before native attach")
+
+            monkeypatch.setattr(survivor, "_client", reject_client)
+            with pytest.raises(RunnerError, match="runner history is rejected"):
+                await survivor.open_session(SANDBOX, SESSION, spec)
+            assert not contacted_runner
         finally:
             await survivor.close()
     finally:

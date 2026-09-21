@@ -695,6 +695,24 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     }
 
 
+async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: TrajectoryStore, lease: IngestionLease) -> None:
+    thread = await store.thread("sb-1", "s-invalid-origin", SPEC)
+    rejected = _event(2, harness_started=event_pb2.HarnessStarted())
+    rejected.origin.sequence = 3
+    with pytest.raises(EventReplicationError, match="invalid runner origin at cursor 2") as raised:
+        await store.record(
+            thread,
+            [
+                _event(1, harness_started=event_pb2.HarnessStarted()),
+                rejected,
+                _event(3, harness_started=event_pb2.HarnessStarted()),
+            ],
+            lease=lease,
+        )
+    assert raised.value.cursor == 2
+    assert await store.last_cursor(thread) == 0
+
+
 async def test_ingested_events_project_the_durable_attachment_without_replay_regression(
     store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
 ) -> None:
