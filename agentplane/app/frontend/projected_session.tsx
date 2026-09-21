@@ -41,6 +41,18 @@ const LIFECYCLE_LABELS: Record<string, string> = {
   harness_lost: "Harness connection lost",
 };
 
+function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
+  if (!event || typeof event !== "object")
+    return { label: LIFECYCLE_LABELS[observation] ?? observation, diagnostic: null };
+  const fields = event as Record<string, unknown>;
+  const status = typeof fields.status === "string" ? fields.status : null;
+  const diagnostic = typeof fields.error === "string" && fields.error ? fields.error : null;
+  if (observation === "turn_completed" && status?.endsWith("FAILED")) return { label: "Turn failed", diagnostic };
+  if (observation === "turn_completed" && status?.endsWith("INTERRUPTED"))
+    return { label: "Turn interrupted", diagnostic };
+  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+}
+
 function Body({
   threadId,
   reference,
@@ -282,11 +294,18 @@ function EntityCard({
   }
   if (entity.entityKind === "lifecycle") {
     const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
+    const event = "event" in entity.state ? entity.state.event : null;
+    const presentation = lifecyclePresentation(observation, event);
     return (
       <Stack gap="xs" data-conversation-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={observation === "harness_lost" ? "red" : "dimmed"}>
-          {LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " ")}
+        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
+          {presentation.label}
         </Text>
+        {presentation.diagnostic && (
+          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {presentation.diagnostic}
+          </Text>
+        )}
         {"event" in entity.state && (
           <details>
             <summary>Lifecycle details</summary>
@@ -552,13 +571,7 @@ function ProjectedSessionBody({
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const operational =
-    view && "controls" in view.state && "operational" in view.state
-      ? (view.state.operational as {
-          status: "active" | "ended" | "failed";
-          feed_error: { cursor: string; message: string } | null;
-        })
-      : null;
+  const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
     available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
@@ -664,7 +677,8 @@ function ProjectedSessionBody({
         )}
         {operational?.feed_error && (
           <Text role="alert" c="red">
-            Conversation feed stopped at cursor {operational.feed_error.cursor}: {operational.feed_error.message}
+            Rejected event {operational.feed_error.cursor}: {operational.feed_error.message}. Showing verified history
+            through event {operational.last_verified_cursor}.
           </Text>
         )}
         {modelError && (

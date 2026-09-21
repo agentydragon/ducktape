@@ -13,15 +13,18 @@ export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-const payloadRefSchema = z.object({
-  source_id: z.string(),
-  projection_epoch: z.string(),
-  owner_cursor: z.string(),
-  owner_item_id: z.string(),
-  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
-  revision_cursor: z.string(),
-  generation: z.string(),
-});
+type StoredState = ConversationStoredEntity["state"];
+type StoredViewState = Extract<StoredState, { controls: unknown }>;
+type ConversationState =
+  | Exclude<StoredState, StoredViewState>
+  | (StoredViewState & {
+      operational: {
+        operational_version: string;
+        status: "active" | "ended" | "failed";
+        last_verified_cursor: string;
+        feed_error: { cursor: string; message: string } | null;
+      };
+    });
 
 export interface ConversationEntity {
   threadId: string;
@@ -33,12 +36,22 @@ export interface ConversationEntity {
   revisionCursor: Decimal;
   pending: boolean;
   turnId: string | null;
-  state: ConversationStoredEntity["state"];
+  state: ConversationState;
   textRef: PayloadRef | null;
   argumentsRef: PayloadRef | null;
   outputRef: PayloadRef | null;
   inputRef: PayloadRef | null;
 }
+const payloadRefSchema = z.object({
+  source_id: z.string(),
+  projection_epoch: z.string(),
+  owner_cursor: z.string(),
+  owner_item_id: z.string(),
+  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
+  revision_cursor: z.string(),
+  generation: z.string(),
+});
+
 const stateSchema = z.union([
   z.object({
     controls: z.object({
