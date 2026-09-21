@@ -17,7 +17,9 @@ export const routes: Route[] = [];
 
 /** A real Electric HTTP shape batch: row operations followed by a completed-snapshot control. */
 export interface ElectricShapeMessage {
-  headers: { operation: "insert" | "update" | "delete" } | { control: "up-to-date" | "must-refetch" };
+  headers:
+    | { relation: ["public", string]; operation: "insert" | "update" | "delete" }
+    | { control: "snapshot-end" | "up-to-date" | "must-refetch" };
   key?: string;
   value?: Record<string, unknown>;
 }
@@ -28,14 +30,18 @@ export interface ElectricShapeMessage {
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
 export function electricShape(rows: readonly ElectricShapeMessage[], handle: string): Response {
-  return new Response(JSON.stringify([...rows, { headers: { control: "up-to-date" } }]), {
-    headers: {
-      "content-type": "application/json",
-      "electric-handle": handle,
-      "electric-offset": "0_0",
-      "electric-up-to-date": "",
-    },
-  });
+  return new Response(
+    JSON.stringify([...rows, { headers: { control: "snapshot-end" } }, { headers: { control: "up-to-date" } }]),
+    {
+      headers: {
+        "content-type": "application/json",
+        "electric-handle": handle,
+        "electric-offset": "0_0",
+        "electric-schema": "public",
+        "electric-up-to-date": "",
+      },
+    }
+  );
 }
 
 interface Ledger {

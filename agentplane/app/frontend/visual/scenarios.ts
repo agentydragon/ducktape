@@ -32,12 +32,14 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
-  /** Stop replay early or omit one entry, exposing synchronization state without fabricating Events. */
+  /** Exercise the production interest and Electric shape synchronization boundary. */
   sessionReplay?: "catching-up" | "gap";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
-  /** Inspect a real Raw Event disclosure, scrolling its containing timeline into view. */
-  openEvidence?: number;
+  /** Open the chronological archive drawer, the native-frame inspection surface. */
+  openDebug?: "latest" | "stderr";
+  /** Open a projected reasoning payload after the semantic row has mounted. */
+  openReasoning?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   failedTurn?: "before-content" | "after-content";
 }
@@ -54,17 +56,13 @@ const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
 // open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
 // fine here: its summary is exactly where the streaming/failed dots these scenarios exist for show.
 const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
-// `%23` is the `#` of the item id: the view scrolls to the newest event, so the block to show open
-// is the second turn's, and the first stays folded beside it.
-const REASONING = "reasoning=r%231";
-
 export const SCENARIOS: Record<string, Scenario> = {
   session_error: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     failedTurn: "before-content",
-    readySelectors: ['[role="alert"]'],
+    readySelectors: ['[data-conversation-anchor="6"]'],
     captureViewport: true,
   },
   session_error_phone: {
@@ -72,23 +70,25 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     failedTurn: "after-content",
-    readySelectors: ['[role="alert"]'],
+    readySelectors: ['[data-conversation-anchor="8"]'],
     captureViewport: true,
   },
   session_error_raw: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1100 },
     failedTurn: "after-content",
-    readySelectors: ['[role="alert"]'],
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   session_error_raw_phone: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: PHONE,
     failedTurn: "before-content",
-    readySelectors: ['[role="alert"]'],
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   session_interleaved: {
@@ -101,28 +101,29 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_interleaved_raw: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1500 },
     interleavedEvents: true,
-    readySelectors: ['[data-event-cursor="18"]'],
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   session_interleaved_raw_phone: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: PHONE,
     interleavedEvents: true,
-    openEvidence: 13,
-    readySelectors: ["#agentplane-event-13[open][data-evidence-ready]"],
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   session_interleaved_native_details: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1100 },
     interleavedEvents: true,
-    openEvidence: 9,
-    readySelectors: ["#agentplane-event-9[open][data-evidence-ready]"],
+    openDebug: "stderr",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
@@ -342,32 +343,36 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_reasoning: {
     element: "#app",
-    route: `${SESSION_ROUTE}?${REASONING}`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-reasoning",
+    openReasoning: true,
+    readySelectors: ["details[open]"],
   },
   session_reasoning_phone: {
     element: "#app",
-    route: `${SESSION_ROUTE}?${REASONING}`,
+    route: SESSION_ROUTE,
     viewport: PHONE,
     outputName: "session-reasoning-phone",
+    openReasoning: true,
+    readySelectors: ["details[open]"],
   },
-  // The Raw frames switch on, so frames render beside the item, input and turn they were
-  // translated into, and what belongs to none of them under "outside the transcript". Reasoning is
-  // open too: a reader following the frames wants the thinking they produced. Taller than the
-  // plain session scenario -- the transcript scrolls to the newest event and the stack is several
-  // times as tall with every frame in it, so a 900-tall window ends inside the last item and the
-  // review never sees a turn or an input take its place in the order.
+  // Native observations are inspected through the chronological drawer. The projected view has
+  // no raw-event URL mode: its semantic entities stay identical while the drawer shows archive rows.
   session_raw: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1&${REASONING}`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1800 },
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
   },
   session_raw_phone: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1&${REASONING}`,
+    route: SESSION_ROUTE,
     viewport: PHONE,
     outputName: "session-raw-phone",
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
   },
   session_states: {
     element: "#app",
@@ -394,7 +399,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_pending_raw: {
     element: "#app",
-    route: `${SESSION_STATES_ROUTE}?raw=1`,
+    route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     readySelectors: ['[aria-label="Pending commands"]'],
@@ -413,7 +418,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Command outcomes"]'],
+    readySelectors: ['[aria-label="Pending commands"]'],
     captureViewport: true,
   },
   session_catching_up: {
@@ -425,7 +430,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_replay_gap: {
     element: "#app",
-    route: `${SESSION_ROUTE}?raw=1`,
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     sessionReplay: "gap",
     readySelectors: ['[role="alert"]'],

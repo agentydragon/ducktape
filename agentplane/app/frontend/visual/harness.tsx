@@ -37,7 +37,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { routes } from "./network";
+import { electricShape, routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -999,6 +999,350 @@ const INTERLEAVED_EVENTS: EventEntry[] = [
   ),
 ];
 
+/**
+ * Conversation scenes deliberately use the same persisted rows, refs, and Electric envelopes as
+ * the browser receives in production.  The old EventEntry scripts above remain fixtures for the
+ * runner protocol only; they are not replayed into the projected-session view.
+ */
+const CONVERSATION_SOURCE = "visual-runner";
+const CONVERSATION_EPOCH = "20260921";
+const payloadBodies = new Map<string, string>();
+
+function payloadKey(
+  ownerCursor: string,
+  ownerId: string,
+  field: string,
+  generation: string,
+  revisionCursor: string
+): string {
+  return `${ownerCursor}:${ownerId}:${field}:${generation}:${revisionCursor}`;
+}
+
+function payload(
+  ownerCursor: number,
+  ownerId: string,
+  field: string,
+  body: string,
+  revisionCursor = ownerCursor
+): Record<string, string> {
+  const reference = {
+    source_id: CONVERSATION_SOURCE,
+    projection_epoch: CONVERSATION_EPOCH,
+    owner_cursor: String(ownerCursor),
+    owner_item_id: ownerId,
+    field,
+    generation: "1",
+    revision_cursor: String(revisionCursor),
+  };
+  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  return reference;
+}
+
+function entity(
+  kind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command",
+  id: string,
+  cursor: number,
+  state: Record<string, unknown>,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    thread_id: extra.thread_id ?? THREADS[0].id,
+    source_id: CONVERSATION_SOURCE,
+    projection_epoch: CONVERSATION_EPOCH,
+    entity_kind: kind,
+    entity_id: id,
+    cursor: String(cursor),
+    revision_cursor: String(extra.revision_cursor ?? cursor),
+    pending: extra.pending ?? false,
+    turn_id: extra.turn_id ?? null,
+    state,
+    text_ref: extra.text_ref ?? null,
+    arguments_ref: extra.arguments_ref ?? null,
+    output_ref: extra.output_ref ?? null,
+    input_ref: extra.input_ref ?? null,
+  };
+}
+
+function viewState(
+  throughCursor: number,
+  activeTurn: string | null,
+  operational: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return entity(
+    "view_state",
+    "current",
+    throughCursor,
+    {
+      controls: {
+        applied_model: "harness-claude-model",
+        active_turn_id: activeTurn,
+        harness_state: activeTurn === null ? "stopped" : "running",
+      },
+      unresolved_count: 0,
+      operational: {
+        operational_version: String(throughCursor),
+        status: "active",
+        last_verified_cursor: String(throughCursor),
+        feed_error: null,
+        ...operational,
+      },
+    },
+    { revision_cursor: throughCursor }
+  );
+}
+
+function lifecycle(
+  cursor: number,
+  observation: string,
+  eventValue: Record<string, unknown>,
+  threadId?: string
+): Record<string, unknown> {
+  return entity(
+    "lifecycle",
+    `${observation}:${cursor}`,
+    cursor,
+    { observation, event: eventValue },
+    { thread_id: threadId }
+  );
+}
+
+function item(
+  cursor: number,
+  id: string,
+  kind: ItemKind,
+  text: string | null,
+  extra: {
+    tool?: string;
+    arguments?: string;
+    output?: string;
+    complete?: boolean;
+    turn?: string;
+    threadId?: string;
+  } = {}
+): Record<string, unknown> {
+  return entity(
+    "item",
+    id,
+    cursor,
+    {
+      kind,
+      tool_name: extra.tool ?? "",
+      completion: extra.complete === false ? null : text,
+      tool_succeeded: extra.output === undefined ? null : true,
+    },
+    {
+      thread_id: extra.threadId,
+      turn_id: extra.turn ?? "turn-visual",
+      text_ref: text === null ? null : payload(cursor, id, "text", text),
+      arguments_ref: extra.arguments === undefined ? null : payload(cursor, id, "arguments", extra.arguments),
+      output_ref: extra.output === undefined ? null : payload(cursor, id, "output", extra.output),
+    }
+  );
+}
+
+function command(
+  cursor: number,
+  id: string,
+  operation: string,
+  outcome: "pending" | "effected" | "failed" | "noop",
+  reason: string | null = null
+): Record<string, unknown> {
+  return entity(
+    "command",
+    id,
+    cursor,
+    { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
+    { pending: outcome === "pending" }
+  );
+}
+
+function standardRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(34, "turn-visual"),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "List the repository files."),
+      }
+    ),
+    item(10, "tool-0", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"README.md"}',
+      output: "# ducktape\n\nRepository instructions are available.",
+    }),
+    item(20, "r-1", ItemKind.REASONING, "I will inspect the repository structure before proposing a change.", {
+      threadId,
+    }),
+    item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
+    lifecycle(
+      31,
+      "harness_stderr",
+      { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } },
+      threadId
+    ),
+    item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
+      threadId,
+      complete: false,
+    }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
+  const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
+  const event = toJson(
+    EventSchema,
+    create(EventSchema, {
+      observation: { case: "turnCompleted", value: { turnId: "failed-turn", status: TurnStatus.FAILED, error } },
+    })
+  ) as Record<string, unknown>;
+  const rows = [
+    viewState(afterContent ? 8 : 6, null),
+    entity(
+      "confirmed_input",
+      "failed-input",
+      4,
+      { harness_message_id: "failed-input", origin_command_ids: ["input-failed"] },
+      {
+        thread_id: threadId,
+        turn_id: "failed-turn",
+        input_ref: payload(4, "failed-input", "confirmed_input", "Inspect the test repository."),
+      }
+    ),
+    ...(afterContent
+      ? [
+          item(
+            6,
+            "partial",
+            ItemKind.ASSISTANT_TEXT,
+            "The first test files are present. Checking the remaining files…",
+            { threadId }
+          ),
+        ]
+      : []),
+    lifecycle(afterContent ? 8 : 6, "turn_completed", event, threadId),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function interleavedRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(18, null),
+    item(3, "tool-1", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"README.md"}',
+      output: "README opened",
+    }),
+    item(
+      8,
+      "before-input",
+      ItemKind.ASSISTANT_TEXT,
+      "I checked the current files before processing the queued messages.",
+      {
+        threadId,
+        turn: "interleaved-turn",
+      }
+    ),
+    entity(
+      "confirmed_input",
+      "coalesced-message",
+      10,
+      { harness_message_id: "coalesced-message", origin_command_ids: ["input-B", "input-C"] },
+      {
+        thread_id: threadId,
+        turn_id: "interleaved-turn",
+        input_ref: payload(10, "coalesced-message", "confirmed_input", "Also inspect tests.\nKeep the patch small."),
+      }
+    ),
+    item(15, "after-input", ItemKind.ASSISTANT_TEXT, "Continuing with the new model…", {
+      threadId,
+      turn: "interleaved-turn",
+    }),
+    lifecycle(
+      18,
+      "turn_completed",
+      toJson(
+        EventSchema,
+        create(EventSchema, {
+          observation: {
+            case: "turnCompleted",
+            value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
+          },
+        })
+      ) as Record<string, unknown>,
+      threadId
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function statesRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(23, "t2"),
+    item(7, "tool-0", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: '{"command":"git branch -d stale"}',
+      output: "fatal: branch 'stale' not found.",
+    }),
+    item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
+    item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
+      threadId,
+      complete: false,
+      turn: "t2",
+    }),
+    item(19, "tool-1", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: '{"command":"bazel test //..."}',
+      output: "42 passed",
+      turn: "t2",
+    }),
+    command(
+      24,
+      "queued-model",
+      "change_model",
+      scenario.pendingCommands === "outcomes" ? "failed" : "pending",
+      "Model unavailable"
+    ),
+    command(
+      25,
+      "queued-interrupt",
+      "interrupt_turn",
+      scenario.pendingCommands === "outcomes" ? "noop" : "pending",
+      "Target turn already ended"
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function conversationRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
+  if (scenario.interleavedEvents) return interleavedRows(threadId);
+  if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
+  return standardRows(threadId);
+}
+
+function conversationInterest(threadId: string): Record<string, string | null> {
+  const through = conversationRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
+  return {
+    source_id: CONVERSATION_SOURCE,
+    projection_epoch: CONVERSATION_EPOCH,
+    through_cursor: String(through),
+    anchor_cursor: String(through),
+    tail_from: "0",
+    window_from: null,
+    window_before: null,
+  };
+}
+
 if (scenario.pendingCommands === "mixed") {
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
@@ -1111,6 +1455,161 @@ routes.push(
   ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])]
 );
 
+function shapeEntity(row: Record<string, unknown>): Record<string, unknown> {
+  // Electric's decoded shape rows retain JSONB as JSON values at this collection boundary. The
+  // database-facing wire serializer owns JSON text, while this browser fixture starts after that
+  // decoder so Zod receives the same object-valued row the app consumes.
+  return { ...row };
+}
+
+function shapeRow(relation: string, key: string, value: Record<string, unknown>) {
+  return {
+    headers: { relation: ["public", relation] as ["public", string], operation: "insert" as const },
+    key,
+    value,
+  };
+}
+
+function threadRows(threadId: string): Record<string, unknown>[] {
+  return conversationRows(threadId).map(shapeEntity);
+}
+
+function observationPage(threadId: string) {
+  return {
+    observations: [
+      {
+        cursor: "31",
+        source_id: CONVERSATION_SOURCE,
+        source_sequence: "31",
+        kind: "harness_stderr",
+        entry: { observation: { harness_stderr: { text: "warning: fixture stderr" } } },
+      },
+      {
+        cursor: "34",
+        source_id: CONVERSATION_SOURCE,
+        source_sequence: "34",
+        kind: "item_completed",
+        entry: { observation: { item_completed: { item_id: "m-2" } } },
+      },
+    ],
+    next_before_cursor: null,
+    next_after_cursor: null,
+    thread_id: threadId,
+  };
+}
+
+routes.push(
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/interest$/,
+    (match) =>
+      scenario.sessionReplay === "gap"
+        ? Response.json({ detail: "conversation scope expired; refetch the current projection" }, { status: 410 })
+        : conversationInterest(match[1]),
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
+    (match) => {
+      const rows = threadRows(match[1]).map((row) => {
+        if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
+        return { ...row, revision_cursor: "8" };
+      });
+      return electricShape(
+        rows.map((row) => shapeRow("conversation_entity", `${row.entity_kind}:${row.entity_id}`, row)),
+        `visual-entities-${match[1]}`
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
+    (match, query) => {
+      const selected = new Set(query.getAll("command_id"));
+      const rows = threadRows(match[1]).filter(
+        (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
+      );
+      return electricShape(
+        rows.map((row) => shapeRow("conversation_entity", `command:${row.entity_id}`, row)),
+        `visual-commands-${match[1]}`
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
+    (_match, query) => {
+      const ownerCursor = query.get("owner_cursor") ?? "0";
+      const ownerId = query.get("owner_id") ?? "";
+      const field = query.get("field") ?? "";
+      const generation = query.get("generation") ?? "0";
+      const revisionCursor = query.get("revision_cursor") ?? "0";
+      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      return {
+        source_id: CONVERSATION_SOURCE,
+        projection_epoch: CONVERSATION_EPOCH,
+        owner_cursor: ownerCursor,
+        owner_id: ownerId,
+        field,
+        generation,
+        revision_cursor: revisionCursor,
+        present: body !== undefined,
+        chunk_count: body === undefined ? "0" : "1",
+        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
+      };
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/payload-chunks$/,
+    (match, query) => {
+      const ownerCursor = query.get("owner_cursor") ?? "0";
+      const ownerId = query.get("owner_id") ?? "";
+      const field = query.get("field") ?? "";
+      const generation = query.get("generation") ?? "0";
+      const revisionCursor = query.get("revision_cursor") ?? "0";
+      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      const rows =
+        body === undefined
+          ? []
+          : [
+              shapeRow("conversation_payload_chunk", `${ownerCursor}:${ownerId}:${field}:0`, {
+                thread_id: match[1],
+                source_id: CONVERSATION_SOURCE,
+                projection_epoch: CONVERSATION_EPOCH,
+                owner_cursor: ownerCursor,
+                owner_id: ownerId,
+                field,
+                generation,
+                chunk_index: "0",
+                text: body,
+              }),
+            ];
+      return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence$/,
+    () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence\/([0-9]+)\/frames$/,
+    (_match) => ({
+      frames: [
+        {
+          source_sequence: "31",
+          availability: "present",
+          entry: { observation: { harness_stderr: { text: "warning: fixture stderr" } } },
+        },
+      ],
+      next_after_sequence: null,
+    }),
+  ],
+  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])]
+);
+
 const FRESH: WatchHealth = {
   fresh: true,
   stale_after_seconds: 900,
@@ -1142,11 +1641,7 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/**
- * The app's two stream shapes: a live view, which is one snapshot and then whatever changes (here,
- * nothing), and a session, which is the canned turn and then silence, the way a session mid-turn
- * looks.
- */
+/** Live inventory and action streams remain EventSource; projected conversations use Electric fetches above. */
 class HarnessEventSource extends EventTarget {
   readonly url: string;
   readyState = 1;
@@ -1191,42 +1686,7 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    const isStatesSession = url.pathname === `/threads/${THREADS[2].id}/events/stream`;
-    const thread = THREADS_WITH_SANDBOXES.find(
-      (candidate) => url.pathname === `/threads/${candidate.id}/events/stream`
-    );
-    if (!thread) throw new Error(`Unknown Thread stream: ${url.pathname}`);
-    let entries = isStatesSession ? EVENTS_STATES : EVENTS;
-    const attached = create(AttachedSchema, {
-      ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
-      sessionId: thread.session_id,
-    });
-    if (thread.sandbox !== "demo-a1b2") {
-      entries = entries.slice(0, thread.last_cursor);
-      attached.lastCursor = BigInt(entries.length);
-    }
-    if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
-    if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
-    if (scenario.interleavedEvents) {
-      entries = INTERLEAVED_EVENTS;
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-      attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
-    }
-    if (scenario.failedTurn) {
-      entries = failedTurnEvents(scenario.failedTurn === "after-content");
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-    }
-    if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
-    if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
-    entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));
-    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
-    for (const entry of entries) {
-      this.dispatchEvent(
-        new MessageEvent("event", { data: toJsonString(EventEntrySchema, entry), lastEventId: String(entry.cursor) })
-      );
-    }
+    throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
   close(): void {
@@ -1236,29 +1696,37 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-if (scenario.openEvidence !== undefined) {
-  const openEvidence = new MutationObserver(() => {
-    const frame = document.getElementById(`agentplane-event-${scenario.openEvidence}`);
-    if (!(frame instanceof HTMLDetailsElement)) return;
-    openEvidence.disconnect();
-    // Let initial bottom-follow and the opened frame's layout settle, then navigate back.
-    // Visiting the top first opts out even if the closed frame was already at the bottom.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        frame.open = true;
-        requestAnimationFrame(() => {
-          const history = frame.closest<HTMLElement>('[aria-label="Thread history"]');
-          if (!history) throw new Error("Raw evidence is outside Thread history");
-          history.scrollTo({ top: 0 });
-          requestAnimationFrame(() => {
-            frame.scrollIntoView({ block: "start" });
-            frame.dataset.evidenceReady = "";
-          });
-        });
-      })
+if (scenario.openDebug) {
+  const openDebug = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Debug history"
     );
+    if (!(button instanceof HTMLButtonElement)) return;
+    openDebug.disconnect();
+    button.click();
+    if (scenario.openDebug !== "stderr") return;
+    const expandStderr = new MutationObserver(() => {
+      const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
+      if (!row) return;
+      expandStderr.disconnect();
+      row.open = true;
+      row.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+    expandStderr.observe(document, { childList: true, subtree: true });
   });
-  openEvidence.observe(document, { childList: true, subtree: true });
+  openDebug.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openReasoning) {
+  const openReasoning = new MutationObserver(() => {
+    const summary = [...document.querySelectorAll("summary")].find(
+      (candidate) => candidate.textContent === "Reasoning"
+    );
+    if (!(summary instanceof HTMLElement)) return;
+    openReasoning.disconnect();
+    summary.click();
+  });
+  openReasoning.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.preselectReconnect) {
