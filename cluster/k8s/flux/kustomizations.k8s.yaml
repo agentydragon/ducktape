@@ -242,22 +242,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: forgejo-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 1h
-  path: ./cluster/k8s/forgejo/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-namespace
-    namespace: ducktape-flux
-  timeout: 1m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-namespace
   namespace: ducktape-flux
 spec:
@@ -1290,8 +1274,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-namespace
-      namespace: ducktape-flux
     - name: valkey
       namespace: ducktape-flux
     - name: local-path-provisioner
@@ -1846,33 +1828,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: cert-manager-environment
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-db
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: forgejo-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/forgejo/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-db
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -3196,24 +3151,13 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: forgejo-namespace
+    - name: cnpg
       namespace: ducktape-flux
-    - name: forgejo-db
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: forgejo-cache
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: authentik
+    - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -3231,7 +3175,7 @@ spec:
       name: forgejo
       namespace: forgejo
   interval: 10m
-  path: ./cluster/k8s/forgejo/app
+  path: ./cluster/k8s/forgejo
   prune: true
   retryInterval: 1m
   sourceRef:
