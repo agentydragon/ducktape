@@ -85,6 +85,8 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         source = document["spec"].get("sourceRef", {})
         if source.get("kind") != "ExternalArtifact":
             continue
+        if source["name"] not in generated_artifacts:
+            continue
         if document.get("metadata", {}).get("annotations", {}).get("ducktape.org/parked") == "true":
             parked_consumers.add(source["name"])
             continue

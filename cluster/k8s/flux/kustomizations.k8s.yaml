@@ -3164,7 +3164,7 @@ spec:
       name: grafana-deployment
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5142,7 +5142,7 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workspaces/app
+  path: ./
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5493,7 +5493,7 @@ spec:
       name: haku-console-db-indexer-provisioner
       namespace: haku-console
   interval: 10m
-  path: ./
+  path: ./cluster/k8s/haku/console
   prune: true
   retryInterval: 1m
   sourceRef:

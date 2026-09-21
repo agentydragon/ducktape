@@ -113,7 +113,8 @@ def haku_console(
             interval="10m",
             retry_interval="1m",
             timeout=TIMEOUT,
-            path="./",
+            # Keep the artifact nested: its kustomization reads console-namespace as a sibling.
+            path="./cluster/k8s/haku/console",
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
             # would take the console's approval ledger with them.

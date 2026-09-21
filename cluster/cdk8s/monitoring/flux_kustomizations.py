@@ -166,7 +166,7 @@ def grafana_instance(chart: Chart, grafana_operator: Kustomization, cnpg: Kustom
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-instance",
+            path="./",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(

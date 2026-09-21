@@ -203,7 +203,7 @@ def haku_workspaces(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/haku/workspaces/app",
+            path="./",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
