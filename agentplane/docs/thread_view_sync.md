@@ -149,8 +149,10 @@ provides the existing client integration. These are capabilities to exercise aga
 pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
 Mutable entity and command collections use changes-only logs and TanStack's on-demand
-snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
-reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
+snapshot reconciliation. Indexed predicates fix each entity shape to the selected tail and
+optional reading window. A separate SQL keyset interest returns at most 30 pending command IDs;
+the command collection follows only that bounded selection or explicitly selected command IDs.
+Bootstrap takes a
 current snapshot of that entire bounded shape; it does not replay earlier item revisions.
 The proxy accepts only a whole-shape subset query and owns all selection predicates.
 Payload shapes select one content field and generation. A pinned reference limits its

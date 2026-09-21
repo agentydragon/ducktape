@@ -113,7 +113,8 @@ are hints and the database cursor remains authoritative.
 of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
 live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
 arguments follow their referenced revisions, while reasoning, tool output and associated debug
-frames are selected on demand. A command-ID subscription retains outcomes after the command
+frames are selected on demand. A separate bounded pending-command page selects command IDs; a
+command-ID subscription retains outcomes after the command
 leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
 remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
 for query, revision and memory contracts and the remaining acceptance gates.
