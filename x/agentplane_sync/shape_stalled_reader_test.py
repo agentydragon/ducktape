@@ -37,8 +37,9 @@ from x.agentplane_sync.shape_test_support import (
 )
 
 MODEL_BYTES = 64 * 1024
-WRITE_BATCHES = 32
-SAMPLE_EVERY = 4
+WRITE_BATCHES = 48
+SAMPLE_EVERY = 8
+MAX_STALLED_RSS_GROWTH_KIB = 16 * 1024
 SHAPE_COLUMNS = f"{ACTIVE_SHAPE_COLUMNS},model"
 
 
@@ -140,10 +141,11 @@ async def _consume_latest_tail(
     where_clause: str,
     where_params: tuple[str, ...],
     expected_model: str,
+    max_pages: int = 30,
 ) -> tuple[str, list[dict[str, Any]]]:
     latest_models: dict[str, str] = {}
     pages: list[dict[str, Any]] = []
-    for _ in range(30):
+    for _ in range(max_pages):
         page = await _read_live_page(
             client,
             shape_url,
@@ -175,6 +177,8 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
         "shapeRows": BOUNDED_HISTORY_TAIL_ROWS,
         "modelBytesPerRow": MODEL_BYTES,
         "writeBatches": WRITE_BATCHES,
+        "writtenModelBytes": (WRITE_BATCHES + 1) * BOUNDED_HISTORY_TAIL_ROWS * MODEL_BYTES,
+        "maxStalledRssGrowthKiB": MAX_STALLED_RSS_GROWTH_KIB,
         "memorySamples": [],
         "healthyPages": [],
         "walCheckpoints": [],
@@ -215,7 +219,9 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                 with electric:
                     electric_url = f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
                     evidence["initialHealth"] = await _wait_electric(electric_url)
-                    evidence["memorySamples"].append({"stage": "ready", **_sample_memory(electric)})
+                    evidence["memorySamples"].append(
+                        {"stage": "ready", "writtenModelBytes": 0, **_sample_memory(electric)}
+                    )
                     async with httpx.AsyncClient(timeout=120) as client:
                         shape_url = f"{electric_url}/v1/shape"
                         snapshot = await _read_snapshot(
@@ -249,7 +255,11 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         evidence["stalledBuffersAtStart"] = _stalled_reader_buffers(stalled_writer)
                         evidence["healthyPages"].extend({"batch": 0, **page} for page in healthy_pages)
                         evidence["memorySamples"].append(
-                            {"stage": "stalled-response-started", **_sample_memory(electric)}
+                            {
+                                "stage": "stalled-response-started",
+                                "writtenModelBytes": BOUNDED_HISTORY_TAIL_ROWS * MODEL_BYTES,
+                                **_sample_memory(electric),
+                            }
                         )
 
                         for batch in range(1, WRITE_BATCHES + 1):
@@ -269,7 +279,13 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             evidence["healthyPages"].extend({"batch": batch, **page} for page in healthy_pages)
                             if batch % SAMPLE_EVERY == 0:
                                 evidence["memorySamples"].append(
-                                    {"stage": f"stalled-after-batch-{batch}", **_sample_memory(electric)}
+                                    {
+                                        "stage": f"stalled-after-batch-{batch}",
+                                        "writtenModelBytes": (batch + 1)
+                                        * BOUNDED_HISTORY_TAIL_ROWS
+                                        * MODEL_BYTES,
+                                        **_sample_memory(electric),
+                                    }
                                 )
                                 _write_evidence(outputs / "stalled-reader-evidence.json", evidence)
 
@@ -279,38 +295,54 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         stalled_writer.close()
                         await stalled_writer.wait_closed()
                         stalled_writer = None
-                        resumed = await _read_live_page(
+                        resumed_offset, resumed_pages = await _consume_latest_tail(
                             client,
                             shape_url,
                             snapshot,
                             offset=snapshot["offset"],
                             where_clause=where_clause,
                             where_params=where_params,
-                            columns=SHAPE_COLUMNS,
+                            expected_model=expected_model,
+                            max_pages=(WRITE_BATCHES + 1) * 8,
                         )
-                        resumed_models = _latest_models(resumed["operations"])
-                        assert len(resumed_models) == BOUNDED_HISTORY_TAIL_ROWS, resumed
-                        assert set(resumed_models.values()) == {expected_model}
                         evidence["resume"] = {
-                            "responseBytes": resumed["responseBytes"],
-                            "operationCount": len(resumed["operations"]),
-                            "latestRows": len(resumed_models),
-                            "offset": resumed["offset"],
+                            "responseBytes": sum(page["responseBytes"] for page in resumed_pages),
+                            "pages": len(resumed_pages),
+                            "latestRows": BOUNDED_HISTORY_TAIL_ROWS,
+                            "offset": resumed_offset,
                         }
-                        evidence["memorySamples"].append({"stage": "after-disconnect-resume", **_sample_memory(electric)})
+                        evidence["memorySamples"].append(
+                            {
+                                "stage": "after-disconnect-resume",
+                                "writtenModelBytes": evidence["writtenModelBytes"],
+                                **_sample_memory(electric),
+                            }
+                        )
 
+                        host_port_before_restart = electric.get_exposed_port(3000)
                         electric.get_wrapped_container().stop(timeout=10)
                         electric.get_wrapped_container().start()
+                        host_port_after_restart = electric.get_exposed_port(3000)
+                        electric_url = f"http://{electric.get_container_host_ip()}:{host_port_after_restart}"
+                        shape_url = f"{electric_url}/v1/shape"
                         evidence["restartHealth"] = await _wait_electric(electric_url)
-                        evidence["memorySamples"].append({"stage": "after-persisted-restart", **_sample_memory(electric)})
-                        restarted = await _read_snapshot(
-                            client,
-                            shape_url,
-                            BOUNDED_HISTORY_CONVERSATION,
-                            where_clause=where_clause,
-                            where_params=where_params,
-                            columns=SHAPE_COLUMNS,
+                        evidence["memorySamples"].append(
+                            {
+                                "stage": "after-persisted-restart",
+                                "writtenModelBytes": evidence["writtenModelBytes"],
+                                **_sample_memory(electric),
+                            }
                         )
+                        await client.aclose()
+                        async with httpx.AsyncClient(timeout=120) as restarted_client:
+                            restarted = await _read_snapshot(
+                                restarted_client,
+                                shape_url,
+                                BOUNDED_HISTORY_CONVERSATION,
+                                where_clause=where_clause,
+                                where_params=where_params,
+                                columns=SHAPE_COLUMNS,
+                            )
                         restarted_models = {row["row_key"]: row["model"] for row in restarted["rows"]}
                         assert len(restarted_models) == BOUNDED_HISTORY_TAIL_ROWS
                         assert set(restarted_models.values()) == {expected_model}
@@ -319,6 +351,8 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             "handleAfter": restarted["handle"],
                             "rowCount": restarted["rowCount"],
                             "responseBytes": restarted["responseBytes"],
+                            "hostPortBefore": host_port_before_restart,
+                            "hostPortAfter": host_port_after_restart,
                         }
 
                         rss = [
@@ -326,8 +360,15 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             for sample in evidence["memorySamples"]
                             if sample.get("pid1VmRSSKiB") is not None and sample["stage"].startswith("stalled-")
                         ]
-                        evidence["stalledRssRangeKiB"] = max(rss) - min(rss)
-                        assert evidence["stalledRssRangeKiB"] < 96 * 1024, evidence["memorySamples"]
+                        evidence["stalledRssGrowthKiB"] = max(rss) - rss[0]
+                        stalled_cgroup = [
+                            sample["cgroupUsageBytes"]
+                            for sample in evidence["memorySamples"]
+                            if sample["stage"].startswith("stalled-") and sample.get("cgroupUsageBytes") is not None
+                        ]
+                        evidence["stalledCgroupGrowthBytes"] = max(stalled_cgroup) - stalled_cgroup[0]
+                        assert evidence["writtenModelBytes"] > 4 * MAX_STALLED_RSS_GROWTH_KIB * 1024
+                        assert evidence["stalledRssGrowthKiB"] < MAX_STALLED_RSS_GROWTH_KIB, evidence["memorySamples"]
                         evidence["conclusion"] = (
                             "Finite sample: a real socket stopped after HTTP headers while its receive buffers filled; "
                             "each write was observed through Electric's logical-replication checkpoint, and independent "
