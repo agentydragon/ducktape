@@ -270,11 +270,6 @@ spec:
       name: litellm-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/matrix/namespace/**"
-          to: "@artifact/cluster/k8s/matrix/namespace/"
-      name: matrix-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/seaweedfs-csi/**"
           to: "@artifact/cluster/k8s/seaweedfs-csi/"
       name: seaweedfs-csi
@@ -788,14 +783,9 @@ spec:
       name: litellm-db
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/matrix/app/**"
-          to: "@artifact/cluster/k8s/matrix/app/"
+        - from: "@repo/cluster/k8s/matrix/**"
+          to: "@artifact/cluster/k8s/matrix/"
       name: matrix-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/matrix/db/**"
-          to: "@artifact/cluster/k8s/matrix/db/"
-      name: matrix-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/matrix/user-provisioner/**"

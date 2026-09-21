@@ -183,7 +183,6 @@ def generate_manifests(root: Path) -> None:
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
     litellm_namespace_kustomization = litellm_flux_kustomizations.litellm_namespace(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
-    matrix_namespace_kustomization = matrix_flux_kustomizations.matrix_namespace(flux_chart)
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_kustomization = monitoring_flux_kustomizations.grafana_helmrepository(flux_chart)
     monitoring_namespace_kustomization = monitoring_flux_kustomizations.monitoring_namespace(flux_chart)
@@ -302,9 +301,6 @@ def generate_manifests(root: Path) -> None:
     )
     litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
         flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
-    matrix_db_kustomization = matrix_flux_kustomizations.matrix_db(
-        flux_chart, matrix_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
     grafana_db_kustomization = monitoring_flux_kustomizations.grafana_db(
         flux_chart, monitoring_namespace_kustomization, cnpg_kustomization
@@ -526,15 +522,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     headlamp_flux_kustomizations.headlamp(flux_chart, gateway_kustomization, sso_providers_tf_kustomization)
-    matrix_kustomization = matrix_flux_kustomizations.matrix(
-        flux_chart,
-        matrix_namespace_kustomization,
-        matrix_db_kustomization,
-        sso_providers_tf_kustomization,
-        reflector_kustomization,
-        gateway_kustomization,
-        local_path_provisioner_kustomization,
-    )
+    matrix_kustomization = matrix_flux_kustomizations.matrix(flux_chart, cnpg_kustomization)
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
         flux_chart, grafana_operator_kustomization, grafana_db_kustomization, sso_providers_tf_kustomization
     )
