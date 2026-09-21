@@ -532,6 +532,7 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
+  const captureExpiry = useRef<number | null>(null);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -554,6 +555,14 @@ function VirtualizedHistory({
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
     restoringAnchor.current = null;
+  };
+  const expectUserScroll = () => {
+    captureNextScroll.current = true;
+    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+    captureExpiry.current = window.setTimeout(() => {
+      captureNextScroll.current = false;
+      captureExpiry.current = null;
+    }, 100);
   };
   const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
@@ -626,6 +635,7 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
+      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -638,13 +648,12 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
-        captureNextScroll.current = true;
+        expectUserScroll();
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
         cancelRestoration();
-        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key))
-          captureNextScroll.current = true;
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
@@ -663,7 +672,7 @@ function VirtualizedHistory({
       }}
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
-        captureNextScroll.current = true;
+        expectUserScroll();
         if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
         touchY.current = next ?? null;
       }}
