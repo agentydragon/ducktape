@@ -247,16 +247,6 @@ spec:
       name: haku-rbac
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/litellm/namespace/**"
-          to: "@artifact/cluster/k8s/litellm/namespace/"
-      name: litellm-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/litellm/secrets/**"
-          to: "@artifact/cluster/k8s/litellm/secrets/"
-      name: litellm-secrets
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/seaweedfs-csi/**"
           to: "@artifact/cluster/k8s/seaweedfs-csi/"
       name: seaweedfs-csi
@@ -331,8 +321,8 @@ spec:
       name: home-assistant
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/litellm/app/**"
-          to: "@artifact/cluster/k8s/litellm/app/"
+        - from: "@repo/cluster/k8s/litellm/**"
+          to: "@artifact/cluster/k8s/litellm/"
       name: litellm
       originRevision: "@repo"
     - copy:
@@ -753,11 +743,6 @@ spec:
         - from: "@repo/cluster/k8s/langfuse/**"
           to: "@artifact/cluster/k8s/langfuse/"
       name: langfuse
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/litellm/db/**"
-          to: "@artifact/cluster/k8s/litellm/db/"
-      name: litellm-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/matrix/**"
