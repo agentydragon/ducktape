@@ -332,6 +332,7 @@ def haku_egress_proxy_namespace(chart: Chart) -> Kustomization:
             interval="1h",
             path="./cluster/k8s/agents/haku-egress-proxy-namespace",
             prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
