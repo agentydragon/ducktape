@@ -717,6 +717,29 @@ spec:
           values:
             - agentplane-staging
 ---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-staging-egress-upstream-ca
+spec:
+  sources:
+    - useDefaultCAs: true
+    - configMap:
+        key: ca.crt
+        name: kube-root-ca.crt
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: "Trust bundle the agentplane-staging egress proxy verifies destinations with: public roots plus this cluster's CA"
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-staging
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

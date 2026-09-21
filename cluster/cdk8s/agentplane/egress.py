@@ -378,7 +378,10 @@ class Egress(Construct):
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
-        self._add_upstream_bundle()
+        # Keep the shared Bundle until both dedicated ConfigMaps exist and the
+        # follow-up switches the proxy mounts. See debug/agentplane_upstream_ca_handoff.md.
+        self._add_upstream_bundle("legacy-upstream-bundle", _UPSTREAM_CA_BUNDLE)
+        self.upstream_bundle = self._add_upstream_bundle("upstream-bundle", f"{env.namespace}-egress-upstream-ca")
         settings_cm = self._add_settings_configmap()
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
@@ -493,7 +496,7 @@ class Egress(Construct):
             ),
         )
 
-    def _add_upstream_bundle(self) -> None:
+    def _add_upstream_bundle(self, id: str, name: str) -> Bundle:
         """What this proxy verifies destinations against, as distinct from what a runner trusts.
 
         The runner's bundle carries the interception root, because the proxy is what answers it.
@@ -505,10 +508,10 @@ class Egress(Construct):
         and is the Kubernetes CA -- not `cluster-root-ca-secret`, which is cert-manager's own root
         for issuing internal leaves and signs nothing the API server presents.
         """
-        Bundle(
+        return Bundle(
             self,
-            "upstream-bundle",
-            metadata=ApiObjectMetadata(name=_UPSTREAM_CA_BUNDLE),
+            id,
+            metadata=ApiObjectMetadata(name=name),
             spec=BundleSpec(
                 sources=[
                     BundleSpecSources(use_default_c_as=True),
