@@ -962,6 +962,11 @@ Action Service has no counterpart for that: its executors hold a linkage credent
 caller's personal account. So this needs the operator-linked Google credential path to exist before
 a group can name either, which is why it does not move on the same clock as a bearer remote.
 
+Wanted for write access (send/label/schedule, behind operator approval per Action, the same shape
+as `github`) but not on `haku_v1`'s critical path: `CONSOLE_POLICIES`'s `gmail_reads`/
+`google_calendar_reads` are already answered by the `google-readonly` egress substitution, so
+nothing here blocks porting `haku_v1`.
+
 ### `MCP_CONSOLE_INTERNAL` — counterparts for the console-internal servers
 
 **Deferred design:** `sandbox` and `grants` are `in_process` servers with no Action Service
