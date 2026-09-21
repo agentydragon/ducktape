@@ -80,7 +80,7 @@ function LazyBody({
   );
 }
 
-function EvidenceFrames({
+function EvidenceFramesPage({
   threadId,
   entity,
   observationCursor,
@@ -92,6 +92,7 @@ function EvidenceFrames({
   const [page, setPage] = useState<NativeFramePage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [afterSequence, setAfterSequence] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
     sourceId: entity.sourceId,
@@ -109,7 +110,10 @@ function EvidenceFrames({
     void conversationFrames(threadId, scope, observationCursor, after, controller.signal)
       .then(
         (value) => {
-          if (!controller.signal.aborted) setPage(value);
+          if (!controller.signal.aborted) {
+            setPage(value);
+            setAfterSequence(after);
+          }
         },
         (reason: unknown) => {
           if (!controller.signal.aborted) setError(displayableError(reason));
@@ -139,6 +143,11 @@ function EvidenceFrames({
           Load raw frames
         </Button>
       )}
+      {afterSequence !== "0" && (
+        <Button variant="subtle" disabled={loading} onClick={() => load()}>
+          First frames
+        </Button>
+      )}
       {page?.next_after_sequence && (
         <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
           Load more frames
@@ -148,10 +157,25 @@ function EvidenceFrames({
   );
 }
 
+function EvidenceFrames(props: {
+  threadId: string;
+  entity: ConversationEntity;
+  observationCursor: string;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>Observation {props.observationCursor} raw frames</summary>
+      {open && <EvidenceFramesPage {...props} />}
+    </details>
+  );
+}
+
 function EvidencePageView({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
   const [page, setPage] = useState<EvidencePage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [afterCursor, setAfterCursor] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
     sourceId: entity.sourceId,
@@ -172,7 +196,10 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
     void conversationEvidence(threadId, scope, after, controller.signal)
       .then(
         (value) => {
-          if (!controller.signal.aborted) setPage(value);
+          if (!controller.signal.aborted) {
+            setPage(value);
+            setAfterCursor(after);
+          }
         },
         (reason: unknown) => {
           if (!controller.signal.aborted) setError(displayableError(reason));
@@ -202,6 +229,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
       {page?.next_after_cursor && (
         <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
           Load more evidence
+        </Button>
+      )}
+      {afterCursor !== "0" && (
+        <Button variant="subtle" disabled={loading} onClick={() => load()}>
+          First evidence
         </Button>
       )}
     </Stack>
@@ -258,7 +290,16 @@ function EntityCard({
     <Paper p="sm" withBorder data-conversation-anchor={entity.cursor.toString()}>
       <Group justify="space-between" mb="xs">
         <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
-        {streaming && <Text size="xs">Streaming</Text>}
+        {streaming && (
+          <Badge role="img" aria-label="Streaming">
+            Streaming
+          </Badge>
+        )}
+        {completion === null && !streaming && (
+          <Badge role="img" aria-label="Incomplete">
+            Incomplete
+          </Badge>
+        )}
       </Group>
       {entity.textRef &&
         (reasoning ? (
@@ -299,17 +340,28 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const scope = entities.find((row) => row.entityKind === "view_state");
   const sourceId = scope?.sourceId;
   const projectionEpoch = scope?.projectionEpoch;
+  useEffect(() => setReconcileAttempt(0), [localCommandKey, projectionEpoch, sourceId]);
   useEffect(() => {
     if (!sourceId || !projectionEpoch || !localCommandKey) return;
     const controller = new AbortController();
-    void reconcileCommands(threadId, sourceId, projectionEpoch, localCommandKey.split("\u0000")).then(
+    let retry: number | undefined;
+    void reconcileCommands(
+      threadId,
+      sourceId,
+      projectionEpoch,
+      localCommandKey.split("\u0000"),
+      controller.signal
+    ).then(
       (result) => {
         if (!controller.signal.aborted) {
           store.observeCommandIds(
             new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
           );
-          if (result.commands.some((value) => value.outcome === null) && reconcileAttempt < 5) {
-            window.setTimeout(() => setReconcileAttempt((value) => value + 1), 250 * 2 ** reconcileAttempt);
+          if (result.commands.some((value) => value.outcome === null)) {
+            retry = window.setTimeout(
+              () => setReconcileAttempt((value) => value + 1),
+              Math.min(5_000, 250 * 2 ** reconcileAttempt)
+            );
           }
         }
       },
@@ -318,7 +370,10 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
           setErrors((previous) => new Map(previous).set("reconciliation", displayableError(reason)));
       }
     );
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (retry !== undefined) window.clearTimeout(retry);
+    };
   }, [localCommandKey, projectionEpoch, reconcileAttempt, sourceId, store, threadId]);
 
   async function deliver(value: LocalCommand): Promise<void> {

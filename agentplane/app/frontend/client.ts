@@ -61,11 +61,13 @@ export async function reconcileCommands(
   threadId: string,
   sourceId: string,
   projectionEpoch: string,
-  commandIds: string[]
+  commandIds: string[],
+  signal?: AbortSignal
 ): Promise<CommandReconciliationResponse> {
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
     body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    signal,
   });
   if (error) throw new Error(displayableError(error));
   return data;
