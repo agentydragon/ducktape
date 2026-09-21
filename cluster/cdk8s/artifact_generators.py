@@ -88,7 +88,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agentplane-index", ("cluster/k8s/agentplane-index",)),
     ("clickhouse", ("cluster/k8s/clickhouse/cluster",)),
     ("github-secrets-sync-secrets", ("cluster/k8s/github-secrets-sync/secrets",)),
-    ("grafana-instance", ("cluster/k8s/monitoring/grafana-instance", "cluster/k8s/monitoring/grafana-db")),
+    ("grafana-instance", ("cluster/k8s/monitoring/grafana-instance",)),
     ("haku-egress-proxy", ("cluster/k8s/agents/haku-egress-proxy",)),
     ("haku-rbac", ("cluster/k8s/haku/rbac",)),
     ("seaweedfs-csi", ("cluster/k8s/seaweedfs-csi",)),

@@ -30,11 +30,7 @@ def environment_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
 
 
 def write_environment_manifests(
-    root: Path,
-    env: Environment,
-    build: Callable[[App], Chart],
-    *,
-    write_kustomization: bool = True,
+    root: Path, env: Environment, build: Callable[[App], Chart], *, write_kustomization: bool = True
 ) -> Chart:
     """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
     `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
@@ -56,6 +52,8 @@ def write_environment_manifests(
     if write_kustomization:
         write_yaml(
             out_dir / "kustomization.yaml",
-            kustomize_kustomization(resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]),
+            kustomize_kustomization(
+                resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]
+            ),
         )
     return chart

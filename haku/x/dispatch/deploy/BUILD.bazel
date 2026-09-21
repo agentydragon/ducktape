@@ -1,5 +1,5 @@
-# These configMapGenerator inputs are also read directly by cluster validation
-# and the dispatcher's stamping/config contracts.
+# These configMapGenerator inputs are also read directly by cluster validation,
+# the dispatcher's stamping/config contracts, and the LiteLLM manifest tests.
 exports_files(
     [
         "job-template.yaml",
@@ -9,6 +9,7 @@ exports_files(
     visibility = [
         "//cluster/validation:__pkg__",
         "//haku/x/dispatch:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
     ],
 )
 

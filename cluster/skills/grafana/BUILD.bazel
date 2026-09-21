@@ -9,8 +9,8 @@ py_binary(
     name = "verify_dashboard",
     srcs = ["verify_dashboard.py"],
     data = [
-        "@playwright_browsers//:chromium-headless-shell",
         "//cluster/k8s:grafana_dashboard_json_files",
+        "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
