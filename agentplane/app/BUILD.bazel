@@ -1008,7 +1008,9 @@ py_test(
     srcs = ["test_electric_wal_recovery.py"],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":trajectory",
+        "//:conftest",
         "//agentplane/app/testing:electric_service",
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:event_pb2",
