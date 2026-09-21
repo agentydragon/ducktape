@@ -65,6 +65,13 @@ async def await_collected(page: Page, ids: set[str]) -> None:
 
 
 async def reader_layout(page: Page) -> dict[str, float | str]:
+    await page.wait_for_function(
+        """() => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            const composer = document.querySelector('textarea[placeholder="Enter sends, Ctrl+Enter for a new line"]');
+            return Boolean(history && composer && history.querySelector('[data-conversation-anchor]'));
+        }"""
+    )
     return cast(
         dict[str, float | str],
         await page.evaluate(
@@ -210,6 +217,83 @@ async def test_pending_command_pages_bound_selection_refresh_and_cleanup(thread_
     finally:
         if original_viewport is not None:
             await page.set_viewport_size(original_viewport)
+
+
+async def test_pending_command_pages_recover_after_offline_updates(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
+    for index in range(62):
+        source.append(pending_command(index))
+    thread_browser.opened.replay.set()
+
+    updates = page.get_by_role("region", name="Command updates", exact=True)
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    await expect(updates).to_contain_text("62 pending")
+    await expect(updates.locator("[data-command-id]")).to_have_count(30)
+    current_id = await await_command_query(page, "command-current")
+    await composer.fill("Draft retained across pending-page offline recovery")
+    reader_before = await reader_layout(page)
+
+    await updates.get_by_role("button", name="Load 30 older pending commands", exact=True).click()
+    await expect(updates.locator("[data-command-id]")).to_have_count(60)
+    await expect(updates.locator('[data-command-id="pending-page-002"]')).to_have_count(1)
+    older_id = await await_command_query(page, "command-older")
+    document = await page.evaluate_handle("document")
+
+    await page.context.set_offline(True)
+    try:
+        # The older fixed-ID collection remains mounted while the disconnected app receives a
+        # selected terminal update. A current-page settlement plus admission keeps the pending
+        # count stable and requires a fresh current selection after reconnect.
+        source.append(
+            event_pb2.Event(
+                command_noop=event_pb2.CommandNoop(command_id="pending-page-002", reason="offline older completed")
+            )
+        )
+        source.append(
+            event_pb2.Event(
+                command_noop=event_pb2.CommandNoop(command_id="pending-page-061", reason="offline current completed")
+            )
+        )
+        source.append(
+            event_pb2.Event(
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id="pending-page-offline-replacement",
+                        submit_input=command_pb2.SubmitInput(text="Pending offline replacement"),
+                    )
+                )
+            )
+        )
+        async with page.expect_response(
+            lambda response: "/sync/pending-interest" in response.url and response.status == 200
+        ):
+            await page.context.set_offline(False)
+        await expect(updates).to_contain_text("61 pending")
+        await expect(updates.locator('[data-command-id="pending-page-offline-replacement"]')).to_have_count(
+            1, timeout=30_000
+        )
+        await expect(updates.locator('[data-command-id="pending-page-061"]')).to_have_count(0)
+        await expect(updates.locator('[data-command-id="pending-page-002"]')).to_contain_text("Input not applied")
+        await expect(updates.locator('[data-command-id="pending-page-002"]')).to_contain_text("offline older completed")
+        fresh_current_id = await await_command_query(page, "command-current", {current_id})
+        assert fresh_current_id != current_id
+        assert await updates.locator("[data-command-id]").count() <= 60
+        assert_reader_visible(await reader_layout(page))
+        reader_after = await reader_layout(page)
+        assert reader_after["anchor"] == reader_before["anchor"]
+        assert abs(float(reader_after["scrollTop"]) - float(reader_before["scrollTop"])) <= 2
+        await expect(composer).to_have_value("Draft retained across pending-page offline recovery")
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+        assert await document.evaluate("original => original === document")
+        trace = await command_trace(page)
+        assert any(event["kind"] == "query" and event["id"] == older_id and event["ready"] for event in trace)
+        assert not any(event["kind"] == "unsubscribed" and event["id"] == older_id for event in trace)
+        await page.screenshot(path=undeclared_outputs_dir() / "pending-command-pages-offline-recovery.png")
+    finally:
+        await page.context.set_offline(False)
+        await document.dispose()
 
 
 if __name__ == "__main__":
