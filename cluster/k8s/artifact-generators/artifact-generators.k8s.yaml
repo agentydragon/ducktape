@@ -296,11 +296,6 @@ spec:
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
-      name: haku-egress-proxy-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-namespace

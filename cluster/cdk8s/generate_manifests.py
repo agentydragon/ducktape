@@ -152,7 +152,6 @@ def generate_manifests(root: Path) -> None:
     flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
-    haku_egress_proxy_namespace_kustomization = agents_flux_kustomizations.haku_egress_proxy_namespace(flux_chart)
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
     agents_mitmproxy_namespace_kustomization = agents_flux_kustomizations.agents_mitmproxy_namespace(flux_chart)
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
@@ -691,7 +690,6 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         agentplane_index_kustomization,
         haku_namespace_kustomization,
-        haku_egress_proxy_namespace_kustomization,
     )
     monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_jwt_rotation_kustomization
@@ -761,15 +759,9 @@ def generate_manifests(root: Path) -> None:
     )
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,
-        haku_egress_proxy_namespace_kustomization,
-        haku_openclaw_spike_namespace_kustomization,
-        haku_state_kustomization,
-        cert_manager_environment_kustomization,
+        cert_manager_kustomization,
         cert_manager_trust_kustomization,
-        reflector_kustomization,
-        external_secrets_config_kustomization,
-        external_creds_kustomization,
-        forgejo_images_kustomization,
+        external_secrets_operator_kustomization,
     )
     haku_flux_kustomizations.haku_ui_image_webhook(flux_chart, haku_state_kustomization)
     haku_flux_kustomizations.haku_workloads(flux_chart, haku_state_kustomization)
