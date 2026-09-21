@@ -71,11 +71,11 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                                 break
                         _write_artifact("slot-timeline.json", json.dumps(timeline, indent=2, sort_keys=True))
                         latest = timeline[-1]
-                        written = latest["wal_bytes"]
+                        final_wal_bytes = latest["wal_bytes"]
                         slot = latest["slot"]
-                        assert isinstance(written, int)
+                        assert isinstance(final_wal_bytes, int)
                         assert isinstance(slot, dict)
-                        assert written >= _WAL_CAP_BYTES
+                        assert final_wal_bytes >= _WAL_CAP_BYTES
                         assert slot["wal_status"] == "lost"
 
                         # This commit must appear only after the client discards its old stream cursor.
