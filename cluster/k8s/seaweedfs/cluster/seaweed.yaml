@@ -142,12 +142,13 @@ spec:
       # auto-derives disk_size / volumeSizeLimitMB → only 112/113 slots on the 1.8 TiB
       # servers, which sat at 112/112 (full) while volumes were ~5% full (~0.85 GB of a
       # 16 GB cap). Thin volumes make over-committing ~free; disk-full is bounded by
-      # minFreeSpacePercent, not the slot cap. 300 > the ~163 distinct HDD volumes, so a
-      # single survivor can hold the full 2-copy set while a peer is repartitioned during
-      # the data-disk mount rename (cluster/docs/plans/ovh_storage_tiering.md) — no
-      # forced single-copy window — and 300 > the 3.6 TB node's auto 232, so no server is
-      # capped below its previous count.
-      maxVolumeCounts: 300
+      # minFreeSpacePercent, not the slot cap. 400 leaves 2*400 = 800 slots across
+      # any two survivors; the current 2-copy set uses 652 (326 logical volumes),
+      # leaving 148 slots for evacuation and growth. This is an intentional
+      # overcommit: thin volumes make extra slots cheap, while minFreeSpacePercent
+      # remains the physical-disk bound. 400 also exceeds the 3.6 TB node's
+      # auto-derived 232 slots, so no server is capped below its prior count.
+      maxVolumeCounts: 400
       nodeSelector:
         storage.allegedly.works/tier: hdd
       tolerations:
@@ -208,9 +209,11 @@ spec:
       minFreeSpacePercent: 10
       # Overcommit the volume-slot count: -max=0 auto-derives only ~24 slots on
       # the 419 GB NVMe and SeaweedFS pre-grabs ~2-6 (mostly-empty) volumes per
-      # collection. Thin volumes make over-committing ~free; disk-full is bounded
-      # by minFreeSpacePercent, not the slot cap.
-      maxVolumeCounts: 50
+      # collection. 200 gives 2*200 = 400 slots across any two survivors; the
+      # current 2-copy set uses 68 (34 logical volumes), leaving room for the
+      # planned SSD migrations. Thin volumes make over-committing ~free;
+      # disk-full is bounded by minFreeSpacePercent, not the slot cap.
+      maxVolumeCounts: 200
       nodeSelector:
         storage.allegedly.works/tier: ssd
       tolerations:
