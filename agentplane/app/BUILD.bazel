@@ -69,6 +69,7 @@ py_library(
         ":conversation_debug",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -133,6 +134,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -244,6 +246,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -350,6 +353,7 @@ py_test(
         "//agentplane/runner:service",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -368,6 +372,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":inventory",
         ":live",
         ":presets",
@@ -949,6 +954,75 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "electric",
+    srcs = ["electric.py"],
+    deps = [
+        ":trajectory",
+        "@pypi//anyio",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_electric",
+    srcs = ["test_electric.py"],
+    deps = [
+        ":conftest",
+        ":electric",
+        ":trajectory",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_conversation_sync",
+    size = "medium",
+    srcs = ["test_conversation_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_electric_wal_recovery",
+    size = "medium",
+    srcs = ["test_electric_wal_recovery.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
     ],
 )
 

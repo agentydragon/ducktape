@@ -10,7 +10,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import ConfigMap
 
 from agentplane.app import main as app_main
-from cluster.cdk8s.agentplane import actions, app as app_component, database, egress, llm_ingress, rbac
+from cluster.cdk8s.agentplane import actions, app as app_component, database, egress, electric, llm_ingress, rbac
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -31,6 +31,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         data={"config.yaml": yaml_config(settings_file(app_main.Settings, env.app_config))},
     )
     database.Db(chart, "db", env)
+    electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env)
     app_component.App(chart, "app", env)

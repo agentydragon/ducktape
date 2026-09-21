@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
 
 import httpx
@@ -17,6 +17,7 @@ from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
@@ -96,6 +97,29 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
+async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
+    async def unexpected(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
+        yield ElectricProxy(
+            client,
+            lambda thread_id, anchor, before, size: store.conversation_entity_interest(
+                thread_id, anchor_cursor=anchor, before_cursor=before, page_size=size
+            ),
+            lambda thread_id, owner_cursor, owner_id, field, generation, revision: store.conversation_payload_selection(
+                thread_id,
+                owner_cursor=owner_cursor,
+                owner_id=owner_id,
+                field=field,
+                generation=generation,
+                revision_cursor=revision,
+            ),
+            store.current_conversation_scope,
+        )
+
+
+@pytest.fixture
 def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
@@ -107,6 +131,7 @@ def client(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
+    electric: ElectricProxy,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
@@ -143,6 +168,7 @@ def client(
         action_policy,
         reviewer=reviewer,
         presets=TEST_PRESETS,
+        electric=electric,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -609,6 +635,17 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     # The forgeable header the API server's service proxy used to forward buys nothing now.
     assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
+
+
+@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
+def test_conversation_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
+    path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
+    for credentials in (
+        {"Authorization": ""},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": "", "x-authentik-username": "root"},
+    ):
+        assert client.get(path, headers=credentials).status_code == 401
 
 
 def test_binding_revocation(client: TestClient) -> None:
