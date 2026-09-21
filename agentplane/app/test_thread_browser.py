@@ -219,7 +219,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await store.set_attached(thread, source.attached, lease=lease)
         await store.record(thread, source.entries, lease=lease)
         await store.rename(thread, f"Test navigation thread {number}")
-        threads.append(thread)
+        threads.append(str(thread))
     await store.release_ingestion(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
