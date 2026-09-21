@@ -76,7 +76,15 @@ from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, container_security, database, egress, llm_ingress, node_scheduling
+from cluster.cdk8s.agentplane import (
+    actions,
+    container_security,
+    database,
+    egress,
+    electric,
+    llm_ingress,
+    node_scheduling,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -251,6 +259,9 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
+            env_name(Settings, "electric_url"): EnvValue.from_value(
+                f"http://{electric.NAME}.{namespace}.svc.cluster.local:{electric.PORT}"
+            ),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
@@ -402,6 +413,7 @@ class App(Construct):
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
                 cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
+                cilium.egress_to(cilium.endpoint_labels(namespace, electric.NAME), electric.PORT),
                 cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,

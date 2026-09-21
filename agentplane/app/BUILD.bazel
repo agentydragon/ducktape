@@ -133,6 +133,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -949,6 +950,7 @@ py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
+        ":trajectory",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -961,6 +963,7 @@ py_test(
     deps = [
         ":conftest",
         ":electric",
+        ":trajectory",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",

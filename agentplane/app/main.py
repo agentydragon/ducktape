@@ -27,6 +27,7 @@ from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
@@ -115,6 +116,10 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    electric_url: str | None = Field(
+        default=None,
+        description="Cluster-internal Electric root URL; omitted leaves conversation sync routes disabled.",
+    )
     models: ModelCatalog = Field(
         description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
     )
@@ -224,6 +229,9 @@ async def async_main(settings: Settings) -> None:
             timeout=10,
         ) as actions_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+        httpx.AsyncClient(
+            base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)
+        ) as electric_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
@@ -275,6 +283,11 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
+            electric=(
+                ElectricProxy(electric_http, store.current_conversation_scope)
+                if settings.electric_url is not None
+                else None
+            ),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
