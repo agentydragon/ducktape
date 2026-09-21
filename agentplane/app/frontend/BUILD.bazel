@@ -678,6 +678,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":conversation_store",
+        "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",

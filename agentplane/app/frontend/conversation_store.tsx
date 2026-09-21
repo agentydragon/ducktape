@@ -326,6 +326,7 @@ export function ConversationCollection({
   const [interestError, setInterestError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
+  const recoveringSelectionRef = useRef<Selection | null>(null);
   const rotate = useCallback(() => {
     setStreamError(null);
     setGeneration((value) => value + 1);
@@ -334,6 +335,7 @@ export function ConversationCollection({
     () => () => {
       selectionRef.current = null;
       pendingSelectionRef.current = null;
+      recoveringSelectionRef.current = null;
     },
     []
   );
@@ -349,9 +351,15 @@ export function ConversationCollection({
             collection: entityCollection(threadId, value, (reason) => {
               if (selectionRef.current !== next && pendingSelectionRef.current !== next) return;
               // The adapter preserves a ready collection after terminal stream errors.
-              // Retired interests need a fresh scope even when query.isError stays false.
-              if (reason instanceof FetchError && reason.status === 410) rotate();
-              else setStreamError(displayableError(reason));
+              // A disconnected stream (status 0) and an expired app interest (410) both
+              // require a new view selection before its command revision can advance.
+              // Keep native Electric errors, including 409 must-refetch, visible for retry.
+              if (reason instanceof FetchError && (reason.status === 0 || reason.status === 410)) {
+                if (recoveringSelectionRef.current !== next) {
+                  recoveringSelectionRef.current = next;
+                  rotate();
+                }
+              } else setStreamError(displayableError(reason));
             }),
           };
           if (selectionRef.current === null) {
