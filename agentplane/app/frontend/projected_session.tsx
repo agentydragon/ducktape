@@ -537,10 +537,10 @@ function VirtualizedHistory({
     getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
-    // ResizeObserver below preserves the first visible row explicitly. Letting the
-    // virtualizer also compensate size changes applies a second, estimate-based scroll
-    // adjustment before that measured anchor is restored.
-    shouldAdjustScrollPositionOnItemSizeChange: () => false,
+    // ResizeObserver below preserves the first visible row explicitly. Ignore the
+    // virtualizer's estimate-based `adjustments` argument so it does not become a
+    // second scroll owner when rows above the viewport are measured again.
+    scrollToFn: (offset, { behavior }, instance) => instance.scrollElement?.scrollTo({ top: offset, behavior }),
   });
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
