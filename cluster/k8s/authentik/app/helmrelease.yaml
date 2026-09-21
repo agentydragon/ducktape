@@ -239,9 +239,9 @@ spec:
       enabled: false
 
     # TODO: replace this chart-bundled Redis with an operator-managed
-    # RedisReplication (redis.redis.opstreelabs.in/v1beta2) like grocy/tana-mcp/
-    # manifold-mcp use. Then set redis.enabled: false and point Authentik at the
-    # operator-managed Valkey via AUTHENTIK_REDIS__HOST / AUTHENTIK_REDIS__PASSWORD.
+    # RedisReplication (redis.redis.opstreelabs.in/v1beta2), as grocy and tana-mcp do.
+    # Then set redis.enabled: false and point Authentik at the operator-managed Valkey
+    # via AUTHENTIK_REDIS__HOST / AUTHENTIK_REDIS__PASSWORD.
     redis:
       enabled: true
 
