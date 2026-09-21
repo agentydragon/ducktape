@@ -97,7 +97,11 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     try:
                         await service.start(timeout_s=5)
                     except TimeoutError:
-                        same_state_restart = {"health": "timed_out", "slot": await _slot_state_after_restart(service)}
+                        same_state_restart = {
+                            "health": "timed_out",
+                            "container": await service.state(),
+                            "slot": await _slot_state_after_restart(service),
+                        }
                     else:
                         raise AssertionError("Electric resumed a lost replication slot without an explicit reset")
                     _write_artifact("same-state-restart.json", json.dumps(same_state_restart, indent=2, sort_keys=True))
@@ -111,6 +115,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                             json.dumps(
                                 {
                                     "health": await _health_state(service),
+                                    "container": await service.state(),
                                     "postgres": await _postgres_recovery_state(service),
                                 },
                                 indent=2,

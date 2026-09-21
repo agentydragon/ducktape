@@ -25,6 +25,7 @@ class ElectricService:
     _start: Callable[[float], Awaitable[None]]
     _wait_ready: Callable[[float], Awaitable[None]]
     _logs: Callable[[], Awaitable[str]]
+    _state: Callable[[], Awaitable[dict[str, object]]]
 
     async def stop(self) -> None:
         """Stop Electric while preserving its configured persistent state."""
@@ -41,6 +42,10 @@ class ElectricService:
     async def wait_ready(self, *, timeout_s: float = 60) -> None:
         """Wait for a running Electric process to pass its health check."""
         await self._wait_ready(timeout_s)
+
+    async def state(self) -> dict[str, object]:
+        """Return Docker's current process and published-port state for diagnostics."""
+        return await self._state()
 
 
 async def _connect(dsn: str) -> asyncpg.Connection:
@@ -136,4 +141,15 @@ async def electric_service(
                 async def wait_ready(timeout_s: float) -> None:
                     await _ready(url, timeout_s=timeout_s)
 
-                yield ElectricService(database_url, url, stop, start, wait_ready, logs)
+                async def state() -> dict[str, object]:
+                    container = electric.get_wrapped_container()
+                    await asyncio.to_thread(container.reload)
+                    network = container.attrs.get("NetworkSettings", {})
+                    return {
+                        "status": container.status,
+                        "state": container.attrs.get("State"),
+                        "ports": network.get("Ports"),
+                        "url": url,
+                    }
+
+                yield ElectricService(database_url, url, stop, start, wait_ready, logs, state)
