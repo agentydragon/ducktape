@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -330,7 +331,8 @@ def forgejo_db(chart: Chart, forgejo_namespace: Kustomization, cnpg: Kustomizati
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/forgejo/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             # Required to apply forgejo-db-ssd-creds.sops.yaml (Forgejo's DB app creds, which CNPG
             # syncs onto the -ssd forgejo role); without it Flux applies the ciphertext.
@@ -402,6 +404,7 @@ def forgejo_namespace(chart: Chart) -> Kustomization:
             interval="1h",
             path="./cluster/k8s/forgejo/namespace",
             prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),

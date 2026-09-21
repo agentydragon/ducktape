@@ -244,6 +244,7 @@ metadata:
   name: forgejo-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/forgejo/namespace
   prune: false
@@ -1858,6 +1859,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: forgejo-namespace
       namespace: ducktape-flux
@@ -1865,7 +1867,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
