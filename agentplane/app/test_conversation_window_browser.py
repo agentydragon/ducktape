@@ -6,11 +6,14 @@ import json
 import pytest_bazel
 from playwright.async_api import Request, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser, db_url  # noqa: F401
+from agentplane.app.test_thread_browser import ThreadBrowser, db_url
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep @pypi//protobuf
+
 pytest_plugins = ("agentplane.app.test_thread_browser",)
+__all__ = ["db_url"]
 
 
 async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser: ThreadBrowser) -> None:
@@ -76,7 +79,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
         }""",
         initial_entity_url,
     )
-    assert stale_status == 409
+    assert stale_status == 410
 
     # The live collection rotates before it retains more than two 30-row pages, while DOM
     # virtualization keeps only the measured viewport and overscan mounted.
@@ -135,12 +138,21 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained across shape rotation")
-    await page.wait_for_function(
-        """() => window.__agentplaneConversationCollectionTrace?.some(event =>
-            event.kind === 'collected' && event.status === 'cleaned-up' && event.size === 0 &&
-            event.subscriberCount === 0
-        )"""
-    )
+    try:
+        await page.wait_for_function(
+            """() => {
+                const trace = window.__agentplaneConversationCollectionTrace ?? [];
+                const active = trace.filter(event => event.kind === 'query' && event.role === 'active').at(-1);
+                const retired = new Set(trace.filter(event => event.kind === 'unsubscribed')
+                    .map(event => event.id).filter(id => id !== active?.id));
+                return retired.size > 0 && [...retired].every(id => trace.some(event =>
+                    event.id === id && event.kind === 'collected' && event.status === 'cleaned-up' &&
+                    event.size === 0 && event.subscriberCount === 0));
+            }"""
+        )
+    finally:
+        trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
+        (undeclared_outputs_dir() / "conversation-window-collections.json").write_text(json.dumps(trace, indent=2))
     await cdp.send("HeapProfiler.collectGarbage")
     heap_after = await cdp.send("Runtime.getHeapUsage")
     trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
@@ -152,6 +164,50 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     assert all(event["subscriberCount"] >= 1 for event in ready)
     active = [event for event in ready if event["role"] == "active"]
     assert active[-1]["size"] <= 61
+    await page.screenshot(path=undeclared_outputs_dir() / "conversation-window-retained-reader.png")
+
+
+async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(thread_browser: ThreadBrowser) -> None:
+    page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    (thread,) = await store.list_threads()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Draft retained across a long offline gap")
+    document = await page.evaluate_handle("document")
+
+    await page.context.set_offline(True)
+    try:
+        for number in range(70):
+            item_id = f"offline-item-{number}"
+            source.append(
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                )
+            )
+            latest = source.append(
+                event_pb2.Event(
+                    item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Offline message {number}")
+                )
+            )
+        async with asyncio.timeout(15):
+            while True:
+                scope = await store.current_conversation_scope(thread.id)
+                if scope is not None and scope.through_cursor >= latest.cursor:
+                    break
+                await asyncio.sleep(0.01)
+        await expect(composer).to_have_value("Draft retained across a long offline gap")
+        async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.status == 410):
+            await page.context.set_offline(False)
+        await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+        await expect(page.get_by_text("Offline message 69", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
+        await expect(composer).to_have_value("Draft retained across a long offline gap")
+        assert await document.evaluate("original => original === document")
+        await page.screenshot(path=undeclared_outputs_dir() / "conversation-long-offline-recovery.png")
+    finally:
+        await page.context.set_offline(False)
+        await document.dispose()
 
 
 if __name__ == "__main__":

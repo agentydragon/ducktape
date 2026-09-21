@@ -241,7 +241,7 @@ function ActiveConversation({
     traceEntityCollection("subscribed", role, collection);
     return () => {
       if (traceEntityCollection("unsubscribed", role, collection))
-        window.setTimeout(() => traceEntityCollection("collected", role, collection), 1_100);
+        collection.once("status:cleaned-up", () => traceEntityCollection("collected", role, collection));
     };
   }, [collection, role]);
   useEffect(() => {

@@ -109,7 +109,7 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
         )
     await electric.aclose()
 
-    assert stale_tail.status_code == 409
+    assert stale_tail.status_code == 410
     assert arbitrary.status_code == 400
     assert bad_log.status_code == 400
 
