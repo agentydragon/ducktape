@@ -5,6 +5,34 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
+py_library(
+    name = "conversation_projection",
+    srcs = ["conversation_projection.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "test_conversation_projection",
+    srcs = ["test_conversation_projection.py"],
+    deps = [
+        ":conversation_projection",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2

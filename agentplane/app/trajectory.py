@@ -22,6 +22,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SqlEnum,
     ForeignKey,
+    Index,
     Text,
     UniqueConstraint,
     delete,
@@ -103,6 +104,95 @@ class FeedState(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
+class ConversationProjectionCheckpoint(Base):
+    """One source/epoch-owned materialized prefix for a Thread."""
+
+    __tablename__ = "conversation_projection_checkpoint"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    through_cursor: Mapped[int] = mapped_column(BigInteger)
+
+
+class ConversationEntity(Base):
+    """The mutable, tagged current row consumed by the conversation view shape."""
+
+    __tablename__ = "conversation_entity"
+    __table_args__ = (
+        Index("ix_conversation_entity_scope_revision", "thread_id", "source_id", "projection_epoch", "revision_cursor"),
+    )
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    entity_kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    entity_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    cursor: Mapped[int] = mapped_column(BigInteger)
+    revision_cursor: Mapped[int] = mapped_column(BigInteger)
+    turn_id: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[dict[str, object]] = mapped_column(JSONB)
+    text_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    arguments_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    output_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    input_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+
+
+class ConversationPayloadManifest(Base):
+    """An immutable exact field revision; chunks are owned by its generation."""
+
+    __tablename__ = "conversation_payload_manifest"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    field: Mapped[str] = mapped_column(Text, primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    revision_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    present: Mapped[bool] = mapped_column(Boolean)
+    chunk_count: Mapped[int] = mapped_column(BigInteger)
+    content_bytes: Mapped[int] = mapped_column(BigInteger)
+
+
+class ConversationPayloadChunk(Base):
+    """A UTF-8 fragment, immutable within a payload generation."""
+
+    __tablename__ = "conversation_payload_chunk"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    field: Mapped[str] = mapped_column(Text, primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chunk_index: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+
+
+class ConversationProjectionEvidence(Base):
+    __tablename__ = "conversation_projection_evidence"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    source_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+
 @dataclass(frozen=True)
 class IngestionLease:
     sandbox: str
@@ -135,6 +225,13 @@ class FeedError:
 class FeedSnapshot:
     attached: protocol_pb2.Attached
     end: FeedEnd | FeedError | None
+
+
+@dataclass(frozen=True)
+class ConversationScope:
+    source_id: str
+    projection_epoch: str
+    through_cursor: int
 
 
 class ThreadView(BaseModel):
@@ -217,6 +314,16 @@ class TrajectoryStore:
                 )
                 or 0
             )
+
+    async def current_conversation_scope(self, thread_id: UUID) -> ConversationScope | None:
+        """The sole source/epoch scope currently materialized for a Thread."""
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
 
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
