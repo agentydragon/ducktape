@@ -125,10 +125,10 @@ async def test_pending_command_pages_bound_selection_refresh_and_cleanup(thread_
     assert_reader_visible(reader_before)
 
     await updates.get_by_role("button", name="Load 30 older pending commands", exact=True).click()
+    first_older_id = await await_command_query(page, "command-older")
     await expect(updates.locator("[data-command-id]")).to_have_count(60)
     await expect(updates.locator('[data-command-id="pending-page-002"]')).to_have_count(1)
     await expect(updates.locator('[data-command-id="pending-page-000"]')).to_have_count(0)
-    first_older_id = await await_command_query(page, "command-older")
     trace = await command_trace(page)
     for role in ("command-current", "command-older"):
         ready = [event for event in trace if event["kind"] == "query" and event["role"] == role and event["ready"]]
@@ -150,9 +150,9 @@ async def test_pending_command_pages_bound_selection_refresh_and_cleanup(thread_
     # Replacing the one bounded older collection with the third page is the only way the
     # intentionally unselected oldest command appears.
     await updates.get_by_role("button", name="Load 30 older pending commands", exact=True).click()
-    await expect(updates.locator('[data-command-id="pending-page-000"]')).to_have_count(1)
     second_older_id = await await_command_query(page, "command-older", {first_older_id})
     assert second_older_id != first_older_id
+    await expect(updates.locator('[data-command-id="pending-page-000"]')).to_have_count(1)
     assert await updates.locator("[data-command-id]").count() <= 60
     reader_after = await reader_layout(page)
     assert_reader_visible(reader_after)
@@ -241,9 +241,9 @@ async def test_pending_command_pages_recover_after_offline_updates(thread_browse
     reader_before = await reader_layout(page)
 
     await updates.get_by_role("button", name="Load 30 older pending commands", exact=True).click()
+    older_id = await await_command_query(page, "command-older")
     await expect(updates.locator("[data-command-id]")).to_have_count(60)
     await expect(updates.locator('[data-command-id="pending-page-002"]')).to_have_count(1)
-    older_id = await await_command_query(page, "command-older")
     document = await page.evaluate_handle("document")
 
     await page.context.set_offline(True)
