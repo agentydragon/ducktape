@@ -147,7 +147,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("dcgm-exporter", ("cluster/k8s/dcgm-exporter",)),
     ("descheduler", ("cluster/k8s/descheduler",)),
     ("dns-automation", ("cluster/k8s/dns-automation",)),
-    ("evidence-market-roster", ("cluster/k8s/evidence",)),
     ("flux-grafana-secrets", ("cluster/k8s/flux-grafana-secrets",)),
     ("flux-image-automation-forgejo", ("cluster/k8s/flux-image-automation-forgejo",)),
     ("flux-monitoring", ("cluster/k8s/flux-monitoring",)),

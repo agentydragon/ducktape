@@ -1,9 +1,7 @@
-# Production mirror roster for the augur-evidence scraper (schema:
-# finance.evidence.markets.MarketRoster). Deployed as the `market-roster`
-# ConfigMap (see kustomization.yaml) and mounted into the scraper CronJob
-# (`--roster`). Seeded from the loom gym's curated panel
-# (loom/gym/market_seed_tasks.py); test_market_seed_tasks asserts every panel
-# market stays rostered. Deep capture: market.json + bets.jsonl + comments.jsonl.
+# Curated market roster for the Augur evidence scraper (schema:
+# finance.evidence.markets.MarketRoster). Kept beside the scraper for a future
+# pipeline revival; the Loom Gym panel-coverage test checks its deep Manifold
+# entries. Deep capture: market.json + bets.jsonl + comments.jsonl.
 markets:
   - platform: manifold
     market_id: hKB9iD8knG4R2RuSyyCu # manifold-bitcoin-100k-2024
