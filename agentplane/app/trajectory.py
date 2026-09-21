@@ -156,10 +156,10 @@ class ConversationEntity(Base):
             "thread_id",
             "source_id",
             "projection_epoch",
-            "pending",
             "cursor",
             "entity_kind",
             "entity_id",
+            postgresql_where=text("pending"),
         ),
     )
 
