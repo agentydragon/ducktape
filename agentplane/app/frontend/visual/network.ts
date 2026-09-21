@@ -18,7 +18,7 @@ export const routes: Route[] = [];
 /** A real Electric HTTP shape batch: row operations followed by a completed-snapshot control. */
 export interface ElectricShapeMessage {
   headers:
-    | { relation: ["public", string]; operation: "insert" | "update" | "delete" }
+    | { relation: ["public", string]; operation: "insert" | "update" | "delete"; snapshot_mark?: number }
     | { control: "snapshot-end" | "up-to-date" | "must-refetch" };
   key?: string;
   value?: Record<string, unknown>;
@@ -59,21 +59,64 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
  * Visual conversation scenes use this rather than an EventSource replay so the collection's column
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
-export function electricShape(rows: readonly ElectricShapeMessage[], handle: string): Response {
-  const relation =
-    rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : "conversation_entity";
+function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "conversation_entity") {
+  const relation = rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : fallback;
   const schema = ELECTRIC_SCHEMAS[relation];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
+  return schema;
+}
+
+function shapeHeaders(handle: string, schema: Record<string, Record<string, string | boolean | number>>): HeadersInit {
+  return {
+    "content-type": "application/json",
+    "electric-handle": handle,
+    "electric-offset": "0_0",
+    "electric-schema": JSON.stringify(schema),
+    "electric-has-data": "true",
+  };
+}
+
+/** Full-log response for immutable chunk shapes and changes-only stream continuations. */
+export function electricShape(rows: readonly ElectricShapeMessage[], handle: string, relation?: string): Response {
+  const schema = relationSchema(rows, relation);
   return new Response(
     JSON.stringify([...rows, { headers: { control: "snapshot-end" } }, { headers: { control: "up-to-date" } }]),
     {
       headers: {
-        "content-type": "application/json",
-        "electric-handle": handle,
-        "electric-offset": "0_0",
-        "electric-schema": JSON.stringify(schema),
-        "electric-has-data": "true",
+        ...shapeHeaders(handle, schema),
         "electric-up-to-date": "",
+      },
+    }
+  );
+}
+
+/**
+ * Current-state bootstrap used by `syncMode: "on-demand"`: Electric returns operations in a
+ * subset envelope rather than the append-only shape log. The snapshot mark links each row to the
+ * PostgreSQL visibility metadata and lets the client discard overlapping streamed changes.
+ */
+export function electricSubset(rows: readonly ElectricShapeMessage[], handle: string): Response {
+  const schema = relationSchema(rows);
+  const snapshotMark = 974_778_392;
+  const data = rows.map((row) =>
+    "relation" in row.headers ? { ...row, headers: { ...row.headers, snapshot_mark: snapshotMark } } : row
+  );
+  return new Response(
+    JSON.stringify({
+      data,
+      metadata: {
+        snapshot_mark: snapshotMark,
+        database_lsn: "25413256",
+        xip_list: [],
+        xmax: "761",
+        xmin: "761",
+      },
+    }),
+    {
+      headers: {
+        ...shapeHeaders(handle, schema),
+        "electric-offset": "0_inf",
+        "electric-snapshot": "true",
       },
     }
   );

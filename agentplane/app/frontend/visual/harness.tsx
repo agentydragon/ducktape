@@ -1,9 +1,8 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
  * (set by visual-test-lib) picks the route; `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers the routes a page still asks for, and `EventSource`
- * serves both stream shapes: one snapshot per live view, and one turn of runner events into the
- * session view.
+ * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
+ * only for the live sandbox, thread, and action-inventory views.
  */
 import "./network";
 import "@mantine/core/styles.css";
@@ -35,7 +34,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricShape, routes } from "./network";
+import { electricShape, electricSubset, routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -1089,6 +1088,16 @@ function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   return value;
 }
 
+/** Mutable Electric collections bootstrap their fixed server-selected interest through an on-demand subset. */
+function currentSubset(query: URLSearchParams): boolean {
+  if (!query.has("subset__where") && !query.has("subset__params")) return false;
+  if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
+    throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
+  }
+  if (query.get("offset") !== "now") throw new Error("current Electric snapshots must start the stream at offset now");
+  return true;
+}
+
 function shapeRow(relation: string, value: Record<string, unknown>) {
   const identity =
     relation === "conversation_entity"
@@ -1177,14 +1186,16 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query) => {
-      if (query.get("offset") !== null && query.get("offset") !== "-1") {
+      const subset = currentSubset(query);
+      if (!subset && query.get("offset") !== null) {
         return electricShape([], `visual-entities-${match[1]}`);
       }
+      if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
       const rows = threadRows(match[1]).map((row) => {
         if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
         return { ...row, revision_cursor: "8" };
       });
-      return electricShape(
+      return electricSubset(
         rows.map((row) => shapeRow("conversation_entity", row)),
         `visual-entities-${match[1]}`
       );
@@ -1194,14 +1205,16 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
     (match, query) => {
-      if (query.get("offset") !== null && query.get("offset") !== "-1") {
+      const subset = currentSubset(query);
+      if (!subset && query.get("offset") !== null) {
         return electricShape([], `visual-commands-${match[1]}`);
       }
+      if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
       const selected = new Set(query.getAll("command_id"));
       const rows = threadRows(match[1]).filter(
         (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
       );
-      return electricShape(
+      return electricSubset(
         rows.map((row) => shapeRow("conversation_entity", row)),
         `visual-commands-${match[1]}`
       );
