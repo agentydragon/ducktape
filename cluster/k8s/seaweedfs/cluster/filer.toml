@@ -27,8 +27,10 @@ hostname = "seaweedfs-filer-db-ssd-rw.seaweedfs.svc"
 port = 5432
 database = "seaweedfs"
 sslmode = "disable"
-connection_max_idle = 100
-connection_max_open = 100
+# Two filers x 32 = 64; PostgreSQL has 100 - 3 = 97 ordinary slots, leaving
+# 33 for other clients. Each filer retains at most 8 idle in each of its two pools.
+connection_max_idle = 8
+connection_max_open = 32
 connection_max_lifetime_seconds = 0
 enableUpsert = true
 upsertQuery = """
