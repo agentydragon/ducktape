@@ -80,7 +80,7 @@ class GitHubVisibilitySettings(BaseModel):
 
 
 class WebPushDeploymentSettings(BaseModel):
-    """The Web Push fields cdk8s authors; the private key comes from the mounted Secret."""
+    """The Web Push fields cdk8s writes; the private key comes from the mounted Secret."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -93,7 +93,8 @@ class ActionServiceDeploymentSettings(BaseModel):
     """The Action Service settings authored by cdk8s and written to its YAML file.
 
     Runtime-only inputs such as the database URL and Web Push private key come from
-    Kubernetes Secrets and environment variables.
+    environment variables; `settings_file` validates those supplied leaves against the
+    complete runtime `Settings` model.
     """
 
     model_config = ConfigDict(extra="forbid")
