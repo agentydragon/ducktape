@@ -708,6 +708,14 @@ async def test_settled_command_reason_survives_history_eviction_and_reload(
     await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
     await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
     await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
+    await page.get_by_role("button", name="Dismiss", exact=True).click()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
+    await page.reload()
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
     assert source.commands.empty()
 
 
