@@ -596,14 +596,9 @@ spec:
       name: gatus-sso-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/app/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/app/"
+        - from: "@repo/cluster/k8s/github-api-proxy/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/"
       name: github-api-proxy
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/identity/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/identity/"
-      name: github-api-proxy-identity
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-branch-protection/**"
