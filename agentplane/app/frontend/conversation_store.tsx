@@ -4,7 +4,14 @@ import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
-import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
+import {
+  conversationInterest,
+  displayableError,
+  pendingCommandInterest,
+  type ConversationStoredEntity,
+  type EntityInterest,
+  type PendingCommandInterest,
+} from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 const RefreshConversation = createContext<() => void>(() => undefined);
@@ -54,6 +61,7 @@ const stateSchema = z.union([
       harness_state: z.string().nullable(),
     }),
     unresolved_count: z.number().int(),
+    command_revision_cursor: z.string().regex(/^-?\d+$/),
     operational: z.object({
       operational_version: z.string(),
       status: z.enum(["active", "ended", "failed"]),
@@ -135,10 +143,16 @@ function entityCollection(threadId: string, interest: EntityInterest, onError: (
   );
 }
 
-function traceEntityCollection(
+function traceCollection(
   kind: string,
-  role: "active" | "pending",
-  collection: ReturnType<typeof entityCollection>
+  role: string,
+  collection: {
+    id: string;
+    size: number;
+    subscriberCount: number;
+    status: string;
+    isReady: () => boolean;
+  }
 ): boolean {
   const trace = window.__agentplaneConversationCollectionTrace;
   if (!trace) return false;
@@ -173,12 +187,13 @@ function commandCollection(
   sourceId: string,
   projectionEpoch: string,
   commandIds: readonly string[],
-  onError: (error: unknown) => void
+  onError: (error: unknown) => void,
+  identity = ""
 ) {
   const selected = [...new Set(commandIds)].sort();
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}`,
+      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}:${identity}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => row.entityId,
@@ -253,6 +268,431 @@ export function CommandSelection({
   );
 }
 
+type PendingPageSelection = {
+  interest: PendingCommandInterest;
+  collection: ReturnType<typeof commandCollection> | null;
+};
+
+function pendingPageSelection(
+  threadId: string,
+  interest: PendingCommandInterest,
+  generation: number,
+  onError: (reason: unknown) => void
+): PendingPageSelection {
+  return {
+    interest,
+    collection:
+      interest.command_ids.length === 0
+        ? null
+        : commandCollection(
+            threadId,
+            interest.source_id,
+            interest.projection_epoch,
+            interest.command_ids,
+            onError,
+            `pending:${interest.command_revision_cursor}:${generation}`
+          ),
+  };
+}
+
+function PendingPageRows({
+  selection,
+  sourceId,
+  projectionEpoch,
+  viewRevisionCursor,
+  onCaughtUp,
+  onScopeMismatch,
+  role,
+  children,
+}: {
+  selection: PendingPageSelection;
+  sourceId: string;
+  projectionEpoch: string;
+  viewRevisionCursor: Decimal;
+  onCaughtUp?: () => void;
+  onScopeMismatch: () => void;
+  role: "current" | "older" | "candidate";
+  children: (rows: ConversationEntity[]) => JSX.Element;
+}): JSX.Element {
+  const collection = selection.collection;
+  if (collection === null)
+    return (
+      <PendingPageResult
+        selection={selection}
+        sourceId={sourceId}
+        projectionEpoch={projectionEpoch}
+        viewRevisionCursor={viewRevisionCursor}
+        ready
+        rows={[]}
+        onCaughtUp={onCaughtUp}
+        onScopeMismatch={onScopeMismatch}
+        role={role}
+      >
+        {children}
+      </PendingPageResult>
+    );
+  return (
+    <LivePendingPageRows
+      selection={{ ...selection, collection }}
+      sourceId={sourceId}
+      projectionEpoch={projectionEpoch}
+      viewRevisionCursor={viewRevisionCursor}
+      onCaughtUp={onCaughtUp}
+      onScopeMismatch={onScopeMismatch}
+      role={role}
+    >
+      {children}
+    </LivePendingPageRows>
+  );
+}
+
+function LivePendingPageRows({
+  selection,
+  sourceId,
+  projectionEpoch,
+  viewRevisionCursor,
+  onCaughtUp,
+  onScopeMismatch,
+  role,
+  children,
+}: {
+  selection: PendingPageSelection & { collection: ReturnType<typeof commandCollection> };
+  sourceId: string;
+  projectionEpoch: string;
+  viewRevisionCursor: Decimal;
+  onCaughtUp?: () => void;
+  onScopeMismatch: () => void;
+  role: "current" | "older" | "candidate";
+  children: (rows: ConversationEntity[]) => JSX.Element;
+}): JSX.Element {
+  const query = useLiveQuery((q) => q.from({ command: selection.collection }), [selection.collection]);
+  return (
+    <PendingPageResult
+      selection={selection}
+      sourceId={sourceId}
+      projectionEpoch={projectionEpoch}
+      viewRevisionCursor={viewRevisionCursor}
+      ready={selection.collection.isReady()}
+      rows={query.data ?? []}
+      onCaughtUp={onCaughtUp}
+      onScopeMismatch={onScopeMismatch}
+      role={role}
+    >
+      {children}
+    </PendingPageResult>
+  );
+}
+
+function PendingPageResult({
+  selection,
+  sourceId,
+  projectionEpoch,
+  viewRevisionCursor,
+  ready,
+  rows,
+  onCaughtUp,
+  onScopeMismatch,
+  role,
+  children,
+}: {
+  selection: PendingPageSelection;
+  sourceId: string;
+  projectionEpoch: string;
+  viewRevisionCursor: Decimal;
+  ready: boolean;
+  rows: ConversationEntity[];
+  onCaughtUp?: () => void;
+  onScopeMismatch: () => void;
+  role: "current" | "older" | "candidate";
+  children: (rows: ConversationEntity[]) => JSX.Element;
+}): JSX.Element {
+  const collection = selection.collection;
+  const scopeMatches =
+    selection.interest.source_id === sourceId && selection.interest.projection_epoch === projectionEpoch;
+  const caughtUp =
+    scopeMatches && ready && decimalBigInt(viewRevisionCursor) >= BigInt(selection.interest.through_cursor);
+  useEffect(() => {
+    if (collection === null) return;
+    traceCollection("subscribed", `command-${role}`, collection);
+    return () => {
+      if (traceCollection("unsubscribed", `command-${role}`, collection))
+        collection.once("status:cleaned-up", () => traceCollection("collected", `command-${role}`, collection));
+    };
+  }, [collection, role]);
+  useEffect(() => {
+    if (collection !== null) traceCollection("query", `command-${role}`, collection);
+  }, [collection, ready, role, rows]);
+  useEffect(() => {
+    if (!scopeMatches) onScopeMismatch();
+  }, [onScopeMismatch, scopeMatches]);
+  useEffect(() => {
+    if (caughtUp) onCaughtUp?.();
+  }, [caughtUp, onCaughtUp]);
+  if (!caughtUp && role === "current")
+    return (
+      <p role="status" data-command-catchup="true">
+        Catching up command updates…
+      </p>
+    );
+  return children(caughtUp ? rows : []);
+}
+
+export function PendingCommandPages({
+  threadId,
+  sourceId,
+  projectionEpoch,
+  viewRevisionCursor,
+  commandRevisionCursor,
+  children,
+}: {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  viewRevisionCursor: Decimal;
+  commandRevisionCursor: Decimal;
+  children: (page: {
+    current: ConversationEntity[];
+    older: ConversationEntity[];
+    unresolvedCount: number;
+    canLoadOlder: boolean;
+    hasOlder: boolean;
+    loadOlder: () => void;
+    clearOlder: () => void;
+  }) => JSX.Element;
+}): JSX.Element {
+  const refreshConversation = useContext(RefreshConversation);
+  const [current, setCurrent] = useState<PendingPageSelection | null>(null);
+  const currentRef = useRef<PendingPageSelection | null>(null);
+  const [candidate, setCandidate] = useState<PendingPageSelection | null>(null);
+  const candidateRef = useRef<PendingPageSelection | null>(null);
+  const [older, setOlder] = useState<PendingPageSelection | null>(null);
+  const olderRef = useRef<PendingPageSelection | null>(null);
+  const [generation, setGeneration] = useState(0);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderRequest = useRef<AbortController | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refreshCurrent = useCallback(() => {
+    setGeneration((value) => value + 1);
+  }, []);
+  const scopeExpired = useCallback(() => {
+    currentRef.current = null;
+    setCandidate(null);
+    candidateRef.current = null;
+    olderRef.current = null;
+    olderRequest.current?.abort();
+    olderRequest.current = null;
+    setLoadingOlder(false);
+    setCurrent(null);
+    setOlder(null);
+    refreshCurrent();
+    refreshConversation();
+  }, [refreshConversation, refreshCurrent]);
+  const scopeMismatch = useCallback(() => refreshConversation(), [refreshConversation]);
+  const streamError = useCallback(
+    (selection: PendingPageSelection, reason: unknown) => {
+      if (currentRef.current !== selection && candidateRef.current !== selection && olderRef.current !== selection)
+        return;
+      if (reason instanceof FetchError && reason.status === 410) {
+        scopeExpired();
+        return;
+      }
+      if (olderRef.current === selection) {
+        olderRef.current = null;
+        setOlder(null);
+        setError(`Older command synchronization stopped: ${displayableError(reason)}. Load it again to retry.`);
+        return;
+      }
+      setError(displayableError(reason));
+    },
+    [scopeExpired]
+  );
+  useEffect(
+    () => () => {
+      currentRef.current = null;
+      candidateRef.current = null;
+      olderRef.current = null;
+      olderRequest.current?.abort();
+      olderRequest.current = null;
+    },
+    []
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    let retry: number | undefined;
+    let attempt = 0;
+    setError(null);
+    const load = (): void => {
+      if (retry !== undefined) window.clearTimeout(retry);
+      void pendingCommandInterest(threadId, undefined, controller.signal).then(
+        (interest) => {
+          if (controller.signal.aborted) return;
+          if (interest.source_id !== sourceId || interest.projection_epoch !== projectionEpoch) {
+            refreshConversation();
+            return;
+          }
+          let next: PendingPageSelection;
+          next = pendingPageSelection(threadId, interest, generation, (reason) => streamError(next, reason));
+          if (currentRef.current === null) {
+            currentRef.current = next;
+            setCurrent(next);
+          } else {
+            candidateRef.current = next;
+            setCandidate(next);
+          }
+          setError(null);
+        },
+        (reason: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(displayableError(reason));
+          retry = window.setTimeout(load, Math.min(5_000, 250 * 2 ** attempt++));
+        }
+      );
+    };
+    const online = (): void => {
+      attempt = 0;
+      load();
+    };
+    window.addEventListener("online", online);
+    load();
+    return () => {
+      controller.abort();
+      if (retry !== undefined) window.clearTimeout(retry);
+      window.removeEventListener("online", online);
+    };
+  }, [generation, projectionEpoch, refreshConversation, sourceId, streamError, threadId]);
+  useEffect(() => {
+    if (
+      current !== null &&
+      candidate === null &&
+      decimalBigInt(commandRevisionCursor) > BigInt(current.interest.command_revision_cursor)
+    )
+      refreshCurrent();
+  }, [candidate, commandRevisionCursor, current, refreshCurrent]);
+
+  const loadOlder = useCallback(() => {
+    const beforeCursor = older?.interest.next_before_cursor ?? current?.interest.next_before_cursor;
+    if (!beforeCursor || loadingOlder) return;
+    olderRequest.current?.abort();
+    const controller = new AbortController();
+    olderRequest.current = controller;
+    setLoadingOlder(true);
+    setError(null);
+    void pendingCommandInterest(threadId, beforeCursor, controller.signal)
+      .then(
+        (interest) => {
+          if (controller.signal.aborted || olderRequest.current !== controller) return;
+          if (interest.source_id !== sourceId || interest.projection_epoch !== projectionEpoch) {
+            refreshConversation();
+            return;
+          }
+          let next: PendingPageSelection;
+          next = pendingPageSelection(threadId, interest, generation, (reason) => streamError(next, reason));
+          olderRef.current = next;
+          setOlder(next);
+        },
+        (reason: unknown) => {
+          if (!controller.signal.aborted && olderRequest.current === controller) setError(displayableError(reason));
+        }
+      )
+      .finally(() => {
+        if (olderRequest.current === controller) {
+          olderRequest.current = null;
+          setLoadingOlder(false);
+        }
+      });
+  }, [current, generation, loadingOlder, older, projectionEpoch, refreshConversation, sourceId, streamError, threadId]);
+  const clearOlder = useCallback(() => {
+    olderRequest.current?.abort();
+    olderRequest.current = null;
+    setLoadingOlder(false);
+    olderRef.current = null;
+    setOlder(null);
+  }, []);
+
+  if (!current) {
+    if (error)
+      return (
+        <p role="alert">
+          Pending command sync failed: {error} <button onClick={refreshCurrent}>Retry pending command sync</button>
+        </p>
+      );
+    return <p role="status">Loading command updates…</p>;
+  }
+  return (
+    <>
+      {error && (
+        <p role="alert">
+          Pending command synchronization stopped: {error}{" "}
+          <button onClick={refreshCurrent}>Refresh command updates</button>
+        </p>
+      )}
+      <PendingPageRows
+        selection={current}
+        sourceId={sourceId}
+        projectionEpoch={projectionEpoch}
+        viewRevisionCursor={viewRevisionCursor}
+        onScopeMismatch={scopeMismatch}
+        role="current"
+      >
+        {(currentRows) =>
+          older ? (
+            <PendingPageRows
+              selection={older}
+              sourceId={sourceId}
+              projectionEpoch={projectionEpoch}
+              viewRevisionCursor={viewRevisionCursor}
+              onScopeMismatch={scopeMismatch}
+              role="older"
+            >
+              {(olderRows) =>
+                children({
+                  current: currentRows,
+                  older: olderRows,
+                  unresolvedCount: current.interest.unresolved_count,
+                  canLoadOlder: Boolean(older.interest.next_before_cursor),
+                  hasOlder: true,
+                  loadOlder,
+                  clearOlder,
+                })
+              }
+            </PendingPageRows>
+          ) : (
+            children({
+              current: currentRows,
+              older: [],
+              unresolvedCount: current.interest.unresolved_count,
+              canLoadOlder: Boolean(current.interest.next_before_cursor),
+              hasOlder: false,
+              loadOlder,
+              clearOlder,
+            })
+          )
+        }
+      </PendingPageRows>
+      {candidate && (
+        <div hidden>
+          <PendingPageRows
+            selection={candidate}
+            sourceId={sourceId}
+            projectionEpoch={projectionEpoch}
+            viewRevisionCursor={viewRevisionCursor}
+            onScopeMismatch={scopeMismatch}
+            role="candidate"
+            onCaughtUp={() => {
+              currentRef.current = candidate;
+              candidateRef.current = null;
+              setCurrent(candidate);
+              setCandidate(null);
+            }}
+          >
+            {() => <></>}
+          </PendingPageRows>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ActiveConversation({
   threadId,
   interest,
@@ -276,14 +716,14 @@ function ActiveConversation({
   const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
   const segmentCount = rows.filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind)).length;
   useEffect(() => {
-    traceEntityCollection("subscribed", role, collection);
+    traceCollection("subscribed", role, collection);
     return () => {
-      if (traceEntityCollection("unsubscribed", role, collection))
-        collection.once("status:cleaned-up", () => traceEntityCollection("collected", role, collection));
+      if (traceCollection("unsubscribed", role, collection))
+        collection.once("status:cleaned-up", () => traceCollection("collected", role, collection));
     };
   }, [collection, role]);
   useEffect(() => {
-    traceEntityCollection("query", role, collection);
+    traceCollection("query", role, collection);
   }, [collection, query.isError, rows, role]);
   useEffect(() => {
     if (segmentCount > 60) onRotate();

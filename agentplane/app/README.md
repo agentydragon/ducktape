@@ -113,9 +113,13 @@ are hints and the database cursor remains authoritative.
 of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
 live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
 arguments follow their referenced revisions, while reasoning, tool output and associated debug
-frames are selected on demand. A command-ID subscription retains outcomes after the command
-leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
-remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
+frames are selected on demand. Pending commands use a 30-row keyset interest plus one optional
+older 30-row fixed-ID page; the view shows the persisted total pending count. A command-ID
+subscription retains outcomes only for those pages and the bounded local selection after a
+command leaves pending membership. The pending page waits for its returned `through_cursor`
+in the matching source/epoch before rendering. App scope expiry is HTTP 410 and requests a
+fresh interest; Electric's HTTP 409 remains its own must-refetch path. Local authored intent,
+unsent drafts and viewport/disclosure state remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
 for query, revision and memory contracts and the remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate

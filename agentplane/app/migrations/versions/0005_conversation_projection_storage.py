@@ -1,4 +1,4 @@
-"""Create materialized conversation storage; deployed staging databases must be reset."""
+"""Create materialized conversation storage; reset and recreate experimental projection state on schema changes."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -55,10 +55,10 @@ def upgrade() -> None:
         postgresql_where=sa.text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
     )
     op.create_index(
-        "ix_conversation_entity_scope_pending_cursor",
+        "ix_conversation_entity_pending_command_cursor",
         "conversation_entity",
-        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
-        postgresql_where=sa.text("pending"),
+        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_id"],
+        postgresql_where=sa.text("pending AND entity_kind = 'command'"),
     )
     op.create_index(
         "ix_conversation_entity_scope_segment_cursor",
@@ -137,7 +137,7 @@ def downgrade() -> None:
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
     op.drop_index("ix_conversation_entity_scope_segment_cursor", table_name="conversation_entity")
-    op.drop_index("ix_conversation_entity_scope_pending_cursor", table_name="conversation_entity")
+    op.drop_index("ix_conversation_entity_pending_command_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")

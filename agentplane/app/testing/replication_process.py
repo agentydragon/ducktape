@@ -286,6 +286,9 @@ async def _serve(
                     )
                 ),
                 store.current_conversation_scope,
+                lambda thread_id, before, page_size: store.pending_command_interest(
+                    thread_id, before_cursor=before, page_size=page_size
+                ),
             )
             if electric_url is not None
             else None,
