@@ -109,7 +109,7 @@ spec:
               port: 8263
             periodSeconds: 10
         # firebase_resigner: when the in-pod Tana's Firebase session is dead
-        # (probes /health on loopback), swap the SOPS-managed refresh token
+        # (probes /health on loopback), swap the central refresh token
         # for an ID token, mint a Tana custom token via the fetchCustomToken
         # Cloud Function, and deliver it to the desktop container's reseed
         # receiver as a tana://auth deep-link. See
@@ -127,7 +127,7 @@ spec:
             - name: PAT
               valueFrom:
                 secretKeyRef:
-                  name: tana-agentydragon-gmail-com-account-pat
+                  name: tana-mcp-pat
                   key: token
           resources:
             requests:
@@ -141,7 +141,7 @@ spec:
         # Tana's ~/.config/tana is just workspace cache + Firebase auth
         # IndexedDB. Both are re-derivable on cold start: workspace from the
         # upstream Tana RTDB, Firebase session re-minted by the
-        # firebase_resigner sidecar from the SOPS-managed refresh token. So
+        # firebase_resigner sidecar from the central runtime Secret. So
         # this can stay an emptyDir — see
         # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: tana-config

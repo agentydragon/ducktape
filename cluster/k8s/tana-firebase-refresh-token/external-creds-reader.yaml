@@ -1,0 +1,7 @@
+# Consumer-owned identity used by the bootstrap ExternalSecret in this namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: ducktape-flux
+automountServiceAccountToken: false

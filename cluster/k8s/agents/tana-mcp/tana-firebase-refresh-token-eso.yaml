@@ -1,0 +1,20 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: tana-firebase-refresh-token
+  namespace: tana-mcp
+spec:
+  # Pick up rotations from the single central runtime Secret without coupling
+  # resigner code to this consumer copy.
+  refreshInterval: 1m
+  secretStoreRef:
+    name: kubernetes-external-creds-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: tana-mcp-firebase-refresh-token
+    creationPolicy: Owner
+  data:
+    - secretKey: refresh_token
+      remoteRef:
+        key: tana-firebase-refresh-token
+        property: refresh_token

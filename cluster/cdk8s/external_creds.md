@@ -27,6 +27,20 @@ contract.
   namespaces: a RoleBinding may name a ServiceAccount before that namespace or
   identity exists.
 
+Tana's rotating Firebase refresh token is the dynamic-source exception. A SOPS
+bootstrap Secret in `external-creds` seeds one ESO-owned runtime Secret in
+`ducktape-flux`. The separate `tana-firebase-refresh-token` Kustomization owns
+the `OnChange` bridge ExternalSecret, the referent reader ServiceAccount, and
+the resigner's exact-name `get`/`patch` grant for that runtime Secret. It
+depends on both `external-creds` and `external-secrets-config`. The resigner
+writes only the central Secret; consumer-owned ExternalSecrets poll it and
+update independent copies in `tana-mcp` and `litellm`. This keeps distribution
+in ESO and out of the resigner. The resigner requires all non-secret settings
+from its ConfigMap and its PAT from a Secret; it has no compiled-in config
+defaults.
+To intentionally reseed after token revocation, update the SOPS seed and bump
+the bridge's `external-secrets.io/force-sync` annotation in Git.
+
 Approval stays at the source. Referencing the shared ClusterSecretStore does
 not grant access: the Kubernetes provider cannot read a canonical Secret
 unless `external-creds` contains a RoleBinding for that namespace's
@@ -55,7 +69,8 @@ in one reconciliation with pruning enabled.
 ## Scope
 
 This pattern excludes cluster-internal credentials, Kubernetes-native identity
-and PKI material, and credentials minted or rotated by a controller. OAuth and
-session credentials (for example Tana and CLIProxyAPI) remain explicit
+and PKI material, and credentials minted or rotated by a controller. Tana's
+Firebase refresh token uses the documented bootstrap/runtime bridge above;
+other OAuth and session credentials (for example CLIProxyAPI) remain explicit
 exceptions. Normal workloads use scoped LiteLLM virtual keys instead of vendor
 credentials where that is available.

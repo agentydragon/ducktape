@@ -71,15 +71,17 @@ The LiteLLM model entries configure Tana through normal `litellm_params`:
   generation options to Tana.
 
 The adapter exchanges the refresh token for a Firebase ID token and caches
-only that short-lived ID token. The resigner owns and refreshes the Secret; this
+only that short-lived ID token. The resigner owns and refreshes the central
+Secret; ESO propagates it to the Tana MCP and LiteLLM consumer Secrets. This
 adapter deliberately does not adopt or persist rotated Firebase refresh tokens
 from the Secure Token response. Direct `TanaProxyClient` use retains the lookup
 order above for local tools such as `probe_models.py`.
 
-In the cluster deployment, this Secret is optional at LiteLLM startup. Without
-it, the proxy still starts and serves other providers; Tana model requests fail
-until the credential is available. The Deployment watches Secret changes, so
-the reflected Secret's return or rotation restarts LiteLLM with the current
+In the cluster deployment, the ESO-managed
+`litellm-tana-firebase-refresh-token` Secret is optional at LiteLLM startup.
+Without it, the proxy still starts and serves other providers; Tana model
+requests fail until the credential is available. The Deployment watches Secret
+changes, so ESO propagation of a rotation restarts LiteLLM with the current
 value. Flux does not gate LiteLLM reconciliation on Tana-MCP readiness.
 
 The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key

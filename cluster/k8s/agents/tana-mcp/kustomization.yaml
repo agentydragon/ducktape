@@ -3,12 +3,13 @@ kind: Kustomization
 resources:
   - forgejo-images-creds-eso.yaml
   - namespace.yaml
+  - external-creds-reader.yaml
+  - tana-pat-eso.yaml
+  - tana-firebase-refresh-token-eso.yaml
   - firebase-resigner-config.yaml
   - deployment.yaml
   - service.yaml
-  - tana-agentydragon-gmail-com-account-pat.sops.yaml
-  - tana-firebase-refresh-token.sops.yaml
-  - firebase-resigner-rbac.yaml
+  - firebase-resigner-service-account.yaml
   - facade-configmap.yaml
   - facade-deployment.yaml
   - facade-httproute.yaml

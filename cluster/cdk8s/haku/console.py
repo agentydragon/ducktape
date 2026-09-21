@@ -286,14 +286,7 @@ class Console(Construct):
                 # namespace from the backend's own (tana-mcp, ha-mcp, ssh-mcp). Resolved only
                 # while the console calls the backend; never mounted into the inner workload.
                 self._from_secret(
-                    "tana-agentydragon-gmail-com-account-pat",
-                    "token",
-                    "mcp",
-                    "servers",
-                    "tana",
-                    "backend",
-                    "auth",
-                    "token",
+                    "haku-console-tana-pat", "token", "mcp", "servers", "tana", "backend", "auth", "token"
                 ),
                 self._from_secret(
                     "ha-mcp-bearer", "bearer-token", "mcp", "servers", "home_assistant", "backend", "auth", "token"

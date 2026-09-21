@@ -71,7 +71,7 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
     `haku-console-public-coder-agent`, `haku-console-agent-api`,
-    `tana-agentydragon-gmail-com-account-pat`, `ha-mcp-bearer`, `ssh-mcp-bearer`,
+    `haku-console-tana-pat`, `ha-mcp-bearer`, `ssh-mcp-bearer`,
     `aiquota-api-bearer-haku-console`, `haku-routine-launch-token`,
     `haku-console-web-push-vapid`, `haku-console-google-client-credentials`,
     `haku-console-google-calendar-client-credentials`, and
@@ -83,7 +83,7 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   - LiteLLM: `litellm-master-key`, `litellm-salt-key`, `litellm-anthropic-key`,
     `litellm-groq-key`, `litellm-gemini-key`, `litellm-mistral-key`,
     `litellm-cliproxy-key`, `litellm-db-app`, `langfuse-secrets`, and
-    `tana-firebase-refresh-token`.
+    `litellm-tana-firebase-refresh-token`.
   - `ntfy`, `etcd-monitoring`, and Forgejo image automation had empty provided-resource
     rosters, so any new out-of-chart Pod reference failed validation.
   - Unit cases covered valid `oidc` → `sso-tf` and `image-tag` → `image-tag.yaml`

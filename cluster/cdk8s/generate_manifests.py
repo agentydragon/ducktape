@@ -257,6 +257,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, claude_rbac_kustomization
     )
     external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
+    tana_firebase_refresh_token_kustomization = agents_flux_kustomizations.tana_firebase_refresh_token(
+        flux_chart, external_creds_kustomization, external_secrets_config_kustomization
+    )
     agents_flux_kustomizations.coinbase_read(
         flux_chart, external_creds_kustomization, external_secrets_config_kustomization
     )
@@ -570,6 +573,8 @@ def generate_manifests(root: Path) -> None:
     )
     agents_flux_kustomizations.tana_mcp(
         flux_chart,
+        external_creds_kustomization,
+        tana_firebase_refresh_token_kustomization,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
         gateway_kustomization,
@@ -692,7 +697,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_jwt_rotation_kustomization
     )
     litellm_kustomization = litellm_proxy.litellm(
-        flux_chart, root, cnpg_kustomization, external_secrets_operator_kustomization, monitoring_crds_kustomization
+        flux_chart,
+        root,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        monitoring_crds_kustomization,
+        external_creds_kustomization,
+        tana_firebase_refresh_token_kustomization,
     )
     aiquota_kustomization = aiquota.aiquota(
         flux_chart,

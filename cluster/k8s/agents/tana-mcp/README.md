@@ -22,9 +22,9 @@ deployment adds:
   enable the Local API/MCP server
 - a cluster-internal proxy so workloads can reach `/mcp` even though Tana
   itself only listens on `localhost`
-- a SOPS-managed Kubernetes secret containing a Tana personal access token for
-  the full `agentydragon@gmail.com` account, which cluster clients can use to
-  authenticate to `/mcp`
+- an ESO-reconciled Kubernetes Secret containing a Tana personal access token
+  for the full `agentydragon@gmail.com` account, which cluster clients can use
+  to authenticate to `/mcp`
 
 ## Security Model
 
@@ -49,13 +49,16 @@ surface.
   start (workspace from the upstream Tana RTDB, Firebase session by the
   resigner). No PVC, no volsync backup.
 - **firebase-resigner sidecar**: Watches `127.0.0.1:8262/health`; when the
-  in-pod renderer isn't signed in, swaps the SOPS-managed refresh token
+  in-pod renderer isn't signed in, swaps the ESO-reconciled refresh token
   for a fresh Firebase ID token → calls Tana's `fetchCustomToken` → POSTs
   the resulting `tana://auth?token=...&providerId=tanaFirebaseToken` URL to
   the desktop container's localhost reseed receiver, which `exec`s Tana
   so Electron's second-instance handler routes the URL into the renderer.
-  Its non-secret settings come from the `tana-firebase-resigner-config`
-  ConfigMap; its `PAT` comes from the existing PAT Secret.
+  Firebase rotations are written to the single central runtime Secret in
+  `ducktape-flux`; ESO refreshes separate consumer Secrets in `tana-mcp` and
+  `litellm`. Its non-secret settings come from the
+  `tana-firebase-resigner-config` ConfigMap; its PAT comes from the existing
+  PAT Secret.
   Readiness is **not** just
   `/health`: when `PAT` is set (from the PAT secret below) the sidecar also
   POSTs `/mcp initialize` with the PAT and treats a `401` as unhealthy. This
@@ -63,20 +66,26 @@ surface.
   `validateToken` is refusing the PAT (the renderer drifted off the matching
   account), and drives a re-sign to recover it — otherwise the facade silently
   serves zero tools.
-- **PAT secret**: `tana-agentydragon-gmail-com-account-pat` is a
-  SOPS-encrypted Kubernetes secret that stores a Tana personal access token for
-  the full `agentydragon@gmail.com` account, used by the cluster MCP clients
-  to authenticate to `/mcp`.
+- **PAT secret**: `tana-mcp-pat` is distributed
+  from the canonical SOPS Secret in `cluster/k8s/external-creds` with an
+  ExternalSecret in `tana-mcp` and `haku-console`. It stores a Tana personal
+  access token for the full `agentydragon@gmail.com` account.
 
 ## Initial Setup
 
-The deployment expects a Firebase refresh token to be present in the
-`tana-firebase-refresh-token` SOPS secret. With that in place, the resigner
+The deployment expects an ESO-reconciled `tana-mcp-firebase-refresh-token` Secret.
+An `OnChange` bridge in `cluster/k8s/external-creds` seeds the central runtime
+Secret from a SOPS bootstrap Secret. Periodic consumer ExternalSecrets deliver
+independent copies to Tana and LiteLLM; the resigner patches only the central
+Secret whenever Firebase rotates the token. With that in place, the resigner
 sidecar drives sign-in on every pod start — no operator action needed.
+If the stored token is revoked, update the bootstrap SOPS Secret and bump the
+bridge's `external-secrets.io/force-sync` annotation in Git to reseed the
+central Secret.
 
 ### Bootstrap the refresh token
 
-Bootstrap the `tana-firebase-refresh-token` SOPS secret once from a local Tana
+Bootstrap the `tana-firebase-refresh-token-seed` SOPS secret once from a local Tana
 Desktop install (no browser automation). With a signed-in local Tana Desktop,
 extract its IndexedDB refresh token:
 
@@ -84,7 +93,7 @@ extract its IndexedDB refresh token:
 bb run //tana/firebase_session_extractor -- \
     ~/.config/tana-outliner/IndexedDB/https_app.tana.inc_0.indexeddb.leveldb \
   | sops -e --input-type binary --output-type yaml /dev/stdin \
-    > cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml
+    > cluster/k8s/external-creds/tana-firebase-refresh-token-seed.sops.yaml
 ```
 
 `tana/firebase_session_extractor` opens Tana Desktop's leveldb, finds the
@@ -159,7 +168,7 @@ is no Labs gate at the HTTP layer.
 The "Local API/MCP server (Alpha)" toggle under **Tana Labs > Settings** only
 controls `McpAgentConfigManager` — i.e. whether Tana writes managed entries
 into `~/.claude.json` / `~/.claude/.config.json` on the host. We don't use that
-path (the cluster proxies bearer-auth `/mcp` from a SOPS-managed PAT), so the
+path (the cluster proxies bearer-auth `/mcp` from an ESO-distributed PAT), so the
 toggle state does not matter for this deployment.
 
 See [`gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md`](../../../../../../gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md)
@@ -169,7 +178,7 @@ for the desktop-side implementation.
 
 Once the MCP server is healthy, the deployment should become ready on its own.
 The authentication material for cluster clients is no longer minted by an
-in-pod broker; it is supplied separately through a SOPS-managed PAT secret.
+in-pod broker; it is supplied separately through an ESO-reconciled PAT Secret.
 
 You can verify separately:
 
@@ -190,7 +199,7 @@ The MCP endpoint is cluster-internal only (no public ingress).
 
 - **Endpoint**: `http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp`
 - **Auth**: Read `token` from the
-  `tana-agentydragon-gmail-com-account-pat` secret and include
+  `tana-mcp-pat` Secret and include
   `Authorization: Bearer <token>` in requests. This is a personal access token
   for the full `agentydragon@gmail.com` account, not a narrowly scoped
   broker-managed OAuth token.
@@ -207,13 +216,13 @@ External clients that need MCP OAuth/DCR should use the separate public facade:
   `tana-agentydragon-gmail-com-account-access` group, intended to contain only
   the `agentydragon` user.
 - **Downstream auth**: the facade injects the server-held
-  `tana-agentydragon-gmail-com-account-pat` token when calling internal
+  `tana-mcp-pat` token when calling internal
   `tana-mcp`
 
 This split is intentional:
 
 - internal `tana-mcp` stays simple and bearer-authenticated
-- `haku-console` is an internal client: it holds a namespace-reflected copy of the PAT and proxies
+- `haku-console` is an internal client: it holds an ESO-reconciled copy of the PAT and proxies
   Tana tools to the inner Haku agent without disclosing the credential
 - public `tana-mcp-facade` handles Authentik OAuth and caller allowlisting
 - the Tana PAT never leaves Kubernetes
@@ -267,9 +276,9 @@ Expected path behavior through the proxy:
   dependencies (`xdg-utils` + GUI browser), or a browser that still has its
   own sandbox enabled inside the container. Rebuild and redeploy the image,
   then retry the login flow from the `vnc.html` URL above.
-- **PAT auth failing**: Verify the SOPS-managed secret decrypts correctly and
-  that clients are using the `token` key from
-  `tana-agentydragon-gmail-com-account-pat`.
+- **PAT auth failing**: Verify the canonical `external-creds` source and the
+  `tana-mcp` ExternalSecret are Ready, and that clients are using the `token`
+  key from `tana-mcp-pat`.
 - **Session expired**: Connect via noVNC and sign in again. The PVC preserves
   state across normal pod restarts but Tana may expire the session after
   prolonged inactivity.
@@ -279,9 +288,10 @@ Expected path behavior through the proxy:
 
 ## Secrets
 
-| Secret                                    | Key     | Source                                        |
-| ----------------------------------------- | ------- | --------------------------------------------- |
-| `tana-agentydragon-gmail-com-account-pat` | `token` | SOPS-managed PAT for `agentydragon@gmail.com` |
+| Secret                            | Key             | Source                                          |
+| --------------------------------- | --------------- | ----------------------------------------------- |
+| `tana-mcp-pat`                    | `token`         | ESO-reconciled PAT for `agentydragon@gmail.com` |
+| `tana-mcp-firebase-refresh-token` | `refresh_token` | ESO copy of the central runtime refresh token   |
 
-The PAT secret is consumed by the facade (downstream auth) and, as `TANA_PAT`,
+The PAT secret is consumed by the facade (downstream auth) and, as `PAT`,
 by the firebase-resigner sidecar (readiness PAT check).

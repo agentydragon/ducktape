@@ -7,7 +7,7 @@ data:
   # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project tagr-prod. This
   # Firebase web API key is a public identifier, not a secret.
   API_KEY: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
-  SECRET_NAMESPACE: tana-mcp
+  SECRET_NAMESPACE: ducktape-flux
   SECRET_NAME: tana-firebase-refresh-token
   SECRET_KEY: refresh_token
   FETCH_CUSTOM_TOKEN_URL: https://app.tana.inc/functions/fetchCustomToken

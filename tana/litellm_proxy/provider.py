@@ -21,7 +21,7 @@ from litellm.utils import custom_llm_setup
 
 DEFAULT_FIREBASE_API_KEY = "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ"
 DEFAULT_FUNCTIONS_BASE_URL = "https://app.tana.inc/functions"
-DEFAULT_REFRESH_TOKEN_SECRET = "tana-mcp/tana-firebase-refresh-token"
+DEFAULT_REFRESH_TOKEN_SECRET = "tana-mcp/tana-mcp-firebase-refresh-token"
 DEFAULT_REFRESH_TOKEN_KEY = "refresh_token"
 TANA_PROVIDER = "tana"
 

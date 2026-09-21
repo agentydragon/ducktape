@@ -612,3 +612,123 @@ subjects:
     kind: ServiceAccount
     name: external-creds-reader
     namespace: claude-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tana-firebase-refresh-token-seed-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - tana-firebase-refresh-token-seed
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-firebase-refresh-token-seed-flux-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-firebase-refresh-token-seed-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: ducktape-flux
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tana-firebase-refresh-token-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - tana-firebase-refresh-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-firebase-refresh-token-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-firebase-refresh-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-firebase-refresh-token-tana-mcp-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-firebase-refresh-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: tana-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tana-agentydragon-gmail-com-account-pat-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - tana-agentydragon-gmail-com-account-pat
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-agentydragon-gmail-com-account-pat-haku-console-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-agentydragon-gmail-com-account-pat-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-agentydragon-gmail-com-account-pat-tana-mcp-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-agentydragon-gmail-com-account-pat-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: tana-mcp
