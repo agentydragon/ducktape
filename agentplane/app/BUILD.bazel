@@ -959,6 +959,7 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
