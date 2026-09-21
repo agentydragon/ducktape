@@ -434,6 +434,7 @@ function VirtualizedHistory({
   onLoadOlder: (cursor: string) => void;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
+  const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousCount = useRef(segments.length);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
@@ -463,6 +464,16 @@ function VirtualizedHistory({
     }
     previousCount.current = segments.length;
   }, [segments, virtualizer]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    const content = contents.current;
+    if (!element || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (atBottom.current) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div
       ref={viewport}
@@ -480,14 +491,16 @@ function VirtualizedHistory({
             offset: element.scrollTop - first.start,
           };
         }
-        const oldest = segments[0]?.cursor.toString();
-        if (element.scrollTop < 80 && oldest && requestedBefore.current !== oldest) {
-          requestedBefore.current = oldest;
-          onLoadOlder(oldest);
+        // Retain one segment across adjacent reading windows so the virtualizer can restore
+        // the same measured item and pixel offset after the old collection is evicted.
+        const boundary = (segments[1] ?? segments[0])?.cursor.toString();
+        if (element.scrollTop < 80 && boundary && requestedBefore.current !== boundary) {
+          requestedBefore.current = boundary;
+          onLoadOlder(boundary);
         }
       }}
     >
-      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+      <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const entity = segments[item.index];
           return entity ? (
@@ -530,7 +543,15 @@ function ProjectedSessionBody({
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const running = available && !thread.archived && controls?.harness_state === "running";
+  const operational =
+    view && "controls" in view.state && "operational" in view.state
+      ? (view.state.operational as {
+          status: "active" | "ended" | "failed";
+          feed_error: { cursor: string; message: string } | null;
+        })
+      : null;
+  const running =
+    available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -557,6 +578,11 @@ function ProjectedSessionBody({
           ? 1
           : 0
     );
+  const projectedCommands = entities.filter(
+    (row): row is ConversationEntity & { state: Extract<ConversationEntity["state"], { outcome: string }> } =>
+      row.entityKind === "command" && "outcome" in row.state
+  );
+  const hasPendingCommands = projectedCommands.length > 0 || commands.local.commands.length > 0;
 
   function submit(): void {
     if (!draft.trim() || !running) return;
@@ -572,7 +598,10 @@ function ProjectedSessionBody({
       <Button
         variant="subtle"
         disabled={!segments.length}
-        onClick={() => segments[0] && onLoadOlder(segments[0].cursor.toString())}
+        onClick={() => {
+          const boundary = segments[1] ?? segments[0];
+          if (boundary) onLoadOlder(boundary.cursor.toString());
+        }}
       >
         Load 30 earlier
       </Button>
@@ -583,12 +612,10 @@ function ProjectedSessionBody({
         activeTurn={activeTurn}
         onLoadOlder={onLoadOlder}
       />
-      {entities
-        .filter((row) => row.entityKind === "command")
-        .map((row) => {
-          if (!("outcome" in row.state)) return null;
-          return (
-            <Paper key={row.entityId} p="xs" withBorder>
+      {hasPendingCommands && (
+        <Stack role="region" aria-label="Pending commands" gap="xs">
+          {projectedCommands.map((row) => (
+            <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
               <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
                 {row.state.outcome === "pending"
                   ? "Saved · awaiting effect"
@@ -598,25 +625,35 @@ function ProjectedSessionBody({
               {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
               <Evidence threadId={threadId} entity={row} />
             </Paper>
-          );
-        })}
-      {commands.local.commands.map((value) => (
-        <Paper key={value.command.commandId} p="xs" withBorder>
-          <Text size="sm">{value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
-          {value.command.operation.case === "submitInput" && <Markdown source={value.command.operation.value.text} />}
-          {value.command.operation.case === "changeModel" && (
-            <Text>Change model to {value.command.operation.value.model}</Text>
-          )}
-          {value.command.operation.case === "interruptTurn" && (
-            <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-          )}
-          {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-          {commands.errors.get(value.command.commandId) && (
-            <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
-          )}
-          {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
-        </Paper>
-      ))}
+          ))}
+          {commands.local.commands.map((value) => (
+            <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+              <Text size="sm">
+                {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
+              </Text>
+              {value.command.operation.case === "submitInput" && (
+                <Markdown source={value.command.operation.value.text} />
+              )}
+              {value.command.operation.case === "changeModel" && (
+                <Text>Change model to {value.command.operation.value.model}</Text>
+              )}
+              {value.command.operation.case === "interruptTurn" && (
+                <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+              )}
+              {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+              {commands.errors.get(value.command.commandId) && (
+                <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
+              )}
+              {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
+            </Paper>
+          ))}
+        </Stack>
+      )}
+      {operational?.feed_error && (
+        <Text role="alert" c="red">
+          Conversation feed stopped at cursor {operational.feed_error.cursor}: {operational.feed_error.message}
+        </Text>
+      )}
       {modelError && (
         <Text role="alert" c="red">
           {modelError}

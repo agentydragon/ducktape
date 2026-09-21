@@ -47,6 +47,12 @@ const stateSchema = z.union([
       harness_state: z.string().nullable(),
     }),
     unresolved_count: z.number().int(),
+    operational: z.object({
+      operational_version: z.string(),
+      status: z.enum(["active", "ended", "failed"]),
+      last_verified_cursor: z.string(),
+      feed_error: z.object({ cursor: z.string(), message: z.string() }).nullable(),
+    }),
   }),
   z.object({
     kind: z.number().int(),
