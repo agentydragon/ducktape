@@ -1,4 +1,5 @@
-# Nix-built OCI image for the codex pod (see cluster/k8s/agents/codex-pod/README.md).
+# Parked Nix-built OCI image experiment (see cluster/k8s/parked/codex-pod/README.md).
+# The flake output is retained; automatic publication was retired with the pod.
 #
 # Two parts, both from Nix — no runtime bootstrap script:
 #   - the tool set is a single `buildEnv` (codexEnv) on /bin;
@@ -7,10 +8,10 @@
 # Secrets are delivered by k8s at runtime (BUILDBUDDY_API_KEY env, the id_ed25519
 # plant, ESO-templated files) — so no sops-nix, no systemd, non-root UID 1000.
 #
-# Still a dockerTools archive (not a NixOS tarball), so CI pushes it with the same
-# `skopeo copy docker-archive:` path. Flux image automation rolls the Deployment.
+# This is a dockerTools archive (not a NixOS tarball). The historical CI publication
+# flow is described in the parked experiment README.
 #
-# Build:  nix build .#codex-pod-image
+# Build:  nix build .#codex-pod-image (currently fails at evaluation; see parked README)
 # Load:   docker load < result
 {
   pkgs,

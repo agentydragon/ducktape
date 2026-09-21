@@ -3,11 +3,12 @@
 # evaluates these in parallel (nix-eval-jobs) and `--skip-cached` builds/pushes
 # only paths missing from the cache. See devinfra/ci/nix_attic_build_and_push.sh.
 #
-#   main   — every target: all ducktape packages (every `nix build .#<pkg>`
-#            output, including the full shared Python lockfile closure any of
-#            them pulls in — see #3298/#7078) + all NixOS toplevels + home
-#            activationPackages + bootstrap packages. Pushed to the broadly
-#            readable `main` cache.
+#   main   — every target: all cache-eligible ducktape package outputs (including
+#            the full shared Python lockfile closure any of them pulls in — see
+#            #3298/#7078) + all NixOS toplevels + home activationPackages +
+#            bootstrap packages. The parked codex-pod image remains a flake
+#            output, but is excluded from this CI cache.
+#            Pushed to the broadly readable `main` cache.
 #   public — the bootstrap subset only, also pushed to the anonymous `public`
 #            cache (a fresh Claude Code web session substitutes these before any
 #            credential exists).
@@ -81,11 +82,14 @@ let
       devShell = self.devShells.${system}.default;
     };
 
+  # Keep the parked image output without making it a CI cache target.
+  atticPackages = builtins.removeAttrs ducktapePkgs [ "codex-pod-image" ];
+
   prefix = p: lib.mapAttrs' (n: v: lib.nameValuePair "${p}-${n}" v);
 in
 {
   main =
-    prefix "pkg" ducktapePkgs
+    prefix "pkg" atticPackages
     // prefix "nixos" (lib.genAttrs (builtins.attrNames self.nixosConfigurations) nixosToplevel)
     // prefix "home" (lib.genAttrs (builtins.attrNames self.homeConfigurations) homeActivation)
     // prefix "bootstrap" bootstrap;
