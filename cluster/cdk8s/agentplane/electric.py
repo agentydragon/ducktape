@@ -82,6 +82,9 @@ class Electric(Construct):
                 "ELECTRIC_PERSISTENT_STATE": EnvValue.from_value("file"),
                 "ELECTRIC_MANUAL_TABLE_PUBLISHING": EnvValue.from_value("true"),
                 "ELECTRIC_REPLICATION_STREAM_ID": EnvValue.from_value("agentplane_conversation"),
+                # Window rotation and exact payload reads create finite shapes. Enable Electric's
+                # once-per-minute LRU expiry; the upstream default retains every shape forever.
+                "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
             },
             ports=[ContainerPort(name="http", number=PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/v1/health", port=PORT, initial_delay_seconds=5, period_seconds=10),

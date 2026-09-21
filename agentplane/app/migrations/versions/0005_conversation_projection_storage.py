@@ -48,6 +48,7 @@ def upgrade() -> None:
         "ix_conversation_entity_scope_cursor",
         "conversation_entity",
         ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
+        postgresql_where=sa.text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
     )
     op.create_index(
         "ix_conversation_entity_scope_pending_cursor",
