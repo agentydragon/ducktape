@@ -12,10 +12,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -278,6 +279,105 @@ class ConversationScope:
     source_id: str
     projection_epoch: str
     through_cursor: int
+
+
+class ConversationPayloadReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    projection_epoch: str
+    owner_cursor: str
+    owner_item_id: str
+    field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
+    revision_cursor: str
+    generation: str
+
+
+class ConversationControlsState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applied_model: str | None
+    active_turn_id: str | None
+    harness_state: str | None
+
+
+class ConversationViewState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    controls: ConversationControlsState
+    unresolved_count: int
+
+
+class ConversationItemState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: int
+    tool_name: str
+    completion: str | None
+    tool_succeeded: bool | None
+
+
+class ConversationConfirmedInputState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    harness_message_id: str
+    origin_command_ids: list[str]
+
+
+class ConversationLifecycleState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str
+    event: JsonValue
+
+
+class ConversationCommandState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: str
+    outcome: Literal["pending", "effected", "failed", "noop"]
+    outcome_cursor: str | None
+    outcome_reason: str | None
+
+
+class ConversationStoredEntity(BaseModel):
+    """The generated client contract for a synchronized current conversation row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: UUID
+    source_id: str
+    projection_epoch: str
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"]
+    entity_id: str
+    cursor: int
+    revision_cursor: int
+    pending: bool
+    turn_id: str | None
+    state: (
+        ConversationViewState
+        | ConversationItemState
+        | ConversationConfirmedInputState
+        | ConversationLifecycleState
+        | ConversationCommandState
+    )
+    text_ref: ConversationPayloadReference | None
+    arguments_ref: ConversationPayloadReference | None
+    output_ref: ConversationPayloadReference | None
+    input_ref: ConversationPayloadReference | None
+
+    @model_validator(mode="after")
+    def _state_matches_kind(self) -> Self:
+        expected = {
+            "view_state": ConversationViewState,
+            "item": ConversationItemState,
+            "confirmed_input": ConversationConfirmedInputState,
+            "lifecycle": ConversationLifecycleState,
+            "command": ConversationCommandState,
+        }[self.entity_kind]
+        if not isinstance(self.state, expected):
+            raise ValueError(f"conversation state does not match {self.entity_kind}")
+        return self
 
 
 class ThreadView(BaseModel):
@@ -963,7 +1063,7 @@ def _entity_values(
     thread_id: UUID,
     source_id: str,
     projection_epoch: str,
-    entity_kind: str,
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"],
     entity_id: str,
     cursor: int,
     revision_cursor: int,
@@ -976,22 +1076,22 @@ def _entity_values(
     output_ref: conversation_projection.FieldValue | None = None,
     input_ref: conversation_projection.FieldValue | None = None,
 ) -> dict[str, object]:
-    return {
-        "thread_id": thread_id,
-        "source_id": source_id,
-        "projection_epoch": projection_epoch,
-        "entity_kind": entity_kind,
-        "entity_id": entity_id,
-        "cursor": cursor,
-        "revision_cursor": revision_cursor,
-        "pending": pending,
-        "turn_id": turn_id,
-        "state": state,
-        "text_ref": _payload_ref_json(text_ref),
-        "arguments_ref": _payload_ref_json(arguments_ref),
-        "output_ref": _payload_ref_json(output_ref),
-        "input_ref": _payload_ref_json(input_ref),
-    }
+    return ConversationStoredEntity(
+        thread_id=thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        cursor=cursor,
+        revision_cursor=revision_cursor,
+        pending=pending,
+        turn_id=turn_id,
+        state=state,
+        text_ref=_payload_ref_json(text_ref),
+        arguments_ref=_payload_ref_json(arguments_ref),
+        output_ref=_payload_ref_json(output_ref),
+        input_ref=_payload_ref_json(input_ref),
+    ).model_dump(mode="json")
 
 
 def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState) -> dict[str, object]:
