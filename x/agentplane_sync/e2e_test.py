@@ -2788,6 +2788,7 @@ async def test_electric_end_to_end() -> None:
                             assert len(final_payload_rows) == 1, final_payload_records
                             diagnostics["payloadRevisionLifecycle"] = {
                                 "streaming": streaming_evidence,
+                                "closedTextCollection": text_collection_gc,
                                 "closedTextChunkRequestsStayedAt": text_requests_before_close,
                                 "replacementCursor": replacement_cursor,
                                 "replacement": final_text_visible,
