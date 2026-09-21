@@ -10,6 +10,7 @@ import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 import uvicorn
@@ -265,6 +266,26 @@ async def async_main(settings: Settings) -> None:
             discover_sandboxes=running_sandboxes,
             sandbox_changes=live.changes,
         )
+
+        async def resolve_entity_interest(
+            thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None, page_size: int
+        ):
+            return await store.conversation_entity_interest(
+                thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=page_size
+            )
+
+        async def resolve_payload(
+            thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
+        ):
+            return await store.conversation_payload_selection(
+                thread_id,
+                owner_cursor=owner_cursor,
+                owner_id=owner_id,
+                field=field,
+                generation=generation,
+                revision_cursor=revision_cursor,
+            )
+
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)
             if settings.action_federation is not None and oidc is not None
@@ -284,7 +305,7 @@ async def async_main(settings: Settings) -> None:
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
             electric=(
-                ElectricProxy(electric_http, store.current_conversation_scope)
+                ElectricProxy(electric_http, resolve_entity_interest, resolve_payload)
                 if settings.electric_url is not None
                 else None
             ),

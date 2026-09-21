@@ -23,6 +23,7 @@ from agentplane.app.trajectory import (
     ConversationPayloadManifest,
     ConversationProjectionError,
     ConversationProjectionEvidence,
+    ConversationProjectionNativeLink,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -117,11 +118,10 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     empty = await store.thread(
         "sb-2", "s-9", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, cwd="/w", model="m")
     )
-    await store.record(
-        thread,
-        [_event(1, harness_started=event_pb2.HarnessStarted(pid=1)), _event(2, harness_lost=event_pb2.HarnessLost())],
-        lease=lease,
-    )
+    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    second.event.at.FromDatetime(datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC))
+    await store.record(thread, [first, second], lease=lease)
 
     views = {view.id: view for view in await store.list_threads()}
 
@@ -134,7 +134,7 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         "last_cursor": 2,
     }
     assert views[thread].harness is Harness.CLAUDE
-    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
+    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 1, tzinfo=UTC)
     assert (views[empty].harness, views[empty].last_cursor, views[empty].last_event_at) == ("HARNESS_CODEX", 0, None)
     assert views[empty].harness is Harness.CODEX
     # No feed has ever attached to either thread (only their event log was replayed), so the
@@ -145,6 +145,15 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+    async with store._sessions() as session:
+        await session.execute(text("SET LOCAL enable_seqscan = false"))
+        plan = (
+            await session.scalars(
+                text("EXPLAIN (COSTS OFF) SELECT at FROM event WHERE thread_id = :thread ORDER BY at DESC LIMIT 1"),
+                {"thread": thread},
+            )
+        ).all()
+    assert any("ix_event_thread_at" in line for line in plan)
 
 
 @pytest.mark.parametrize("cursors", [pytest.param([2], id="initial-gap"), pytest.param([1, 3], id="batch-gap"), [2, 1]])
@@ -632,6 +641,11 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
                 select(ConversationProjectionEvidence).where(ConversationProjectionEvidence.thread_id == thread)
             )
         ).all()
+        native_links = (
+            await session.scalars(
+                select(ConversationProjectionNativeLink).where(ConversationProjectionNativeLink.thread_id == thread)
+            )
+        ).all()
     assert item is not None
     assert item.text_ref == {
         "source_id": "test-runner",
@@ -647,7 +661,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         (3, 1, 2),
     ]
     assert [chunk.text for chunk in chunks] == ["hello world", "!"]
-    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in evidence] == [(1, 1, 9007)]
+    assert [(row.item_cursor, row.observation_cursor) for row in evidence] == [(1, 1)]
+    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
     await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
     async with store._sessions() as session:
@@ -673,6 +688,88 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     with pytest.raises(ConversationProjectionError, match="cursor 5"):
         await store.record(thread, [_event(5)], lease=lease)
     assert await store.last_cursor(thread) == 4
+
+
+async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
+    confirmed = _event(
+        2,
+        harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+            harness_message_id="message", text="question", origin_command_ids=["input"], turn_id="turn"
+        ),
+    )
+    confirmed.event.source_sequences.extend([81, 82])
+    await store.record(
+        thread,
+        [
+            _event(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
+            confirmed,
+            _event(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
+        ],
+        lease=lease,
+    )
+    await store.record(
+        thread,
+        [
+            _event(
+                4,
+                item_started=event_pb2.ItemStarted(
+                    item_id="tool-b", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="later"
+                ),
+            ),
+            _event(
+                5,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-b", tool=event_pb2.ToolResult(output="B", succeeded=True)
+                ),
+            ),
+            _event(6, tool_arguments=event_pb2.ToolArguments(item_id="tool-a", arguments_json='{"path":"x"}')),
+            _event(
+                7,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-a", tool=event_pb2.ToolResult(output="", succeeded=False)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        entities = {
+            (row.entity_kind, row.entity_id): row
+            for row in (
+                await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread))
+            ).all()
+        }
+        manifests = (
+            await session.scalars(
+                select(ConversationPayloadManifest)
+                .where(ConversationPayloadManifest.thread_id == thread)
+                .order_by(ConversationPayloadManifest.owner_id, ConversationPayloadManifest.revision_cursor)
+            )
+        ).all()
+    first, second = entities[("item", "tool-a")], entities[("item", "tool-b")]
+    assert (first.cursor, first.revision_cursor, second.cursor, second.revision_cursor) == (3, 7, 4, 5)
+    assert first.arguments_ref is not None
+    assert first.arguments_ref["revision_cursor"] == "6"
+    assert first.output_ref is not None
+    assert first.output_ref["revision_cursor"] == "7"
+    assert first.output_ref["generation"] == "7"
+    assert second.output_ref is not None
+    assert second.output_ref["revision_cursor"] == "5"
+    assert entities[("confirmed_input", "2")].input_ref is not None
+    assert entities[("command", "input")].pending is False
+    assert entities[("command", "input")].state["outcome"] == "effected"
+    assert [(manifest.owner_id, manifest.revision_cursor, manifest.chunk_count) for manifest in manifests] == [
+        ("input", 1, 1),
+        ("message", 2, 1),
+        ("tool-a", 3, 1),
+        ("tool-a", 6, 1),
+        ("tool-a", 7, 0),
+        ("tool-b", 5, 1),
+    ]
 
 
 if __name__ == "__main__":

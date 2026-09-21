@@ -77,11 +77,16 @@ class Thread(Base):
 
 class Event(Base):
     __tablename__ = "event"
+    __table_args__ = (
+        Index("ix_event_thread_at", "thread_id", "at"),
+        Index("ix_event_thread_origin_sequence", "thread_id", "origin_sequence"),
+    )
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
@@ -135,6 +140,7 @@ class ConversationEntity(Base):
             "cursor",
             "entity_kind",
             "entity_id",
+            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
         Index(
             "ix_conversation_entity_scope_pending_cursor",
@@ -214,6 +220,18 @@ class ConversationProjectionEvidence(Base):
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+
+class ConversationProjectionNativeLink(Base):
+    __tablename__ = "conversation_projection_native_link"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
 
@@ -260,6 +278,32 @@ class ConversationScope:
     source_id: str
     projection_epoch: str
     through_cursor: int
+
+
+@dataclass(frozen=True)
+class ConversationEntityInterest:
+    """Stable cursor bounds for one bounded Electric entity shape."""
+
+    scope: ConversationScope
+    anchor_cursor: int
+    tail_from: int
+    window_from: int | None = None
+    window_before: int | None = None
+
+
+@dataclass(frozen=True)
+class ConversationPayloadSelection:
+    """One immutable payload revision and its server-verified physical extent."""
+
+    scope: ConversationScope
+    owner_cursor: int
+    owner_id: str
+    field: str
+    generation: int
+    revision_cursor: int
+    present: bool
+    chunk_count: int
+    content_bytes: int
 
 
 class ThreadView(BaseModel):
@@ -338,7 +382,7 @@ class TrajectoryStore:
         async with self._sessions() as session:
             return (
                 await session.scalar(
-                    select(func.coalesce(func.max(Event.cursor), 0)).where(Event.thread_id == thread_id)
+                    select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
                 )
                 or 0
             )
@@ -352,6 +396,89 @@ class TrajectoryStore:
             if checkpoint is None:
                 return None
             return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+
+    async def conversation_entity_interest(
+        self,
+        thread_id: UUID,
+        *,
+        anchor_cursor: int | None = None,
+        before_cursor: int | None = None,
+        page_size: int = 30,
+    ) -> ConversationEntityInterest | None:
+        """Resolve bounded, immutable cursor ranges for a tail and optional history page."""
+        if not 1 <= page_size <= 100:
+            raise ValueError("conversation page size must be between 1 and 100")
+        segment_kinds = ("item", "confirmed_input", "lifecycle")
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            scope = ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
+            if anchor < 0 or anchor > scope.through_cursor:
+                raise ValueError("conversation anchor is outside the projected prefix")
+
+            async def lower(before: int) -> int:
+                cursors = list(
+                    await session.scalars(
+                        select(ConversationEntity.cursor)
+                        .where(
+                            ConversationEntity.thread_id == thread_id,
+                            ConversationEntity.source_id == scope.source_id,
+                            ConversationEntity.projection_epoch == scope.projection_epoch,
+                            ConversationEntity.entity_kind.in_(segment_kinds),
+                            ConversationEntity.cursor < before,
+                        )
+                        .order_by(ConversationEntity.cursor.desc())
+                        .limit(page_size)
+                    )
+                )
+                return cursors[-1] if cursors else before
+
+            tail_from = await lower(anchor + 1)
+            if before_cursor is None:
+                return ConversationEntityInterest(scope, anchor, tail_from)
+            if before_cursor < 0:
+                raise ValueError("before cursor cannot be negative")
+            return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
+
+    async def conversation_payload_selection(
+        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
+    ) -> ConversationPayloadSelection | None:
+        """Verify an exact immutable reference and return its authoritative chunk bound."""
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            manifest = await session.scalar(
+                select(ConversationPayloadManifest).where(
+                    ConversationPayloadManifest.thread_id == thread_id,
+                    ConversationPayloadManifest.source_id == checkpoint.source_id,
+                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                    ConversationPayloadManifest.owner_cursor == owner_cursor,
+                    ConversationPayloadManifest.owner_id == owner_id,
+                    ConversationPayloadManifest.field == field,
+                    ConversationPayloadManifest.generation == generation,
+                    ConversationPayloadManifest.revision_cursor == revision_cursor,
+                )
+            )
+            if manifest is None:
+                return None
+            return ConversationPayloadSelection(
+                ConversationScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
+                owner_cursor,
+                owner_id,
+                field,
+                generation,
+                revision_cursor,
+                manifest.present,
+                manifest.chunk_count,
+                manifest.content_bytes,
+            )
 
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
@@ -397,6 +524,7 @@ class TrajectoryStore:
                     Event(
                         thread_id=thread_id,
                         cursor=entry.cursor,
+                        origin_sequence=entry.origin.sequence,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
                         payload=payload,
@@ -523,14 +651,18 @@ class TrajectoryStore:
     ) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it. Archived
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
-        last = (
-            select(Event.thread_id, func.max(Event.cursor).label("last_cursor"), func.max(Event.at).label("last_at"))
-            .group_by(Event.thread_id)
-            .subquery()
+        last_cursor = (
+            select(Event.cursor)
+            .where(Event.thread_id == Thread.id)
+            .order_by(Event.cursor.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        last_at = (
+            select(Event.at).where(Event.thread_id == Thread.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
         )
         query = (
-            select(Thread, last.c.last_cursor, last.c.last_at, FeedState.attached)
-            .outerjoin(last, last.c.thread_id == Thread.id)
+            select(Thread, last_cursor, last_at, FeedState.attached)
             .outerjoin(FeedState, FeedState.thread_id == Thread.id)
             .order_by(Thread.created_at.desc())
         )
@@ -664,17 +796,18 @@ async def _record_conversation_projection(
             )
         )
     for evidence in result.evidence_upserts:
+        values = {
+            "thread_id": thread_id,
+            "source_id": evidence.source_id,
+            "projection_epoch": evidence.projection_epoch,
+            "item_cursor": evidence.item_cursor,
+            "observation_cursor": evidence.observation_cursor,
+        }
+        await session.execute(insert(ConversationProjectionEvidence).values(**values).on_conflict_do_nothing())
         for source_sequence in evidence.source_sequences:
             await session.execute(
-                insert(ConversationProjectionEvidence)
-                .values(
-                    thread_id=thread_id,
-                    source_id=evidence.source_id,
-                    projection_epoch=evidence.projection_epoch,
-                    item_cursor=evidence.item_cursor,
-                    observation_cursor=evidence.observation_cursor,
-                    source_sequence=source_sequence,
-                )
+                insert(ConversationProjectionNativeLink)
+                .values(**values, source_sequence=source_sequence)
                 .on_conflict_do_nothing()
             )
     checkpoint_values = {
@@ -1115,8 +1248,12 @@ def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.Even
 
 
 async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:
-    last = await session.execute(select(func.max(Event.cursor), func.max(Event.at)).where(Event.thread_id == thread_id))
-    last_cursor, last_at = last.one()
+    last_cursor = await session.scalar(
+        select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
+    )
+    last_at = await session.scalar(
+        select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
+    )
     state = await session.get(FeedState, thread_id)
     return last_cursor, last_at, (state.attached if state is not None else None)
 

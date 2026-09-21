@@ -355,12 +355,12 @@ class _Fold:
                 raise ValueError(f"field {field} does not belong to a conversation item")
         return self._save_item(item, cursor)
 
-    def _evidence(self, item: ConversationItem, entry: event_log_pb2.EventEntry) -> None:
+    def _evidence(self, item: ConversationItem | int, entry: event_log_pb2.EventEntry) -> None:
         self.evidence.append(
             EvidenceAssociation(
                 self.state.position.source_id,
                 self.state.position.projection_epoch,
-                item.cursor,
+                item.cursor if isinstance(item, ConversationItem) else item,
                 entry.cursor,
                 tuple(entry.event.source_sequences),
             )
@@ -562,16 +562,21 @@ class _Fold:
                 )
                 for command_id in confirmed.origin_command_ids:
                     self._settle(cursor, command_id, CommandOutcome.EFFECTED)
+                self._evidence(cursor, entry)
             case "command_admitted":
                 self._admit(cursor, event.command_admitted.command)
+                self._evidence(cursor, entry)
             case "command_failed":
                 self._settle(
                     cursor, event.command_failed.command_id, CommandOutcome.FAILED, event.command_failed.reason
                 )
+                self._evidence(cursor, entry)
             case "command_noop":
                 self._settle(cursor, event.command_noop.command_id, CommandOutcome.NOOP, event.command_noop.reason)
+                self._evidence(cursor, entry)
             case kind if kind in _LIFECYCLE:
                 self._lifecycle(cursor, event, kind)
+                self._evidence(cursor, entry)
             case kind if kind in _SILENT:
                 pass
             case _:
