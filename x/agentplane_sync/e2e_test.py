@@ -92,7 +92,7 @@ def _payload_seed_records(
     field_name: str,
     source_id: str,
     revision: int,
-    generation_id: str,
+    generation_id: int,
     content_chunks: list[str],
 ) -> tuple[tuple[Any, ...], list[tuple[Any, ...]], str]:
     chunks = [(index, value, len(value.encode("utf-8"))) for index, value in enumerate(content_chunks) if value]
@@ -125,7 +125,7 @@ async def _seed_payload(
     field_name: str,
     source_id: str,
     revision: int,
-    generation_id: str,
+    generation_id: int,
     content_chunks: list[str],
 ) -> tuple[str, int, int]:
     manifest, chunks, reference = _payload_seed_records(
@@ -165,12 +165,12 @@ async def _seed_payload_probes(pool: asyncpg.Pool) -> dict[str, dict[str, Any]]:
                 "text",
                 source_id,
                 revision,
-                f"superseded-{revision}",
+                HIGH_CURSOR + revision,
                 [f"superseded body {revision}"],
             )
             manifest_rows.append(manifest)
             chunk_rows.extend(chunks)
-        generation_id = "current-generation"
+        generation_id = HIGH_CURSOR + history_count + 1
         manifest, chunks, reference = _payload_seed_records(
             "alpha-small", item_id, "text", source_id, anchor, generation_id, current_chunks
         )
@@ -184,6 +184,7 @@ async def _seed_payload_probes(pool: asyncpg.Pool) -> dict[str, dict[str, Any]]:
             "generationId": generation_id,
             "payloadRef": reference,
             "anchor": anchor,
+            "revision": anchor,
             "content": "".join(current_chunks),
             "contentBytes": content_bytes,
             "chunkCount": int(manifest[8]),
@@ -223,40 +224,19 @@ async def _seed_payload_probes(pool: asyncpg.Pool) -> dict[str, dict[str, Any]]:
 async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
     base = HIGH_CURSOR + LARGE_COUNT + 100
     text_ref, text_count, _ = await _seed_payload(
-        pool, "alpha-large", "live-item", "text", SOURCE, base - 4, "seed-live-text", ["seed text"]
+        pool, "alpha-large", "live-item", "text", SOURCE, base - 4, base - 4, ["seed text"]
     )
     arguments_ref, arguments_count, _ = await _seed_payload(
-        pool, "alpha-large", "tool-row", "arguments", SOURCE, base - 3, "seed-tool-arguments", []
+        pool, "alpha-large", "tool-row", "arguments", SOURCE, base - 3, base - 3, []
     )
     output_ref, output_count, _ = await _seed_payload(
-        pool,
-        "alpha-large",
-        "tool-row",
-        "output",
-        SOURCE,
-        base - 3,
-        "seed-tool-output",
-        ["SENSITIVE_INITIAL_OUTPUT"],
+        pool, "alpha-large", "tool-row", "output", SOURCE, base - 3, base - 3, ["SENSITIVE_INITIAL_OUTPUT"]
     )
     reasoning_ref, reasoning_count, _ = await _seed_payload(
-        pool,
-        "alpha-large",
-        "reasoning-row",
-        "reasoning",
-        SOURCE,
-        base - 2,
-        "seed-reasoning",
-        ["SENSITIVE_INITIAL_REASONING"],
+        pool, "alpha-large", "reasoning-row", "reasoning", SOURCE, base - 2, base - 2, ["SENSITIVE_INITIAL_REASONING"]
     )
     older_output_ref, older_output_count, older_output_bytes = await _seed_payload(
-        pool,
-        "alpha-large",
-        "older-tool-row",
-        "output",
-        SOURCE,
-        base - 5,
-        "seed-older-output",
-        ["older streamed ", "bytes"],
+        pool, "alpha-large", "older-tool-row", "output", SOURCE, base - 5, base - 5, ["older streamed ", "bytes"]
     )
     no_payload = [None, None, None, None]
     no_generation = [None, None, None, None]
@@ -283,7 +263,7 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
             None,
             None,
             None,
-            "seed-live-text",
+            base - 4,
             None,
             None,
             None,
@@ -317,8 +297,8 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
             output_ref,
             None,
             None,
-            "seed-tool-arguments",
-            "seed-tool-output",
+            base - 3,
+            base - 3,
             None,
             0,
             arguments_count,
@@ -352,7 +332,7 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
             None,
             None,
             None,
-            "seed-reasoning",
+            base - 2,
             0,
             0,
             0,
@@ -432,7 +412,7 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
             None,
             None,
             None,
-            "seed-older-output",
+            base - 5,
             None,
             0,
             0,
@@ -452,8 +432,7 @@ async def _seed_large_live_rows(pool: asyncpg.Pool) -> int:
         "text_chunk_count,arguments_chunk_count,output_chunk_count,reasoning_chunk_count,status,model,command_id"
     )
     await pool.executemany(
-        f"INSERT INTO sync_view_row ({columns}) VALUES (" + ",".join(f"${index}" for index in range(1, 32)) + ")",
-        rows,
+        f"INSERT INTO sync_view_row ({columns}) VALUES (" + ",".join(f"${index}" for index in range(1, 32)) + ")", rows
     )
     await pool.execute(
         "INSERT INTO projection_checkpoint (conversation_id,source_id,through_cursor) VALUES ('alpha-large',$1,$2)",
@@ -526,20 +505,19 @@ async def _query_plan(pool: asyncpg.Pool, conversation_id: str, before: int | No
     return json.loads(raw) if isinstance(raw, str) else raw
 
 
-async def _payload_chunk_plan(
-    pool: asyncpg.Pool, item: dict[str, Any], *, conversation_id: str = "alpha-small"
-) -> Any:
+async def _payload_chunk_plan(pool: asyncpg.Pool, item: dict[str, Any], *, conversation_id: str = "alpha-small") -> Any:
     raw = await pool.fetchval(
         """EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
            SELECT chunk_index, content, content_bytes FROM projected_payload_chunk
            WHERE conversation_id = $1 AND item_id = $2 AND field_name = $3
-             AND source_id = $4 AND generation_id = $5
+             AND source_id = $4 AND generation_id = $5 AND chunk_index < $6
            ORDER BY chunk_index""",
         conversation_id,
         item["itemId"],
         item["fieldName"],
         item["sourceId"],
         item["generationId"],
+        item["chunkCount"],
     )
     return json.loads(raw) if isinstance(raw, str) else raw
 
@@ -738,6 +716,31 @@ def _capture_electric(
                 message["headers"]["control"] for message in messages if message.get("headers", {}).get("control")
             ],
             "rowKeys": [value.get("row_key") for value in row_values if "row_key" in value][:40],
+            "syncRows": [
+                {
+                    key: str(value.get(key)) if value.get(key) is not None else None
+                    for key in (
+                        "row_key",
+                        "anchor",
+                        "revision",
+                        "text_revision",
+                        "text_payload_ref",
+                        "text_generation_id",
+                        "text_chunk_count",
+                        "arguments_revision",
+                        "arguments_payload_ref",
+                        "arguments_generation_id",
+                        "arguments_chunk_count",
+                        "output_revision",
+                        "output_payload_ref",
+                        "output_generation_id",
+                        "output_chunk_count",
+                    )
+                    if key in value
+                }
+                for value in row_values
+                if "row_key" in value
+            ],
             "payloadPart": path_parts[-1] if payload_shape else None,
             "payloadRef": path_parts[-2] if payload_shape and len(path_parts) >= 2 else None,
             "chunkIndexes": [value["chunk_index"] for value in row_values if "chunk_index" in value],
@@ -747,6 +750,7 @@ def _capture_electric(
                     "generationId": value["generation_id"],
                     "chunkIndex": value["chunk_index"],
                     "sourceId": value["source_id"],
+                    "sourceCursor": value["source_cursor"],
                     "contentBytes": value["content_bytes"],
                     "contentSha256": hashlib.sha256(value["content"].encode("utf-8")).hexdigest(),
                 }
@@ -825,9 +829,7 @@ async def _wait_ready(page: Page, *, exact_bigint: bool = False) -> None:
         )
 
 
-async def _assert_rendered_payload(
-    page: Page, *, expected: str, payload_ref: str, revision: int
-) -> dict[str, Any]:
+async def _assert_rendered_payload(page: Page, *, expected: str, payload_ref: str, revision: int) -> dict[str, Any]:
     await page.wait_for_function(
         """(selection) => {
           const body = document.querySelector('[data-testid=payload-body]')
@@ -921,9 +923,7 @@ async def test_electric_end_to_end() -> None:
                     for node in nodes
                 ), nodes
                 await pool.execute("ANALYZE projected_payload_chunk")
-                payload_plans = {
-                    name: await _payload_chunk_plan(pool, probe) for name, probe in payload_probes.items()
-                }
+                payload_plans = {name: await _payload_chunk_plan(pool, probe) for name, probe in payload_probes.items()}
                 _write_json(outputs / "payload-query-plans.json", payload_plans)
                 for name, plan in payload_plans.items():
                     nodes = _flatten_plan(plan[0]["Plan"])
@@ -933,10 +933,7 @@ async def test_electric_end_to_end() -> None:
                         and node.get("Actual Rows") == selected_count
                         for node in nodes
                     ), {"name": name, "plan": nodes, "history": payload_probes[name]}
-                diagnostics["payloadReconstruction"] = {
-                    "history": payload_probes,
-                    "plans": payload_plans,
-                }
+                diagnostics["payloadReconstruction"] = {"history": payload_probes, "plans": payload_plans}
 
                 electric = (
                     LoggedContainer(electric_1_8.IMAGE.tag, test_name="electric-derisk-electric-first")
@@ -951,6 +948,88 @@ async def test_electric_end_to_end() -> None:
                     await _wait_electric(electric_url)
                     subset_gate = SubsetGate()
                     electric_shape_url = f"{electric_url}/v1/shape"
+                    large_payload_probe = payload_probes["payload-large"]
+                    exact_bigint_cursor = int(large_payload_probe["anchor"])
+                    exact_bigint_generation = int(large_payload_probe["generationId"])
+                    bigint_shape_where = " AND ".join(
+                        (
+                            "conversation_id = 'alpha-small'",
+                            f"item_id = '{large_payload_probe['itemId']}'",
+                            f"field_name = '{large_payload_probe['fieldName']}'",
+                            f"source_id = '{large_payload_probe['sourceId']}'",
+                            "generation_id = $2",
+                            "source_cursor <= $1",
+                        )
+                    )
+                    bigint_shape_columns = (
+                        "conversation_id,item_id,field_name,source_id,generation_id,"
+                        "chunk_index,source_cursor,content,content_bytes"
+                    )
+                    bigint_param_results: dict[str, Any] = {}
+                    async with httpx.AsyncClient(timeout=15) as electric_client:
+                        for label, upper_bound, generation_bound, expected_rows in (
+                            ("equal", exact_bigint_cursor, exact_bigint_generation, large_payload_probe["chunkCount"]),
+                            ("cursor-exclusive-lower", exact_bigint_cursor - 1, exact_bigint_generation, 0),
+                            ("generation-exclusive-other", exact_bigint_cursor, exact_bigint_generation + 1, 0),
+                        ):
+                            bigint_response = await electric_client.get(
+                                electric_shape_url,
+                                params={
+                                    "table": "projected_payload_chunk",
+                                    "where": bigint_shape_where,
+                                    "params[1]": str(upper_bound),
+                                    "params[2]": str(generation_bound),
+                                    "columns": bigint_shape_columns,
+                                    "queryable_columns": bigint_shape_columns,
+                                    "replica": "full",
+                                    "log": "changes_only",
+                                    "offset": "now",
+                                    "subset__where": "true = true",
+                                },
+                            )
+                            assert bigint_response.status_code == 200, {
+                                "status": bigint_response.status_code,
+                                "body": bigint_response.text[:2000],
+                                "upperBound": str(upper_bound),
+                                "generationId": str(generation_bound),
+                            }
+                            bigint_messages = _messages(bigint_response.content)
+                            bigint_rows = [
+                                message["value"]
+                                for message in bigint_messages
+                                if message.get("headers", {}).get("operation")
+                            ]
+                            assert len(bigint_rows) == expected_rows, {
+                                "label": label,
+                                "upperBound": str(upper_bound),
+                                "rows": bigint_rows,
+                                "messages": bigint_messages[:4],
+                            }
+                            assert all(str(row["source_cursor"]) == str(exact_bigint_cursor) for row in bigint_rows), (
+                                bigint_rows
+                            )
+                            assert all(str(row["generation_id"]) == str(generation_bound) for row in bigint_rows), (
+                                bigint_rows
+                            )
+                            bigint_param_results[label] = {
+                                "upperBound": str(upper_bound),
+                                "generationId": str(generation_bound),
+                                "rowCount": len(bigint_rows),
+                                "chunkIndexes": sorted(int(row["chunk_index"]) for row in bigint_rows),
+                                "sourceCursors": sorted({str(row["source_cursor"]) for row in bigint_rows}),
+                                "responseBytes": len(bigint_response.content),
+                            }
+                    diagnostics["bigintParameterizedShapePredicate"] = {
+                        "where": bigint_shape_where,
+                        "parameterEncoding": "params[n] decimal strings",
+                        "generationId": str(exact_bigint_generation),
+                        "valuesAboveJavascriptSafeInteger": True,
+                        "results": bigint_param_results,
+                    }
+                    _write_json(
+                        outputs / "bigint-parameterized-shape-predicate.json",
+                        diagnostics["bigintParameterizedShapePredicate"],
+                    )
                     proxy_one = create_electric_proxy(electric_shape_url, "proxy-1", pool)
                     proxy_two = create_electric_proxy(electric_shape_url, "proxy-2", pool)
                     proxy_one.state.subset_gate = subset_gate
@@ -1028,14 +1107,37 @@ async def test_electric_end_to_end() -> None:
                                 json={"table": "pg_class", "where": "chunk_index >= 0"},
                             )
                             assert payload_post_override.status_code == 400, payload_post_override.text
+                            payload_parameter_override = await api.get(
+                                f"/api/electric/alpha-large/payload/{empty_arguments_ref}/revision",
+                                params={"offset": "now", "params[1]": "1"},
+                                headers=AUTH,
+                            )
+                            assert payload_parameter_override.status_code == 400, payload_parameter_override.text
                             payload_limit_override = await api.post(
                                 f"/api/electric/alpha-large/payload/{empty_arguments_ref}/chunks?offset=now",
                                 headers=AUTH,
                                 json={"limit": 1},
                             )
                             assert payload_limit_override.status_code == 400, payload_limit_override.text
+                            payload_exact_subset = await api.get(
+                                f"/api/electric/alpha-large/payload/{empty_arguments_ref}/revision",
+                                params={"offset": "now", "log": "changes_only", "subset__where": "true = true"},
+                                headers=AUTH,
+                            )
+                            assert payload_exact_subset.status_code == 200, payload_exact_subset.text
+                            payload_broader_subset = await api.get(
+                                f"/api/electric/alpha-large/payload/{empty_arguments_ref}/revision",
+                                params={
+                                    "offset": "now",
+                                    "log": "changes_only",
+                                    "subset__where": '"chunk_index" < $1',
+                                    "subset__params": json.dumps({"1": "1"}),
+                                },
+                                headers=AUTH,
+                            )
+                            assert payload_broader_subset.status_code == 400, payload_broader_subset.text
                             payload_log_override = await api.get(
-                                f"/api/electric/alpha-large/payload/{empty_arguments_ref}/chunks?offset=now&log=changes_only",
+                                f"/api/electric/alpha-large/payload/{empty_arguments_ref}/revision?offset=now&log=full",
                                 headers=AUTH,
                             )
                             assert payload_log_override.status_code == 400, payload_log_override.text
@@ -1055,6 +1157,8 @@ async def test_electric_end_to_end() -> None:
                             "payloadTableOverride": payload_get_override.status_code,
                             "payloadPostOverride": payload_post_override.status_code,
                             "payloadLimitOverride": payload_limit_override.status_code,
+                            "payloadExactSubset": payload_exact_subset.status_code,
+                            "payloadBroaderSubset": payload_broader_subset.status_code,
                             "payloadLogOverride": payload_log_override.status_code,
                             "payloadForeignConversationRef": wrong_conversation_ref.status_code,
                         }
@@ -1352,33 +1456,15 @@ async def test_electric_end_to_end() -> None:
                                 "SELECT text_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:live-item'"
                             )
                             assert isinstance(payload_ref_r, str)
-                            payload_requests_before_selection = (await _api_get(
-                                app_url, "/api/proxy-metrics", headers=AUTH
-                            )).json()["payloadRequests"]
-                            payload_gate = PayloadGate(payload_ref_r, "chunks")
+                            payload_requests_before_selection = (
+                                await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                            ).json()["payloadRequests"]
+                            payload_gate = PayloadGate(payload_ref_r, "revision")
                             proxy_one.state.payload_gate = payload_gate
                             proxy_two.state.payload_gate = payload_gate
-                            await page.get_by_role("button", name="Open text").click()
+                            await page.get_by_role("button", name="Pin text revision").click()
                             await asyncio.wait_for(payload_gate.arrived.wait(), timeout=45)
-                            r_snapshot_messages = _messages(payload_gate.response_body)
-                            r_snapshot_rows = [
-                                message["value"]
-                                for message in r_snapshot_messages
-                                if message.get("headers", {}).get("operation")
-                            ]
-                            r_snapshot_rows.sort(key=lambda row: int(row["chunk_index"]))
                             expected_r_content = "seed text +during-history"
-                            assert [int(row["chunk_index"]) for row in r_snapshot_rows] == [0, 1], r_snapshot_rows
-                            assert "".join(row["content"] for row in r_snapshot_rows) == expected_r_content
-                            r_snapshot_evidence = {
-                                "payloadRef": payload_ref_r,
-                                "revision": str(base_cursor + 1),
-                                "chunkIndexes": [int(row["chunk_index"]) for row in r_snapshot_rows],
-                                "contentBytes": sum(int(row["content_bytes"]) for row in r_snapshot_rows),
-                                "contentSha256": hashlib.sha256(expected_r_content.encode("utf-8")).hexdigest(),
-                                "electricResponseBytes": len(payload_gate.response_body),
-                            }
-
                             r_plus_one = base_cursor + 3
                             first_result = await apply_batch(
                                 pool,
@@ -1392,19 +1478,62 @@ async def test_electric_end_to_end() -> None:
                             )
                             assert isinstance(payload_ref_r_plus_one, str)
                             assert payload_ref_r_plus_one != payload_ref_r
-                            await page.wait_for_function(
-                                """(refs) => {
-                                  const row = document.querySelector('[data-row-key="item:live-item"]')
-                                  const body = document.querySelector('[data-testid=payload-body]')
-                                  return row?.dataset.textPayloadRef === refs.latest
-                                    && body?.dataset.payloadRef === refs.selected
-                                    && body?.dataset.latestRef === refs.latest
-                                    && body?.dataset.state === 'hydrating'
-                                    && body.textContent === ''
-                                }""",
-                                arg={"selected": payload_ref_r, "latest": payload_ref_r_plus_one},
-                                timeout=30_000,
-                            )
+                            try:
+                                await page.wait_for_function(
+                                    """(refs) => {
+                                      const row = document.querySelector('[data-row-key="item:live-item"]')
+                                      const body = document.querySelector('[data-testid=payload-body]')
+                                      return row?.dataset.textPayloadRef === refs.latest
+                                        && body?.dataset.payloadRef === refs.selected
+                                        && body?.dataset.latestRef === refs.latest
+                                        && body?.dataset.state === 'hydrating'
+                                        && body.textContent === ''
+                                    }""",
+                                    arg={"selected": payload_ref_r, "latest": payload_ref_r_plus_one},
+                                    timeout=30_000,
+                                )
+                            except Exception as error:
+                                live_state = await page.evaluate(
+                                    """() => {
+                                      const row = document.querySelector('[data-row-key="item:live-item"]')
+                                      const body = document.querySelector('[data-testid=payload-body]')
+                                      return {
+                                        row: row ? {...row.dataset} : null,
+                                        body: body ? {...body.dataset, content: body.textContent ?? ''} : null,
+                                        revisions: window.__syncEvidence.revisions['item:live-item'] ?? [],
+                                        payloadStates: window.__syncEvidence.payloadStates,
+                                        pageErrors: window.__syncEvidence.pageErrors,
+                                      }
+                                    }"""
+                                )
+                                database_row = await pool.fetchrow(
+                                    "SELECT * FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:live-item'"
+                                )
+                                _write_json(
+                                    outputs / "payload-race-before-rplus-one-evidence.json",
+                                    {
+                                        "error": repr(error),
+                                        "expected": {"selectedRef": payload_ref_r, "latestRef": payload_ref_r_plus_one},
+                                        "browser": live_state,
+                                        "database": {
+                                            key: str(value) if value is not None else None
+                                            for key, value in database_row.items()
+                                        },
+                                        "syncResponses": [
+                                            record
+                                            for record in response_records
+                                            if record.get("path") == "/api/electric/alpha-large"
+                                            and "item:live-item" in record.get("rowKeys", [])
+                                        ],
+                                        "consoleAndNetworkEvents": [
+                                            event for event in network_events if event.get("event") == "console"
+                                        ],
+                                    },
+                                )
+                                await page.screenshot(
+                                    path=outputs / "payload-race-before-rplus-one-failed.png", full_page=True
+                                )
+                                raise
                             r_while_r_plus_one_arrived = await page.get_by_test_id("payload-body").evaluate(
                                 "body => ({state: body.dataset.state, payloadRef: body.dataset.payloadRef, "
                                 "latestRef: body.dataset.latestRef, revision: body.dataset.revision, content: body.textContent ?? ''})"
@@ -1417,6 +1546,26 @@ async def test_electric_end_to_end() -> None:
                                 "content": "",
                             }, r_while_r_plus_one_arrived
                             payload_gate.release.set()
+                            await asyncio.wait_for(payload_gate.completed.wait(), timeout=60)
+                            r_snapshot_messages = _messages(payload_gate.response_body)
+                            r_snapshot_rows = [
+                                message["value"]
+                                for message in r_snapshot_messages
+                                if message.get("headers", {}).get("operation")
+                            ]
+                            r_snapshot_rows.sort(key=lambda row: int(row["chunk_index"]))
+                            assert [int(row["chunk_index"]) for row in r_snapshot_rows] == [0, 1], r_snapshot_rows
+                            assert "".join(row["content"] for row in r_snapshot_rows) == expected_r_content
+                            assert all(int(row["source_cursor"]) <= base_cursor + 1 for row in r_snapshot_rows)
+                            r_snapshot_evidence = {
+                                "payloadRef": payload_ref_r,
+                                "revision": str(base_cursor + 1),
+                                "chunkIndexes": [int(row["chunk_index"]) for row in r_snapshot_rows],
+                                "sourceCursors": [str(row["source_cursor"]) for row in r_snapshot_rows],
+                                "contentBytes": sum(int(row["content_bytes"]) for row in r_snapshot_rows),
+                                "contentSha256": hashlib.sha256(expected_r_content.encode("utf-8")).hexdigest(),
+                                "electricResponseBytes": len(payload_gate.response_body),
+                            }
                             await page.wait_for_function(
                                 """(expected) => window.__syncEvidence.payloadStates.some(state =>
                                   state.payloadRef === expected.payloadRef
@@ -1429,11 +1578,12 @@ async def test_electric_end_to_end() -> None:
                                 },
                                 timeout=45_000,
                             )
-                            r_state = await page.evaluate(
-                                """(ref) => window.__syncEvidence.payloadStates.find(state => state.payloadRef === ref)""",
-                                arg=payload_ref_r,
+                            r_state = await _assert_rendered_payload(
+                                page, expected=expected_r_content, payload_ref=payload_ref_r, revision=base_cursor + 1
                             )
                             assert r_state["latestRef"] == payload_ref_r_plus_one, r_state
+                            await page.screenshot(path=outputs / "payload-r-pinned-while-r-plus-one-current.png")
+                            await page.get_by_role("button", name="Open text").click()
                             r_plus_one_content = expected_r_content + " +first"
                             r_plus_one_visible = await _assert_rendered_payload(
                                 page,
@@ -1455,16 +1605,64 @@ async def test_electric_end_to_end() -> None:
                             ]
                             selected_text_requests = payload_requests[len(payload_requests_before_selection) :]
                             assert {request["field"] for request in selected_text_requests} == {"text"}
-                            assert sum(
-                                request["part"] == "chunks" and request["itemId"] == "live-item"
+                            r_revision_requests = [
+                                request
                                 for request in selected_text_requests
-                            ) == 1, selected_text_requests
+                                if request["part"] == "revision"
+                                and request["itemId"] == "live-item"
+                                and request["payloadRef"] == payload_ref_r
+                            ]
+                            r_revision_snapshots = [
+                                request
+                                for request in r_revision_requests
+                                if "subset__where" in request.get("electricQuery", {})
+                            ]
+                            assert len(r_revision_snapshots) == 1, r_revision_requests
                             assert any(
                                 request["part"] == "manifest"
                                 and request["payloadRef"] == payload_ref_r
                                 and request["revision"] == str(base_cursor + 1)
                                 for request in selected_text_requests
                             ), selected_text_requests
+                            r_manifest = await pool.fetchrow(
+                                """SELECT generation_id,source_cursor,chunk_count
+                                   FROM projected_payload_manifest WHERE conversation_id='alpha-large' AND payload_ref=$1""",
+                                payload_ref_r,
+                            )
+                            assert r_manifest is not None
+                            assert r_manifest["generation_id"] > 9_007_199_254_740_991
+                            forwarded_payload_shapes = [
+                                shape_request
+                                for proxy in (proxy_one, proxy_two)
+                                for shape_request in proxy.state.forwarded_shapes
+                                if shape_request["payloadRef"] == payload_ref_r and shape_request["part"] == "revision"
+                            ]
+                            assert forwarded_payload_shapes, (
+                                proxy_one.state.forwarded_shapes,
+                                proxy_two.state.forwarded_shapes,
+                            )
+                            expected_shape_params = {
+                                "params[1]": str(r_manifest["generation_id"]),
+                                "params[2]": str(r_manifest["source_cursor"]),
+                            }
+                            for shape_request in forwarded_payload_shapes:
+                                assert shape_request["whereParams"] == expected_shape_params, shape_request
+                                assert "generation_id = $1" in shape_request["where"], shape_request
+                                assert "source_cursor <= $2" in shape_request["where"], shape_request
+                                assert f"chunk_index < {r_manifest['chunk_count']}" in shape_request["where"], (
+                                    shape_request
+                                )
+                            _write_json(
+                                outputs / "payload-race-evidence.json",
+                                {
+                                    "selectedRWhileRPlusOneWasCurrent": r_state,
+                                    "hydrationGateSnapshot": r_snapshot_evidence,
+                                    "heldUiBeforeRelease": r_while_r_plus_one_arrived,
+                                    "renderedRPlusOne": r_plus_one_visible,
+                                    "snapshotRequests": r_revision_snapshots,
+                                    "serverBoundShapes": forwarded_payload_shapes,
+                                },
+                            )
 
                             main_batch = [
                                 _text_entry(SOURCE, base_cursor + 4, "live-item", " +second"),
@@ -1613,9 +1811,7 @@ async def test_electric_end_to_end() -> None:
                                         "item_completed",
                                         event_pb2.ItemCompleted(
                                             item_id="tool-row",
-                                            tool=event_pb2.ToolResult(
-                                                output="REPLACED_TOOL_OUTPUT", succeeded=True
-                                            ),
+                                            tool=event_pb2.ToolResult(output="REPLACED_TOOL_OUTPUT", succeeded=True),
                                         ),
                                     )
                                 ],
@@ -1658,8 +1854,7 @@ async def test_electric_end_to_end() -> None:
                                         base_cursor + 13,
                                         "item_completed",
                                         event_pb2.ItemCompleted(
-                                            item_id="tool-row",
-                                            tool=event_pb2.ToolResult(output="", succeeded=True),
+                                            item_id="tool-row", tool=event_pb2.ToolResult(output="", succeeded=True)
                                         ),
                                     )
                                 ],
@@ -1676,10 +1871,13 @@ async def test_electric_end_to_end() -> None:
                                 "payloadRequests"
                             ]
                             assert (
-                                len([
-                                    request for request in payload_after_close
-                                    if request["field"] == "output" and request["itemId"] == "tool-row"
-                                ])
+                                len(
+                                    [
+                                        request
+                                        for request in payload_after_close
+                                        if request["field"] == "output" and request["itemId"] == "tool-row"
+                                    ]
+                                )
                                 == output_requests_before_close
                             )
                             assert await page.get_by_test_id("payload-body").inner_text() == ""
@@ -1700,10 +1898,7 @@ async def test_electric_end_to_end() -> None:
                             try:
                                 await page.get_by_role("button", name="Open arguments").click()
                                 await _assert_rendered_payload(
-                                    page,
-                                    expected='{"x":1}',
-                                    payload_ref=arguments_ref,
-                                    revision=base_cursor + 6,
+                                    page, expected='{"x":1}', payload_ref=arguments_ref, revision=base_cursor + 6
                                 )
                             finally:
                                 route_control["releaseManifest"].set()
@@ -1720,9 +1915,9 @@ async def test_electric_end_to_end() -> None:
                                 "revision": str(base_cursor + 6),
                                 "content": '{"x":1}',
                             }, arguments_after_stale_manifest
-                            stale_manifest_requests = (await _api_get(
-                                app_url, "/api/proxy-metrics", headers=AUTH
-                            )).json()["payloadRequests"]
+                            stale_manifest_requests = (
+                                await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                            ).json()["payloadRequests"]
                             assert any(
                                 request["part"] == "manifest" and request["payloadRef"] == older_output_ref
                                 for request in stale_manifest_requests
@@ -2129,12 +2324,16 @@ async def test_electric_end_to_end() -> None:
                                 "SELECT text_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:live-item'"
                             )
                             assert isinstance(current_text_ref, str)
+                            current_text_manifest = await pool.fetchrow(
+                                """SELECT source_id,generation_id,revision,chunk_count,content_bytes
+                                   FROM projected_payload_manifest
+                                   WHERE conversation_id='alpha-large' AND payload_ref=$1""",
+                                current_text_ref,
+                            )
+                            assert current_text_manifest is not None
                             await page.get_by_role("button", name="Open text").click()
                             reopened_text = await _assert_rendered_payload(
-                                page,
-                                expected=current_text,
-                                payload_ref=current_text_ref,
-                                revision=restart_cursor,
+                                page, expected=current_text, payload_ref=current_text_ref, revision=restart_cursor
                             )
                             text_shape_ref = reopened_text["shapeRef"]
                             assert text_shape_ref == current_text_ref
@@ -2146,19 +2345,11 @@ async def test_electric_end_to_end() -> None:
                             for group_start in range(0, len(streaming_chunks), 4):
                                 group_chunks = streaming_chunks[group_start : group_start + 4]
                                 group_entries = [
-                                    _text_entry(
-                                        SOURCE,
-                                        next_stream_cursor + index,
-                                        "live-item",
-                                        chunk,
-                                    )
+                                    _text_entry(SOURCE, next_stream_cursor + index, "live-item", chunk)
                                     for index, chunk in enumerate(group_chunks)
                                 ]
                                 group_result = await apply_batch(
-                                    pool,
-                                    conversation_id="alpha-large",
-                                    source_id=SOURCE,
-                                    entries=group_entries,
+                                    pool, conversation_id="alpha-large", source_id=SOURCE, entries=group_entries
                                 )
                                 final_group_cursor = next_stream_cursor + len(group_entries) - 1
                                 assert group_result == ApplyResult(final_group_cursor, 0, 1, 4), group_result
@@ -2275,18 +2466,21 @@ async def test_electric_end_to_end() -> None:
                                 arg=str(replacement_cursor),
                                 timeout=45_000,
                             )
-                            payload_after_text_close = (await _api_get(
-                                app_url, "/api/proxy-metrics", headers=AUTH
-                            )).json()["payloadRequests"]
-                            assert len(
-                                [
-                                    request
-                                    for request in payload_after_text_close
-                                    if request["field"] == "text"
-                                    and request["itemId"] == "live-item"
-                                    and request["part"] == "chunks"
-                                ]
-                            ) == text_requests_before_close
+                            payload_after_text_close = (
+                                await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                            ).json()["payloadRequests"]
+                            assert (
+                                len(
+                                    [
+                                        request
+                                        for request in payload_after_text_close
+                                        if request["field"] == "text"
+                                        and request["itemId"] == "live-item"
+                                        and request["part"] == "chunks"
+                                    ]
+                                )
+                                == text_requests_before_close
+                            )
                             await page.get_by_role("button", name="Open text").click()
                             final_text_visible = await _assert_rendered_payload(
                                 page,
@@ -2307,6 +2501,8 @@ async def test_electric_end_to_end() -> None:
                                 "fieldName": "text",
                                 "sourceId": final_manifest["source_id"],
                                 "generationId": final_manifest["generation_id"],
+                                "chunkCount": final_manifest["chunk_count"],
+                                "revision": final_manifest["revision"],
                             }
                             await pool.execute("ANALYZE projected_payload_chunk")
                             live_current_plan = await _payload_chunk_plan(
@@ -2344,9 +2540,99 @@ async def test_electric_end_to_end() -> None:
                                 "replacementQueryPlan": live_current_plan,
                             }
                             _write_json(
-                                outputs / "payload-lifecycle-evidence.json",
-                                diagnostics["payloadRevisionLifecycle"],
+                                outputs / "payload-lifecycle-evidence.json", diagnostics["payloadRevisionLifecycle"]
                             )
+
+                            stale_revision_probe = {
+                                "itemId": "live-item",
+                                "fieldName": "text",
+                                "sourceId": current_text_manifest["source_id"],
+                                "generationId": current_text_manifest["generation_id"],
+                                "revision": current_text_manifest["revision"],
+                                "chunkCount": current_text_manifest["chunk_count"],
+                            }
+                            stored_generation_rows = await pool.fetchval(
+                                """SELECT count(*) FROM projected_payload_chunk
+                                   WHERE conversation_id='alpha-large' AND item_id='live-item'
+                                     AND field_name='text' AND source_id=$1 AND generation_id=$2""",
+                                stale_revision_probe["sourceId"],
+                                stale_revision_probe["generationId"],
+                            )
+                            stored_generation_bytes = await pool.fetchval(
+                                """SELECT sum(content_bytes) FROM projected_payload_chunk
+                                   WHERE conversation_id='alpha-large' AND item_id='live-item'
+                                     AND field_name='text' AND source_id=$1 AND generation_id=$2""",
+                                stale_revision_probe["sourceId"],
+                                stale_revision_probe["generationId"],
+                            )
+                            assert stored_generation_rows == stale_revision_probe["chunkCount"] + len(streaming_chunks)
+                            assert stored_generation_rows > stale_revision_probe["chunkCount"]
+                            assert stored_generation_bytes > current_text_manifest["content_bytes"]
+                            stale_revision_plan = await _payload_chunk_plan(
+                                pool, stale_revision_probe, conversation_id="alpha-large"
+                            )
+                            stale_plan_nodes = _flatten_plan(stale_revision_plan[0]["Plan"])
+                            assert any(
+                                node.get("Index Name") == "projected_payload_chunk_pkey"
+                                and node.get("Actual Rows") == stale_revision_probe["chunkCount"]
+                                for node in stale_plan_nodes
+                            ), stale_plan_nodes
+                            await page.goto(
+                                f"{app_url}/?conversation=alpha-large&payloadRef={current_text_ref}",
+                                wait_until="domcontentloaded",
+                            )
+                            await _wait_ready(page, exact_bigint=True)
+                            stale_revision_visible = await _assert_rendered_payload(
+                                page,
+                                expected="seed text +during-history +first +second +disconnect-trigger +offline +rotate +restart",
+                                payload_ref=current_text_ref,
+                                revision=restart_cursor,
+                            )
+                            assert stale_revision_visible["latestRef"] == final_text_ref, stale_revision_visible
+                            await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
+                            stale_revision_records = [
+                                record
+                                for record in response_records
+                                if record.get("page") == "page-1"
+                                and record.get("payloadRef") == current_text_ref
+                                and record.get("payloadPart") == "revision"
+                                and record.get("status") == 200
+                            ]
+                            stale_revision_rows = [
+                                row for record in stale_revision_records for row in record.get("chunkRows", [])
+                            ]
+                            stale_revision_rows.sort(key=lambda row: row["chunkIndex"])
+                            assert [row["chunkIndex"] for row in stale_revision_rows] == list(
+                                range(stale_revision_probe["chunkCount"])
+                            ), stale_revision_records
+                            assert all(
+                                int(row["sourceCursor"]) <= stale_revision_probe["revision"]
+                                for row in stale_revision_rows
+                            ), stale_revision_rows
+                            stale_revision_wire_bytes = sum(int(row["contentBytes"]) for row in stale_revision_rows)
+                            assert stale_revision_wire_bytes == current_text_manifest["content_bytes"]
+                            assert stale_revision_wire_bytes < stored_generation_bytes
+                            stale_revision_evidence = {
+                                "selectedRevision": stale_revision_visible,
+                                "selectedManifest": {
+                                    "revision": str(stale_revision_probe["revision"]),
+                                    "chunkCount": stale_revision_probe["chunkCount"],
+                                    "contentBytes": current_text_manifest["content_bytes"],
+                                },
+                                "currentGeneration": {
+                                    "rows": stored_generation_rows,
+                                    "contentBytes": stored_generation_bytes,
+                                },
+                                "wire": {
+                                    "chunkRows": len(stale_revision_rows),
+                                    "contentBytes": stale_revision_wire_bytes,
+                                    "responseBytes": sum(record["responseBytes"] for record in stale_revision_records),
+                                    "chunkIndexes": [row["chunkIndex"] for row in stale_revision_rows],
+                                },
+                                "queryPlan": stale_revision_plan,
+                            }
+                            diagnostics["staleRevisionReopen"] = stale_revision_evidence
+                            _write_json(outputs / "payload-stale-reopen-evidence.json", stale_revision_evidence)
 
                             reconstruction_results: dict[str, Any] = {}
                             for probe_name in ("payload-small", "payload-large"):
@@ -2374,13 +2660,12 @@ async def test_electric_end_to_end() -> None:
                                     and record.get("payloadPart") == "chunks"
                                     and record.get("status") == 200
                                 ]
-                                probe_rows = [
-                                    row for record in probe_records for row in record.get("chunkRows", [])
-                                ]
+                                probe_rows = [row for record in probe_records for row in record.get("chunkRows", [])]
                                 probe_rows.sort(key=lambda row: row["chunkIndex"])
-                                assert [row["chunkIndex"] for row in probe_rows] == list(
-                                    range(probe["chunkCount"])
-                                ), {"probe": probe, "records": probe_records}
+                                assert [row["chunkIndex"] for row in probe_rows] == list(range(probe["chunkCount"])), {
+                                    "probe": probe,
+                                    "records": probe_records,
+                                }
                                 assert sum(int(row["contentBytes"]) for row in probe_rows) == probe["contentBytes"]
                                 stored_history_rows = await pool.fetchval(
                                     """SELECT count(*) FROM projected_payload_chunk
@@ -2397,9 +2682,7 @@ async def test_electric_end_to_end() -> None:
                                     "networkResponseBytes": sum(record["responseBytes"] for record in probe_records),
                                     "queryPlan": payload_plans[probe_name],
                                 }
-                                await page.screenshot(
-                                    path=outputs / f"{probe_name}-exact-revision.png", full_page=True
-                                )
+                                await page.screenshot(path=outputs / f"{probe_name}-exact-revision.png", full_page=True)
                             assert reconstruction_results["payload-small"]["currentGenerationRowsOnWire"] == 2
                             assert reconstruction_results["payload-large"]["currentGenerationRowsOnWire"] == 32
                             assert reconstruction_results["payload-small"]["supersededGenerationsInDatabase"] == 12
@@ -2438,12 +2721,14 @@ async def test_electric_end_to_end() -> None:
                                 for record in main_view_records
                             ), main_view_records
                             payload_chunk_records = [
-                                record for record in response_records if record.get("payloadPart") == "chunks"
+                                record
+                                for record in response_records
+                                if record.get("payloadPart") in {"chunks", "revision"}
                             ]
                             assert all(
                                 request["field"] in {"text", "arguments", "output"}
                                 for request in payload_metrics
-                                if request["part"] == "chunks"
+                                if request["part"] in {"chunks", "revision"}
                             ), payload_metrics
                             assert payload_chunk_records, response_records
                             assert not page_errors, page_errors

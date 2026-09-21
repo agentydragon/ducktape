@@ -5,6 +5,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 
+const generationIdSchema = z.union([z.string(), z.bigint()]).transform((value) => value.toString());
+
 const viewRowSchema = z.object({
   conversationId: z.string(),
   rowKey: z.string(),
@@ -26,10 +28,10 @@ const viewRowSchema = z.object({
   argumentsPayloadRef: z.string().nullable(),
   outputPayloadRef: z.string().nullable(),
   reasoningPayloadRef: z.string().nullable(),
-  textGenerationId: z.string().nullable(),
-  argumentsGenerationId: z.string().nullable(),
-  outputGenerationId: z.string().nullable(),
-  reasoningGenerationId: z.string().nullable(),
+  textGenerationId: generationIdSchema.nullable(),
+  argumentsGenerationId: generationIdSchema.nullable(),
+  outputGenerationId: generationIdSchema.nullable(),
+  reasoningGenerationId: generationIdSchema.nullable(),
   textChunkCount: z.number().int().nonnegative(),
   argumentsChunkCount: z.number().int().nonnegative(),
   outputChunkCount: z.number().int().nonnegative(),
@@ -47,6 +49,10 @@ type PayloadInterest = {
   payloadRef: string | null;
   generationId: string | null;
   shapeRef: string | null;
+  followLatest: boolean;
+  revision: bigint;
+  chunkCount: number;
+  contentBytes: bigint;
   epoch: number;
 };
 type ActivePayloadInterest = PayloadInterest & { payloadRef: string; generationId: string; shapeRef: string };
@@ -66,7 +72,7 @@ const payloadManifestSchema = z.object({
   itemId: z.string(),
   fieldName: z.enum(["text", "arguments", "output", "reasoning"]),
   sourceId: z.string(),
-  generationId: z.string(),
+  generationId: generationIdSchema,
   revision: z.coerce.bigint(),
   present: z.boolean(),
   chunkCount: z.number().int().nonnegative(),
@@ -79,7 +85,7 @@ const payloadChunkSchema = z.object({
   itemId: z.string(),
   fieldName: z.enum(["text", "arguments", "output", "reasoning"]),
   sourceId: z.string(),
-  generationId: z.string(),
+  generationId: generationIdSchema,
   chunkIndex: z.number().int().nonnegative(),
   sourceCursor: z.coerce.bigint(),
   content: z.string(),
@@ -154,16 +160,18 @@ function makeRows(conversationId: string) {
   );
 }
 
-function makePayloadChunks(conversationId: string, payloadRef: string, epoch: number) {
+function makePayloadChunks(conversationId: string, payloadRef: string, epoch: number, followLatest: boolean) {
   return createCollection(
     electricCollectionOptions({
       id: `agentplane-payload-chunks:${conversationId}:${payloadRef}:${epoch}`,
       schema: payloadChunkSchema,
       getKey: (row) => `${row.sourceId}:${row.generationId}:${row.chunkIndex}`,
-      syncMode: "eager",
+      syncMode: followLatest ? "eager" : "on-demand",
       shapeOptions: {
         url: new URL(
-          `/api/electric/${encodeURIComponent(conversationId)}/payload/${encodeURIComponent(payloadRef)}/chunks`,
+          `/api/electric/${encodeURIComponent(conversationId)}/payload/${encodeURIComponent(payloadRef)}/${
+            followLatest ? "chunks" : "revision"
+          }`,
           window.location.href
         ).toString(),
         params: { replica: "full" },
@@ -202,6 +210,48 @@ function payloadGeneration(row: ViewRow | undefined, field: PayloadField): strin
   }
 }
 
+function payloadRevision(row: ViewRow | undefined, field: PayloadField): bigint {
+  if (!row) return 0n;
+  switch (field) {
+    case "text":
+      return row.textRevision;
+    case "arguments":
+      return row.argumentsRevision;
+    case "output":
+      return row.outputRevision;
+    case "reasoning":
+      return row.reasoningRevision;
+  }
+}
+
+function payloadChunkCount(row: ViewRow | undefined, field: PayloadField): number {
+  if (!row) return 0;
+  switch (field) {
+    case "text":
+      return row.textChunkCount;
+    case "arguments":
+      return row.argumentsChunkCount;
+    case "output":
+      return row.outputChunkCount;
+    case "reasoning":
+      return row.reasoningChunkCount;
+  }
+}
+
+function payloadContentBytes(row: ViewRow | undefined, field: PayloadField): bigint {
+  if (!row) return 0n;
+  switch (field) {
+    case "text":
+      return row.textBytes;
+    case "arguments":
+      return row.argumentsBytes;
+    case "output":
+      return row.outputBytes;
+    case "reasoning":
+      return row.reasoningBytes;
+  }
+}
+
 function PayloadPanel({
   conversationId,
   selection,
@@ -215,8 +265,8 @@ function PayloadPanel({
 }) {
   const selectedRef = selection.payloadRef;
   const chunksCollection = useMemo(
-    () => makePayloadChunks(conversationId, selection.shapeRef, selection.epoch),
-    [conversationId, selection.epoch, selection.shapeRef]
+    () => makePayloadChunks(conversationId, selection.shapeRef, selection.epoch, selection.followLatest),
+    [conversationId, selection.epoch, selection.followLatest, selection.shapeRef]
   );
   useEffect(() => {
     const collection = chunksCollection;
@@ -247,10 +297,10 @@ function PayloadPanel({
     setManifestState("loading");
     setManifestError("");
     const token = localStorage.getItem("spike-token") ?? "";
-    void fetch(
-      `/api/payloads/${encodeURIComponent(conversationId)}/${encodeURIComponent(selectedRef)}`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }
-    )
+    void fetch(`/api/payloads/${encodeURIComponent(conversationId)}/${encodeURIComponent(selectedRef)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
       .then(async (response) => {
         if (response.status === 410) throw new Error("Payload revision is unavailable or expired");
         if (!response.ok) throw new Error(`Payload manifest request failed with ${response.status}`);
@@ -263,9 +313,13 @@ function PayloadPanel({
           value.conversationId !== conversationId ||
           value.itemId !== selection.itemId ||
           value.fieldName !== selection.field ||
-          value.generationId !== selection.generationId
+          value.generationId !== selection.generationId ||
+          value.revision !== selection.revision ||
+          value.sourceCursor !== selection.revision ||
+          value.chunkCount !== selection.chunkCount ||
+          value.contentBytes !== selection.contentBytes
         ) {
-          throw new Error("Payload manifest identity does not match the selected reference");
+          throw new Error("Payload manifest does not match the selected row revision");
         }
         setManifest(value);
         setManifestState("ready");
@@ -279,7 +333,17 @@ function PayloadPanel({
       current = false;
       controller.abort();
     };
-  }, [conversationId, selectedRef, selection.epoch, selection.field, selection.generationId, selection.itemId]);
+  }, [
+    conversationId,
+    selectedRef,
+    selection.epoch,
+    selection.field,
+    selection.generationId,
+    selection.itemId,
+    selection.revision,
+    selection.chunkCount,
+    selection.contentBytes,
+  ]);
 
   const selectedChunks = manifest
     ? chunks
@@ -290,7 +354,8 @@ function PayloadPanel({
             chunk.fieldName === selection.field &&
             chunk.sourceId === manifest.sourceId &&
             chunk.generationId === manifest.generationId &&
-            chunk.chunkIndex < manifest.chunkCount
+            chunk.chunkIndex < manifest.chunkCount &&
+            chunk.sourceCursor <= manifest.sourceCursor
         )
         .sort((left, right) => left.chunkIndex - right.chunkIndex)
     : [];
@@ -401,6 +466,7 @@ function App() {
   const query = new URLSearchParams(location.search);
   const conversationId = query.get("conversation") ?? "alpha-large";
   const payloadItem = query.get("payloadItem") ?? "live-item";
+  const pinnedPayloadRef = query.get("payloadRef");
   const collection = useMemo(() => makeRows(conversationId), [conversationId]);
   const tail = useLiveQuery(
     (q) =>
@@ -416,6 +482,7 @@ function App() {
   const [interest, setInterest] = useState<PayloadInterest | null>(null);
   const [payloadReady, setPayloadReady] = useState<{ epoch: number; payloadRef: string } | null>(null);
   const nextPayloadEpoch = useRef(0);
+  const loadedPinnedRef = useRef(false);
   const viewport = useRef<HTMLDivElement>(null);
   const pendingScroll = useRef<{ key: string; top: number; rowCount: number } | null>(null);
   const receiveHistory = useCallback((pageId: string, rows: ViewRow[]) => {
@@ -440,6 +507,41 @@ function App() {
     (oldest, row) => (oldest === null || row.anchor < oldest ? row.anchor : oldest),
     null
   );
+
+  useEffect(() => {
+    if (!pinnedPayloadRef || loadedPinnedRef.current) return;
+    loadedPinnedRef.current = true;
+    const controller = new AbortController();
+    const token = localStorage.getItem("spike-token") ?? "";
+    void fetch(`/api/payloads/${encodeURIComponent(conversationId)}/${encodeURIComponent(pinnedPayloadRef)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Pinned payload manifest request failed with ${response.status}`);
+        return payloadManifestSchema.parse(await response.json());
+      })
+      .then((manifest) => {
+        if (controller.signal.aborted || manifest.conversationId !== conversationId) return;
+        setInterest({
+          itemId: manifest.itemId,
+          field: manifest.fieldName,
+          payloadRef: manifest.payloadRef,
+          generationId: manifest.generationId,
+          shapeRef: manifest.payloadRef,
+          followLatest: false,
+          revision: manifest.revision,
+          chunkCount: manifest.chunkCount,
+          contentBytes: manifest.contentBytes,
+          epoch: ++nextPayloadEpoch.current,
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        window.__syncEvidence.pageErrors.push(String(error));
+      });
+    return () => controller.abort();
+  }, [conversationId, pinnedPayloadRef]);
 
   useEffect(() => {
     window.__syncEvidence.rowKeys = tailRows.map((row) => row.rowKey);
@@ -484,11 +586,21 @@ function App() {
   }, [allRows]);
 
   const onPayloadReady = useCallback((epoch: number, ref: string) => {
-    setPayloadReady((current) => (current?.epoch === epoch && current.payloadRef === ref ? current : { epoch, payloadRef: ref }));
+    setPayloadReady((current) =>
+      current?.epoch === epoch && current.payloadRef === ref ? current : { epoch, payloadRef: ref }
+    );
   }, []);
 
   useEffect(() => {
-    if (!interest || !interestedRow || latestPayloadRef === null || latestPayloadRef === interest.payloadRef) return;
+    if (
+      !interest ||
+      !interest.followLatest ||
+      !interestedRow ||
+      latestPayloadRef === null ||
+      latestPayloadRef === interest.payloadRef
+    ) {
+      return;
+    }
     const previousValueReady =
       interest.payloadRef === null ||
       (payloadReady?.epoch === interest.epoch && payloadReady.payloadRef === interest.payloadRef);
@@ -501,6 +613,9 @@ function App() {
         payloadRef: latestPayloadRef,
         generationId,
         shapeRef: generationId === current.generationId ? current.shapeRef : latestPayloadRef,
+        revision: payloadRevision(interestedRow, interest.field),
+        chunkCount: payloadChunkCount(interestedRow, interest.field),
+        contentBytes: payloadContentBytes(interestedRow, interest.field),
       };
     });
     setPayloadReady(null);
@@ -524,7 +639,7 @@ function App() {
     setHistoryCursors((current) => [...current, oldestAnchor]);
   }
 
-  function openPayload(itemId: string, field: PayloadField) {
+  function openPayload(itemId: string, field: PayloadField, followLatest = true) {
     const row = allRows.find((candidate) => candidate.itemId === itemId);
     const ref = payloadRef(row, field);
     setPayloadReady(null);
@@ -534,6 +649,10 @@ function App() {
       payloadRef: ref,
       generationId: payloadGeneration(row, field),
       shapeRef: ref,
+      followLatest,
+      revision: payloadRevision(row, field),
+      chunkCount: payloadChunkCount(row, field),
+      contentBytes: payloadContentBytes(row, field),
       epoch: ++nextPayloadEpoch.current,
     });
   }
@@ -561,6 +680,9 @@ function App() {
         </button>
         <button type="button" onClick={() => openPayload(payloadItem, "text")} aria-label="Open text">
           Open text
+        </button>
+        <button type="button" onClick={() => openPayload(payloadItem, "text", false)} aria-label="Pin text revision">
+          Pin text revision
         </button>
         <button type="button" onClick={() => openPayload("tool-row", "arguments")} aria-label="Open arguments">
           Open arguments

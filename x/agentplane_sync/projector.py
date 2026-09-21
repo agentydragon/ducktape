@@ -117,19 +117,14 @@ class ApplyResult:
 @dataclass(frozen=True)
 class PayloadState:
     source_id: str
-    generation_id: str
+    generation_id: int
     revision: int
     chunk_count: int
     content_bytes: int
 
 
 def payload_reference(
-    conversation_id: str,
-    item_id: str,
-    field_name: str,
-    source_id: str,
-    generation_id: str,
-    revision: int,
+    conversation_id: str, item_id: str, field_name: str, source_id: str, generation_id: int, revision: int
 ) -> str:
     identity = json.dumps(
         [conversation_id, item_id, field_name, source_id, generation_id, revision],
@@ -212,8 +207,8 @@ def _digest(entry: event_log_pb2.EventEntry) -> bytes:
 
 def _append_payload(
     row: dict[str, Any],
-    payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]],
-    payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]],
+    payload_manifests: list[tuple[str, str, str, str, str, int, int, bool, int, int, int]],
+    payload_chunks: list[tuple[str, str, str, str, int, int, int, str, int]],
     payload_states: dict[tuple[str, str], PayloadState],
     source_id: str,
     field_name: str,
@@ -228,7 +223,7 @@ def _append_payload(
     owner = (item_id, field_name)
     previous = payload_states.get(owner)
     if operation == "replace" or previous is None:
-        generation_id = f"generation-{cursor}"
+        generation_id = cursor
         chunk_count = 0
         content_bytes = 0
     else:
@@ -242,17 +237,7 @@ def _append_payload(
     encoded = content.encode("utf-8")
     if encoded:
         payload_chunks.append(
-            (
-                conversation_id,
-                item_id,
-                field_name,
-                source_id,
-                generation_id,
-                chunk_count,
-                cursor,
-                content,
-                len(encoded),
-            )
+            (conversation_id, item_id, field_name, source_id, generation_id, chunk_count, cursor, content, len(encoded))
         )
         chunk_count += 1
     content_bytes = content_bytes + len(encoded) if operation == "append" and previous is not None else len(encoded)
@@ -286,8 +271,8 @@ def _apply_event(
     conversation_id: str,
     source_id: str,
     rows: dict[str, dict[str, Any]],
-    payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]],
-    payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]],
+    payload_manifests: list[tuple[str, str, str, str, str, int, int, bool, int, int, int]],
+    payload_chunks: list[tuple[str, str, str, str, int, int, int, str, int]],
     payload_states: dict[tuple[str, str], PayloadState],
     entry: event_log_pb2.EventEntry,
 ) -> None:
@@ -321,7 +306,9 @@ def _apply_event(
         row["item_id"] = delta.item_id
         if case == "text_delta":
             field_name = "reasoning" if row["item_kind"] == event_pb2.ITEM_KIND_REASONING else "text"
-            _append_payload(row, payload_manifests, payload_chunks, payload_states, source_id, field_name, cursor, delta.text)
+            _append_payload(
+                row, payload_manifests, payload_chunks, payload_states, source_id, field_name, cursor, delta.text
+            )
         elif case == "tool_arguments_delta":
             _append_payload(
                 row,
@@ -346,7 +333,9 @@ def _apply_event(
                 "replace",
             )
         else:
-            _append_payload(row, payload_manifests, payload_chunks, payload_states, source_id, "output", cursor, delta.text)
+            _append_payload(
+                row, payload_manifests, payload_chunks, payload_states, source_id, "output", cursor, delta.text
+            )
     elif case == "item_completed":
         completed = event.item_completed
         row = row_for(f"item:{completed.item_id}", "item")
@@ -521,18 +510,10 @@ async def apply_batch(
                     payload_ref = row[f"{field_name}_payload_ref"]
                     if payload_ref is not None:
                         payload_states[(row["item_id"], field_name)] = by_ref[payload_ref]
-        payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]] = []
-        payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]] = []
+        payload_manifests: list[tuple[str, str, str, str, str, int, int, bool, int, int, int]] = []
+        payload_chunks: list[tuple[str, str, str, str, int, int, int, str, int]] = []
         for entry in new_entries:
-            _apply_event(
-                conversation_id,
-                source_id,
-                rows,
-                payload_manifests,
-                payload_chunks,
-                payload_states,
-                entry,
-            )
+            _apply_event(conversation_id, source_id, rows, payload_manifests, payload_chunks, payload_states, entry)
 
         if payload_chunks:
             await connection.executemany(

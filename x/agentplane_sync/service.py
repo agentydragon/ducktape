@@ -139,7 +139,9 @@ def _validate_subset(
                 re.IGNORECASE,
             )
             if not ordering.fullmatch(order_by):
-                raise HTTPException(status_code=400, detail="Subset ordering uses a column outside this shape's safe set")
+                raise HTTPException(
+                    status_code=400, detail="Subset ordering uses a column outside this shape's safe set"
+                )
         elif isinstance(order_by, list):
             if not order_by or any(
                 not isinstance(item, dict)
@@ -147,7 +149,9 @@ def _validate_subset(
                 or str(item.get("direction", "")).upper() not in {"ASC", "DESC"}
                 for item in order_by
             ):
-                raise HTTPException(status_code=400, detail="Subset ordering uses a column outside this shape's safe set")
+                raise HTTPException(
+                    status_code=400, detail="Subset ordering uses a column outside this shape's safe set"
+                )
         else:
             raise HTTPException(status_code=400, detail="Unsupported subset ordering")
         subset["order_by"] = order_by
@@ -188,11 +192,18 @@ def _validate_get_subset(
                 raise HTTPException(status_code=400, detail="Subset parameters must be JSON") from error
         raw[target_key] = value
     return _validate_subset(
-        raw,
-        allowed_columns=allowed_columns,
-        limit_max=limit_max,
-        order_by_columns=order_by_columns,
+        raw, allowed_columns=allowed_columns, limit_max=limit_max, order_by_columns=order_by_columns
     )
+
+
+def _validate_payload_subset(subset: dict[str, Any]) -> None:
+    where = subset.get("where")
+    if where is not None and (not isinstance(where, str) or where.strip().casefold() != "true = true"):
+        raise HTTPException(status_code=400, detail="Payload shapes do not accept caller-supplied subset filters")
+    if subset.get("params") not in (None, {}, []):
+        raise HTTPException(status_code=400, detail="Payload shapes do not accept caller-supplied subset parameters")
+    if any(key in subset for key in ("limit", "offset", "order_by")):
+        raise HTTPException(status_code=400, detail="Payload snapshots cannot be narrowed, truncated, or reordered")
 
 
 @dataclass(frozen=True)
@@ -204,6 +215,8 @@ class FixedShape:
     limit_max: int | None
     order_by_columns: frozenset[str]
     log_mode: str = "changes_only"
+    payload_shape: bool = False
+    where_params: tuple[str, ...] = ()
 
 
 def _sql_literal(value: str) -> str:
@@ -218,15 +231,12 @@ _VIEW_SHAPE = FixedShape(
     limit_max=MAX_PAGE_SIZE,
     order_by_columns=frozenset({"anchor"}),
 )
-_CHUNK_COLUMNS = "conversation_id,item_id,field_name,source_id,generation_id,chunk_index,source_cursor,content,content_bytes"
+_CHUNK_COLUMNS = (
+    "conversation_id,item_id,field_name,source_id,generation_id,chunk_index,source_cursor,content,content_bytes"
+)
 
 
-async def _forward_electric(
-    request: Request,
-    electric_url: str,
-    instance_name: str,
-    shape: FixedShape,
-) -> Response:
+async def _forward_electric(request: Request, electric_url: str, instance_name: str, shape: FixedShape) -> Response:
     conversation_id = request.path_params["conversation_id"]
     _scope(request.headers.get("authorization"), conversation_id)
     query = request.query_params
@@ -251,9 +261,24 @@ async def _forward_electric(
         # WHERE stays under proxy control and remains the auth boundary.
         "queryable_columns": shape.columns,
     }
+    fixed.update({f"params[{index}]": value for index, value in enumerate(shape.where_params, start=1)})
     if "log" not in incoming:
         incoming["log"] = "changes_only"
     params = {**fixed, **incoming}
+    forwarded_shapes = getattr(request.app.state, "forwarded_shapes", None)
+    if isinstance(forwarded_shapes, list):
+        forwarded_shapes.append(
+            {
+                "conversationId": conversation_id,
+                "payloadRef": request.path_params.get("payload_ref"),
+                "part": request.path_params.get("part"),
+                "table": shape.table,
+                "where": shape.where,
+                "whereParams": {
+                    key: value for key, value in params.items() if re.fullmatch(r"params\[[1-9][0-9]*\]", key)
+                },
+            }
+        )
     body = await request.body()
     if request.method == "POST":
         subset = _validate_subset(
@@ -262,16 +287,20 @@ async def _forward_electric(
             limit_max=shape.limit_max,
             order_by_columns=shape.order_by_columns,
         )
+        if shape.payload_shape:
+            _validate_payload_subset(subset)
         body = json.dumps(subset, separators=(",", ":")).encode()
     elif body:
         raise HTTPException(status_code=400, detail="Electric GET requests cannot carry a body")
     else:
-        _validate_get_subset(
+        subset = _validate_get_subset(
             query,
             allowed_columns=shape.subset_columns,
             limit_max=shape.limit_max,
             order_by_columns=shape.order_by_columns,
         )
+        if shape.payload_shape and any(key.startswith("subset__") for key in query):
+            _validate_payload_subset(subset)
     headers = {
         name: value
         for name, value in request.headers.items()
@@ -291,6 +320,7 @@ def create_electric_proxy(electric_url: str, instance_name: str, pool: asyncpg.P
     app.state.request_count = 0
     app.state.subset_gate = None
     app.state.payload_gate = None
+    app.state.forwarded_shapes = []
 
     @app.api_route("/shape/{conversation_id}", methods=["GET", "POST"])
     async def proxy_shape(conversation_id: str, request: Request) -> Response:
@@ -317,35 +347,53 @@ def create_electric_proxy(electric_url: str, instance_name: str, pool: asyncpg.P
     async def proxy_payload_shape(conversation_id: str, payload_ref: str, part: str, request: Request) -> Response:
         app.state.request_count += 1
         _scope(request.headers.get("authorization"), conversation_id)
-        if part != "chunks":
+        if part not in {"chunks", "revision"}:
             raise HTTPException(status_code=404, detail="Unknown payload shape")
         manifest = await pool.fetchrow(
-            """SELECT conversation_id,item_id,field_name,source_id,generation_id
+            """SELECT conversation_id,item_id,field_name,source_id,generation_id,revision,source_cursor,chunk_count
                FROM projected_payload_manifest WHERE conversation_id = $1 AND payload_ref = $2""",
             conversation_id,
             payload_ref,
         )
         if manifest is None:
             raise HTTPException(status_code=410, detail="Payload revision is unavailable or expired")
+        shape_where = " AND ".join(
+            f"{column} = {_sql_literal(str(manifest[column]))}"
+            for column in ("conversation_id", "item_id", "field_name", "source_id")
+        )
+        shape_params = [str(manifest["generation_id"])]
+        shape_where += " AND generation_id = $1"
+        if part == "revision":
+            # Bind int8 identity/window values as decimal strings. Electric
+            # treats unquoted bigint literals as floats. The manifest's chunk
+            # count is a small exact prefix bound; the browser also checks the
+            # source cursor on each immutable row.
+            shape_where += f" AND source_cursor <= $2 AND chunk_index < {int(manifest['chunk_count'])}"
+            shape_params.append(str(manifest["source_cursor"]))
         shape = FixedShape(
             "projected_payload_chunk",
-            " AND ".join(
-                f"{column} = {_sql_literal(str(manifest[column]))}"
-                for column in ("conversation_id", "item_id", "field_name", "source_id", "generation_id")
-            ),
+            shape_where,
             _CHUNK_COLUMNS,
-            frozenset({"chunk_index"}),
+            frozenset(),
             None,
-            frozenset({"chunk_index"}),
-            log_mode="full",
+            frozenset(),
+            log_mode="changes_only" if part == "revision" else "full",
+            payload_shape=True,
+            where_params=tuple(shape_params),
         )
-        response = await _forward_electric(request, app.state.electric_url, instance_name, shape)
         gate: PayloadGate | None = app.state.payload_gate
-        if gate is not None and gate.active and gate.payload_ref == payload_ref and gate.part == part:
+        has_subset = request.method == "POST" or any(key.startswith("subset__") for key in request.query_params)
+        hold_response = gate is not None and gate.active and gate.payload_ref == payload_ref and gate.part == part
+        if hold_response and has_subset:
+            gate.arrived.set()
+            await gate.release.wait()
+            gate.active = False
+        response = await _forward_electric(request, app.state.electric_url, instance_name, shape)
+        if hold_response and has_subset:
             gate.active = False
             gate.response_body = bytes(response.body)
             gate.arrived.set()
-            await gate.release.wait()
+            gate.completed.set()
         return response
 
     return app
@@ -366,6 +414,7 @@ class PayloadGate:
     active: bool = True
     arrived: asyncio.Event = field(default_factory=asyncio.Event)
     release: asyncio.Event = field(default_factory=asyncio.Event)
+    completed: asyncio.Event = field(default_factory=asyncio.Event)
     response_body: bytes = b""
 
 
@@ -400,6 +449,10 @@ def _public_row(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
         "arguments_bytes",
         "output_bytes",
         "reasoning_bytes",
+        "text_generation_id",
+        "arguments_generation_id",
+        "output_generation_id",
+        "reasoning_generation_id",
     ):
         if row[key] is not None:
             row[key] = str(row[key])
@@ -436,7 +489,7 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
     @app.api_route("/api/electric/{conversation_id}/payload/{payload_ref}/{part}", methods=["GET", "POST"])
     async def gateway_payload_shape(conversation_id: str, payload_ref: str, part: str, request: Request) -> Response:
         _scope(request.headers.get("authorization"), conversation_id)
-        if part != "chunks":
+        if part not in {"chunks", "revision"}:
             raise HTTPException(status_code=404, detail="Unknown payload shape")
         owner = await pool.fetchrow(
             """SELECT item_id,field_name,source_id,generation_id,revision,chunk_count,content_bytes
@@ -453,13 +506,14 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
                 "itemId": owner["item_id"] if owner is not None else None,
                 "field": owner["field_name"] if owner is not None else None,
                 "sourceId": owner["source_id"] if owner is not None else None,
-                "generationId": owner["generation_id"] if owner is not None else None,
+                "generationId": str(owner["generation_id"]) if owner is not None else None,
                 "revision": str(owner["revision"]) if owner is not None else None,
                 "chunkCount": owner["chunk_count"] if owner is not None else None,
                 "contentBytes": str(owner["content_bytes"]) if owner is not None else None,
                 "part": part,
                 "method": request.method,
                 "dispatch": name,
+                "electricQuery": dict(request.query_params.multi_items()),
             }
         )
         body = await request.body()
@@ -533,7 +587,7 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
                 "itemId": record["item_id"],
                 "field": record["field_name"],
                 "sourceId": record["source_id"],
-                "generationId": record["generation_id"],
+                "generationId": str(record["generation_id"]),
                 "part": "manifest",
                 "revision": str(record["revision"]),
                 "chunkCount": record["chunk_count"],
@@ -546,7 +600,7 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
             "itemId": record["item_id"],
             "fieldName": record["field_name"],
             "sourceId": record["source_id"],
-            "generationId": record["generation_id"],
+            "generationId": str(record["generation_id"]),
             "revision": str(record["revision"]),
             "present": record["present"],
             "chunkCount": record["chunk_count"],
