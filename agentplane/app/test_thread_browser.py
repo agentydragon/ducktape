@@ -442,23 +442,23 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     reading_position = await history.evaluate("area => area.scrollTop")
-    source.append(
+    updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
         )
     )
-    await expect(page.get_by_text("Test output while reading", exact=True)).to_have_count(1)
+    await expect_projected_cursor(page, updated.cursor)
     source.append(
         event_pb2.Event(
             item_started=event_pb2.ItemStarted(item_id="test-scroll-next", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
         )
     )
-    source.append(
+    completed = source.append(
         event_pb2.Event(
             item_completed=event_pb2.ItemCompleted(item_id="test-scroll-next", text="Test new message while reading")
         )
     )
-    await expect(page.get_by_text("Test new message while reading", exact=True)).to_have_count(1)
+    await expect_projected_cursor(page, completed.cursor)
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
@@ -469,7 +469,7 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
-    await page.get_by_text("Test retained prefix", exact=True).evaluate(
+    await history.locator(".agentplane-markdown").first.evaluate(
         """message => {
             const area = message.closest('[aria-label="Thread history"]');
             message.style.minHeight = `${area.scrollHeight}px`;
@@ -483,10 +483,10 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Scroll events are queued. Grow a rendered item in the same task as returning to the
     # bottom: when that event arrives, the old bottom is already behind the new content.
     # This reproduces a late layout expansion without relying on network/frame timing.
-    await page.get_by_text("Test new message while reading", exact=True).evaluate(
-        """message => {
-            const area = message.closest('[aria-label="Thread history"]');
+    await history.evaluate(
+        """area => {
             area.scrollTo({ top: area.scrollHeight });
+            const message = area.querySelector('.agentplane-markdown:last-of-type');
             message.style.minHeight = '240px';
         }"""
     )
@@ -500,6 +500,16 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def expect_projected_cursor(page: Page, cursor: int) -> None:
+    await page.wait_for_function(
+        """cursor => {
+            const value = document.querySelector('[data-projection-cursor]')?.dataset.projectionCursor;
+            return value !== undefined && BigInt(value) >= BigInt(cursor);
+        }""",
+        arg=str(cursor),
+    )
 
 
 async def expect_history_bottom(page: Page) -> None:
@@ -620,7 +630,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
             )
         )
     )
-    await expect(page.get_by_text("Turn test-following-turn: COMPLETED", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Turn completed", exact=True)).to_have_count(2)
     await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
     await expect(error_text).to_have_count(1)
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
