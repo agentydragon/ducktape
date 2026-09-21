@@ -105,7 +105,7 @@ def parse_float(value: str | None) -> float | None:
         return None
     try:
         return float(value.split()[0])
-    except IndexError, ValueError:
+    except (IndexError, ValueError):
         return None
 
 
@@ -193,7 +193,7 @@ def proc_btime() -> int | None:
         if line.startswith("btime "):
             try:
                 return int(line.split()[1])
-            except IndexError, ValueError:
+            except (IndexError, ValueError):
                 return None
     return None
 
