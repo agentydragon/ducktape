@@ -699,6 +699,7 @@ function viewState(
         harness_state: activeTurn === null ? "stopped" : "running",
       },
       unresolved_count: 0,
+      command_revision_cursor: String(throughCursor),
       operational: {
         operational_version: String(throughCursor),
         status: "active",

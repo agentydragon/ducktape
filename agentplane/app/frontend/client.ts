@@ -33,6 +33,7 @@ export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type EntityInterest = components["schemas"]["EntityInterestResponse"];
+export type PendingCommandInterest = components["schemas"]["PendingCommandInterestResponse"];
 export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
 export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
@@ -332,6 +333,18 @@ export async function conversationInterest(
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`Conversation interest failed with ${response.status}`);
   return (await response.json()) as EntityInterest;
+}
+
+export async function pendingCommandInterest(
+  threadId: string,
+  beforeCursor?: string,
+  signal?: AbortSignal
+): Promise<PendingCommandInterest> {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/pending-interest`, window.location.href);
+  if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Pending command interest failed with ${response.status}`);
+  return (await response.json()) as PendingCommandInterest;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

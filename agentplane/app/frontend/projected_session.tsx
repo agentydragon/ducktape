@@ -22,6 +22,7 @@ import {
   ConversationCollection,
   CommandSelection,
   decimalBigInt,
+  PendingCommandPages,
   PayloadBody,
   type ConversationEntity,
   type PayloadRef,
@@ -524,6 +525,64 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
+function PendingCommandRows({
+  threadId,
+  current,
+  older,
+  unresolvedCount,
+  canLoadOlder,
+  hasOlder,
+  loadOlder,
+  clearOlder,
+  excludedIds,
+}: {
+  threadId: string;
+  current: ConversationEntity[];
+  older: ConversationEntity[];
+  unresolvedCount: number;
+  canLoadOlder: boolean;
+  hasOlder: boolean;
+  loadOlder: () => void;
+  clearOlder: () => void;
+  excludedIds: ReadonlySet<string>;
+}): JSX.Element {
+  const rows = new Map<string, ConversationEntity>();
+  for (const row of [...current, ...older]) {
+    const existing = rows.get(row.entityId);
+    if (
+      !excludedIds.has(row.entityId) &&
+      (existing === undefined || decimalBigInt(row.revisionCursor) > decimalBigInt(existing.revisionCursor))
+    )
+      rows.set(row.entityId, row);
+  }
+  return (
+    <Stack role="region" aria-label="Command updates" gap="xs">
+      <Text size="sm">Command updates · {unresolvedCount} pending</Text>
+      {[...rows.values()].map((row) => {
+        if (!("outcome" in row.state)) return null;
+        return (
+          <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+            <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+              {row.state.outcome === "pending"
+                ? "Saved · awaiting effect"
+                : commandOutcomeLabel(row.state.operation, row.state.outcome)}
+              {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+            </Text>
+            {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+            <Evidence threadId={threadId} entity={row} />
+          </Paper>
+        );
+      })}
+      {canLoadOlder && <Button onClick={loadOlder}>Load 30 older pending commands</Button>}
+      {hasOlder && (
+        <Button variant="subtle" onClick={clearOlder}>
+          Show current pending commands
+        </Button>
+      )}
+    </Stack>
+  );
+}
+
 function VirtualizedHistory({
   threadId,
   segments,
@@ -867,12 +926,6 @@ function ProjectedSessionBody({
           ? 1
           : 0
     );
-  const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
-  const projectedCommands = entities.filter(
-    (row): row is ConversationEntity & { state: Extract<ConversationEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
-  );
-  const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
 
   function submit(): void {
@@ -907,21 +960,23 @@ function ProjectedSessionBody({
           activeTurn={activeTurn}
           onLoadOlder={onLoadOlder}
         />
-        {hasPendingCommands && (
-          <Stack role="region" aria-label="Pending commands" gap="xs">
-            {projectedCommands.map((row) => (
-              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
-                <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-                  {row.state.outcome === "pending"
-                    ? "Saved · awaiting effect"
-                    : commandOutcomeLabel(row.state.operation, row.state.outcome)}
-                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-                </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-                <Evidence threadId={threadId} entity={row} />
-              </Paper>
-            ))}
-          </Stack>
+        {view && "controls" in view.state && (
+          <PendingCommandPages
+            key={`${view.sourceId}:${view.projectionEpoch}`}
+            threadId={threadId}
+            sourceId={view.sourceId}
+            projectionEpoch={view.projectionEpoch}
+            viewRevisionCursor={view.revisionCursor}
+            commandRevisionCursor={view.state.command_revision_cursor}
+          >
+            {(page) => (
+              <PendingCommandRows
+                threadId={threadId}
+                excludedIds={new Set(selectedCommandIds.map((value) => value.command.commandId))}
+                {...page}
+              />
+            )}
+          </PendingCommandPages>
         )}
         {view && selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes

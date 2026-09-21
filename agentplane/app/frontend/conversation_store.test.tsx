@@ -18,11 +18,11 @@ vi.mock("@tanstack/electric-db-collection", () => ({
 }));
 
 vi.mock("@tanstack/react-db", () => ({
-  createCollection: <T,>(options: T) => options,
+  createCollection: <T,>(options: T) => ({ ...options, isReady: () => true }),
   useLiveQuery: () => ({ data: [], isError: false }),
 }));
 
-import { CommandSelection, PayloadBody, type PayloadRef } from "./conversation_store";
+import { CommandSelection, PayloadBody, PendingCommandPages, type PayloadRef } from "./conversation_store";
 
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -128,4 +128,66 @@ it("keeps a payload callback error through a follow revision and replaces it on 
 
   await act(async () => retired.shapeOptions.onError?.(new Error("retired callback")));
   expect(container.textContent).not.toContain("retired callback");
+});
+
+it("opens at most one current and one older fixed-ID pending page", async () => {
+  const current = Array.from({ length: 30 }, (_, index) => `current-${index}`);
+  const older = Array.from({ length: 30 }, (_, index) => `older-${index}`);
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 61,
+        command_ids: current,
+        next_before_cursor: "500",
+      })
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 61,
+        command_ids: older,
+        next_before_cursor: "400",
+      })
+    );
+  vi.stubGlobal("fetch", fetch);
+  const container = await render(
+    <PendingCommandPages
+      threadId="thread"
+      sourceId="source"
+      projectionEpoch="epoch"
+      viewRevisionCursor="12"
+      commandRevisionCursor="12"
+    >
+      {(page) => (
+        <>
+          <p>{page.unresolvedCount} pending</p>
+          <p>
+            {page.current.length} current and {page.older.length} older
+          </p>
+          <button onClick={page.loadOlder} disabled={!page.canLoadOlder}>
+            Load older
+          </button>
+        </>
+      )}
+    </PendingCommandPages>
+  );
+
+  await vi.waitFor(() => expect(container.textContent).toContain("61 pending"));
+  expect(captured.options.filter((value) => value.id.startsWith("agentplane-commands:"))).toHaveLength(1);
+  expect(new URL(fetch.mock.calls[0]![0] as string).pathname).toBe("/threads/thread/sync/pending-interest");
+
+  await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
+  await vi.waitFor(() =>
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-commands:"))).toHaveLength(2)
+  );
+  expect(new URL(fetch.mock.calls[1]![0] as string).searchParams.get("before_cursor")).toBe("500");
+  expect(container.textContent).toContain("0 current and 0 older");
 });

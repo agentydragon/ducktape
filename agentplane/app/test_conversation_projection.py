@@ -241,6 +241,7 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
 def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
     store = replay(script(), [17])
     assert store.state.unresolved_count == 0
+    assert store.state.command_revision_cursor == 17
     assert store.commands["input-1"].outcome is CommandOutcome.EFFECTED
     assert store.commands["input-2"].outcome is CommandOutcome.EFFECTED
     assert store.commands["model-1"].outcome is CommandOutcome.EFFECTED
@@ -254,6 +255,22 @@ def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
         (15, 15),
         (15, 16),
     ]
+
+
+def test_command_revision_cursor_ignores_item_deltas_and_advances_for_same_count_swaps() -> None:
+    store = Store()
+    store.apply([admitted(1, "first", command_pb2.SubmitInput(text="first"))])
+    assert store.state.command_revision_cursor == 1
+    store.apply([entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="answer", text="text")))])
+    assert store.state.command_revision_cursor == 1
+    store.apply(
+        [
+            admitted(3, "second", command_pb2.SubmitInput(text="second")),
+            entry(4, event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id="first", reason="done"))),
+        ]
+    )
+    assert store.state.unresolved_count == 1
+    assert store.state.command_revision_cursor == 4
 
 
 def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
