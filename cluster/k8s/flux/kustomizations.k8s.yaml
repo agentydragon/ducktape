@@ -3519,13 +3519,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: keda
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: haku-forgejo-tea
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku-ci

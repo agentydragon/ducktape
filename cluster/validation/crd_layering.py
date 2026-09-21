@@ -20,6 +20,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-trust": {"Bundle"},
     "cert-manager-environment": set(),
     "cluster-ca": set(),
+    "keda": {"ScaledJob", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),
     "tofu-controller": {"Terraform"},
