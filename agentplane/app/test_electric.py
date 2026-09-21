@@ -68,7 +68,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=changes_only"
+            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=changes_only"
         )
     await electric.aclose()
 
@@ -98,14 +98,39 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
 
     app, electric = make_app(httpx.MockTransport(unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        stale_tail = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=0&offset=-1")
-        arbitrary = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&table=event")
-        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=full")
+        stale_tail = await client.get(
+            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=0&offset=-1"
+        )
+        arbitrary = await client.get(
+            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&table=event"
+        )
+        bad_log = await client.get(
+            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&log=full"
+        )
     await electric.aclose()
 
-    assert stale_tail.status_code == 409
+    assert stale_tail.status_code == 410
     assert arbitrary.status_code == 400
     assert bad_log.status_code == 400
+
+
+@pytest.mark.parametrize("field", ["source_id", "projection_epoch"])
+async def test_old_entity_scope_is_rejected_before_forwarding(field: str) -> None:
+    async def unexpected(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("retired scopes must not reach Electric")
+
+    app, electric = make_app(httpx.MockTransport(unexpected))
+    params = {
+        "source_id": SCOPE.source_id,
+        "projection_epoch": SCOPE.projection_epoch,
+        "anchor_cursor": "99",
+        "tail_from": "70",
+        field: "retired-scope",
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(f"/threads/{THREAD}/sync/entities", params=params)
+    await electric.aclose()
+    assert response.status_code == 410
 
 
 @pytest.mark.parametrize(
@@ -127,7 +152,15 @@ async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{THREAD}/sync/entities",
-            params={"anchor_cursor": "99", "tail_from": "70", "offset": "0_0", "handle": "fixed", **subset},
+            params={
+                "source_id": SCOPE.source_id,
+                "projection_epoch": SCOPE.projection_epoch,
+                "anchor_cursor": "99",
+                "tail_from": "70",
+                "offset": "0_0",
+                "handle": "fixed",
+                **subset,
+            },
             headers={"electric-protocol-version": "1.0"},
         )
     await electric.aclose()
@@ -162,7 +195,9 @@ async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(query:
 
     app, electric = make_app(httpx.MockTransport(unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&{query}")
+        response = await client.get(
+            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&{query}"
+        )
     await electric.aclose()
     assert response.status_code == 400
 
@@ -270,7 +305,14 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         "headers": [],
     }
     response = await app.state.electric.entities(
-        Request(scope), thread_id=THREAD, anchor_cursor=99, tail_from=70, window_from=None, window_before=None
+        Request(scope),
+        thread_id=THREAD,
+        source_id=SCOPE.source_id,
+        projection_epoch=SCOPE.projection_epoch,
+        anchor_cursor=99,
+        tail_from=70,
+        window_from=None,
+        window_before=None,
     )
     first = asyncio.Event()
     release = asyncio.Event()

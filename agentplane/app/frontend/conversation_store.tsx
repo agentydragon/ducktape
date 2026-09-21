@@ -1,4 +1,4 @@
-import { snakeCamelMapper } from "@electric-sql/client";
+import { FetchError, snakeCamelMapper } from "@electric-sql/client";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -108,6 +108,8 @@ type PayloadChunk = z.output<typeof chunkSchema>;
 
 function entityUrl(threadId: string, interest: EntityInterest): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
+  url.searchParams.set("source_id", interest.source_id);
+  url.searchParams.set("projection_epoch", interest.projection_epoch);
   url.searchParams.set("anchor_cursor", interest.anchor_cursor);
   url.searchParams.set("tail_from", interest.tail_from);
   if (interest.window_from !== null) url.searchParams.set("window_from", interest.window_from);
@@ -115,7 +117,7 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
   return url.toString();
 }
 
-function entityCollection(threadId: string, interest: EntityInterest) {
+function entityCollection(threadId: string, interest: EntityInterest, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
       id: `agentplane-conversation:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
@@ -127,6 +129,7 @@ function entityCollection(threadId: string, interest: EntityInterest) {
         url: entityUrl(threadId, interest),
         params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
+        onError,
       },
     })
   );
@@ -238,7 +241,7 @@ function ActiveConversation({
     traceEntityCollection("subscribed", role, collection);
     return () => {
       if (traceEntityCollection("unsubscribed", role, collection))
-        window.setTimeout(() => traceEntityCollection("collected", role, collection), 1_100);
+        collection.once("status:cleaned-up", () => traceEntityCollection("collected", role, collection));
     };
   }, [collection, role]);
   useEffect(() => {
@@ -277,9 +280,17 @@ export function ConversationCollection({
   const [selection, setSelection] = useState<Selection | null>(null);
   const selectionRef = useRef<Selection | null>(null);
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null);
+  const pendingSelectionRef = useRef<Selection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const rotate = useCallback(() => setGeneration((value) => value + 1), []);
+  useEffect(
+    () => () => {
+      selectionRef.current = null;
+      pendingSelectionRef.current = null;
+    },
+    []
+  );
   useEffect(() => {
     const controller = new AbortController();
     let retry: number | undefined;
@@ -287,11 +298,23 @@ export function ConversationCollection({
     void conversationInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) {
-          const next = { interest: value, collection: entityCollection(threadId, value) };
+          const next: Selection = {
+            interest: value,
+            collection: entityCollection(threadId, value, (reason) => {
+              if (selectionRef.current !== next && pendingSelectionRef.current !== next) return;
+              // The adapter preserves a ready collection after terminal stream errors.
+              // Retired interests need a fresh scope even when query.isError stays false.
+              if (reason instanceof FetchError && reason.status === 410) rotate();
+              else setError(displayableError(reason));
+            }),
+          };
           if (selectionRef.current === null) {
             selectionRef.current = next;
             setSelection(next);
-          } else setPendingSelection(next);
+          } else {
+            pendingSelectionRef.current = next;
+            setPendingSelection(next);
+          }
         }
       },
       (reason: unknown) => {
@@ -305,7 +328,7 @@ export function ConversationCollection({
       controller.abort();
       if (retry !== undefined) window.clearTimeout(retry);
     };
-  }, [beforeCursor, generation, threadId]);
+  }, [beforeCursor, generation, rotate, threadId]);
   if (!selection) {
     if (error) return <p role="alert">Conversation sync failed: {error}</p>;
     return <p role="status">Loading conversation…</p>;
@@ -332,6 +355,7 @@ export function ConversationCollection({
             role="pending"
             onCaughtUp={() => {
               selectionRef.current = pendingSelection;
+              pendingSelectionRef.current = null;
               setSelection(pendingSelection);
               setPendingSelection(null);
             }}

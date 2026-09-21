@@ -736,6 +736,17 @@ ts_library(
 )
 
 ts_library(
+    name = "projected_session_test",
+    testonly = True,
+    srcs = ["projected_session.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":projected_session",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "push",
     srcs = ["settings/push.tsx"],
     tsconfig = TSCONFIG,
@@ -840,6 +851,7 @@ vitest_bin.vitest_test(
         ":launch_presets_test",
         ":local_commands_test",
         ":mcp_servers_test",
+        ":projected_session_test",
         ":push_test",
         ":retained_disclosures_test",
         ":sandbox_page_test",
