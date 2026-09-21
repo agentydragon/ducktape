@@ -173,10 +173,15 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         scope.through_cursor,
         (_event(history_size + 2, command_failed=event_pb2.CommandFailed(command_id="admission", reason="test")),),
     )
-    # Warm the driver and Python caches before taking its allocation profile.
+    # Warm the driver, typed codec, and Python caches before taking its allocation profile.
     async with store._sessions() as session:
         warmed = await trajectory._prior_conversation_entities(session, thread, batch)
     assert warmed.commands["admission"] is not None
+    assert await store.admitted_command(thread, command) == admitted
+    assert await store.command_outcomes(thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]) == {
+        "admission": "pending",
+        "absent": None,
+    }
     gc.collect()
     tracemalloc.start()
     try:
