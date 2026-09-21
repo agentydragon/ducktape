@@ -40,14 +40,7 @@ class Subset(BaseModel):
     offset: int | None = Field(default=None, ge=0, le=10_000)
 
     @model_validator(mode="after")
-    def supported_query(self) -> Subset:
-        if (self.where, self.order_by) not in {
-            ("segment_cursor < $1", "segment_cursor DESC"),
-            ("segment_cursor > $1", "segment_cursor ASC"),
-            ("cursor_or_id = ANY($1)", "segment_cursor ASC"),
-            ("owner_id = $1 AND field = $2 AND generation = $3 AND revision_cursor = $4", "chunk_index ASC"),
-        }:
-            raise ValueError("unsupported conversation subset")
+    def parameters_match(self) -> Subset:
         expected = {str(index) for index in range(1, self.where.count("$") + 1)}
         if set(self.params) != expected:
             raise ValueError("subset params do not match the supported query")
@@ -86,6 +79,24 @@ _SHAPE_COLUMNS = {
         "chunk_index,content"
     ),
 }
+_SHAPE_QUERYABLE_COLUMNS = {
+    ConversationShape.ENTITIES: "segment_cursor,cursor_or_id",
+    ConversationShape.PAYLOAD_MANIFESTS: "owner_id,field,generation,revision_cursor",
+    ConversationShape.PAYLOAD_CHUNKS: "owner_id,field,generation,chunk_index",
+}
+_SHAPE_SUBSETS = {
+    ConversationShape.ENTITIES: {
+        ("segment_cursor < $1", "segment_cursor DESC"),
+        ("segment_cursor > $1", "segment_cursor ASC"),
+        ("cursor_or_id = ANY($1)", "segment_cursor ASC"),
+    },
+    ConversationShape.PAYLOAD_MANIFESTS: {
+        ("owner_id = $1 AND field = $2 AND generation = $3 AND revision_cursor = $4", "revision_cursor ASC")
+    },
+    ConversationShape.PAYLOAD_CHUNKS: {
+        ("owner_id = $1 AND field = $2 AND generation = $3 AND chunk_index < $4", "chunk_index ASC")
+    },
+}
 
 
 ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
@@ -102,6 +113,8 @@ class ElectricProxy:
         scope = await self._resolve_scope(thread_id)
         if scope is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"no thread {thread_id}")
+        if subset is not None and (subset.where, subset.order_by) not in _SHAPE_SUBSETS[shape]:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "subset is not valid for this shape")
 
         supplied = set(request.query_params)
         if rejected := supplied - _PASSTHROUGH_QUERY:
@@ -111,10 +124,7 @@ class ElectricProxy:
             [
                 ("table", _SHAPE_TABLES[shape]),
                 ("columns", _SHAPE_COLUMNS[shape]),
-                (
-                    "queryable_columns",
-                    "segment_cursor,cursor_or_id,owner_id,field,generation,revision_cursor,chunk_index",
-                ),
+                ("queryable_columns", _SHAPE_QUERYABLE_COLUMNS[shape]),
                 ("where", "thread_id = $1 AND source_id = $2 AND projection_epoch = $3"),
                 ("params", json.dumps({"1": str(scope.thread_id), "2": scope.source_id, "3": scope.projection_epoch})),
                 ("log", "changes_only"),
