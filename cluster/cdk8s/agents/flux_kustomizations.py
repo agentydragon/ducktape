@@ -829,6 +829,7 @@ def public_coder_agent_namespace(chart: Chart) -> Kustomization:
             interval="1h",
             path="./cluster/k8s/agents/public-coder-agent/namespace",
             prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -859,7 +860,8 @@ def public_coder_agent_proxy(
             interval="1h",
             retry_interval="1m",
             path="./cluster/k8s/agents/public-coder-agent/proxy",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
@@ -929,7 +931,8 @@ def public_coder_agent_sshpiper(
             retry_interval="1m",
             timeout="10m",
             path="./cluster/k8s/agents/public-coder-agent/sshpiper",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),

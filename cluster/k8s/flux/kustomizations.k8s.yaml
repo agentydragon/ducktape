@@ -62,6 +62,7 @@ metadata:
   name: public-coder-agent-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/agents/public-coder-agent/namespace
   prune: false
@@ -1193,6 +1194,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
@@ -1205,7 +1207,7 @@ spec:
       namespace: public-coder-agent
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/sshpiper
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -5353,6 +5355,7 @@ metadata:
   name: public-coder-agent-proxy
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -5391,7 +5394,7 @@ spec:
       namespace: public-coder-agent
   interval: 1h
   path: ./cluster/k8s/agents/public-coder-agent/proxy
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
