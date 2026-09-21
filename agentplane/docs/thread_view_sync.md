@@ -14,6 +14,9 @@ representations remain implementation decisions to validate with the sync integr
 - Opening a Thread reads its tail and current controls without replaying its history.
   Earlier items load only on demand. A tab left open for months retains a limited tail
   and reading window, with eviction and virtualization.
+- Neither browser nor server processes may require a complete conversation in memory. Resident state
+  scales with selected windows/content, active execution state and bounded processing
+  batches, not total conversation length or the number of raw frames.
 - Text and tool arguments stream when the harness exposes deltas. Completion may replace
   the accumulated value. Tool results update the invocation they identify.
 - Reads cost the requested items and selected content, independent of total conversation
@@ -145,7 +148,10 @@ The evaluation must resolve:
    limit the underlying live shape. Measure updates to unloaded items and ensure large
    bodies never enter a broad metadata shape. Evaluate bounded interest shapes if active
    unloaded items otherwise dominate traffic. Shape replacement must use the library's
-   supported handoff and must preserve updates.
+   supported handoff and must preserve updates. Unsubscribing a query must release its
+   retained rows and bodies when no other active interest needs them; verify the adapter
+   actually evicts them. Live updates to unloaded or evicted items must not accumulate an
+   implicit full-history cache. A later query obtains their current committed state.
 3. **Atomic visibility.** PostgreSQL transaction atomicity does not establish atomic React
    publication across several collections. Evaluate one entity collection containing
    segments, controls/checkpoint and commands, with queryable kind/cursor/identity columns.
@@ -199,6 +205,28 @@ Electric endpoint; browser sessions must not require replica affinity. Commands 
 through the app's existing admission API. The proxy does not own another conversation
 cache or implement snapshot/live reconciliation.
 
+### Server memory ownership
+
+The full durable conversation belongs in storage; no integration-app replica needs an
+in-memory copy of it. Updating an old item requires indexed reads of that item and the
+batch's other affected entities, independent of the size of the preceding history.
+
+| Component                 | Resident state target                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Integration app/projector | Current batch, touched entity metadata, checkpoint and bounded queues; release after commit.                          |
+| Read/auth proxy           | Requested window or selected content and bounded transport buffers; no per-listener conversation copy.                |
+| Runner                    | Required active execution state, recovery checkpoint and bounded journal buffers; page historical entries from disk.  |
+| Electric                  | Bounded replication buffers and caches for active shapes; persisted shape history must not require full residency.    |
+| Postgres                  | Durable records and indexes with configured buffer/query memory; conversation size does not mandate loading all rows. |
+
+Electric's server memory behavior is an adoption gate, not an established property of the
+spike. Measure its resident memory as stored history grows with fixed active subscriptions,
+and during initial shape creation, reconnect, restart and a stalled downstream reader.
+Identify supported cache/shape lifecycle controls and replication backpressure; document
+any unavoidable per-shape metadata growth. Browser transfer measurements do not establish
+server memory bounds. Selected large content and concurrent work may cost proportional
+memory, but inactive conversation history must remain pageable from durable storage.
+
 ## Storage and durability
 
 The initial implementation projects the existing exact archive. Each worker transaction
@@ -211,6 +239,10 @@ Do not reconstruct all segment maps, sort all history or recount every pending c
 batch. Required work is proportional to incoming observations, touched entities and new
 content. Store pending counts with the same transactional transitions. Projection rebuild
 is explicit background work into a new epoch, never a first-view or reconnect operation.
+Workers release preloaded entities, payload writes and evidence associations after each
+committed batch. Replay and rebuild page through durable storage; neither needs a complete
+conversation map in memory. A stalled reader cannot make ingestion or proxy queues grow
+without bound: apply backpressure or end the subscription and resume through the engine.
 
 Store append chunks and manifests so writes cost new content, rather than rewriting every
 prefix of a growing string. Authoritative completion can replace streamed content, even
@@ -235,8 +267,10 @@ before relaxing publication durability.
 
 Runner restart also needs incremental recovery: its current journal loads all Events and
 session initialization folds them all. Persist recovery state, index pending commands and
-page replay. Native harness resume cost is a separate measurement; bounding Agentplane's
-work does not prove Claude/Codex's own resume is bounded.
+page replay. During execution, retain required active state and bounded journal buffers;
+page historical entries from disk rather than accumulating them in process memory. Native
+harness context and resume cost are separate measurements; bounding Agentplane's memory
+and work does not prove Claude/Codex's own execution or resume is bounded.
 
 ## Snapshot, live stream, and command recovery
 
@@ -320,6 +354,26 @@ independently of network/cache limits. Unloaded bodies, fetch failures, empty bo
 incomplete harness output must look different. New output follows the bottom only while
 the reader is already there.
 
+### Retained browser state
+
+Keep the tail and the current reading window independently; opening an old page does not
+load the intervening history. Explicitly selected bodies and a small prefetch margin may
+remain resident. Moving the reading window releases obsolete page interests and evicts
+unneeded entities, body chunks/manifests and assembled values from the collection caches.
+Closing a body or retiring a selection releases its subscriptions and outstanding request
+references. Late callbacks must neither change the active selection nor repopulate retired
+caches. Shared data stays resident only while another active interest or bounded cache
+policy needs it. Persistent browser caches, if enabled later, also need eviction policies.
+
+Eviction is local, not a deletion from durable history. Retain only the necessary lightweight
+viewport anchors, drafts and local command state; rereading an evicted page obtains a fresh
+subset and reconciles with live changes through the engine. A failed historical read stays
+explicit rather than silently restoring an obsolete copy. Retained memory may scale with
+large selected bodies: this requirement does not introduce query byte budgets or truncate
+content at a reported revision.
+
+### Acceptance evidence
+
 Required evidence before production cutover:
 
 - Projection parity over different batch boundaries, including parallel tools finishing in
@@ -333,7 +387,16 @@ Required evidence before production cutover:
   only requested windows; per-batch projection and memory do not scan/retain full history.
   Measure transfer, storage writes and browser paint separately. Large selected content may
   cost proportionally to its size; a fixed item count is not a fixed number of bytes.
-- Runner recovery from checkpoint plus bounded suffix; native harness resume measured separately.
+- Repeated scroll/load/evict/revisit and open/close body cycles, with background updates to
+  evicted items: collection row counts, subscriptions and retained heap must stabilize for a
+  fixed set of interests as total history grows. Verify release in TanStack/Electric caches,
+  not only disappearance from the DOM. Revisit must show current revisions; drafts and the
+  visible scroll anchor survive eviction and reconnect.
+- Measure live traffic for updates outside selected windows separately from fetched snapshot
+  size. Record any unavoidable metadata traffic; omitted bodies must stay off the wire.
+- Long-running ingestion and slow-reader experiments must bound worker/proxy buffers; runner
+  execution and recovery use bounded journal buffers and checkpoint plus paged suffix.
+  Native harness memory/context and resume cost are measured separately.
 
 ## Implementation boundaries
 
