@@ -437,6 +437,7 @@ function VirtualizedHistory({
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousCount = useRef(segments.length);
+  const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
   const virtualizer = useVirtualizer({
@@ -449,9 +450,16 @@ function VirtualizedHistory({
   });
   useLayoutEffect(() => {
     const element = viewport.current;
+    const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
     if (element && atBottom.current && segments.length > previousCount.current)
       element.scrollTop = element.scrollHeight;
-    if (element && previousCount.current === 0 && segments.length > 0 && readingAnchor.current) {
+    if (
+      element &&
+      !atBottom.current &&
+      segments.length > 0 &&
+      readingAnchor.current &&
+      (previousCount.current === 0 || previousFirstKey.current !== firstKey)
+    ) {
       const index = segments.findIndex(
         (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
       );
@@ -463,6 +471,7 @@ function VirtualizedHistory({
       }
     }
     previousCount.current = segments.length;
+    previousFirstKey.current = firstKey;
   }, [segments, virtualizer]);
   useLayoutEffect(() => {
     const element = viewport.current;
