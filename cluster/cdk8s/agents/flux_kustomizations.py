@@ -248,24 +248,6 @@ def claude_sandbox_secrets(
     )
 
 
-def coinbase_read(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
-    name = "coinbase-read"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path="./cluster/k8s/agents/coinbase-read",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="5m",
-            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
-        ),
-    )
-
-
 def forgejo_token_rotation(
     chart: Chart,
     forgejo_images: Kustomization,

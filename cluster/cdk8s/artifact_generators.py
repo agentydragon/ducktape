@@ -106,7 +106,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("nvidia-device-plugin", ("cluster/k8s/nvidia-device-plugin",)),
     ("nvidia-runtimeclass", ("cluster/k8s/nvidia-runtimeclass",)),
     ("claude-sandbox-secrets", ("cluster/k8s/agents/claude-sandbox-secrets",)),
-    ("coinbase-read", ("cluster/k8s/agents/coinbase-read",)),
     ("forgejo-token-rotation", ("cluster/k8s/agents/forgejo-token-rotation",)),
     ("ha-mcp", ("cluster/k8s/agents/ha-mcp/app",)),
     (

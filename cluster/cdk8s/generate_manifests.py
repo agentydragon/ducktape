@@ -249,7 +249,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, claude_rbac_kustomization
     )
     external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
-    agents_flux_kustomizations.coinbase_read(flux_chart, external_secrets_config_kustomization)
     goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(flux_chart, vpa_kustomization)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(flux_chart, root, clickhouse_kustomization)
     cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
