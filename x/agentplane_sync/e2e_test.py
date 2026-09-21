@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -926,6 +926,7 @@ async def test_electric_end_to_end() -> None:
             pg_port = postgres.get_exposed_port(5432)
             dsn = f"postgresql://postgres:postgres@{pg_host}:{pg_port}/postgres"
             pool = await _connect_postgres_when_ready(dsn)
+            restart_container_stack = ExitStack()
             try:
                 await initialize_database(pool)
                 await _seed_conversation(pool, "alpha-small", count=SMALL_COUNT, first_anchor=HIGH_CURSOR - SMALL_COUNT)
@@ -2528,51 +2529,51 @@ async def test_electric_end_to_end() -> None:
                                 )
                                 .with_env("ELECTRIC_INSECURE", "true")
                             )
-                            with restarted:
-                                restarted_url = (
-                                    f"http://{restarted.get_container_host_ip()}:{restarted.get_exposed_port(3000)}"
-                                )
-                                await _wait_electric(restarted_url)
-                                proxy_one.state.electric_url = f"{restarted_url}/v1/shape"
-                                proxy_two.state.electric_url = f"{restarted_url}/v1/shape"
-                                restart_cursor = disconnect_trigger_cursor + 4
-                                await apply_batch(
-                                    pool,
-                                    conversation_id="alpha-large",
-                                    source_id=SOURCE,
-                                    entries=[_text_entry(SOURCE, restart_cursor, "live-item", " +restart")],
-                                )
-                                await page.wait_for_function(
-                                    "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
-                                    arg=str(restart_cursor),
-                                    timeout=60_000,
-                                )
-                                await page_two.wait_for_function(
-                                    "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
-                                    arg=str(restart_cursor),
-                                    timeout=60_000,
-                                )
-                                await page.screenshot(
-                                    path=outputs / "alpha-large-electric-restarted.png", full_page=True
-                                )
-                                wal_state = await pool.fetchrow("""SELECT current_setting('wal_level') AS wal_level,
-                                    (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical') AS logical_slots,
-                                    (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical' AND active) AS active_slots,
-                                    pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE((SELECT min(restart_lsn) FROM pg_replication_slots WHERE slot_type='logical'), pg_current_wal_lsn()))::bigint AS retained_wal_bytes""")
-                                assert wal_state is not None
-                                diagnostics["postgresReplication"] = dict(wal_state)
-                                diagnostics["postgresReplication"]["retained_wal_bytes"] = int(
-                                    wal_state["retained_wal_bytes"]
-                                )
-                                assert wal_state["wal_level"] == "logical"
-                                assert int(wal_state["logical_slots"]) >= 1
-                                assert int(wal_state["active_slots"]) >= 1
-                                diagnostics["restart"] = {
-                                    "completed": True,
-                                    "page1Responses": response_records[old_electric_request_records:],
-                                    "postgresReplication": diagnostics["postgresReplication"],
-                                }
-                                _write_json(outputs / "electric-restart-evidence.json", diagnostics["restart"])
+                            restart_container_stack.enter_context(restarted)
+                            restarted_url = (
+                                f"http://{restarted.get_container_host_ip()}:{restarted.get_exposed_port(3000)}"
+                            )
+                            await _wait_electric(restarted_url)
+                            proxy_one.state.electric_url = f"{restarted_url}/v1/shape"
+                            proxy_two.state.electric_url = f"{restarted_url}/v1/shape"
+                            restart_cursor = disconnect_trigger_cursor + 4
+                            await apply_batch(
+                                pool,
+                                conversation_id="alpha-large",
+                                source_id=SOURCE,
+                                entries=[_text_entry(SOURCE, restart_cursor, "live-item", " +restart")],
+                            )
+                            await page.wait_for_function(
+                                "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
+                                arg=str(restart_cursor),
+                                timeout=60_000,
+                            )
+                            await page_two.wait_for_function(
+                                "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
+                                arg=str(restart_cursor),
+                                timeout=60_000,
+                            )
+                            await page.screenshot(
+                                path=outputs / "alpha-large-electric-restarted.png", full_page=True
+                            )
+                            wal_state = await pool.fetchrow("""SELECT current_setting('wal_level') AS wal_level,
+                                (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical') AS logical_slots,
+                                (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical' AND active) AS active_slots,
+                                pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE((SELECT min(restart_lsn) FROM pg_replication_slots WHERE slot_type='logical'), pg_current_wal_lsn()))::bigint AS retained_wal_bytes""")
+                            assert wal_state is not None
+                            diagnostics["postgresReplication"] = dict(wal_state)
+                            diagnostics["postgresReplication"]["retained_wal_bytes"] = int(
+                                wal_state["retained_wal_bytes"]
+                            )
+                            assert wal_state["wal_level"] == "logical"
+                            assert int(wal_state["logical_slots"]) >= 1
+                            assert int(wal_state["active_slots"]) >= 1
+                            diagnostics["restart"] = {
+                                "completed": True,
+                                "page1Responses": response_records[old_electric_request_records:],
+                                "postgresReplication": diagnostics["postgresReplication"],
+                            }
+                            _write_json(outputs / "electric-restart-evidence.json", diagnostics["restart"])
 
                             final_checkpoint = await _api_get(app_url, "/api/checkpoint/alpha-large", headers=AUTH)
                             assert final_checkpoint.status_code == 200
@@ -2655,7 +2656,7 @@ async def test_electric_end_to_end() -> None:
                             streamed_rows = [
                                 row for record in live_stream_records for row in record.get("chunkRows", [])
                             ]
-                            streamed_rows.sort(key=lambda row: row["chunkIndex"])
+                            streamed_rows.sort(key=lambda row: int(row["chunkIndex"]))
                             expected_streamed_chunk_count = reopened_text["chunkCount"] + len(streaming_chunks)
                             assert len(streamed_rows) == expected_streamed_chunk_count, {
                                 "shapeRef": text_shape_ref,
@@ -2663,7 +2664,7 @@ async def test_electric_end_to_end() -> None:
                                 "observedRows": len(streamed_rows),
                                 "records": live_stream_records,
                             }
-                            assert [row["chunkIndex"] for row in streamed_rows] == list(
+                            assert [int(row["chunkIndex"]) for row in streamed_rows] == list(
                                 range(expected_streamed_chunk_count)
                             ), streamed_rows
                             assert len({row["contentSha256"] for row in streamed_rows}) == len(streamed_rows), (
@@ -3009,6 +3010,7 @@ async def test_electric_end_to_end() -> None:
                             await context.close()
                             await browser.close()
             finally:
+                restart_container_stack.close()
                 await pool.close()
 
 
