@@ -6068,8 +6068,6 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: tana-mcp
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m

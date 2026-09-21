@@ -129,6 +129,7 @@ data:
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -136,6 +137,7 @@ data:
       - model_name: tana/ant-messages/claude-opus-4-6
         litellm_params:
           model: tana/tana/claude-opus-4-6/high
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -143,6 +145,7 @@ data:
       - model_name: tana/ant-messages/claude-haiku-4-5
         litellm_params:
           model: tana/tana/claude-haiku-4-5-20251001
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -712,6 +715,7 @@ spec:
                 secretKeyRef:
                   key: refresh_token
                   name: tana-firebase-refresh-token
+                  optional: true
             - name: LANGFUSE_OTEL_HOST
               value: http://langfuse-web.langfuse.svc.cluster.local:3000
             - name: LANGFUSE_PUBLIC_KEY

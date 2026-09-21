@@ -916,7 +916,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_environment_kustomization,
         langfuse_secrets_kustomization,
         reflector_kustomization,
-        tana_mcp_kustomization,
         monitoring_crds_kustomization,
     )
     aiquota_kustomization = aiquota.aiquota(

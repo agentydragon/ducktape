@@ -51,17 +51,25 @@ POST https://app.tana.inc/functions/llmProxy
 POST https://app.tana.inc/functions/llmProxyNext
 ```
 
-Refresh token lookup order:
+For direct `TanaProxyClient` use, refresh token lookup order:
 
 1. `TANA_FIREBASE_REFRESH_TOKEN`
 2. `TANA_FIREBASE_REFRESH_TOKEN_FILE`
 3. Kubernetes secret via local `kubectl`
 
-For production LiteLLM proxy use, prefer `TANA_FIREBASE_REFRESH_TOKEN` populated
-from a reflected copy of the resigner-maintained Kubernetes Secret. The resigner
-owns and refreshes that Secret; this adapter only reads the configured refresh
-token and caches short-lived Firebase ID tokens. It deliberately does not adopt
-or persist rotated Firebase refresh tokens from the Secure Token response.
+The LiteLLM model entries set `api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN`.
+LiteLLM resolves that reference and passes the value to the custom provider as
+`api_key`; the adapter uses it as the Firebase refresh token and caches only the
+short-lived Firebase ID token. The resigner owns and refreshes the Secret; this
+adapter deliberately does not adopt or persist rotated Firebase refresh tokens
+from the Secure Token response. Direct `TanaProxyClient` use retains the lookup
+order above for local tools such as `probe_models.py`.
+
+In the cluster deployment, this Secret is optional at LiteLLM startup. Without
+it, the proxy still starts and serves other providers; Tana model requests fail
+until the credential is available. The Deployment watches Secret changes, so
+the reflected Secret's return or rotation restarts LiteLLM with the current
+value. Flux does not gate LiteLLM reconciliation on Tana-MCP readiness.
 
 The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key
 `refresh_token`, matching the in-cluster Tana MCP setup. Treat that as a

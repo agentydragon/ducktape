@@ -60,6 +60,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
                 litellm_params:
                   model: tana/tana/gpt-4o-mini
                   custom_llm_provider: tana
+                  api_key: refresh-token
                 model_info:
                   mode: chat
                   supports_function_calling: true
@@ -79,9 +80,12 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
                 model: str,
                 messages: Sequence[Mapping[str, Any]],
                 optional_params: Mapping[str, Any] | None = None,
+                *,
+                refresh_token: str,
             ) -> TanaChatResult:
                 assert model == "tana/gpt-4o-mini"
                 assert messages == [{"role": "user", "content": "hi"}]
+                assert refresh_token == "refresh-token"
                 return TanaChatResult(text="pong")
 
             def stream_completion(

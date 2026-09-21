@@ -237,6 +237,7 @@ def _tana_entries() -> list[dict]:
             exposed_name(Provider.TANA, shape, exposed),
             f"{Provider.TANA}/{Provider.TANA}/{downstream}",
             shape_mode(shape),
+            api_key="os.environ/TANA_FIREBASE_REFRESH_TOKEN",
             supports_function_calling=True,
             custom_llm_provider=Provider.TANA,
         )
