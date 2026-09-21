@@ -1002,6 +1002,24 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_electric_wal_recovery",
+    size = "medium",
+    srcs = ["test_electric_wal_recovery.py"],
+    requires_docker = True,
+    deps = [
+        ":trajectory",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "conversation_debug",
     srcs = ["conversation_debug.py"],
