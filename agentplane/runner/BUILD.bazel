@@ -657,3 +657,18 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_journal_memory",
+    srcs = ["test_journal_memory.py"],
+    deps = [
+        ":conftest",
+        ":journal",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

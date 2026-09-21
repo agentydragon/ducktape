@@ -328,13 +328,15 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         cursor = first.open.follow.after_cursor
         try:
             while True:
-                for entry in session.journal.since(cursor):
+                for entry in await session.journal.since(cursor, limit=128):
                     if ended and entry.cursor > opened_cursor and entry.event.HasField("harness_started"):
                         return
                     yield protocol_pb2.ServerMessage(event_entry=entry)
                     cursor = entry.cursor
                     if entry.cursor > opened_cursor and entry.event.HasField("harness_exited"):
                         ended = True
+                if cursor < session.journal.last_cursor:
+                    continue
                 if ended:
                     return
                 if closing.is_set():

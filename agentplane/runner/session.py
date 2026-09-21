@@ -54,10 +54,8 @@ class Session:
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
         self.journal = journal
-        self.harness_running = False
-        self.active_turn_id = ""
-        self.admitted_commands: set[str] = set()
-        self.terminal_commands: set[str] = set()
+        self.harness_running = journal.recovery_state.harness_running
+        self.active_turn_id = journal.recovery_state.active_turn_id
         # Per-process only. A restarted runner consults the durable journal and intentionally
         # tries outstanding commands again using their original ids.
         self._dispatched_commands: set[str] = set()
@@ -69,9 +67,6 @@ class Session:
         self._dispatch_tasks: set[asyncio.Task[None]] = set()
         self._interrupt_commands: dict[str, str] = {}
         self._stop_command_id = ""
-        self._debug_checkpoints_reached: set[tuple[str, str]] = set()
-        for entry in self.journal.entries:
-            self._apply(entry.event)
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
@@ -80,35 +75,6 @@ class Session:
         self._stopping = False
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
-
-    def _apply(self, event: event_pb2.Event) -> None:
-        match event.WhichOneof("observation"):
-            case "harness_started":
-                self.harness_running = True
-            case "harness_lost":
-                self.harness_running = False
-            case "harness_exited":
-                self.harness_running = False
-                if event.harness_exited.stopped_by_command_id:
-                    self.terminal_commands.add(event.harness_exited.stopped_by_command_id)
-            case "turn_started":
-                self.active_turn_id = event.turn_started.turn_id
-            case "turn_completed":
-                self.active_turn_id = ""
-                if event.turn_completed.interrupted_by_command_id:
-                    self.terminal_commands.add(event.turn_completed.interrupted_by_command_id)
-            case "command_admitted":
-                self.admitted_commands.add(event.command_admitted.command.command_id)
-            case "command_failed":
-                self.terminal_commands.add(event.command_failed.command_id)
-            case "command_noop":
-                self.terminal_commands.add(event.command_noop.command_id)
-            case "harness_user_message_confirmed":
-                self.terminal_commands.update(event.harness_user_message_confirmed.origin_command_ids)
-            case "model_changed":
-                self.terminal_commands.add(event.model_changed.command_id)
-            case "debug_checkpoint":
-                self._debug_checkpoints_reached.add((event.debug_checkpoint.name, event.debug_checkpoint.command_id))
 
     async def emit(
         self,
@@ -127,7 +93,17 @@ class Session:
             terminal_command_ids=terminal_command_ids,
             native_correlation=native_correlation,
         )
-        self._apply(entry.event)
+        match entry.event.WhichOneof("observation"):
+            case "harness_started":
+                self.harness_running = True
+            case "harness_lost" | "harness_exited":
+                self.harness_running = False
+            case "turn_started":
+                self.active_turn_id = entry.event.turn_started.turn_id
+            case "turn_completed":
+                self.active_turn_id = ""
+        self._scheduled_commands.difference_update(terminal_command_ids)
+        self._dispatched_commands.difference_update(terminal_command_ids)
         return entry
 
     async def recover_after_restart(self) -> None:
@@ -184,19 +160,19 @@ class Session:
     async def command(self, command: command_pb2.Command) -> None:
         """Durably admit a command before arranging its potentially blocking native work."""
         async with self._lock:
-            if admission := await self.journal.admit(command):
-                self._apply(admission.event)
-            self._schedule(command)
+            await self.journal.admit(command)
+            await self._schedule(command)
 
     async def _reconcile_commands(self, *, recovering: bool = False) -> None:
         """Resume journaled work after this process has a fresh native harness attachment."""
         for command in await self.journal.pending_commands():
-            self._schedule(command, recovering=recovering)
+            await self._schedule(command, recovering=recovering)
 
-    def _schedule(self, command: command_pb2.Command, *, recovering: bool = False) -> None:
+    async def _schedule(self, command: command_pb2.Command, *, recovering: bool = False) -> None:
         """Arrange one admitted command's native work without extending the admission critical section."""
         command_id = command.command_id
-        if command_id in self.terminal_commands:
+        stored = await self.journal.get(command_id)
+        if stored is not None and stored.terminal_cursor is not None:
             return
         if recovering:
             self._scheduled_commands.discard(command_id)
@@ -230,7 +206,8 @@ class Session:
 
     async def _dispatch(self, command: command_pb2.Command) -> None:
         command_id = command.command_id
-        if command_id in self.terminal_commands:
+        stored = await self.journal.get(command_id)
+        if stored is not None and stored.terminal_cursor is not None:
             return
         if command_id in self._dispatched_commands:
             return
@@ -303,7 +280,8 @@ class Session:
 
     async def model_changed(self, command_id: str, model: str, *, sources: Sequence[int] | None = None) -> None:
         """Record a harness's causal model-selection effect, after it has really selected it."""
-        if command_id in self.terminal_commands:
+        stored = await self.journal.get(command_id)
+        if stored is not None and stored.terminal_cursor is not None:
             return
         previous = self.record.model
         self.record.model = model
@@ -349,7 +327,7 @@ class Session:
         if (
             configured is None
             or key != (configured.name, configured.command_id)
-            or key in self._debug_checkpoints_reached
+            or await self.journal.reached_checkpoint(name, command_id)
         ):
             return
         await self.emit(event_pb2.DebugCheckpoint(name=name, command_id=command_id), sources=[])
