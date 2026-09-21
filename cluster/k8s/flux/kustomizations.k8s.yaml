@@ -2288,12 +2288,13 @@ metadata:
   name: haku-console-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/console-namespace
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: haku-console-namespace
