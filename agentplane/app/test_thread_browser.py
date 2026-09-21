@@ -551,7 +551,6 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     if raw:
         await expand_item_evidence(page)
     history = page.get_by_role("region", name="Thread history", exact=True)
-    await page.evaluate("() => { window.__agentplaneScrollTrace = []; }")
     source.append(
         event_pb2.Event(
             item_completed=event_pb2.ItemCompleted(item_id="test-browser-item", text="Test retained prefix")
@@ -694,7 +693,6 @@ async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> N
                 const top = area.getBoundingClientRect().top;
                 return {
                     expected,
-                    trace: window.__agentplaneScrollTrace ?? [],
                     scrollTop: area.scrollTop,
                     scrollHeight: area.scrollHeight,
                     viewportHeight: area.clientHeight,

@@ -33,19 +33,6 @@ import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_discl
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
-declare global {
-  interface Window {
-    __agentplaneScrollTrace?: unknown[];
-  }
-}
-
-function scrollTrace(kind: string, data: Record<string, unknown>): void {
-  const trace = window.__agentplaneScrollTrace;
-  if (!trace) return;
-  trace.push({ kind, time: performance.now(), ...data });
-  if (trace.length > 128) trace.splice(0, trace.length - 128);
-}
-
 const LIFECYCLE_LABELS: Record<string, string> = {
   turn_started: "Turn started",
   turn_completed: "Turn completed",
@@ -576,17 +563,14 @@ function VirtualizedHistory({
   // instance hook in the pinned virtual-core version, rather than an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
   const cancelRestoration = () => {
-    scrollTrace("restore-cancel", { restoring: restoringAnchor.current, scrollTop: viewport.current?.scrollTop });
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
     restoringAnchor.current = null;
   };
   const expectUserScroll = () => {
-    scrollTrace("intent-start", { scrollTop: viewport.current?.scrollTop });
     captureNextScroll.current = true;
     if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
     captureExpiry.current = window.setTimeout(() => {
-      scrollTrace("intent-expired", { scrollTop: viewport.current?.scrollTop });
       captureNextScroll.current = false;
       captureExpiry.current = null;
     }, 100);
@@ -596,27 +580,18 @@ function VirtualizedHistory({
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
-    scrollTrace("restore-start", { anchor, index, scrollTop: viewport.current?.scrollTop });
     const correctFromDom = (): boolean => {
       const element = viewport.current;
       const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
       if (!element || !row) return false;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-      scrollTrace("restore-correct", {
-        anchor,
-        beforeScrollTop: element.scrollTop,
-        currentOffset,
-      });
       element.scrollTop += currentOffset - anchor.offset;
-      scrollTrace("restore-corrected", { anchor, scrollTop: element.scrollTop });
       return true;
     };
     if (!correctFromDom()) virtualizer.scrollToIndex(index, { align: "start" });
     restorationFrame.current = requestAnimationFrame(() => {
-      scrollTrace("restore-frame", { anchor, scrollTop: viewport.current?.scrollTop });
       if (restoringAnchor.current === anchor.key) correctFromDom();
       restorationFrame.current = requestAnimationFrame(() => {
-        scrollTrace("restore-finish", { anchor, scrollTop: viewport.current?.scrollTop });
         if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
         restorationFrame.current = null;
       });
@@ -649,23 +624,13 @@ function VirtualizedHistory({
     previousScrollHeight.current = element.scrollHeight;
     previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
-      const beforeScrollTop = element.scrollTop;
-      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
+      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
       else if (readingAnchor.current && restoringAnchor.current === null) restoreAnchor(readingAnchor.current);
-      scrollTrace("resize", {
-        anchor: readingAnchor.current,
-        restoring: restoringAnchor.current,
-        atBottom: atBottom.current,
-        beforeScrollTop,
-        previousBottom,
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-      });
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
@@ -684,55 +649,40 @@ function VirtualizedHistory({
       tabIndex={0}
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
-        scrollTrace("input-wheel", { deltaY: event.deltaY, scrollTop: viewport.current?.scrollTop });
         cancelRestoration();
         expectUserScroll();
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
-        scrollTrace("input-key", { key: event.key, scrollTop: viewport.current?.scrollTop });
         cancelRestoration();
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
-        scrollTrace("input-pointer-down", { scrollTop: viewport.current?.scrollTop });
         cancelRestoration();
         pointerScrolling.current = true;
       }}
       onPointerUp={() => {
-        scrollTrace("input-pointer-up", { scrollTop: viewport.current?.scrollTop });
         pointerScrolling.current = false;
       }}
       onPointerCancel={() => {
         pointerScrolling.current = false;
       }}
       onTouchStart={(event) => {
-        scrollTrace("input-touch-start", { scrollTop: viewport.current?.scrollTop });
         cancelRestoration();
         touchY.current = event.touches[0]?.clientY ?? null;
       }}
       onTouchMove={(event) => {
-        scrollTrace("input-touch-move", { scrollTop: viewport.current?.scrollTop });
         const next = event.touches[0]?.clientY;
         expectUserScroll();
         if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
         touchY.current = next ?? null;
       }}
       onTouchEnd={() => {
-        scrollTrace("input-touch-end", { scrollTop: viewport.current?.scrollTop });
         touchY.current = null;
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        scrollTrace("scroll", {
-          anchor: readingAnchor.current,
-          restoring: restoringAnchor.current,
-          captureIntent: captureNextScroll.current,
-          pointerScrolling: pointerScrolling.current,
-          touchY: touchY.current,
-          scrollTop: element.scrollTop,
-        });
         if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
@@ -752,7 +702,6 @@ function VirtualizedHistory({
             cursor: firstEntity.cursor.toString(),
             offset: first.getBoundingClientRect().top - viewportTop,
           };
-          scrollTrace("scroll-capture", { anchor: readingAnchor.current, scrollTop: element.scrollTop });
         }
         // Retain one segment across adjacent reading windows so the virtualizer can restore
         // the same measured item and pixel offset after the old collection is evicted.
