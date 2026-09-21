@@ -382,7 +382,7 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
-        await show_raw(page)
+        await expand_item_evidence(page)
     history = page.get_by_role("region", name="Thread history", exact=True)
     source.append(
         event_pb2.Event(
@@ -517,7 +517,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
-        await show_raw(page)
+        await expand_item_evidence(page)
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Test input confirmed before a model error")
     await composer.press("Enter")
@@ -574,15 +574,13 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
-        await expect_raw_prefix(page, failed.cursor)
-        for entry in (native, failed):
-            frame = page.locator(f'[data-event-cursor="{entry.cursor}"]')
-            await frame.locator("summary").click()
-            assert (
-                json_format.Parse(await frame.locator("[data-event-envelope]").inner_text(), event_log_pb2.EventEntry())
-                == entry
-            )
-            await frame.locator("summary").click()
+        lifecycle = page.locator(f'[data-conversation-anchor="{failed.cursor}"]')
+        await lifecycle.locator("summary", has_text="Evidence").click()
+        await lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames").click()
+        frame = lifecycle.locator("pre")
+        await expect(frame).to_contain_text("unsafe diagnostic")
+        assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
+        await lifecycle.locator("summary", has_text="Evidence").click()
 
     await composer.fill("Test distinct input after the failed turn")
     await composer.press("Enter")
@@ -752,16 +750,8 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await page.unroute_all(behavior="wait")
 
 
-async def show_raw(page: Page) -> None:
-    await page.get_by_role("button", name="More", exact=True).click()
-    await page.get_by_role("menuitem", name="Raw frames", exact=True).click()
-    await page.keyboard.press("Escape")
-
-
-async def expect_raw_prefix(page: Page, cursor: int) -> None:
-    await expect(page.locator(".agentplane-frame-sequence")).to_have_text(
-        [f"Event {sequence} ·" for sequence in range(1, cursor + 1)]
-    )
+async def expand_item_evidence(page: Page) -> None:
+    await page.locator('[data-conversation-anchor="3"]').locator("summary", has_text="Evidence").click()
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -977,11 +967,10 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
 
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
-    await expect(page.get_by_role("status")).to_have_text("Catching up: 0 / 4 events")
-    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("")
-    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
-    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
-    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    await expect(page.get_by_role("status")).to_have_text("Loading conversation…")
+    await expect(page.locator('[aria-label="Model"]:enabled')).to_have_count(0)
+    await expect(page.locator("textarea:enabled")).to_have_count(0)
+    await expect(page.locator('[aria-label="Interrupt"]:enabled')).to_have_count(0)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.store.last_cursor(thread.id) == 0
