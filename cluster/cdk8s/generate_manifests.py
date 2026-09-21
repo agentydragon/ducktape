@@ -190,7 +190,6 @@ def generate_manifests(root: Path) -> None:
     openebs_lvm_flux_kustomizations.openebs_lvm(flux_chart)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
-    inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart)
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(flux_chart)
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
@@ -290,9 +289,6 @@ def generate_manifests(root: Path) -> None:
     )
     litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
         flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
-    inventree_db_kustomization = parked_flux_kustomizations.inventree_db(
-        flux_chart, inventree_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
@@ -725,16 +721,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    inventree_kustomization = parked_flux_kustomizations.inventree(
-        flux_chart,
-        forgejo_images_kustomization,
-        inventree_namespace_kustomization,
-        inventree_db_kustomization,
-        sso_providers_tf_kustomization,
-        reflector_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
-    )
     parked_flux_kustomizations.sdr(
         flux_chart,
         external_secrets_config_kustomization,
@@ -830,13 +816,6 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         home_assistant_kustomization,
         monitoring_crds_kustomization,
-    )
-    parked_flux_kustomizations.inventree_token_provisioner(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        inventree_kustomization,
-        claude_rbac_kustomization,
     )
     agents_flux_kustomizations.forgejo_token_rotation(
         flux_chart,

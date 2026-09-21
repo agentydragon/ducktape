@@ -381,8 +381,8 @@ noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
   its revival package remains in Git.
 - **egress-proxy-rugged**: `cluster/k8s/parked/egress-proxy-rugged/` — decommissioned;
   its configuration remains in Git.
-- **InvenTree**: `cluster/k8s/parked/inventree/` — decommissioned; its revival package
-  remains in Git.
+- **InvenTree**: `cluster/k8s/parked/inventree/` — decommissioned; its four Flux
+  Kustomizations are removed from the active bundle, and the revival package remains in Git.
 - **Authelia**: `cluster/k8s/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
