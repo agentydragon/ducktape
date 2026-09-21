@@ -12,10 +12,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -149,7 +150,6 @@ class ConversationEntity(Base):
             "cursor",
             "entity_kind",
             "entity_id",
-            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
         Index(
             "ix_conversation_entity_scope_pending_cursor",
@@ -295,8 +295,6 @@ class ConversationScope:
 
 @dataclass(frozen=True)
 class ConversationEntityInterest:
-    """Stable cursor bounds for one bounded Electric entity shape."""
-
     scope: ConversationScope
     anchor_cursor: int
     tail_from: int
@@ -306,8 +304,6 @@ class ConversationEntityInterest:
 
 @dataclass(frozen=True)
 class ConversationPayloadSelection:
-    """One immutable payload revision and its server-verified physical extent."""
-
     scope: ConversationScope
     owner_cursor: int
     owner_id: str
@@ -317,6 +313,105 @@ class ConversationPayloadSelection:
     present: bool
     chunk_count: int
     content_bytes: int
+
+
+class ConversationPayloadReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    projection_epoch: str
+    owner_cursor: str
+    owner_item_id: str
+    field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
+    revision_cursor: str
+    generation: str
+
+
+class ConversationControlsState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applied_model: str | None
+    active_turn_id: str | None
+    harness_state: str | None
+
+
+class ConversationViewState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    controls: ConversationControlsState
+    unresolved_count: int
+
+
+class ConversationItemState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: int
+    tool_name: str
+    completion: str | None
+    tool_succeeded: bool | None
+
+
+class ConversationConfirmedInputState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    harness_message_id: str
+    origin_command_ids: list[str]
+
+
+class ConversationLifecycleState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str
+    event: JsonValue
+
+
+class ConversationCommandState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: str
+    outcome: Literal["pending", "effected", "failed", "noop"]
+    outcome_cursor: str | None
+    outcome_reason: str | None
+
+
+class ConversationStoredEntity(BaseModel):
+    """The generated client contract for a synchronized current conversation row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: UUID
+    source_id: str
+    projection_epoch: str
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"]
+    entity_id: str
+    cursor: int
+    revision_cursor: int
+    pending: bool
+    turn_id: str | None
+    state: (
+        ConversationViewState
+        | ConversationItemState
+        | ConversationConfirmedInputState
+        | ConversationLifecycleState
+        | ConversationCommandState
+    )
+    text_ref: ConversationPayloadReference | None
+    arguments_ref: ConversationPayloadReference | None
+    output_ref: ConversationPayloadReference | None
+    input_ref: ConversationPayloadReference | None
+
+    @model_validator(mode="after")
+    def _state_matches_kind(self) -> Self:
+        expected = {
+            "view_state": ConversationViewState,
+            "item": ConversationItemState,
+            "confirmed_input": ConversationConfirmedInputState,
+            "lifecycle": ConversationLifecycleState,
+            "command": ConversationCommandState,
+        }[self.entity_kind]
+        if not isinstance(self.state, expected):
+            raise ValueError(f"conversation state does not match {self.entity_kind}")
+        return self
 
 
 class ThreadView(BaseModel):
@@ -418,7 +513,6 @@ class TrajectoryStore:
         before_cursor: int | None = None,
         page_size: int = 30,
     ) -> ConversationEntityInterest | None:
-        """Resolve bounded, immutable cursor ranges for a tail and optional history page."""
         if not 1 <= page_size <= 100:
             raise ValueError("conversation page size must be between 1 and 100")
         segment_kinds = ("item", "confirmed_input", "lifecycle")
@@ -432,17 +526,17 @@ class TrajectoryStore:
             anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
             if anchor < 0 or anchor > scope.through_cursor:
                 raise ValueError("conversation anchor is outside the projected prefix")
+            common = (
+                ConversationEntity.thread_id == thread_id,
+                ConversationEntity.source_id == scope.source_id,
+                ConversationEntity.projection_epoch == scope.projection_epoch,
+                ConversationEntity.entity_kind.in_(segment_kinds),
+            )
             if anchor_cursor is not None:
                 newer = list(
                     await session.scalars(
                         select(ConversationEntity.cursor)
-                        .where(
-                            ConversationEntity.thread_id == thread_id,
-                            ConversationEntity.source_id == scope.source_id,
-                            ConversationEntity.projection_epoch == scope.projection_epoch,
-                            ConversationEntity.entity_kind.in_(segment_kinds),
-                            ConversationEntity.cursor > anchor,
-                        )
+                        .where(*common, ConversationEntity.cursor > anchor)
                         .order_by(ConversationEntity.cursor)
                         .limit(page_size * 2 + 1)
                     )
@@ -454,13 +548,7 @@ class TrajectoryStore:
                 cursors = list(
                     await session.scalars(
                         select(ConversationEntity.cursor)
-                        .where(
-                            ConversationEntity.thread_id == thread_id,
-                            ConversationEntity.source_id == scope.source_id,
-                            ConversationEntity.projection_epoch == scope.projection_epoch,
-                            ConversationEntity.entity_kind.in_(segment_kinds),
-                            ConversationEntity.cursor < before,
-                        )
+                        .where(*common, ConversationEntity.cursor < before)
                         .order_by(ConversationEntity.cursor.desc())
                         .limit(page_size)
                     )
@@ -477,7 +565,6 @@ class TrajectoryStore:
     async def conversation_payload_selection(
         self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
     ) -> ConversationPayloadSelection | None:
-        """Verify an exact immutable reference and return its authoritative chunk bound."""
         async with self._sessions() as session:
             checkpoint = await session.scalar(
                 select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
@@ -1216,7 +1303,7 @@ def _entity_values(
     thread_id: UUID,
     source_id: str,
     projection_epoch: str,
-    entity_kind: str,
+    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"],
     entity_id: str,
     cursor: int,
     revision_cursor: int,
@@ -1229,22 +1316,22 @@ def _entity_values(
     output_ref: conversation_projection.FieldValue | None = None,
     input_ref: conversation_projection.FieldValue | None = None,
 ) -> dict[str, object]:
-    return {
-        "thread_id": thread_id,
-        "source_id": source_id,
-        "projection_epoch": projection_epoch,
-        "entity_kind": entity_kind,
-        "entity_id": entity_id,
-        "cursor": cursor,
-        "revision_cursor": revision_cursor,
-        "pending": pending,
-        "turn_id": turn_id,
-        "state": state,
-        "text_ref": _payload_ref_json(text_ref),
-        "arguments_ref": _payload_ref_json(arguments_ref),
-        "output_ref": _payload_ref_json(output_ref),
-        "input_ref": _payload_ref_json(input_ref),
-    }
+    return ConversationStoredEntity(
+        thread_id=thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        cursor=cursor,
+        revision_cursor=revision_cursor,
+        pending=pending,
+        turn_id=turn_id,
+        state=state,
+        text_ref=_payload_ref_json(text_ref),
+        arguments_ref=_payload_ref_json(arguments_ref),
+        output_ref=_payload_ref_json(output_ref),
+        input_ref=_payload_ref_json(input_ref),
+    ).model_dump(mode="json")
 
 
 def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState) -> dict[str, object]:
