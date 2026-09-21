@@ -542,6 +542,7 @@ async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> N
                     scrollHeight: area.scrollHeight,
                     viewportHeight: area.clientHeight,
                     viewportWidth: area.clientWidth,
+                    trace: window.__agentplaneScrollTrace,
                     rows: [...area.querySelectorAll('[data-conversation-anchor]')].map(item => ({
                         cursor: item.dataset.conversationAnchor,
                         offset: item.getBoundingClientRect().top - top,

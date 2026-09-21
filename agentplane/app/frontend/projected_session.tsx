@@ -32,6 +32,14 @@ import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+declare global {
+  interface Window {
+    __agentplaneScrollTrace?: unknown[];
+  }
+}
+function scrollTrace(kind: string, data: Record<string, unknown>): void {
+  (window.__agentplaneScrollTrace ??= []).push({ kind, time: performance.now(), ...data });
+}
 const LIFECYCLE_LABELS: Record<string, string> = {
   turn_started: "Turn started",
   turn_completed: "Turn completed",
@@ -551,12 +559,15 @@ function VirtualizedHistory({
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
+    scrollTrace("restore-start", { anchor, index, scrollTop: viewport.current?.scrollTop });
     virtualizer.scrollToIndex(index, { align: "start" });
     restorationFrame.current = requestAnimationFrame(() => {
       const measured = virtualizer.getVirtualItems().find((item) => item.index === index);
+      scrollTrace("restore-frame", { anchor, index, measured, scrollTop: viewport.current?.scrollTop });
       if (viewport.current && restoringAnchor.current === anchor.key && measured)
         viewport.current.scrollTop = measured.start + anchor.offset;
       restorationFrame.current = requestAnimationFrame(() => {
+        scrollTrace("restore-finish", { anchor, index, scrollTop: viewport.current?.scrollTop });
         if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
         restorationFrame.current = null;
       });
@@ -589,6 +600,12 @@ function VirtualizedHistory({
     previousScrollHeight.current = element.scrollHeight;
     previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
+      scrollTrace("resize", {
+        anchor: readingAnchor.current,
+        restoring: restoringAnchor.current,
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+      });
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
@@ -651,6 +668,20 @@ function VirtualizedHistory({
         const items = virtualizer.getVirtualItems();
         const first = items.find((item) => item.end > element.scrollTop) ?? items[0];
         const firstEntity = first ? segments[first.index] : undefined;
+        const viewportTop = element.getBoundingClientRect().top;
+        const domFirst = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+          (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
+        );
+        scrollTrace("scroll-capture", {
+          scrollTop: element.scrollTop,
+          virtual: first && firstEntity ? { key: `${firstEntity.entityKind}:${firstEntity.entityId}`, ...first } : null,
+          dom: domFirst
+            ? {
+                key: domFirst.dataset.conversationAnchor,
+                offset: domFirst.getBoundingClientRect().top - viewportTop,
+              }
+            : null,
+        });
         if (first && firstEntity) {
           readingAnchor.current = {
             key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
