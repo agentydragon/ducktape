@@ -71,7 +71,7 @@ py_test(
 
 py_test(
     name = "shape_capacity_test",
-    size = "medium",
+    size = "large",
     srcs = ["shape_capacity_test.py"],
     requires_docker = True,
     deps = [
