@@ -421,7 +421,8 @@ def _capture_electric(
             return
         request_parts = urlsplit(request.url)
         query = parse_qs(request_parts.query)
-        row_messages = [message for message in _messages(body) if message.get("headers", {}).get("operation")]
+        messages = _messages(body)
+        row_messages = [message for message in messages if message.get("headers", {}).get("operation")]
         post_body = _parse_body(request.post_data.encode()) if request.post_data else {}
         row_values = [message.get("value", {}) for message in row_messages]
         record = {
@@ -434,6 +435,9 @@ def _capture_electric(
             "responseBytes": len(body),
             "rowCount": len(row_messages),
             "operations": [message["headers"]["operation"] for message in row_messages],
+            "controls": [
+                message["headers"]["control"] for message in messages if message.get("headers", {}).get("control")
+            ],
             "rowKeys": [value.get("row_key") for value in row_values if "row_key" in value][:40],
             "fields": sorted(set().union(*(set(value) for value in row_values))) if row_values else [],
             "containsSensitivePayload": any(secret.encode() in body for secret in SENSITIVE),
@@ -643,7 +647,18 @@ async def test_electric_end_to_end() -> None:
                             "whereConversationOverride": where_override.status_code,
                         }
 
-                        route_control: dict[str, Any] = {"badHandle": False, "badHandleRequest": None}
+                        route_control: dict[str, Any] = {
+                            "badHandle": False,
+                            "badHandleRequest": None,
+                            "disconnectNextPage1Live": False,
+                            "disconnectRequest": None,
+                            "disconnectFailure": None,
+                            "recordResetSubsets": False,
+                        }
+                        disconnect_failed = asyncio.Event()
+                        recovery_responses: asyncio.Queue[Response] = asyncio.Queue()
+                        reset_subset_responses: asyncio.Queue[Response] = asyncio.Queue()
+                        page_references: dict[str, Page] = {}
                         async with async_playwright() as playwright:
                             browser = await playwright.chromium.launch(
                                 headless=True, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS
@@ -660,25 +675,43 @@ async def test_electric_end_to_end() -> None:
                             await context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
                             async def route_request(route: Any, request: Request) -> None:
-                                if route_control["badHandleRequest"] is None and route_control["badHandle"]:
-                                    parts = urlsplit(request.url)
-                                    query = parse_qs(parts.query)
-                                    if query.get("handle") and query.get("offset", [""])[-1] not in {"now", "-1"}:
-                                        changed = query.copy()
-                                        changed["handle"] = ["expired-derisk-handle"]
-                                        new_query = "&".join(
-                                            f"{key}={value}" for key, values in changed.items() for value in values
-                                        )
-                                        url = urlunsplit(
-                                            (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
-                                        )
-                                        route_control["badHandle"] = False
-                                        route_control["badHandleRequest"] = {
-                                            "url": request.url,
-                                            "method": request.method,
-                                        }
-                                        await route.continue_(url=url)
-                                        return
+                                parts = urlsplit(request.url)
+                                query = parse_qs(parts.query)
+                                if (
+                                    route_control["disconnectNextPage1Live"]
+                                    and query.get("live") == ["true"]
+                                    and page_references.get("page-1") is request.frame.page
+                                ):
+                                    route_control["disconnectNextPage1Live"] = False
+                                    route_control["disconnectRequest"] = {
+                                        "url": request.url,
+                                        "method": request.method,
+                                        "page": "page-1",
+                                    }
+                                    # Fail a real live poll at the browser boundary, then
+                                    # keep that client offline while the database advances.
+                                    await context.set_offline(True)
+                                    await route.abort("internetdisconnected")
+                                    return
+                                if (
+                                    route_control["badHandleRequest"] is None
+                                    and route_control["badHandle"]
+                                    and query.get("handle")
+                                    and query.get("offset", [""])[-1] not in {"now", "-1"}
+                                    and page_references.get("page-1") is request.frame.page
+                                ):
+                                    changed = query.copy()
+                                    changed["handle"] = ["expired-derisk-handle"]
+                                    new_query = "&".join(
+                                        f"{key}={value}" for key, values in changed.items() for value in values
+                                    )
+                                    url = urlunsplit(
+                                        (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+                                    )
+                                    route_control["badHandle"] = False
+                                    route_control["badHandleRequest"] = {"url": request.url, "method": request.method}
+                                    await route.continue_(url=url)
+                                    return
                                 await route.continue_()
 
                             await context.route("**/api/electric/**", route_request)
@@ -696,6 +729,14 @@ async def test_electric_end_to_end() -> None:
                                     _write_browser_journal(journal_path, network_events, response_records, page_errors)
 
                             page = await context.new_page()
+                            page_references["page-1"] = page
+
+                            def record_disconnect_failure(request: Request) -> None:
+                                disconnect_request = route_control["disconnectRequest"]
+                                if disconnect_request is not None and request.url == disconnect_request["url"]:
+                                    route_control["disconnectFailure"] = request.failure
+                                    disconnect_failed.set()
+
                             _capture_electric(
                                 page,
                                 "page-1",
@@ -705,8 +746,31 @@ async def test_electric_end_to_end() -> None:
                                 journal_path,
                                 page_errors,
                             )
+
+                            def capture_recovery_response(response: Response) -> None:
+                                query = parse_qs(urlsplit(response.url).query)
+                                if (
+                                    "/api/electric/alpha-large" in response.url
+                                    and "cache-buster" in query
+                                    and query.get("offset") == ["-1"]
+                                ):
+                                    recovery_responses.put_nowait(response)
+
+                            def capture_reset_subset_response(response: Response) -> None:
+                                parts = urlsplit(response.url)
+                                query = parse_qs(parts.query)
+                                if (
+                                    route_control["recordResetSubsets"]
+                                    and parts.path == "/api/electric/alpha-large"
+                                    and "subset__limit" in query
+                                ):
+                                    reset_subset_responses.put_nowait(response)
+
+                            page.on("response", capture_recovery_response)
+                            page.on("response", capture_reset_subset_response)
                             page.on("pageerror", record_page_error)
                             page.on("console", record_console_error)
+                            page.on("requestfailed", record_disconnect_failure)
                             await page.goto(f"{app_url}/?conversation=alpha-small", wait_until="domcontentloaded")
                             try:
                                 await _wait_ready(page, exact_bigint=True)
@@ -992,7 +1056,6 @@ async def test_electric_end_to_end() -> None:
                             )
                             assert await page.get_by_test_id("history-count").inner_text() == "60"
 
-                            before_disconnect_records = len(response_records)
                             previous_page1_records = [
                                 record for record in response_records if record.get("page") == "page-1"
                             ]
@@ -1014,42 +1077,130 @@ async def test_electric_end_to_end() -> None:
                             )
                             assert prior_handle is not None, previous_page1_records[-10:]
                             assert prior_offset is not None, previous_page1_records[-10:]
-                            await context.set_offline(True)
-                            await page.wait_for_event("requestfailed", timeout=15_000)
+                            route_control["disconnectNextPage1Live"] = True
+                            disconnect_trigger_cursor = base_cursor + 12
+                            trigger_result = await apply_batch(
+                                pool,
+                                conversation_id="alpha-large",
+                                source_id=SOURCE,
+                                entries=[
+                                    _text_entry(SOURCE, disconnect_trigger_cursor, "live-item", " +disconnect-trigger")
+                                ],
+                            )
+                            assert trigger_result.row_writes == 1
+                            await page.wait_for_function(
+                                "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
+                                arg=str(disconnect_trigger_cursor),
+                                timeout=30_000,
+                            )
+                            await asyncio.wait_for(disconnect_failed.wait(), timeout=15)
+                            disconnect_request = route_control["disconnectRequest"]
+                            assert disconnect_request is not None, route_control
+                            disconnected_query = parse_qs(urlsplit(disconnect_request["url"]).query)
+                            assert disconnected_query.get("handle", [None])[-1] == prior_handle, disconnect_request
+                            disconnect_offset = disconnected_query.get("offset", [None])[-1]
+                            assert disconnect_offset is not None, disconnect_request
+                            assert route_control["disconnectFailure"], route_control
+                            await page.wait_for_function("navigator.onLine === false", timeout=1_000)
+                            offline_probe = await page.evaluate(
+                                """async () => {
+                                  try {
+                                    const response = await fetch('/api/checkpoint/alpha-large', {
+                                      headers: { Authorization: `Bearer ${localStorage.getItem('spike-token')}` },
+                                    })
+                                    return { failed: false, status: response.status }
+                                  } catch (error) {
+                                    return { failed: true, error: String(error) }
+                                  }
+                                }"""
+                            )
+                            assert offline_probe["failed"], offline_probe
+                            network_events.append({"event": "offline-probe", "result": offline_probe})
+                            _write_browser_journal(
+                                outputs / "browser-network-journal.json", network_events, response_records, page_errors
+                            )
                             offline_batch = [
-                                _text_entry(SOURCE, base_cursor + 12, "live-item", " +offline"),
-                                _text_entry(SOURCE, base_cursor + 13, target_item_id, " +older-offline"),
+                                _text_entry(SOURCE, base_cursor + 13, "live-item", " +offline"),
+                                _text_entry(SOURCE, base_cursor + 14, target_item_id, " +older-offline"),
                             ]
                             await apply_batch(
                                 pool, conversation_id="alpha-large", source_id=SOURCE, entries=offline_batch
                             )
+                            await asyncio.sleep(0.5)
+                            offline_state = await page.evaluate(
+                                """(targetKey) => {
+                                  const live = [...document.querySelectorAll('[data-row-key]')]
+                                    .find(node => node.dataset.rowKey === 'item:live-item')
+                                  const target = [...document.querySelectorAll('[data-row-key]')]
+                                    .find(node => node.dataset.rowKey === targetKey)
+                                  return {
+                                    liveTextRevision: live?.dataset.textRevision ?? null,
+                                    targetRevision: target?.dataset.revision ?? null,
+                                  }
+                                }""",
+                                arg=target_key,
+                            )
+                            assert offline_state == {
+                                "liveTextRevision": str(disconnect_trigger_cursor),
+                                "targetRevision": str(base_cursor + 2),
+                            }, offline_state
+                            before_resume_records = len(response_records)
+                            before_resume_events = len(network_events)
                             await context.set_offline(False)
                             for opened in (page, page_two):
                                 await opened.wait_for_function(
                                     "(revision) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === 'item:live-item' && node.dataset.textRevision === revision)",
-                                    arg=str(base_cursor + 12),
+                                    arg=str(base_cursor + 13),
                                     timeout=60_000,
                                 )
                             await page.wait_for_function(
                                 "(expected) => [...document.querySelectorAll('[data-row-key]')].some(node => node.dataset.rowKey === expected.key && node.dataset.revision === expected.revision)",
-                                arg={"key": target_key, "revision": str(base_cursor + 13)},
+                                arg={"key": target_key, "revision": str(base_cursor + 14)},
                                 timeout=60_000,
                             )
-                            resumed_records = response_records[before_disconnect_records:]
+                            await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
+                            resumed_records = response_records[before_resume_records:]
                             resumed_request = next(
                                 (
                                     record
                                     for record in resumed_records
                                     if record.get("page") == "page-1"
                                     and record.get("query", {}).get("handle") == prior_handle
-                                    and record.get("query", {}).get("offset") == prior_offset
+                                    and record.get("query", {}).get("offset") == disconnect_offset
                                 ),
                                 None,
                             )
                             assert resumed_request is not None, {
                                 "expectedHandle": prior_handle,
-                                "expectedOffset": prior_offset,
+                                "expectedOffset": disconnect_offset,
                                 "observed": resumed_records[-20:],
+                            }
+                            resumed_event = next(
+                                (
+                                    event
+                                    for event in network_events[before_resume_events:]
+                                    if event.get("event") == "request"
+                                    and event.get("page") == "page-1"
+                                    and parse_qs(urlsplit(event["url"]).query).get("handle", [None])[-1] == prior_handle
+                                    and parse_qs(urlsplit(event["url"]).query).get("offset", [None])[-1]
+                                    == disconnect_offset
+                                ),
+                                None,
+                            )
+                            assert resumed_event is not None, {
+                                "disconnectedRequest": disconnect_request,
+                                "observed": network_events[before_resume_events:],
+                            }
+                            diagnostics["reconnect"] = {
+                                "failedRequest": disconnect_request,
+                                "failure": route_control["disconnectFailure"],
+                                "offlineProbe": offline_probe,
+                                "offlineState": offline_state,
+                                "resumedRequest": resumed_event,
+                                "sameHandle": parse_qs(urlsplit(resumed_event["url"]).query).get("handle", [None])[-1]
+                                == prior_handle,
+                                "sameOffset": parse_qs(urlsplit(resumed_event["url"]).query).get("offset", [None])[-1]
+                                == disconnect_offset,
                             }
                             revision_history = await page.evaluate("window.__syncEvidence.revisions")
                             for key in ("item:live-item", target_key):
@@ -1057,8 +1208,10 @@ async def test_electric_end_to_end() -> None:
                                 assert all(left < right for left, right in pairwise(history)), (key, history)
                             await page.screenshot(path=outputs / "alpha-large-reconnected.png", full_page=True)
 
+                            recovery_record_start = len(response_records)
+                            route_control["recordResetSubsets"] = True
                             route_control["badHandle"] = True
-                            rotation_cursor = base_cursor + 14
+                            rotation_cursor = base_cursor + 15
                             await apply_batch(
                                 pool,
                                 conversation_id="alpha-large",
@@ -1078,23 +1231,108 @@ async def test_electric_end_to_end() -> None:
                             assert route_control["badHandleRequest"] is not None, (
                                 "No resumable Electric request was altered"
                             )
-                            await page.screenshot(path=outputs / "alpha-large-stale-handle.png", full_page=True)
-                            stale_records = [record for record in response_records if record.get("status") == 409]
-                            assert stale_records, response_records[-20:]
-                            reset_rows = sum(
-                                record.get("rowCount", 0)
-                                for record in response_records
-                                if record.get("page") == "page-1" and record.get("path") == "/api/electric/alpha-large"
+                            recovery_response = await asyncio.wait_for(recovery_responses.get(), timeout=60)
+                            recovery_body = await recovery_response.body()
+                            recovery_messages = [
+                                message
+                                for message in _messages(recovery_body)
+                                if message.get("headers", {}).get("operation")
+                            ]
+                            recovery_query = parse_qs(urlsplit(recovery_response.url).query)
+                            reset_rows = len(recovery_messages)
+                            assert recovery_response.status == 200, {
+                                "status": recovery_response.status,
+                                "url": recovery_response.url,
+                                "body": recovery_body[:1000].decode(errors="replace"),
+                            }
+                            assert recovery_query.get("offset") == ["-1"], recovery_query
+                            assert not any(key.startswith("subset__") for key in recovery_query), recovery_query
+                            assert reset_rows <= 30, {"recoveryResponse": recovery_response.url, "rows": reset_rows}
+                            reissued_subset_responses: list[dict[str, Any]] = []
+                            for _ in range(3):
+                                subset_response = await asyncio.wait_for(reset_subset_responses.get(), timeout=45)
+                                subset_body = await subset_response.body()
+                                subset_messages = [
+                                    message
+                                    for message in _messages(subset_body)
+                                    if message.get("headers", {}).get("operation")
+                                ]
+                                reissued_subset_responses.append(
+                                    {
+                                        "status": subset_response.status,
+                                        "url": subset_response.url,
+                                        "rowCount": len(subset_messages),
+                                        "responseBytes": len(subset_body),
+                                        "rowKeys": [
+                                            message.get("value", {}).get("row_key") for message in subset_messages
+                                        ],
+                                    }
+                                )
+                            route_control["recordResetSubsets"] = False
+                            assert all(record["status"] == 200 for record in reissued_subset_responses), (
+                                reissued_subset_responses
                             )
+                            assert all(record["rowCount"] <= 30 for record in reissued_subset_responses), (
+                                reissued_subset_responses
+                            )
+                            await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
+                            reset_records = [
+                                record
+                                for record in response_records[recovery_record_start:]
+                                if record.get("page") == "page-1" and record.get("path") == "/api/electric/alpha-large"
+                            ]
+                            stale_records = [record for record in reset_records if record.get("status") == 409]
+                            assert stale_records, reset_records[-20:]
+                            assert any("must-refetch" in record.get("controls", []) for record in stale_records), (
+                                stale_records
+                            )
+                            post_reset_state = await page.evaluate(
+                                """(targetKey) => {
+                                  const rows = [...document.querySelectorAll('[data-row-key]')]
+                                  const target = rows.find(node => node.dataset.rowKey === targetKey)
+                                  const live = rows.find(node => node.dataset.rowKey === 'item:live-item')
+                                  return {
+                                    historyCount: Number(document.querySelector('[data-testid=history-count]')?.textContent ?? '-1'),
+                                    tailCount: Number(document.querySelector('[data-testid=tail-count]')?.textContent ?? '-1'),
+                                    targetRevision: target?.dataset.revision ?? null,
+                                    targetStatus: target?.dataset.status ?? null,
+                                    liveTextRevision: live?.dataset.textRevision ?? null,
+                                    loadedRowCount: rows.length,
+                                  }
+                                }""",
+                                arg=target_key,
+                            )
+                            history_preserved = (
+                                post_reset_state["historyCount"] == 60
+                                and post_reset_state["targetRevision"] == str(base_cursor + 14)
+                                and post_reset_state["targetStatus"] == "complete"
+                                and post_reset_state["liveTextRevision"] == str(rotation_cursor)
+                            )
+                            await page.screenshot(path=outputs / "alpha-large-stale-handle.png", full_page=True)
                             diagnostics["mustRefetch"] = {
                                 "forcedRequest": route_control["badHandleRequest"],
                                 "responses": stale_records,
-                                "page1RowsTransferredToDate": reset_rows,
-                                "boundedReset": reset_rows <= 30,
+                                "recoveryResponse": {
+                                    "status": recovery_response.status,
+                                    "query": {key: values[-1] for key, values in recovery_query.items()},
+                                    "rowCount": reset_rows,
+                                    "responseBytes": len(recovery_body),
+                                    "subsetFiltersApplied": any(key.startswith("subset__") for key in recovery_query),
+                                },
+                                "reissuedSubsetResponses": reissued_subset_responses,
+                                "postResetState": post_reset_state,
+                                "historyRowsPreserved": history_preserved,
+                                "boundedReset": reset_rows <= 30
+                                and all(record.get("rowCount", 0) <= 30 for record in reissued_subset_responses),
+                                "persistentCacheTagRecovery": "not exercised; no persisted browser cache or tags configured",
                             }
+                            _write_json(outputs / "must-refetch-evidence.json", diagnostics["mustRefetch"])
+                            assert history_preserved, post_reset_state
+                            await page.goto(f"{app_url}/?conversation=alpha-large", wait_until="domcontentloaded")
+                            await _wait_ready(page)
 
                             old_electric_request_records = len(response_records)
-                            electric.stop()
+                            electric.get_wrapped_container().stop(timeout=10)
                             restarted = (
                                 LoggedContainer(electric_1_8.IMAGE.tag, test_name="electric-derisk-electric-restart")
                                 .with_network(network)
@@ -1113,7 +1351,7 @@ async def test_electric_end_to_end() -> None:
                                 await _wait_electric(restarted_url)
                                 proxy_one.state.electric_url = f"{restarted_url}/v1/shape"
                                 proxy_two.state.electric_url = f"{restarted_url}/v1/shape"
-                                restart_cursor = base_cursor + 15
+                                restart_cursor = base_cursor + 16
                                 await apply_batch(
                                     pool,
                                     conversation_id="alpha-large",
@@ -1133,10 +1371,24 @@ async def test_electric_end_to_end() -> None:
                                 await page.screenshot(
                                     path=outputs / "alpha-large-electric-restarted.png", full_page=True
                                 )
+                                wal_state = await pool.fetchrow("""SELECT current_setting('wal_level') AS wal_level,
+                                    (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical') AS logical_slots,
+                                    (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical' AND active) AS active_slots,
+                                    pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE((SELECT min(restart_lsn) FROM pg_replication_slots WHERE slot_type='logical'), pg_current_wal_lsn()))::bigint AS retained_wal_bytes""")
+                                assert wal_state is not None
+                                diagnostics["postgresReplication"] = dict(wal_state)
+                                diagnostics["postgresReplication"]["retained_wal_bytes"] = int(
+                                    wal_state["retained_wal_bytes"]
+                                )
+                                assert wal_state["wal_level"] == "logical"
+                                assert int(wal_state["logical_slots"]) >= 1
+                                assert int(wal_state["active_slots"]) >= 1
                                 diagnostics["restart"] = {
                                     "completed": True,
                                     "page1Responses": response_records[old_electric_request_records:],
+                                    "postgresReplication": diagnostics["postgresReplication"],
                                 }
+                                _write_json(outputs / "electric-restart-evidence.json", diagnostics["restart"])
 
                             final_checkpoint = await _api_get(app_url, "/api/checkpoint/alpha-large", headers=AUTH)
                             assert final_checkpoint.status_code == 200
@@ -1146,24 +1398,12 @@ async def test_electric_end_to_end() -> None:
                                 await opened.get_by_role("button", name="Open text").click()
                                 await opened.wait_for_function(
                                     "(expected) => document.querySelector('[data-testid=payload-body]')?.textContent === expected",
-                                    arg="seed text +during-history +first +second +closed +offline +rotate +restart",
+                                    arg="seed text +during-history +first +second +closed +disconnect-trigger +offline +rotate +restart",
                                     timeout=45_000,
                                 )
                             await page.screenshot(path=outputs / "alpha-large-final.png", full_page=True)
                             await asyncio.gather(*tuple(response_tasks), return_exceptions=True)
 
-                            wal_state = await pool.fetchrow("""SELECT current_setting('wal_level') AS wal_level,
-                                (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical') AS logical_slots,
-                                (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical' AND active) AS active_slots,
-                                pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE((SELECT min(restart_lsn) FROM pg_replication_slots WHERE slot_type='logical'), pg_current_wal_lsn()))::bigint AS retained_wal_bytes""")
-                            assert wal_state is not None
-                            diagnostics["postgresReplication"] = dict(wal_state)
-                            diagnostics["postgresReplication"]["retained_wal_bytes"] = int(
-                                wal_state["retained_wal_bytes"]
-                            )
-                            assert wal_state["wal_level"] == "logical"
-                            assert int(wal_state["logical_slots"]) >= 1
-                            assert int(wal_state["active_slots"]) >= 1
                             gateway_dispatches = await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
                             assert gateway_dispatches.status_code == 200
                             dispatches = gateway_dispatches.json()["dispatches"]
@@ -1180,6 +1420,15 @@ async def test_electric_end_to_end() -> None:
                             assert any(request["field"] == "text" for request in payload_metrics)
                             assert any(request["field"] == "arguments" for request in payload_metrics)
                             assert any(request["field"] == "output" for request in payload_metrics)
+                            assert not any(request["field"] == "reasoning" for request in payload_metrics)
+                            assert all(not record.get("containsSensitivePayload") for record in response_records)
+                            assert all(
+                                not (
+                                    set(record.get("fields", []))
+                                    & {"text", "arguments", "output", "reasoning", "content"}
+                                )
+                                for record in response_records
+                            ), response_records
                             assert not page_errors, page_errors
                             diagnostics["payload"] = payload_metrics
                             diagnostics["browser"] = {

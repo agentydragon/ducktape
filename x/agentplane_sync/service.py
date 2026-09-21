@@ -19,6 +19,7 @@ MAX_PAGE_SIZE = 30
 _MAX_PG_BIGINT = 9_223_372_036_854_775_807
 _QUERY_PROTOCOL_KEYS = {
     "offset",
+    "cache-buster",
     "handle",
     "live",
     "log",

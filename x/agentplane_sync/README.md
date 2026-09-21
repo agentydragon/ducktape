@@ -55,32 +55,34 @@ guards against bounded response sizes hiding an unbounded PostgreSQL scan.
 
 ## Evidence matrix
 
-Status below reflects the latest completed RBE runs while the draft is being
-iterated. `Not demonstrated` means the browser has not completed the gate; it
-does not mean the behavior passed.
+The full RBE run [b48b37b5](https://app.buildbuddy.io/invocation/b48b37b5-c9d3-425c-9ace-c5a2bf569d51)
+passed `//x/agentplane_sync:e2e_test`. Its HAR, browser request journal, SQL
+plans, screenshots, traces, service logs, and summarized measurements are
+available as undeclared test outputs. This is prototype evidence from one test
+environment, not a production load test.
 
 | Gate | Status | Evidence or open question |
 | --- | --- | --- |
-| Projection idempotency, two workers racing one prefix, failed-batch rollback, retry | Confirmed before browser bootstrap | PostgreSQL test asserts one writer, duplicate digests, unchanged checkpoint/payload on rollback, and a successful retry. |
-| Bounded SQL work | Confirmed before browser bootstrap | The seeded 50,000-row history's tail and exclusive-before plans must use `sync_view_row_tail` and return at most 30 actual rows from the index scan. The JSON plans are undeclared outputs. |
-| Exact bigint cursors and exclusive-before API page | Confirmed at Python API boundary | History API asserts the decimal string `9007199254740993` survives and `anchor < before` is exclusive. Browser verification is still required. |
-| API conversation authorization and caller shape overrides | Confirmed at Python proxy boundary | Tests reject an unscoped conversation, GET table override, POST table override, and attempt to add another conversation in subset `WHERE`. The real browser receives scoped Electric rows; multi-listener authorization remains pending. |
-| Real Electric subset snapshot and initial 30-row browser tail | Confirmed for initial bootstrap only | RBE invocation `a2fd8105-9c88-4c9d-b3ed-5bc9fad9ad14` saved `alpha-small-tail.png` and `alpha-large-tail.png`; both passed 30-row client-state and shape-row bounds, byte-size scaling, and omitted-payload checks. The small fixture also passed browser bigint `9007199254740993`. This does not establish history or reset bounds. |
-| Exclusive-before browser history page and late update racing its fetch | Confirmed in RBE invocation `953f81e5-e87c-4435-8010-13727c29d4bf` | The delayed Electric subset response contained 30 rows with anchors strictly older than the tail cursor. While it was held, the test committed newer text and completion revisions; after release, the browser rendered the target at the new revision and `complete` status. The HAR-style request journal reports the 30-row snapshot and two-row change batch. |
-| Scroll anchor pixel preservation | Pending rerun after an evidence bug | The browser measured a 960px pre-correction shift after adding 30 rows, then adjusted `scrollTop` by the same amount. The earlier assertion recorded the pre-correction position; the next run records both values and still requires the final displacement to be at most 1px. |
-| Any-item updates, selective payload loading/eviction, and append/replacement cost | Not demonstrated yet | Body chunks are stored separately as append/replace payload parts; shape rows contain per-field revisions and byte counts only. Browser interest tests have not run yet. |
-| Live head arrivals with older loaded rows retained | Not demonstrated yet | Browser assertions require a newly created head item to appear while already loaded older rows stay present. The late text update so far targets an existing item. |
-| Atomic React visibility for item/control/command updates in one Postgres transaction | Not demonstrated yet | All three entities share one tagged relation; the browser records rendered tuples and rejects intermediate mixed states. PostgreSQL transaction atomicity alone is not treated as proof. |
-| Reconnect with same handle, no gaps/duplicates/regressions | Not demonstrated yet | The browser goes offline while writes continue, then checks resumed handle/offset, both listeners, and monotone revisions. |
-| Expired handle / must-refetch and bounded reset | Not demonstrated yet; likely adoption blocker | The browser corrupts a live handle and records the actual reset request and rows. Current TanStack DB documentation says recovery can request a full snapshot in on-demand mode. The measured reset size must decide whether bounded recovery is acceptable. |
-| Electric service restart and replication-slot/WAL observations | Not demonstrated yet | The test restarts the pinned service and checks recovery; it also records logical slots and retained WAL bytes if the complete browser run reaches teardown. A single-process test does not establish deployment topology or WAL operations policy. |
-| Two browsers and two stateless proxy instances | Not demonstrated yet | Requests alternate between proxy instances without sticky state; both pages must observe the same writes. |
+| Projection idempotency, two workers racing one prefix, failed-batch rollback, retry | Confirmed | `e2e-summary.json` records one writer, duplicate events for the losing worker, unchanged checkpoint/payload after rollback, and a successful retry. |
+| Bounded SQL work | Confirmed | `query-plans.json` covers the 50,000-row tail and exclusive-before queries. The test requires `sync_view_row_tail` and at most 30 actual rows from each bounded index scan. |
+| Exact bigint cursors and exclusive-before history | Confirmed | Python API and browser preserve `9007199254740993`; the loaded page has anchors strictly before the tail cursor. During the held page response, newer text and completion events commit, and the browser renders the newer revision with `complete` status. |
+| Initial bootstrap for 1,000 and 50,000 rows | Confirmed | Both real Electric snapshots load 30 rows. Captured response sizes were 19,092 bytes and 19,100 bytes respectively; the large history did not inflate the initial transfer. Shape rows omit text, arguments, output, reasoning, and content fields. |
+| Scroll anchor pixel preservation | Confirmed | `scroll-evidence.json`: anchor top 175.875px before loading, 1,135.875px before correction, correction 960px, and final displacement 0px. |
+| Any-item and out-of-order updates; selective payloads | Confirmed | Independent text/arguments/output revisions and byte counts travel in shape rows. The delayed history page does not overwrite a newer revision. Text, arguments, and output are fetched only when selected; closing output interest stops further output requests. The test reconstructs selected text from append parts and leaves reasoning/output absent from the shape wire. |
+| Live head arrival while old history stays loaded | Confirmed | A newly created head item enters the 30-row tail while the already loaded 60 older rows remain visible. The anchor and row IDs stay stable. |
+| Atomic React visibility for item/control/command updates | Confirmed | These entities share one tagged row collection. Both browser pages render only the old tuple or the new tuple from the single PostgreSQL transaction; no intermediate combination is observed. |
+| Reconnect with same handle, no gaps/duplicates/regressions | Confirmed | A real page-1 live poll is aborted with `net::ERR_INTERNET_DISCONNECTED`; writes continue while offline. The browser resumes using the same Electric handle and offset, catches up both changed items, and observes monotonically increasing revisions. |
+| Expired handle / `must-refetch` and bounded on-demand reset | Confirmed for the tested no-cache flow | Electric returns a 409 `must-refetch`. TanStack sends an 80-byte `offset=-1` request with no subset parameters, then reissues the three active tail/history subsets at 30 rows each. The browser retains 60 loaded history rows and the newer item revisions. `must-refetch-evidence.json` records the request sequence and UI state. |
+| Electric restart and replication-slot/WAL observation | Confirmed in the single-service test | Electric 1.8 is stopped and restarted; both browser pages receive the next update. One logical slot is active with `wal_level=logical`; retained WAL measured 355,352 bytes in this run. Requests held against the deliberately stopped service briefly return 500 before the new service is ready; the collections retry and recover. |
+| Authentication, multiple browsers, and two proxy instances | Confirmed in the test topology | The API rejects cross-conversation access and caller-supplied GET table, POST table, and conversation `WHERE` overrides. Both browsers receive updates while 63 requests alternate across two stateless proxy instances (32 and 31 requests), with no sticky state. |
+| Sustained write/network amplification and persisted-cache recovery | Not established | Response rows/bytes, per-field payload parts, query plans, and one WAL measurement are recorded, but there is no sustained throughput benchmark or production retention policy. No browser persistence or collection tags are configured, so cold persisted-cache/tag recovery still needs a separate test. |
 
 TanStack's current [Electric collection recovery notes](https://tanstack.com/db/latest/docs/collections/electric-collection#cleanup-and-resume-safety)
-say a reset can replace cached rows from a full snapshot even in on-demand
-mode. This spike intentionally measures that behavior instead of inferring
-bounded recovery from the first-page limit. Persistent local storage is not
-enabled here, so cold persisted-cache recovery is not covered.
+say a cold persisted resume that needs tag membership can request a full shape
+snapshot even in on-demand mode. That persisted-cache/tag path is not enabled in
+this spike; the bounded reset result above applies only to the tested
+in-memory, active-subset flow. Do not infer a bounded cold-cache reset from the
+30-row bootstrap result.
 
 ## Deliberate limits
 
