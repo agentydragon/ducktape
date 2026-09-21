@@ -129,21 +129,45 @@ data:
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
+          api_base: https://app.tana.inc/functions
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
           custom_llm_provider: tana
+          firebase_api_key: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: tana/ant-messages/claude-opus-4-6
         litellm_params:
           model: tana/tana/claude-opus-4-6/high
+          api_base: https://app.tana.inc/functions
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
           custom_llm_provider: tana
+          firebase_api_key: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: tana/ant-messages/claude-haiku-4-5
         litellm_params:
           model: tana/tana/claude-haiku-4-5-20251001
+          api_base: https://app.tana.inc/functions
+          api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
           custom_llm_provider: tana
+          firebase_api_key: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
         model_info:
           mode: chat
           supports_function_calling: true
@@ -712,6 +736,7 @@ spec:
                 secretKeyRef:
                   key: refresh_token
                   name: tana-firebase-refresh-token
+                  optional: true
             - name: LANGFUSE_OTEL_HOST
               value: http://langfuse-web.langfuse.svc.cluster.local:3000
             - name: LANGFUSE_PUBLIC_KEY

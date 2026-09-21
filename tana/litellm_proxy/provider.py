@@ -6,8 +6,9 @@ import json
 import os
 import subprocess
 import time
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -44,14 +45,14 @@ class TanaProxyConfig:
     ignore_out_of_credits_warning: bool = False
 
     @classmethod
-    def from_env(cls) -> TanaProxyConfig:
+    def from_env(cls, *, include_refresh_token: bool = True) -> TanaProxyConfig:
         return cls(
             firebase_api_key=os.environ.get("TANA_FIREBASE_API_KEY", DEFAULT_FIREBASE_API_KEY),
             functions_base_url=os.environ.get("TANA_FUNCTIONS_BASE_URL", DEFAULT_FUNCTIONS_BASE_URL),
             user_context=os.environ.get("TANA_LLM_USER_CONTEXT", "Generic AI Query"),
             tool_user_context=os.environ.get("TANA_LLM_TOOL_USER_CONTEXT", "Ask Tana"),
-            refresh_token=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN"),
-            refresh_token_file=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN_FILE"),
+            refresh_token=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN") if include_refresh_token else None,
+            refresh_token_file=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN_FILE") if include_refresh_token else None,
             refresh_token_secret=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN_SECRET", DEFAULT_REFRESH_TOKEN_SECRET),
             refresh_token_secret_key=os.environ.get("TANA_FIREBASE_REFRESH_TOKEN_KEY", DEFAULT_REFRESH_TOKEN_KEY),
             request_timeout_seconds=float(os.environ.get("TANA_LLM_TIMEOUT_SECONDS", "60")),
@@ -76,17 +77,32 @@ class TanaChatResult:
     raw: Any | None = None
 
 
-class _ChatClient(Protocol):
+class _CredentialAwareChatClient(Protocol):
     async def chat_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str,
     ) -> TanaChatResult: ...
 
     def stream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str,
     ) -> Iterator[GenericStreamingChunk]: ...
 
     def astream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str,
     ) -> AsyncIterator[GenericStreamingChunk]: ...
 
 
@@ -194,16 +210,22 @@ class TanaProxyClient:
         self._now = now
         self._id_token: str | None = None
         self._id_token_expires_at = 0.0
+        self._id_token_refresh_token: str | None = None
         self._refresh_token: str | None = self._cfg.refresh_token
 
     async def chat_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str | None = None,
     ) -> TanaChatResult:
         if self._http_client is not None:
-            return await self._chat_completion(self._http_client, model, messages, optional_params or {})
+            return await self._chat_completion(self._http_client, model, messages, optional_params or {}, refresh_token)
 
         async with httpx.AsyncClient(timeout=self._cfg.request_timeout_seconds) as http:
-            return await self._chat_completion(http, model, messages, optional_params or {})
+            return await self._chat_completion(http, model, messages, optional_params or {}, refresh_token)
 
     async def _chat_completion(
         self,
@@ -211,9 +233,10 @@ class TanaProxyClient:
         model: str,
         messages: Sequence[Mapping[str, Any]],
         optional_params: Mapping[str, Any],
+        refresh_token: str | None,
     ) -> TanaChatResult:
         _reject_unsupported(optional_params)
-        id_token = await self._id_token_for_request(http)
+        id_token = await self._id_token_for_request(http, refresh_token)
         if _has_tools(optional_params):
             return await self._tool_chat_completion(http, id_token, model, messages, optional_params)
         args = _basic_chat_args(self._cfg.user_context, _strip_tana_prefix(model), messages, optional_params, self._cfg)
@@ -259,31 +282,49 @@ class TanaProxyClient:
         _raise_for_status(response, "llmProxyNext", model)
         return _parse_tana_response(response)
 
-    async def _id_token_for_request(self, http: httpx.AsyncClient) -> str:
-        if self._id_token is not None and self._now() < self._id_token_expires_at - 60:
+    async def _id_token_for_request(self, http: httpx.AsyncClient, refresh_token: str | None = None) -> str:
+        cache_key = refresh_token or self._refresh_token
+        if (
+            self._id_token is not None
+            and self._id_token_refresh_token == cache_key
+            and self._now() < self._id_token_expires_at - 60
+        ):
             return self._id_token
 
-        refresh_token = self._refresh_token or self._refresh_token_reader(self._cfg)
-        fresh = await _refresh_id_token_once(http, self._cfg.firebase_api_key, refresh_token)
+        token_to_exchange = cache_key or self._refresh_token_reader(self._cfg)
+        fresh = await _refresh_id_token_once(http, self._cfg.firebase_api_key, token_to_exchange)
         self._id_token = fresh.id_token
         self._id_token_expires_at = self._now() + fresh.expires_in
+        self._id_token_refresh_token = cache_key
         return fresh.id_token
 
     def stream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str | None = None,
     ) -> Iterator[GenericStreamingChunk]:
         if self._sync_http_client is not None:
-            yield from self._stream_completion(self._sync_http_client, model, messages, optional_params or {})
+            yield from self._stream_completion(
+                self._sync_http_client, model, messages, optional_params or {}, refresh_token
+            )
             return
 
         with httpx.Client(timeout=self._cfg.request_timeout_seconds) as http:
-            yield from self._stream_completion(http, model, messages, optional_params or {})
+            yield from self._stream_completion(http, model, messages, optional_params or {}, refresh_token)
 
     def _stream_completion(
-        self, http: httpx.Client, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any]
+        self,
+        http: httpx.Client,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any],
+        refresh_token: str | None,
     ) -> Iterator[GenericStreamingChunk]:
         _reject_unsupported(optional_params)
-        id_token = self._id_token_for_request_sync(http)
+        id_token = self._id_token_for_request_sync(http, refresh_token)
         url, body = self._stream_request(_strip_tana_prefix(model), messages, optional_params)
         headers = {
             "Authorization": f"Bearer {id_token}",
@@ -298,15 +339,22 @@ class TanaProxyClient:
             yield from _parse_tana_stream_lines(response.iter_lines())
 
     async def astream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, Any]],
+        optional_params: Mapping[str, Any] | None = None,
+        *,
+        refresh_token: str | None = None,
     ) -> AsyncIterator[GenericStreamingChunk]:
         if self._http_client is not None:
-            async for chunk in self._astream_completion(self._http_client, model, messages, optional_params or {}):
+            async for chunk in self._astream_completion(
+                self._http_client, model, messages, optional_params or {}, refresh_token
+            ):
                 yield chunk
             return
 
         async with httpx.AsyncClient(timeout=self._cfg.request_timeout_seconds) as http:
-            async for chunk in self._astream_completion(http, model, messages, optional_params or {}):
+            async for chunk in self._astream_completion(http, model, messages, optional_params or {}, refresh_token):
                 yield chunk
 
     async def _astream_completion(
@@ -315,9 +363,10 @@ class TanaProxyClient:
         model: str,
         messages: Sequence[Mapping[str, Any]],
         optional_params: Mapping[str, Any],
+        refresh_token: str | None,
     ) -> AsyncIterator[GenericStreamingChunk]:
         _reject_unsupported(optional_params)
-        id_token = await self._id_token_for_request(http)
+        id_token = await self._id_token_for_request(http, refresh_token)
         url, body = self._stream_request(_strip_tana_prefix(model), messages, optional_params)
         headers = {
             "Authorization": f"Bearer {id_token}",
@@ -356,21 +405,48 @@ class TanaProxyClient:
             },
         )
 
-    def _id_token_for_request_sync(self, http: httpx.Client) -> str:
-        if self._id_token is not None and self._now() < self._id_token_expires_at - 60:
+    def _id_token_for_request_sync(self, http: httpx.Client, refresh_token: str | None = None) -> str:
+        cache_key = refresh_token or self._refresh_token
+        if (
+            self._id_token is not None
+            and self._id_token_refresh_token == cache_key
+            and self._now() < self._id_token_expires_at - 60
+        ):
             return self._id_token
 
-        refresh_token = self._refresh_token or self._refresh_token_reader(self._cfg)
-        fresh = _refresh_id_token_once_sync(http, self._cfg.firebase_api_key, refresh_token)
+        token_to_exchange = cache_key or self._refresh_token_reader(self._cfg)
+        fresh = _refresh_id_token_once_sync(http, self._cfg.firebase_api_key, token_to_exchange)
         self._id_token = fresh.id_token
         self._id_token_expires_at = self._now() + fresh.expires_in
+        self._id_token_refresh_token = cache_key
         return fresh.id_token
 
 
 class TanaLiteLLM(CustomLLM):
-    def __init__(self, client: _ChatClient | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._client = client or TanaProxyClient()
+        self._base_config = TanaProxyConfig.from_env(include_refresh_token=False)
+        self._clients_by_config: OrderedDict[TanaProxyConfig, _CredentialAwareChatClient] = OrderedDict()
+
+    def _make_client(self, config: TanaProxyConfig) -> _CredentialAwareChatClient:
+        """Build the Tana transport for one resolved model configuration."""
+        return TanaProxyClient(config)
+
+    def _client_for_request(
+        self, optional_params: Mapping[str, Any], *, api_base: Any = None, timeout: Any = None
+    ) -> tuple[_CredentialAwareChatClient, dict[str, Any]]:
+        config, provider_options = _litellm_request_config(
+            self._base_config, optional_params, api_base=api_base, timeout=timeout
+        )
+        client = self._clients_by_config.get(config)
+        if client is None:
+            client = self._make_client(config)
+            self._clients_by_config[config] = client
+            if len(self._clients_by_config) > 16:
+                self._clients_by_config.popitem(last=False)
+        else:
+            self._clients_by_config.move_to_end(config)
+        return client, provider_options
 
     def completion(self, *args: Any, **kwargs: Any) -> ModelResponse:
         try:
@@ -382,15 +458,23 @@ class TanaLiteLLM(CustomLLM):
     async def acompletion(self, *args: Any, **kwargs: Any) -> ModelResponse:
         model = _required_kwarg("model", kwargs)
         messages = _required_kwarg("messages", kwargs)
-        optional_params = kwargs.get("optional_params") or {}
-        result = await self._client.chat_completion(model, messages, optional_params)
+        refresh_token = _refresh_token_from_api_key(kwargs.get("api_key"))
+        client, optional_params = self._client_for_request(
+            kwargs.get("optional_params") or {}, api_base=kwargs.get("api_base"), timeout=kwargs.get("timeout")
+        )
+        result = await client.chat_completion(model, messages, optional_params, refresh_token=refresh_token)
         return _model_response(model, result)
 
     def streaming(self, *args: Any, **kwargs: Any) -> Iterator[GenericStreamingChunk]:
         model = _required_kwarg("model", kwargs)
         messages = _required_kwarg("messages", kwargs)
-        optional_params = kwargs.get("optional_params") or {}
-        yield from _filter_stream_chunks(self._client.stream_completion(model, messages, optional_params))
+        refresh_token = _refresh_token_from_api_key(kwargs.get("api_key"))
+        client, optional_params = self._client_for_request(
+            kwargs.get("optional_params") or {}, api_base=kwargs.get("api_base"), timeout=kwargs.get("timeout")
+        )
+        yield from _filter_stream_chunks(
+            client.stream_completion(model, messages, optional_params, refresh_token=refresh_token)
+        )
 
     # LiteLLM's base type annotates this as a coroutine, but the streaming
     # dispatcher consumes the returned object as an async iterator.
@@ -413,10 +497,12 @@ class TanaLiteLLM(CustomLLM):
         timeout: Any = None,  # noqa: ASYNC109 - LiteLLM's override signature includes timeout.
         client: Any = None,
     ) -> AsyncIterator[GenericStreamingChunk]:
-        del api_base, custom_prompt_dict, model_response, print_verbose, encoding, api_key
-        del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
-        async for chunk in self._client.astream_completion(
-            model, cast(Sequence[Mapping[str, Any]], messages), optional_params
+        del custom_prompt_dict, model_response, print_verbose, encoding
+        del logging_obj, acompletion, litellm_params, logger_fn, headers, client
+        refresh_token = _refresh_token_from_api_key(api_key)
+        tana_client, provider_options = self._client_for_request(optional_params, api_base=api_base, timeout=timeout)
+        async for chunk in tana_client.astream_completion(
+            model, cast(Sequence[Mapping[str, Any]], messages), provider_options, refresh_token=refresh_token
         ):
             if _is_empty_nonterminal_stream_chunk(chunk):
                 continue
@@ -425,8 +511,8 @@ class TanaLiteLLM(CustomLLM):
                 break
 
 
-def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
-    custom_handler = handler or TanaLiteLLM()
+def register_litellm_provider(handler: TanaLiteLLM) -> TanaLiteLLM:
+    custom_handler = handler
     litellm.custom_provider_map = [
         item for item in litellm.custom_provider_map if item.get("provider") != TANA_PROVIDER
     ]
@@ -448,6 +534,54 @@ def _required_kwarg(name: str, kwargs: Mapping[str, Any]) -> Any:
     if name not in kwargs:
         raise TanaProxyError(f"LiteLLM did not pass required argument {name!r}")
     return kwargs[name]
+
+
+def _refresh_token_from_api_key(api_key: Any) -> str:
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise TanaProxyError("Tana Firebase refresh token is missing from LiteLLM api_key")
+    refresh_token = api_key.strip()
+    if refresh_token.startswith("os.environ/"):
+        raise TanaProxyError("LiteLLM did not resolve Tana Firebase refresh token from the environment")
+    return refresh_token
+
+
+def _litellm_request_config(
+    base_config: TanaProxyConfig, optional_params: Mapping[str, Any], *, api_base: Any, timeout: Any
+) -> tuple[TanaProxyConfig, dict[str, Any]]:
+    config_fields = {
+        "firebase_api_key": ("firebase_api_key", str),
+        "tana_user_context": ("user_context", str),
+        "tana_tool_user_context": ("tool_user_context", str),
+        "tana_ignore_large_context_warning": ("ignore_large_context_warning", bool),
+        "tana_ignore_out_of_credits_warning": ("ignore_out_of_credits_warning", bool),
+    }
+    overrides: dict[str, Any] = {}
+    provider_options = dict(optional_params)
+    for option_name, (field_name, expected_type) in config_fields.items():
+        if option_name not in provider_options:
+            continue
+        value = provider_options.pop(option_name)
+        if not isinstance(value, expected_type):
+            raise TanaProxyError(f"LiteLLM model parameter {option_name!r} must be {expected_type.__name__}")
+        if isinstance(value, str) and not value.strip():
+            raise TanaProxyError(f"LiteLLM model parameter {option_name!r} must not be empty")
+        if isinstance(value, str) and value.startswith("os.environ/"):
+            raise TanaProxyError(f"LiteLLM did not resolve model parameter {option_name!r} from the environment")
+        overrides[field_name] = value
+
+    if api_base == "":
+        api_base = None
+    if api_base is not None:
+        if not isinstance(api_base, str) or not api_base.strip():
+            raise TanaProxyError("LiteLLM api_base for Tana must be a non-empty string")
+        overrides["functions_base_url"] = api_base
+
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+        if timeout <= 0:
+            raise TanaProxyError("LiteLLM timeout for Tana must be greater than zero")
+        overrides["request_timeout_seconds"] = float(timeout)
+
+    return replace(base_config, **overrides), provider_options
 
 
 def _strip_tana_prefix(model: str) -> str:

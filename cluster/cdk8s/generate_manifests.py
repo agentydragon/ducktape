@@ -623,7 +623,7 @@ def generate_manifests(root: Path) -> None:
         reflector_kustomization,
         monitoring_crds_kustomization,
     )
-    tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
+    agents_flux_kustomizations.tana_mcp(
         flux_chart,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
@@ -777,7 +777,6 @@ def generate_manifests(root: Path) -> None:
         gateway_kustomization,
         cert_manager_environment_kustomization,
         reflector_kustomization,
-        tana_mcp_kustomization,
         monitoring_crds_kustomization,
     )
     aiquota_kustomization = aiquota.aiquota(

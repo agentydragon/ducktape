@@ -19,16 +19,10 @@ source-faithful to that evidence.
     blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
-- Make Tana auth deployment-safe:
-  - reflect the resigner-maintained `tana-firebase-refresh-token` Secret into
-    the LiteLLM namespace
-  - populate `TANA_FIREBASE_REFRESH_TOKEN` from that reflected Secret
-  - rely on reloader to restart LiteLLM when the reflected Secret changes
-  - avoid relying on in-process `kubectl get secret` or direct resigner code in
-    the deployed proxy path
-  - document the reflected-secret path and restart-based freshness model
 - Keep refresh-token ownership in the resigner:
-  - LiteLLM reads the reflected refresh-token env var but never owns it
+  - LiteLLM config gets the reflected refresh-token env var through the
+    standard `api_key: os.environ/...` reference; its custom handler uses the
+    resolved value but never owns the token
   - LiteLLM may cache Firebase ID tokens, but must not persist or adopt rotated
     Firebase refresh tokens
   - the existing resigner remains the only component that maintains the
