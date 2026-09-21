@@ -608,12 +608,17 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
     fold = _Fold(state, PriorEntities(dict(prior.items), dict(prior.commands)))
     for supplied in batch.entries:
         entry = event_log_pb2.EventEntry.FromString(supplied.SerializeToString())
-        if entry.cursor != fold.state.position.through_cursor + 1:
-            raise ValueError(f"noncontiguous source cursor: {entry.cursor}")
-        if entry.origin.source_id != batch.source_id or entry.origin.sequence != entry.cursor:
-            raise ValueError("entry does not belong to the original source archive")
-        fold.fold(entry)
-        fold.state = replace(fold.state, position=replace(fold.state.position, through_cursor=entry.cursor))
+        try:
+            if entry.cursor != fold.state.position.through_cursor + 1:
+                raise ValueError(f"noncontiguous source cursor: {entry.cursor}")
+            if entry.origin.source_id != batch.source_id or entry.origin.sequence != entry.cursor:
+                raise ValueError("entry does not belong to the original source archive")
+            fold.fold(entry)
+            fold.state = replace(fold.state, position=replace(fold.state.position, through_cursor=entry.cursor))
+        except ObservationNotUnderstoodError:
+            raise
+        except ValueError as error:
+            raise ObservationNotUnderstoodError(entry.cursor, str(error)) from error
     return ProjectionBatch(
         fold.state,
         tuple(fold.items.values()),

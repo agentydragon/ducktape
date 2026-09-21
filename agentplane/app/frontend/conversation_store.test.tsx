@@ -22,7 +22,15 @@ vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: [], isError: false }),
 }));
 
-import { CommandSelection, PayloadBody, PendingCommandPages, type PayloadRef } from "./conversation_store";
+import { FetchError } from "@electric-sql/client";
+
+import {
+  CommandSelection,
+  ConversationCollection,
+  PayloadBody,
+  PendingCommandPages,
+  type PayloadRef,
+} from "./conversation_store";
 
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -128,6 +136,63 @@ it("keeps a payload callback error through a follow revision and replaces it on 
 
   await act(async () => retired.shapeOptions.onError?.(new Error("retired callback")));
   expect(container.textContent).not.toContain("retired callback");
+});
+
+it("refreshes the active conversation selection after a disconnected ready stream", async () => {
+  const interest = {
+    source_id: "source",
+    projection_epoch: "epoch",
+    anchor_cursor: "1",
+    tail_from: "1",
+    window_from: null,
+    window_before: null,
+    through_cursor: "1",
+  };
+  const fetch = vi.fn().mockResolvedValue(Response.json(interest));
+  vi.stubGlobal("fetch", fetch);
+  await render(<ConversationCollection threadId="thread">{() => <p>retained conversation</p>}</ConversationCollection>);
+  await vi.waitFor(() =>
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1)
+  );
+
+  const active = option("agentplane-conversation:");
+  await act(async () =>
+    active.shapeOptions.onError?.(new FetchError(0, "stream disconnected", undefined, {}, "", "stream disconnected"))
+  );
+
+  await vi.waitFor(() =>
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(2)
+  );
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("keeps native Electric stream errors visible instead of rotating the active conversation", async () => {
+  const interest = {
+    source_id: "source",
+    projection_epoch: "epoch",
+    anchor_cursor: "1",
+    tail_from: "1",
+    window_from: null,
+    window_before: null,
+    through_cursor: "1",
+  };
+  const fetch = vi.fn().mockResolvedValue(Response.json(interest));
+  vi.stubGlobal("fetch", fetch);
+  const container = await render(
+    <ConversationCollection threadId="thread">{() => <p>retained conversation</p>}</ConversationCollection>
+  );
+  await vi.waitFor(() =>
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1)
+  );
+
+  const active = option("agentplane-conversation:");
+  await act(async () =>
+    active.shapeOptions.onError?.(new FetchError(409, "must refetch", undefined, {}, "", "must refetch"))
+  );
+
+  expect(container.textContent).toContain("Conversation synchronization stopped: must refetch");
+  expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
 
 it("opens at most one current and one older fixed-ID pending page", async () => {
