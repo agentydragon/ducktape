@@ -10,8 +10,8 @@ metadata:
     policies.kyverno.io/description: >-
       Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute,
       TCPRoute, UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox
-      namespaces (claude-sandbox, haku-sandbox,
-      openhands-sandboxes). The public `cluster-gateway` listeners use
+      namespaces (claude-sandbox, haku-sandbox). The public `cluster-gateway`
+      listeners use
       `allowedRoutes.namespaces.from: All`, so without this fence an agent that
       gained `httproutes`/`gateways` RBAC could publish a route that attaches to
       the public gateway and bypasses the operator-owned Authentik proxy. Agents
@@ -53,7 +53,6 @@ spec:
               namespaces:
                 - claude-sandbox
                 - haku-sandbox
-                - openhands-sandboxes
       validate:
         message: >-
           Gateway API routes and Gateways may not be created in agent sandbox

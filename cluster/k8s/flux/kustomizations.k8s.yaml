@@ -766,41 +766,6 @@ kind: Kustomization
 metadata:
   annotations:
     ducktape.org/parked: "true"
-  name: openhands-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/parked/openhands/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: openhands-namespace
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: openhands-sandboxes
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/parked/openhands/sandboxes
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: openhands-sandboxes
-    namespace: ducktape-flux
-  suspend: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
   name: paperless-namespace
   namespace: ducktape-flux
 spec:
@@ -3176,41 +3141,6 @@ spec:
     name: gatus-sso-tf
     namespace: ducktape-flux
   timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: openhands
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: openhands-namespace
-      namespace: ducktape-flux
-    - name: openhands-sandboxes
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/openhands/app
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: openhands-app
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
