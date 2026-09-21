@@ -554,6 +554,23 @@ function VirtualizedHistory({
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
+  const cancelRestoration = () => {
+    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+    restorationFrame.current = null;
+    restorationSize.current = null;
+    restoringAnchor.current = null;
+  };
+  const followPreviousBottom = (element: HTMLDivElement) => {
+    // A programmatic return to the old bottom can be delivered after a card grows. Preserve
+    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll.
+    if (captureNextScroll.current) return false;
+    const previousBottom = previousScrollHeight.current - previousClientHeight.current;
+    if (Math.abs(element.scrollTop - previousBottom) > 2) return false;
+    atBottom.current = true;
+    cancelRestoration();
+    element.scrollTop = element.scrollHeight;
+    return true;
+  };
   function correctRestoration(): number | null {
     const anchor = readingAnchor.current;
     const element = viewport.current;
@@ -574,6 +591,7 @@ function VirtualizedHistory({
     onChange: (instance, sync) => {
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
+      if (viewport.current && followPreviousBottom(viewport.current)) return;
       if (atBottom.current) {
         restorationSize.current = null;
         restoringAnchor.current = null;
@@ -584,6 +602,7 @@ function VirtualizedHistory({
       if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
       restorationFrame.current = requestAnimationFrame(() => {
         restorationFrame.current = null;
+        if (viewport.current && followPreviousBottom(viewport.current)) return;
         if (correctRestoration() !== null) {
           restoringAnchor.current = null;
         }
@@ -593,12 +612,6 @@ function VirtualizedHistory({
   // ResizeObserver below preserves the first visible row explicitly. This is an
   // instance hook in the pinned virtual-core version, rather than an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
-  const cancelRestoration = () => {
-    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-    restorationFrame.current = null;
-    restorationSize.current = null;
-    restoringAnchor.current = null;
-  };
   const expectUserScroll = () => {
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
@@ -678,9 +691,7 @@ function VirtualizedHistory({
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
-      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
-      if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
-      if (atBottom.current) element.scrollTop = element.scrollHeight;
+      if (followPreviousBottom(element) || atBottom.current) element.scrollTop = element.scrollHeight;
       // Content can resize while a wheel, touch, or key scroll is still settling. Its
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
@@ -762,6 +773,10 @@ function VirtualizedHistory({
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
+        if (followPreviousBottom(element)) {
+          previousScrollTop.current = element.scrollTop;
+          return;
+        }
         if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
           atBottom.current = true;
           cancelRestoration();
