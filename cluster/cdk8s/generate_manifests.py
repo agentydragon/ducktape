@@ -498,7 +498,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_agentydragon_repos_kustomization = forgejo_flux_kustomizations.forgejo_agentydragon_repos(
         flux_chart, forgejo_kustomization, tofu_controller_kustomization, tofu_state_db_kustomization
     )
-    budget_ledger_kustomization = forgejo_flux_kustomizations.budget_ledger(
+    forgejo_flux_kustomizations.budget_ledger(
         flux_chart,
         forgejo_kustomization,
         tofu_controller_kustomization,
@@ -549,9 +549,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_public_s3_kustomization,
         local_path_provisioner_kustomization,
-    )
-    parked_flux_kustomizations.budget(
-        flux_chart, budget_ledger_kustomization, gateway_kustomization, authentik_kustomization
     )
     activitywatch_flux_kustomizations.activitywatch(
         flux_chart,
