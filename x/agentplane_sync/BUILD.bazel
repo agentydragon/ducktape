@@ -8,6 +8,7 @@ package(default_testonly = True)
 # gazelle:resolve py third_party.containers.electric_1_8_1 //third_party/containers:electric_1_8_1
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
 # gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
+# gazelle:resolve py x.agentplane_sync.shape_test_support //x/agentplane_sync:shape_test_support
 
 py_library(
     name = "projector",
@@ -28,6 +29,16 @@ py_library(
     deps = [
         "@pypi//asyncpg",
         "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "shape_test_support",
+    srcs = ["shape_test_support.py"],
+    deps = [
+        "//util/testing:container_logs",
+        "@pypi//asyncpg",
         "@pypi//httpx",
     ],
 )
@@ -71,7 +82,7 @@ py_test(
 
 py_test(
     name = "shape_capacity_test",
-    size = "large",
+    size = "medium",
     srcs = ["shape_capacity_test.py"],
     requires_docker = True,
     deps = [
@@ -83,6 +94,29 @@ py_test(
         "//util:oci",
         "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
+        "//x/agentplane_sync:shape_test_support",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "shape_history_memory_test",
+    size = "large",
+    srcs = ["shape_history_memory_test.py"],
+    requires_docker = True,
+    deps = [
+        ":projector",
+        "//:conftest",
+        "//third_party/containers:electric_1_8_1",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane_sync:shape_test_support",
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

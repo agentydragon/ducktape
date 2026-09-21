@@ -10,13 +10,14 @@ runtime yet.
 
 ## Run the experiment
 
-Run the browser E2E and focused Electric capacity tests through Bazel and
+Run the browser E2E and focused Electric resource probes through Bazel and
 BuildBuddy. Their PostgreSQL, Electric, and Chromium containers require RBE:
 
 ```bash
 nix develop --command bbr test \
   //x/agentplane_sync:e2e_test \
   //x/agentplane_sync:shape_capacity_test \
+  //x/agentplane_sync:shape_history_memory_test \
   --test_output=errors
 ```
 
@@ -24,6 +25,9 @@ The E2E target writes its HAR, screenshots, Playwright trace, SQL plans, request
 measurements, and container logs to Bazel undeclared test outputs. The capacity
 target writes `shape-capacity-evidence.json`, including shape handles, snapshot
 rows/bytes, LRU expiry/reset responses, and Electric container memory samples.
+The separate history-memory target writes `bounded-history-evidence.json` with
+fixed-tail live response bytes, excluded-row counts, database history size,
+shape-rotation/reset events, and Electric memory samples.
 After a run, retrieve artifacts from the BuildBuddy invocation:
 
 ```bash
@@ -67,9 +71,15 @@ Agentplane deployment. It seeds 1,000-row and 20,000-row histories, configures
 `ELECTRIC_MAX_SHAPES=2`, creates three shapes, and records container cgroup
 usage plus PID 1 RSS/high-water samples. After the periodic expiry cycle, it
 requires the oldest handle to return 409 and a fresh snapshot to return every
-row. The browser E2E still uses the repository's 1.8.0 image. A passing
-409/reset probe establishes the configured handle lifecycle; these samples do
-not by themselves establish a long-run server-memory bound.
+row. This probe is a separate medium-sized target so its expiry wait does not
+inflate the longer bounded-history experiment. The history-memory target holds
+an active 30-row tail shape while older rows grow the same conversation from
+100 to 100,000 rows, uses a selected-row change as a WAL-consumption barrier,
+measures live bytes and memory, then rotates other interests until the active
+handle expires and verifies a fresh 30-row snapshot. The browser E2E still uses
+the repository's 1.8.0 image. A passing 409/reset probe establishes the
+configured handle lifecycle; even a passing bounded-history sample is not a
+long-run server-memory bound.
 
 ## Evidence matrix
 
@@ -99,6 +109,7 @@ environment, not a production load test.
 | Electric restart and replication-slot/WAL observation                               | Confirmed in the single-service test         | Electric 1.8 is stopped and restarted; both browser pages receive the next update. One logical slot is active with `wal_level=logical`; retained WAL measured 366,192 bytes in this run. Requests held against the deliberately stopped service briefly return 500 before the new service is ready; the collections retry and recover.                                 |
 | Configured shape-cap eviction and fresh-handle reset on Electric 1.8.1              | Confirmed                                    | RBE run [`b5fdc116`](https://app.buildbuddy.io/invocation/b5fdc116-9ae6-4742-acd2-eab63ce4979a): full snapshots returned 1k, 20k, and 1k rows; with `ELECTRIC_MAX_SHAPES=2`, the oldest handle returned 409 plus `must-refetch` after 75s, and a new handle reloaded all 1k rows. Logs show the expiry manager removing that handle.                                   |
 | Electric process memory during the 1.8.1 capacity probe                             | Sampled; bounded growth unproven             | `shape-capacity-evidence.json` records PID 1 RSS from 317,396 KiB at readiness to 313,380 KiB after the 20k-row full shape, 301,764 KiB after expiry, and 302,072 KiB after reset; peak RSS was 319,308 KiB. cgroup usage ranged from 258.8 MB after expiry to 272.4 MB at readiness. This single full-shape run is not evidence of a fixed-active-shape memory bound. |
+| Fixed 30-row live shape while older history grows 100 to 100,000 rows               | Pending                                      | `shape_history_memory_test` records WAL-barrier-confirmed selected-row updates and excluded-row delivery while inserting older rows in bounded batches, then rotates interests through expiry/reset cycles. RBE execution and resource samples are pending.                                                                                                            |
 | Authentication, multiple browsers, and two proxy instances                          | Confirmed in the test topology               | The API rejects cross-conversation access and caller-supplied GET table, POST table, and conversation `WHERE` overrides. Both browsers receive updates while 62 requests alternate across two stateless proxy instances (31 each), with no sticky state.                                                                                                               |
 | Sustained write/network amplification and persisted-cache recovery                  | Not established                              | Response rows/bytes, per-field payload parts, query plans, and one WAL measurement are recorded, but there is no sustained throughput benchmark or production retention policy. No browser persistence or collection tags are configured, so cold persisted-cache/tag recovery still needs a separate test.                                                            |
 
@@ -175,8 +186,9 @@ the exact-reference, immutable-prefix, per-field, and transaction semantics.
 - Long-run browser heap bounds/virtualization and Electric server RSS/retained
   heap across fixed active subscriptions, unrelated history growth, shape
   churn/expiry, resets, restarts, and slow readers remain unproven. The 1.8.1
-  capacity probe measures a single 1k/20k/1k full-shape sequence; replication
-  buffers, shape caches/history, backpressure, and payload retention policy
-  remain server-side adoption gates.
+  capacity probe measures a single 1k/20k/1k full-shape sequence; the separate
+  bounded-history probe is a finite 100-to-100,000-row experiment, not a steady
+  state proof. Replication buffers, shape caches/history, backpressure, and
+  payload retention policy remain server-side adoption gates.
 - BuildBuddy test outputs are evidence for a particular invocation; they are
   not committed screenshots or performance baselines.
