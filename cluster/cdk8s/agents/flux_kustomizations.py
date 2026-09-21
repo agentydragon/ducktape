@@ -199,6 +199,11 @@ def authentik_jwt_rotation(chart: Chart, external_secrets_operator: Kustomizatio
                 )
             ],
             timeout="2m",
+            # grocy-sf-readonly-token.sops.yaml's seed placeholder.
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
         ),
     )
 

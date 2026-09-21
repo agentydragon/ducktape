@@ -74,6 +74,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     FORGEJO_HAKU_POLICY,
     GITHUB_PUBLIC_POLICY,
     GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
@@ -121,7 +122,9 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+def _egress_credentials(
+    scope: Construct, *, namespace: str, include_forgejo_credential: bool, include_grocy_sf_credential: bool
+) -> None:
     EgressCredential(
         scope,
         "egresscredential-agentplane-workload",
@@ -241,8 +244,36 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
         ),
     )
 
+    if include_grocy_sf_credential:
+        EgressCredential(
+            scope,
+            "egresscredential-grocy-sf-readonly",
+            metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
+            spec=EgressCredentialSpec(
+                description=(
+                    "An Authentik-outpost-scoped bearer token minted and refreshed by the "
+                    "authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into "
+                    "this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP "
+                    "server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works "
+                    "outpost accepts. The proxy does not narrow what the token itself may do -- "
+                    "`grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read "
+                    "routes."
+                ),
+                source=EgressCredentialSpecSource(
+                    secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="token")
+                ),
+                targets=[
+                    EgressCredentialSpecTargets(
+                        header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                    )
+                ],
+            ),
+        )
 
-def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+
+def _egress_policies(
+    scope: Construct, *, namespace: str, include_forgejo_credential: bool, include_grocy_sf_credential: bool
+) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-basic",
@@ -409,6 +440,37 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
             ]
         ),
     )
+    if include_grocy_sf_credential:
+        EgressPolicy(
+            scope,
+            "egresspolicy-grocy-sf-readonly",
+            metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
+            spec=EgressPolicySpec(
+                rules=[
+                    # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
+                    # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
+                    # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
+                    # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
+                    # that distinction directly, so GET-only admits exactly the routes
+                    # haku-console's `grocy_reads` ActionPolicySet names as tools (entities/stock/
+                    # user/system/file reads); PUT, POST and DELETE -- every write -- are refused by
+                    # the proxy regardless of path.
+                    EgressPolicySpecRules(
+                        hosts=["grocy-sf.allegedly.works"],
+                        methods=[EgressPolicySpecRulesMethods.GET],
+                        paths=[
+                            "/api/objects/**",
+                            "/api/stock/**",
+                            "/api/user",
+                            "/api/system/info",
+                            "/api/system/db-changed-time",
+                            "/api/files/**",
+                        ],
+                        credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
+                    )
+                ]
+            ),
+        )
 
 
 class Egress(Construct):
@@ -436,10 +498,16 @@ class Egress(Construct):
         if env.replicas.pdb_min_available is not None:
             self._add_pdb(env.replicas.pdb_min_available)
         _egress_credentials(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+            self,
+            namespace=env.namespace,
+            include_forgejo_credential=env.egress.include_forgejo_credential,
+            include_grocy_sf_credential=env.egress.include_grocy_sf_credential,
         )
         _egress_policies(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+            self,
+            namespace=env.namespace,
+            include_forgejo_credential=env.egress.include_forgejo_credential,
+            include_grocy_sf_credential=env.egress.include_grocy_sf_credential,
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:

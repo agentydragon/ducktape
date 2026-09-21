@@ -9,7 +9,12 @@ from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, TESTI
 def test_real_credentials_have_only_staging_readers_and_exact_source_access() -> None:
     chart = Cdk8sTesting.chart()
     EgressCredentials(
-        chart, "credentials", namespace=STAGING_NAMESPACE, proxy_namespace="agentplane-staging", include_forgejo=True
+        chart,
+        "credentials",
+        namespace=STAGING_NAMESPACE,
+        proxy_namespace="agentplane-staging",
+        include_forgejo=True,
+        include_grocy_sf=True,
     )
     objects = Cdk8sTesting.synth(chart)
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]
@@ -35,6 +40,7 @@ def test_real_credentials_have_only_staging_readers_and_exact_source_access() ->
     assert {(obj["metadata"]["namespace"], obj["metadata"]["name"]) for obj in secrets} == {
         (STAGING_NAMESPACE, "agentplane-github-pat"),
         (STAGING_NAMESPACE, "haku-forgejo-git"),
+        (STAGING_NAMESPACE, "grocy-sf-readonly"),
     }
     forgejo = next(obj for obj in secrets if obj["metadata"]["name"] == "haku-forgejo-git")
     assert forgejo["spec"]["data"] == [
@@ -46,7 +52,12 @@ def test_real_credentials_have_only_staging_readers_and_exact_source_access() ->
 def test_testing_gets_github_only_and_no_forgejo_source_grant() -> None:
     chart = Cdk8sTesting.chart()
     EgressCredentials(
-        chart, "credentials", namespace=TESTING_NAMESPACE, proxy_namespace="agentplane-testing", include_forgejo=False
+        chart,
+        "credentials",
+        namespace=TESTING_NAMESPACE,
+        proxy_namespace="agentplane-testing",
+        include_forgejo=False,
+        include_grocy_sf=False,
     )
     objects = Cdk8sTesting.synth(chart)
     assert not any(obj["kind"] == "ClusterSecretStore" for obj in objects)

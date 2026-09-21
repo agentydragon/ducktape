@@ -40,7 +40,14 @@ class EgressCredentials(Construct):
     """Keep the proxy's namespace-wide Secret watch away from application credentials."""
 
     def __init__(
-        self, scope: Construct, id: str, *, namespace: str, proxy_namespace: str, include_forgejo: bool
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        namespace: str,
+        proxy_namespace: str,
+        include_forgejo: bool,
+        include_grocy_sf: bool,
     ) -> None:
         super().__init__(scope, id)
         Namespace(
@@ -69,6 +76,10 @@ class EgressCredentials(Construct):
         secrets = [
             ("agentplane-github-pat", "github-agentydragon-agent", "token", "kubernetes-external-creds-secret-store")
         ]
+        if include_grocy_sf:
+            secrets.append(
+                ("grocy-sf-readonly", "grocy-sf-readonly-token", "token", "kubernetes-flux-system-secret-store")
+            )
         if include_forgejo:
             secrets.append(("haku-forgejo-git", "haku-forgejo-git", "password", _FORGEJO_STORE))
             source_role = Role(

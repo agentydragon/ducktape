@@ -49,6 +49,21 @@ spec:
             - name: alloy-otlp-creds
               secret:
                 secretName: alloy-otlp-client-credentials
+            - name: grocy-sf-readonly-creds
+              secret:
+                # Reflector-mirrored from tf/gitops/agent-machine-access/grocy-sf.tf's
+                # kubernetes_secret.grocy_mcp_oidc_sf_source -- the same client
+                # credentials the grocy-mcp-sf MCP server itself uses. Remap the
+                # `grocy_proxy_client_id` key to the `proxy_client_id` filename
+                # rotate.py's exchange step reads.
+                secretName: grocy-mcp-oidc-sf
+                items:
+                  - key: client_id
+                    path: client_id
+                  - key: client_secret
+                    path: client_secret
+                  - key: grocy_proxy_client_id
+                    path: proxy_client_id
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
@@ -86,6 +101,9 @@ spec:
                   readOnly: true
                 - name: alloy-otlp-creds
                   mountPath: /var/run/secrets/authentik/alloy-otlp
+                  readOnly: true
+                - name: grocy-sf-readonly-creds
+                  mountPath: /var/run/secrets/authentik/grocy-sf-readonly
                   readOnly: true
               resources:
                 requests:

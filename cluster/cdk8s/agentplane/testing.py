@@ -128,6 +128,8 @@ ENV = Environment(
         ca_secret_name="agentplane-testing-egress-ca",
         credentials_namespace=TESTING_NAMESPACE,
         include_forgejo_credential=False,
+        # No testing/vallejo household analog for grocy-sf.
+        include_grocy_sf_credential=False,
     ),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
@@ -158,6 +160,7 @@ def chart(app: App) -> Chart:
         namespace=ENV.egress.credentials_namespace,
         proxy_namespace=ENV.namespace,
         include_forgejo=ENV.egress.include_forgejo_credential,
+        include_grocy_sf=ENV.egress.include_grocy_sf_credential,
     )
     return chart
 

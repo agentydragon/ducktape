@@ -1294,6 +1294,22 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  description: An Authentik-outpost-scoped bearer token minted and refreshed by the authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works outpost accepts. The proxy does not narrow what the token itself may do -- `grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read routes.
+  source:
+    secretRef:
+      name: grocy-sf-readonly
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: basic
@@ -1429,6 +1445,27 @@ spec:
         - /calendar/v3/**
       credentialRef:
         name: google-readonly
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - grocy-sf.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/objects/**
+        - /api/stock/**
+        - /api/user
+        - /api/system/info
+        - /api/system/db-changed-time
+        - /api/files/**
+      credentialRef:
+        name: grocy-sf-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -3228,6 +3265,7 @@ spec:
     - forgejo-haku
     - packages
     - google-readonly
+    - grocy-sf-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3422,6 +3460,26 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: agentplane-github-pat
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: grocy-sf-readonly-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-flux-system-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: grocy-sf-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

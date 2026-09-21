@@ -236,7 +236,10 @@ ENV = Environment(
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(
-        ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE, include_forgejo_credential=True
+        ca_secret_name="agentplane-egress-ca",
+        credentials_namespace=STAGING_NAMESPACE,
+        include_forgejo_credential=True,
+        include_grocy_sf_credential=True,
     ),
     app=AppProps(
         hostname=_HOSTNAME,
@@ -310,6 +313,7 @@ def chart(app: App) -> Chart:
         namespace=ENV.egress.credentials_namespace,
         proxy_namespace=ENV.namespace,
         include_forgejo=ENV.egress.include_forgejo_credential,
+        include_grocy_sf=ENV.egress.include_grocy_sf_credential,
     )
     return chart
 
