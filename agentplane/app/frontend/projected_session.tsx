@@ -545,7 +545,6 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
-  const captureFrame = useRef<number | null>(null);
   const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
@@ -575,6 +574,11 @@ function VirtualizedHistory({
     onChange: (instance, sync) => {
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
+      if (atBottom.current) {
+        restorationSize.current = null;
+        restoringAnchor.current = null;
+        return;
+      }
       if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
       restorationSize.current = null;
       if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
@@ -596,13 +600,9 @@ function VirtualizedHistory({
     restoringAnchor.current = null;
   };
   const expectUserScroll = () => {
+    if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
-    if (captureFrame.current !== null) cancelAnimationFrame(captureFrame.current);
-    captureFrame.current = requestAnimationFrame(() => {
-      if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      captureFrame.current = null;
-    });
   };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
@@ -691,11 +691,6 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (captureFrame.current !== null) {
-        cancelAnimationFrame(captureFrame.current);
-        captureFrame.current = null;
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -719,13 +714,24 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
-        expectUserScroll();
-        if (event.deltaY < 0) atBottom.current = false;
+        const element = event.currentTarget;
+        const canScroll =
+          (event.deltaY < 0 && element.scrollTop > 0) ||
+          (event.deltaY > 0 && element.scrollTop < element.scrollHeight - element.clientHeight);
+        if (canScroll) {
+          expectUserScroll();
+          if (event.deltaY < 0) atBottom.current = false;
+        } else if (!scrolledSinceInput.current) {
+          captureNextScroll.current = false;
+        }
       }}
       onKeyDown={(event) => {
         cancelRestoration();
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
+      }}
+      onKeyUp={() => {
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onPointerDown={() => {
         cancelRestoration();
@@ -734,9 +740,11 @@ function VirtualizedHistory({
       }}
       onPointerUp={() => {
         pointerScrolling.current = false;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onPointerCancel={() => {
         pointerScrolling.current = false;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onTouchStart={(event) => {
         cancelRestoration();
@@ -750,11 +758,14 @@ function VirtualizedHistory({
       }}
       onTouchEnd={() => {
         touchY.current = null;
+        if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
-        else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+          atBottom.current = true;
+          cancelRestoration();
+        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
