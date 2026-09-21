@@ -248,6 +248,8 @@ async def _read_live_page(
     where_clause: str,
     where_params: tuple[str, ...] | None = None,
     columns: str,
+    log_mode: str = "full",
+    queryable_columns: str | None = None,
 ) -> dict[str, Any]:
     params = {
         **_shape_params(
@@ -260,6 +262,10 @@ async def _read_live_page(
         "handle": snapshot["handle"],
         "offset": offset,
     }
+    if log_mode != "full":
+        params["log"] = log_mode
+    if queryable_columns is not None:
+        params["queryable_columns"] = queryable_columns
     response = await client.get(shape_url, params=params)
     assert response.status_code == 200, {
         "conversationId": snapshot["conversationId"],

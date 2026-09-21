@@ -145,6 +145,7 @@ async def _open_changes_only_at_now(
     shape_url: str,
     where_clause: str,
     where_params: tuple[str, ...],
+    existing_handle: str | None = None,
 ) -> dict[str, Any]:
     params = {
         **_shape_params(
@@ -157,12 +158,16 @@ async def _open_changes_only_at_now(
         "queryable_columns": SHAPE_COLUMNS,
         "offset": "now",
     }
+    if existing_handle is not None:
+        params["handle"] = existing_handle
     response = await client.get(shape_url, params=params)
     assert response.status_code == 200, {"status": response.status_code, "body": response.text[:2000]}
     handle = response.headers.get("electric-handle")
     offset = response.headers.get("electric-offset")
     assert handle, {"headers": dict(response.headers), "body": response.text[:2000]}
     assert offset, {"headers": dict(response.headers), "body": response.text[:2000]}
+    if existing_handle is not None:
+        assert handle == existing_handle, {"existingHandle": existing_handle, "responseHandle": handle}
     messages = _messages(response.content)
     return {
         "conversationId": BOUNDED_HISTORY_CONVERSATION,
@@ -216,6 +221,8 @@ async def _consume_latest_tail(
     where_params: tuple[str, ...],
     expected_model: str,
     max_pages: int = 30,
+    log_mode: str = "full",
+    queryable_columns: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     latest_models: dict[str, str] = {}
     pages: list[dict[str, Any]] = []
@@ -228,10 +235,13 @@ async def _consume_latest_tail(
             where_clause=where_clause,
             where_params=where_params,
             columns=SHAPE_COLUMNS,
+            log_mode=log_mode,
+            queryable_columns=queryable_columns,
         )
         next_offset = page["offset"]
         assert isinstance(next_offset, str), page
         assert next_offset != offset, page
+        assert page["headers"].get("electric-handle") == snapshot["handle"], page["headers"]
         offset = next_offset
         latest_models.update(_latest_models(page["operations"]))
         pages.append({"responseBytes": page["responseBytes"], "offset": offset})
@@ -247,8 +257,8 @@ async def _prove_changes_only_subset_recovery(
     where_clause: str,
     where_params: tuple[str, ...],
     expected_model: str,
+    changes_only: dict[str, Any],
 ) -> dict[str, Any]:
-    changes_only = await _open_changes_only_at_now(client, shape_url, where_clause, where_params)
     assert changes_only["operationCount"] == 0, changes_only
     async with pool.acquire() as connection:
         async with connection.transaction():
@@ -285,6 +295,8 @@ async def _prove_changes_only_subset_recovery(
         where_clause=where_clause,
         where_params=where_params,
         expected_model=race_model,
+        log_mode="changes_only",
+        queryable_columns=SHAPE_COLUMNS,
     )
     return {
         "start": changes_only,
@@ -368,6 +380,18 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             columns=SHAPE_COLUMNS,
                         )
                         assert snapshot["rowCount"] == BOUNDED_HISTORY_TAIL_ROWS
+                        changes_only_before_writes = await _open_changes_only_at_now(
+                            client,
+                            shape_url,
+                            where_clause,
+                            where_params,
+                        )
+                        assert changes_only_before_writes["operationCount"] == 0, changes_only_before_writes
+                        evidence["changesOnlyBeforeWrites"] = {
+                            "handle": changes_only_before_writes["handle"],
+                            "responseBytes": changes_only_before_writes["responseBytes"],
+                            "operationCount": changes_only_before_writes["operationCount"],
+                        }
                         healthy_offset = snapshot["offset"]
                         stalled_reader, stalled_writer = await _open_stalled_shape_request(
                             electric_url, snapshot, where_clause, where_params
@@ -491,6 +515,23 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                                 "hostPortBefore": host_port_before_restart,
                                 "hostPortAfter": host_port_after_restart,
                             }
+                            changes_only_after_restart = await _open_changes_only_at_now(
+                                restarted_client,
+                                shape_url,
+                                where_clause,
+                                where_params,
+                                existing_handle=changes_only_before_writes["handle"],
+                            )
+                            assert changes_only_after_restart["operationCount"] == 0, changes_only_after_restart
+                            evidence["changesOnlyWarmRestart"] = {
+                                "handleBefore": changes_only_before_writes["handle"],
+                                "handleAfter": changes_only_after_restart["handle"],
+                                "reusedPersistedHandle": (
+                                    changes_only_after_restart["handle"] == changes_only_before_writes["handle"]
+                                ),
+                                "responseBytes": changes_only_after_restart["responseBytes"],
+                                "operationCount": changes_only_after_restart["operationCount"],
+                            }
                             evidence["changesOnlySubsetRecovery"] = await _prove_changes_only_subset_recovery(
                                 restarted_client,
                                 shape_url,
@@ -498,6 +539,7 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                                 where_clause,
                                 where_params,
                                 expected_model,
+                                changes_only_after_restart,
                             )
 
                         rss = [
