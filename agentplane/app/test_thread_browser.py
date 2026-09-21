@@ -612,8 +612,9 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     if raw:
         lifecycle = page.locator(f'[data-conversation-anchor="{failed.cursor}"]')
         await lifecycle.locator("summary", has_text="Evidence").click()
-        await lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames").click()
-        frame = lifecycle.locator("pre")
+        raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
+        await raw_frames.click()
+        frame = raw_frames.locator("..").locator("pre")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
         await lifecycle.locator("summary", has_text="Evidence").click()
@@ -798,13 +799,19 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
+    reply_started = asyncio.Event()
+    reply_finished = asyncio.Event()
 
     async def hold_reply(route: Route) -> None:
         # This is a real response from the app after PostgreSQL admission commit. Only its
         # delivery to this browser is withheld; independent Electric synchronization continues.
-        replies.put_nowait(await route.fetch())
-        await drop_reply.wait()
-        await route.abort()
+        reply_started.set()
+        try:
+            replies.put_nowait(await route.fetch())
+            await drop_reply.wait()
+            await route.abort()
+        finally:
+            reply_finished.set()
 
     await page.route("**/threads/*/commands", hold_reply, times=1)
     try:
@@ -833,6 +840,9 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
+        if reply_started.is_set():
+            async with asyncio.timeout(15):
+                await reply_finished.wait()
         await page.unroute_all(behavior="wait")
 
 
