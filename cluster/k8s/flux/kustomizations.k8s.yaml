@@ -5513,6 +5513,8 @@ spec:
       namespace: ducktape-flux
     - name: ha-mcp
       namespace: ducktape-flux
+    - name: airlock
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
