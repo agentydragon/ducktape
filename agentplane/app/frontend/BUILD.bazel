@@ -672,6 +672,21 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_store_test",
+    testonly = True,
+    srcs = ["conversation_store.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":conversation_store",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "retained_disclosures",
     srcs = ["retained_disclosures.tsx"],
     tsconfig = TSCONFIG,
@@ -846,6 +861,7 @@ vitest_bin.vitest_test(
         ":command_state_test",
         ":connections_test",
         ":consent_test",
+        ":conversation_store_test",
         ":frame_test",
         ":json_view_test",
         ":launch_presets_test",

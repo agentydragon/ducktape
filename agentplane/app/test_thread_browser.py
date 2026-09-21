@@ -742,24 +742,6 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
-    expansion_before = await page.evaluate(
-        """anchor => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            const top = area.getBoundingClientRect().top;
-            const message = area.querySelector('.agentplane-markdown');
-            const row = message?.closest('[data-conversation-anchor]');
-            const anchored = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
-            return {
-                expanded_cursor: row?.dataset.conversationAnchor,
-                expanded_offset: row?.getBoundingClientRect().top - top,
-                anchor_cursor: anchor.cursor,
-                anchor_offset: anchored?.getBoundingClientRect().top - top,
-                scroll_top: area.scrollTop,
-                bottom: area.scrollHeight - area.clientHeight,
-            };
-        }""",
-        reading_anchor,
-    )
     await history.locator(".agentplane-markdown").first.evaluate(
         """message => {
             const area = message.closest('[aria-label="Thread history"]');
@@ -767,27 +749,6 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    expansion_after = await page.evaluate(
-        """anchor => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            const top = area.getBoundingClientRect().top;
-            const message = area.querySelector('.agentplane-markdown');
-            const row = message?.closest('[data-conversation-anchor]');
-            const anchored = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
-            return {
-                expanded_cursor: row?.dataset.conversationAnchor,
-                expanded_offset: row?.getBoundingClientRect().top - top,
-                anchor_cursor: anchor.cursor,
-                anchor_offset: anchored?.getBoundingClientRect().top - top,
-                scroll_top: area.scrollTop,
-                bottom: area.scrollHeight - area.clientHeight,
-            };
-        }""",
-        reading_anchor,
-    )
-    (undeclared_outputs_dir() / f"{request.node.name}-late-expansion.json").write_text(
-        json.dumps({"before": expansion_before, "after": expansion_after}, indent=2)
-    )
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
     await expect_reading_anchor(page, reading_anchor)
     assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
@@ -1387,6 +1348,56 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         drop_reply.set()
         await page.unroute_all(behavior="wait")
         await document.dispose()
+
+
+async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh_shape(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Command retained across terminal shape error")
+    async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
+        await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    pending = page.get_by_role("region", name="Pending commands")
+    await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+
+    async def terminal_shape_error(route: Route) -> None:
+        await route.fulfill(status=410, content_type="text/plain", body="command scope expired")
+
+    await page.route("**/sync/commands?*", terminal_shape_error, times=1)
+    await page.context.set_offline(True)
+    try:
+        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 410):
+            await page.context.set_offline(False)
+        stopped = page.get_by_role("alert").filter(has_text="Command synchronization stopped:")
+        await expect(stopped).to_be_visible()
+        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+
+        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
+            await stopped.get_by_role("button", name="Retry command synchronization", exact=True).click()
+        await expect(page.get_by_text("Command synchronization stopped:", exact=False)).to_have_count(0)
+        source.append(
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="test-command-after-terminal-shape-retry",
+                    origin_command_ids=[command.command_id],
+                    text=command.submit_input.text,
+                    turn_id="test-browser-turn",
+                )
+            )
+        )
+        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+            command.submit_input.text
+        )
+        await expect(pending).to_have_count(0)
+    finally:
+        await page.context.set_offline(False)
+        await page.unroute("**/sync/commands?*", terminal_shape_error)
 
 
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
