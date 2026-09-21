@@ -49,10 +49,21 @@ measurements; it does not override a failure in the assembled regression.
 
 ## Stack review
 
-Runner #7535, fold #7523, batching #7546, storage #7540, debug #7555, backend
-#7563, and frontend #7537 remain independently reviewable where their content permits.
-The current assembled follow-up is #7564. WAL #7560, visual #7561, feed-failure
-lifecycle #7565 and native-startup diagnostics #7566 are peers above #7564. Bounded
-pending-command membership #7567 is stacked on #7561; native resource profiling #7562
-is independently stacked on runner #7535. Until predecessors land, ancestry makes their complete diffs visible; retargeting
-cannot honestly hide prerequisite commits.
+Runner #7535 is merged into devel. The remaining implementation reviews are batching
+#7546, fold #7523, storage #7540, lazy debug #7555, Electric backend #7563, frontend
+#7537, and bounded pending-command membership #7567. Native resource measurements
+#7562 are independently reviewable and do not change harness internals.
+
+Backend #7563 incorporates WAL recovery #7560, rejected-feed lifecycle #7565, and
+native-startup diagnostics #7566. Frontend #7537 incorporates recovery/acceptance
+#7564, visual fixtures #7561, and the frontend parts of #7565. Those five follow-up
+PRs are closed with successor links; their source branches and historical test evidence
+are retained. #7567 is directly based on #7537. No PR was merged into devel as part
+of this consolidation.
+
+The consolidated source at #7567 `82cccee817` was compared with verification source
+`1f6e388baf`: changes are limited to the reviewed pytest fixture and concrete Electric
+service class, the active-view transport recovery candidate and its unit dependency/tests,
+and correction of the terminal-command browser test's subscription isolation/assertions.
+The last two still require their real-browser proofs. The pending-page phone resize and
+scroll-anchor failures remain open; consolidation does not establish acceptance.
