@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -137,7 +138,8 @@ def authentik_db(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/authentik/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(cnpg, authentik_namespace, local_path_provisioner),
         ),
@@ -152,7 +154,8 @@ def authentik_namespace(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             interval="1h",
             path="./cluster/k8s/authentik/namespace",
-            prune=False,  # Don't delete namespace on kustomization removal
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -172,7 +175,8 @@ def authentik_proxy_routes(chart: Chart, gateway: Kustomization, authentik: Kust
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/authentik/proxy-routes",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             depends_on=flux_kustomization_depends_on_many(gateway, authentik),
         ),
     )

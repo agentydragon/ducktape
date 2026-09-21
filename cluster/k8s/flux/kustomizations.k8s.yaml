@@ -143,6 +143,7 @@ metadata:
   name: authentik-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/authentik/namespace
   prune: false
@@ -1958,6 +1959,7 @@ metadata:
   name: authentik-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
@@ -1967,7 +1969,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/authentik/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -2769,6 +2771,7 @@ metadata:
   name: authentik-proxy-routes
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
@@ -2776,7 +2779,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/authentik/proxy-routes
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: authentik-proxy-routes
