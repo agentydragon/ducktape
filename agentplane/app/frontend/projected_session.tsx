@@ -29,6 +29,7 @@ import {
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
+import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 const LIFECYCLE_LABELS: Record<string, string> = {
@@ -79,12 +80,11 @@ function LazyBody({
   follow: boolean;
   plain?: boolean;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_item_id}:${body.reference.field}`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>{label}</summary>
-      {open && <Body {...body} />}
-    </details>
+    <RetainedDisclosure id={id} summary={label}>
+      <Body {...body} />
+    </RetainedDisclosure>
   );
 }
 
@@ -594,139 +594,144 @@ function ProjectedSessionBody({
   }
 
   return (
-    <Stack style={{ flex: 1, minHeight: 0 }}>
-      <Button
-        variant="subtle"
-        disabled={!segments.length}
-        onClick={() => {
-          const boundary = segments[1] ?? segments[0];
-          if (boundary) onLoadOlder(boundary.cursor.toString());
-        }}
+    <RetainedDisclosureProvider>
+      <Stack
+        style={{ flex: 1, minHeight: 0 }}
+        data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        Load 30 earlier
-      </Button>
-      <VirtualizedHistory
-        threadId={threadId}
-        segments={segments}
-        running={running}
-        activeTurn={activeTurn}
-        onLoadOlder={onLoadOlder}
-      />
-      {hasPendingCommands && (
-        <Stack role="region" aria-label="Pending commands" gap="xs">
-          {projectedCommands.map((row) => (
-            <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
-              <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-                {row.state.outcome === "pending"
-                  ? "Saved · awaiting effect"
-                  : `${row.state.operation.replaceAll("_", " ")} · ${row.state.outcome}`}
-                {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-              </Text>
-              {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-              <Evidence threadId={threadId} entity={row} />
-            </Paper>
-          ))}
-          {commands.local.commands.map((value) => (
-            <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-              <Text size="sm">
-                {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
-              </Text>
-              {value.command.operation.case === "submitInput" && (
-                <Markdown source={value.command.operation.value.text} />
-              )}
-              {value.command.operation.case === "changeModel" && (
-                <Text>Change model to {value.command.operation.value.model}</Text>
-              )}
-              {value.command.operation.case === "interruptTurn" && (
-                <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-              )}
-              {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-              {commands.errors.get(value.command.commandId) && (
-                <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
-              )}
-              {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
-            </Paper>
-          ))}
-        </Stack>
-      )}
-      {operational?.feed_error && (
-        <Text role="alert" c="red">
-          Conversation feed stopped at cursor {operational.feed_error.cursor}: {operational.feed_error.message}
-        </Text>
-      )}
-      {modelError && (
-        <Text role="alert" c="red">
-          {modelError}
-        </Text>
-      )}
-      <Textarea
-        value={draft}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        placeholder="Enter sends, Ctrl+Enter for a new line"
-        disabled={!running}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-            event.preventDefault();
-            submit();
-          }
-        }}
-      />
-      <Button disabled={!running || !draft.trim()} onClick={submit}>
-        Send
-      </Button>
-      <Group justify="space-between" wrap="nowrap">
-        <Select
-          aria-label="Model"
-          data={modelOptions}
-          value={controls?.applied_model ?? null}
-          disabled={!running}
-          onChange={(model) =>
-            model &&
-            commands.submit(
-              create(CommandSchema, {
-                commandId: crypto.randomUUID(),
-                operation: { case: "changeModel", value: { model } },
-              })
-            )
-          }
+        <Button
+          variant="subtle"
+          disabled={!segments.length}
+          onClick={() => {
+            const boundary = segments[1] ?? segments[0];
+            if (boundary) onLoadOlder(boundary.cursor.toString());
+          }}
+        >
+          Load 30 earlier
+        </Button>
+        <VirtualizedHistory
+          threadId={threadId}
+          segments={segments}
+          running={running}
+          activeTurn={activeTurn}
+          onLoadOlder={onLoadOlder}
         />
-        <Group gap="xs">
-          <Button
-            color="red"
-            variant="subtle"
+        {hasPendingCommands && (
+          <Stack role="region" aria-label="Pending commands" gap="xs">
+            {projectedCommands.map((row) => (
+              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+                <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+                  {row.state.outcome === "pending"
+                    ? "Saved · awaiting effect"
+                    : `${row.state.operation.replaceAll("_", " ")} · ${row.state.outcome}`}
+                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                </Text>
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                <Evidence threadId={threadId} entity={row} />
+              </Paper>
+            ))}
+            {commands.local.commands.map((value) => (
+              <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+                <Text size="sm">
+                  {value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}
+                </Text>
+                {value.command.operation.case === "submitInput" && (
+                  <Markdown source={value.command.operation.value.text} />
+                )}
+                {value.command.operation.case === "changeModel" && (
+                  <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "interruptTurn" && (
+                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+                )}
+                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+                {commands.errors.get(value.command.commandId) && (
+                  <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
+                )}
+                {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
+              </Paper>
+            ))}
+          </Stack>
+        )}
+        {operational?.feed_error && (
+          <Text role="alert" c="red">
+            Conversation feed stopped at cursor {operational.feed_error.cursor}: {operational.feed_error.message}
+          </Text>
+        )}
+        {modelError && (
+          <Text role="alert" c="red">
+            {modelError}
+          </Text>
+        )}
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          placeholder="Enter sends, Ctrl+Enter for a new line"
+          disabled={!running}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <Button disabled={!running || !draft.trim()} onClick={submit}>
+          Send
+        </Button>
+        <Group justify="space-between" wrap="nowrap">
+          <Select
+            aria-label="Model"
+            data={modelOptions}
+            value={controls?.applied_model ?? null}
             disabled={!running}
-            onClick={() =>
+            onChange={(model) =>
+              model &&
               commands.submit(
                 create(CommandSchema, {
                   commandId: crypto.randomUUID(),
-                  operation: { case: "stopRunnerSession", value: {} },
+                  operation: { case: "changeModel", value: { model } },
                 })
               )
             }
-          >
-            Shut down harness
-          </Button>
-          <ActionIcon
-            size="lg"
-            variant="light"
-            color="red"
-            aria-label="Interrupt"
-            disabled={!running || !activeTurn}
-            onClick={() =>
-              activeTurn &&
-              commands.submit(
-                create(CommandSchema, {
-                  commandId: crypto.randomUUID(),
-                  operation: { case: "interruptTurn", value: { turnId: activeTurn } },
-                })
-              )
-            }
-          >
-            <IconPlayerStop size={16} />
-          </ActionIcon>
+          />
+          <Group gap="xs">
+            <Button
+              color="red"
+              variant="subtle"
+              disabled={!running}
+              onClick={() =>
+                commands.submit(
+                  create(CommandSchema, {
+                    commandId: crypto.randomUUID(),
+                    operation: { case: "stopRunnerSession", value: {} },
+                  })
+                )
+              }
+            >
+              Shut down harness
+            </Button>
+            <ActionIcon
+              size="lg"
+              variant="light"
+              color="red"
+              aria-label="Interrupt"
+              disabled={!running || !activeTurn}
+              onClick={() =>
+                activeTurn &&
+                commands.submit(
+                  create(CommandSchema, {
+                    commandId: crypto.randomUUID(),
+                    operation: { case: "interruptTurn", value: { turnId: activeTurn } },
+                  })
+                )
+              }
+            >
+              <IconPlayerStop size={16} />
+            </ActionIcon>
+          </Group>
         </Group>
-      </Group>
-    </Stack>
+      </Stack>
+    </RetainedDisclosureProvider>
   );
 }
 
