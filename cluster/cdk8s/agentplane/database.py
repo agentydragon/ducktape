@@ -19,6 +19,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecMonitoring,
+    ClusterSpecPostgresql,
     ClusterSpecProbes,
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
@@ -150,6 +151,10 @@ class Db(Construct):
                     node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
                 ),
                 storage=ClusterSpecStorage(storage_class=_STORAGE_CLASS, size=_STORAGE_SIZE),
+                # Electric's WAL-loss recovery purges every shape, then stays unready while
+                # rebuilding its replication pipeline. Keep a bounded outage budget below the
+                # 5Gi volume instead of silently recycling the logical slot's WAL.
+                postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
                 monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
                 bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="app", owner="app")),
                 managed=ClusterSpecManaged(
