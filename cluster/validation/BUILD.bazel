@@ -183,7 +183,6 @@ py_library(
         ":cluster",
         ":k8s",
         ":kustomize",
-        "@pypi//networkx",
     ],
 )
 
