@@ -27,8 +27,17 @@ from cluster.validation.kustomize import KustomizeBuildResult
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
-# Stored for future Home Assistant provisioning; see homeassistant/TODO.md.
-_INTENTIONALLY_STORED_ONLY_FILES = frozenset({Path("external-creds/dreo-account.sops.yaml")})
+# These inputs are intentionally stored without a deploy Kustomization reference:
+# Dreo is retained for future Home Assistant provisioning (see homeassistant/TODO.md);
+# Codex pod credentials stay parked until replaced with runtime-managed secrets
+# (see x/codex_pod_image/deploy/README.md before reactivation).
+_INTENTIONALLY_STORED_ONLY_FILES = frozenset(
+    {
+        Path("external-creds/dreo-account.sops.yaml"),
+        Path("parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
+        Path("parked/codex-pod/forgejo-tea.sops.yaml"),
+    }
+)
 
 
 def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
