@@ -2242,25 +2242,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-console-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/haku/console-namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-console-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     description: Self-hosted ntfy for Android and cluster alert notifications.
   name: ntfy
@@ -4754,8 +4735,6 @@ spec:
       namespace: ducktape-flux
     - name: haku-namespace
       namespace: ducktape-flux
-    - name: haku-console-namespace
-      namespace: ducktape-flux
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux
   healthChecks:
@@ -5584,17 +5563,11 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
-    - name: haku-workspaces
-      namespace: ducktape-flux
-    - name: haku-console-namespace
-      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
     - name: forgejo-images
-      namespace: ducktape-flux
-    - name: haku-state
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

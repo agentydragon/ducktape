@@ -303,7 +303,6 @@ def haku_state(
     tofu_state_db: Kustomization,
     agentplane_index: Kustomization,
     haku_namespace: Kustomization,
-    haku_console_namespace: Kustomization,
     haku_egress_proxy_namespace: Kustomization,
 ) -> Kustomization:
     name = "haku-state"
@@ -339,7 +338,6 @@ def haku_state(
                 # aggregate to create that target Namespace before applying Terraform.
                 agentplane_index,
                 haku_namespace,
-                haku_console_namespace,
                 haku_egress_proxy_namespace,
             ),
         ),

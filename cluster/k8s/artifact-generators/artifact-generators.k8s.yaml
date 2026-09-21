@@ -296,11 +296,6 @@ spec:
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/console-namespace/**"
-          to: "@artifact/cluster/k8s/haku/console-namespace/"
-      name: haku-console-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
           to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
       name: haku-egress-proxy-namespace
@@ -650,6 +645,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/haku/console/**"
           to: "@artifact/cluster/k8s/haku/console/"
+        - from: "@repo/cluster/k8s/haku/console-namespace/**"
+          to: "@artifact/cluster/k8s/haku/console-namespace/"
       name: haku-console
       originRevision: "@repo"
     - copy:

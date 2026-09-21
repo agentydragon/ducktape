@@ -313,9 +313,6 @@ def generate_manifests(root: Path) -> None:
     github_secrets_sync_secrets_kustomization = github_secrets_sync_flux_kustomizations.github_secrets_sync_secrets(
         flux_chart, external_creds_kustomization, external_secrets_config_kustomization
     )
-    haku_console_namespace_kustomization = haku_flux_kustomizations.haku_console_namespace(
-        flux_chart, external_secrets_config_kustomization
-    )
     ntfy_kustomization = ntfy.ntfy(
         flux_chart,
         root,
@@ -695,7 +692,6 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         agentplane_index_kustomization,
         haku_namespace_kustomization,
-        haku_console_namespace_kustomization,
         haku_egress_proxy_namespace_kustomization,
     )
     monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
@@ -790,7 +786,7 @@ def generate_manifests(root: Path) -> None:
         flux_image_automation_forgejo_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    haku_workspaces_kustomization = haku_flux_kustomizations.haku_workspaces(
+    haku_flux_kustomizations.haku_workspaces(
         flux_chart,
         agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
@@ -861,12 +857,9 @@ def generate_manifests(root: Path) -> None:
     haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
         haku_console_health_checks,
-        haku_workspaces_kustomization,
-        haku_console_namespace_kustomization,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         forgejo_images_kustomization,
-        haku_state_kustomization,
         gateway_kustomization,
         agent_machine_access_tf_kustomization,
         reflector_kustomization,

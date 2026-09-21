@@ -24,29 +24,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def haku_console_namespace(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
-    name = "haku-console-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path="./cluster/k8s/haku/console-namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            # The ducktape-ci pull credential lives here rather than beside the console's own
-            # workloads, because haku-console-migration needs it and the console layer depends on
-            # that migration — putting the ExternalSecret in the console layer makes the pull
-            # secret wait on the Job that needs it.
-            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="2m",
-        ),
-    )
-
-
 def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
     name = "haku-forgejo-tea"
     return flux_kustomization(
