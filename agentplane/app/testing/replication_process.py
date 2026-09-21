@@ -283,6 +283,7 @@ async def _serve(
                         revision_cursor=revision,
                     )
                 ),
+                store.current_conversation_scope,
             )
             if electric_url is not None
             else None,

@@ -102,16 +102,17 @@ completion facts. Reasoning and tool outputs can remain omitted until requested.
 These logical operations map to sync-engine queries or existing app HTTP calls. They do
 not mandate a second wire protocol beside the engine.
 
-| Operation                   | Meaning                                                        |
-| --------------------------- | -------------------------------------------------------------- |
-| List segments, no direction | Latest N segments; return in conversation order.               |
-| List before cursor          | Closest N earlier segments, excluding the cursor.              |
-| List after cursor           | Closest N later segments, excluding the cursor.                |
-| Get segments by cursor      | Exact identities, even outside loaded windows.                 |
-| Read payload                | Whole immutable selected content, or typed unavailability.     |
-| List pending commands       | Keyset page by admission cursor.                               |
-| Get commands by ID          | Reconcile admitted and settled commands after a lost response. |
-| Submit                      | Existing runner-first command admission; no app queue.         |
+| Operation                   | Meaning                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.                                      |
+| List before cursor          | Closest N earlier segments, excluding the cursor.                                     |
+| List after cursor           | Closest N later segments, excluding the cursor.                                       |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                                        |
+| Read payload                | Whole immutable selected content, or typed unavailability.                            |
+| List pending commands       | Keyset page by admission cursor.                                                      |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                        |
+| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes. |
+| Submit                      | Existing runner-first command admission; no app queue.                                |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
 Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
