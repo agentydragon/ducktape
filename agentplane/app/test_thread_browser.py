@@ -15,7 +15,15 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
-from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
+from playwright.async_api import (
+    APIResponse,
+    Page,
+    Request,
+    Route,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+    expect,
+)
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
@@ -441,7 +449,15 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_position = await history.evaluate("area => area.scrollTop")
+    reading_anchor = await history.evaluate(
+        """area => {
+            const top = area.getBoundingClientRect().top;
+            const item = [...area.querySelectorAll('[data-conversation-anchor]')].find(
+                item => item.getBoundingClientRect().bottom > top
+            );
+            return {cursor: item.dataset.conversationAnchor, offset: item.getBoundingClientRect().top - top};
+        }"""
+    )
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -462,10 +478,10 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == reading_position
+    await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
     previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
@@ -477,7 +493,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
-    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 400
+    await expect_reading_anchor(page, reading_anchor)
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
     # Scroll events are queued. Grow a rendered item in the same task as returning to the
@@ -486,8 +503,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await history.evaluate(
         """area => {
             area.scrollTo({ top: area.scrollHeight });
-            const message = area.querySelector('.agentplane-markdown:last-of-type');
-            message.style.minHeight = '240px';
+            const message = [...area.querySelectorAll('.agentplane-markdown')].at(-1);
+            message.style.minHeight = `${message.offsetHeight + 240}px`;
         }"""
     )
     await expect_history_bottom(page)
@@ -500,6 +517,43 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
+    try:
+        await page.wait_for_function(
+            """anchor => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const item = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            return item !== null && Math.abs(
+                item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
+            ) <= 2;
+        }""",
+            arg=anchor,
+        )
+    except PlaywrightTimeoutError:
+        geometry = await page.evaluate(
+            """expected => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                const top = area.getBoundingClientRect().top;
+                return {
+                    expected,
+                    scrollTop: area.scrollTop,
+                    scrollHeight: area.scrollHeight,
+                    viewportHeight: area.clientHeight,
+                    viewportWidth: area.clientWidth,
+                    rows: [...area.querySelectorAll('[data-conversation-anchor]')].map(item => ({
+                        cursor: item.dataset.conversationAnchor,
+                        offset: item.getBoundingClientRect().top - top,
+                        height: item.getBoundingClientRect().height,
+                    })),
+                };
+            }""",
+            anchor,
+        )
+        thread_id = urlsplit(page.url).fragment.split("/")[-1]
+        (undeclared_outputs_dir() / f"reading-anchor-{thread_id}.json").write_text(json.dumps(geometry, indent=2))
+        raise
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:
@@ -590,8 +644,9 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     if raw:
         lifecycle = page.locator(f'[data-conversation-anchor="{failed.cursor}"]')
         await lifecycle.locator("summary", has_text="Evidence").click()
-        await lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames").click()
-        frame = lifecycle.locator("pre")
+        raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
+        await raw_frames.click()
+        frame = raw_frames.locator("..").locator("pre")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
         await lifecycle.locator("summary", has_text="Evidence").click()
@@ -646,6 +701,55 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         command,
         following,
     ]
+
+
+@pytest.mark.parametrize("outcome", ["failed", "noop"])
+async def test_settled_command_reason_survives_history_eviction_and_reload(
+    thread_browser: ThreadBrowser, outcome: str
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    submitted = "Test input whose outcome must remain visible"
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill(submitted)
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    reason = f"Test command {outcome} after admission"
+    if outcome == "failed":
+        source.append(
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command.command_id, reason=reason))
+        )
+    else:
+        source.append(event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id=command.command_id, reason=reason)))
+    for index in range(40):
+        item_id = f"after-command-{index}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
+        )
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.reload()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
+    await page.get_by_role("button", name="Dismiss", exact=True).click()
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
+    await page.reload()
+    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
+    await expect(page.get_by_text(submitted, exact=True)).to_have_count(0)
+    assert source.commands.empty()
 
 
 async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
@@ -727,13 +831,19 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
+    reply_started = asyncio.Event()
+    reply_finished = asyncio.Event()
 
     async def hold_reply(route: Route) -> None:
         # This is a real response from the app after PostgreSQL admission commit. Only its
         # delivery to this browser is withheld; independent Electric synchronization continues.
-        replies.put_nowait(await route.fetch())
-        await drop_reply.wait()
-        await route.abort()
+        reply_started.set()
+        try:
+            replies.put_nowait(await route.fetch())
+            await drop_reply.wait()
+            await route.abort()
+        finally:
+            reply_finished.set()
 
     await page.route("**/threads/*/commands", hold_reply, times=1)
     try:
@@ -762,6 +872,9 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
+        if reply_started.is_set():
+            async with asyncio.timeout(15):
+                await reply_finished.wait()
         await page.unroute_all(behavior="wait")
 
 

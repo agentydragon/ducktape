@@ -246,6 +246,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -916,6 +917,7 @@ py_test(
     ],
     env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
     requires_docker = True,
+    shard_count = 4,
     deps = [
         ":conftest",
         ":trajectory",
@@ -1034,6 +1036,7 @@ py_test(
         "//agentplane/app/testing:electric_service",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
