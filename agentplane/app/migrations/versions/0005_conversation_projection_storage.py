@@ -107,11 +107,11 @@ def upgrade() -> None:
         op.execute(f'ALTER TABLE "{table}" REPLICA IDENTITY FULL')
     op.execute("GRANT USAGE ON SCHEMA public TO electric")
     op.execute(f"GRANT SELECT ON {', '.join(synced_tables)} TO electric")
-    op.execute(f"CREATE PUBLICATION agentplane_conversation FOR TABLE {', '.join(synced_tables)}")
+    op.execute(f"CREATE PUBLICATION electric_publication_agentplane_conversation FOR TABLE {', '.join(synced_tables)}")
 
 
 def downgrade() -> None:
-    op.execute("DROP PUBLICATION IF EXISTS agentplane_conversation")
+    op.execute("DROP PUBLICATION IF EXISTS electric_publication_agentplane_conversation")
     op.drop_table("conversation_projection_evidence")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
