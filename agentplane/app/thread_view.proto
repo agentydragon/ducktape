@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+// Materialized Thread state. These messages describe domain records and complete query results;
+// the selected sync engine owns its offsets, snapshot boundaries, changes and reconnect protocol.
+// The runner must not import app schemas. Contract: agentplane/docs/thread_view_sync.md.
+package ducktape.agentplane.app.v1;
+
+import "agentplane/protocol/command.proto";
+import "agentplane/protocol/event.proto";
+
+// Projection progress in the runner journal. This is NOT a sync-engine continuation token.
+message Position {
+  string source_id = 1;
+  // A rebuild selects a new generation atomically. Never mix records from different generations.
+  string projection_epoch = 2;
+  // Includes observations that produced no conversation item, such as retained native frames.
+  uint64 through_cursor = 3;
+}
+
+enum PayloadField {
+  PAYLOAD_FIELD_UNSPECIFIED = 0;
+  PAYLOAD_FIELD_TEXT = 1;
+  PAYLOAD_FIELD_ARGUMENTS = 2;
+  PAYLOAD_FIELD_OUTPUT = 3;
+  PAYLOAD_FIELD_COMMAND_INPUT = 4;
+  PAYLOAD_FIELD_CONFIRMED_INPUT = 5;
+}
+
+// Immutable complete content at an item/field revision. A replacement gets a new reference;
+// independently growing fields do not invalidate each other's references.
+message PayloadRef {
+  string source_id = 1;
+  string projection_epoch = 2;
+  uint64 owner_cursor = 3;
+  PayloadField field = 4;
+  uint64 revision_cursor = 5;
+}
+
+// Presence distinguishes an included empty value from an omitted body. Included values are whole
+// at this reference, even if the item is still streaming. Queries never truncate them to a budget.
+message Text {
+  PayloadRef reference = 1;
+  optional string value = 2;
+}
+
+// Content selection is independent of item membership and lifecycle. Selecting no bodies still
+// returns item metadata and references. Raw evidence is a separate explicit read.
+message ContentSelection {
+  bool text = 1;
+  bool reasoning = 2;
+  bool tool_arguments = 3;
+  bool tool_output = 4;
+}
+
+message Item {
+  // Native identity within the source. The Segment cursor is the stable timeline identity.
+  string item_id = 1;
+  ducktape.agentplane.protocol.v1.ItemKind kind = 2;
+  string tool_name = 3;
+  Text text = 4;
+  Text arguments_json = 5;
+  Text output = 6;
+  // Missing means no completion was observed, including after interruption or process loss.
+  oneof completion {
+    TextCompleted completed_text = 7;
+    ToolCompleted completed_tool = 8;
+  }
+  // The turn active at first observation, when known. Later updates preserve this association.
+  optional string turn_id = 9;
+}
+
+// Separating the body permits selecting metadata without retransmitting the confirmed input.
+message ConfirmedInput {
+  string harness_message_id = 1;
+  repeated string origin_command_ids = 2;
+  optional string turn_id = 3;
+  Text text = 4;
+}
+
+message TextCompleted {}
+
+message ToolCompleted {
+  bool succeeded = 1;
+}
+
+enum HarnessState {
+  HARNESS_STATE_UNSPECIFIED = 0;
+  HARNESS_STATE_RUNNING = 1;
+  HARNESS_STATE_STOPPED = 2;
+  HARNESS_STATE_LOST = 3;
+}
+
+// One ordered history with updates to any item; no edits of past user input or branches.
+// Turn boundaries, model effects and harness lifecycle facts retain their Event vocabulary.
+// Confirmed input separates selectable content. Commands and raw evidence are separate records.
+message Segment {
+  // First-observed source cursor: identity and order, unchanged by later updates.
+  uint64 cursor = 1;
+  uint64 revision_cursor = 2;
+  oneof content {
+    Item item = 3;
+    ducktape.agentplane.protocol.v1.Event event = 4;
+    ConfirmedInput confirmed_input = 5;
+  }
+}
+
+message Controls {
+  optional string applied_model = 1;
+  optional string active_turn_id = 2;
+  optional HarnessState harness_state = 3;
+  // Configuration provenance when no Event supplied the initial model.
+  optional string configured_model = 4;
+}
+
+// Committed atomically with the entities changed by the projector. Neither a runner Attached
+// snapshot ahead of the copied prefix nor a command receipt advances this state.
+message ViewState {
+  Position position = 1;
+  Controls controls = 2;
+  uint64 unresolved_count = 3;
+}
+
+message Pending {}
+
+message Effected {
+  uint64 origin_cursor = 1;
+}
+
+message CommandFailure {
+  uint64 origin_cursor = 1;
+  string reason = 2;
+}
+
+message CommandNoop {
+  uint64 origin_cursor = 1;
+  string reason = 2;
+}
+
+message CommandSummary {
+  string command_id = 1;
+  string operation_kind = 2;
+  // Exact submitted input or its reference, never a truncated preview.
+  Text input = 3;
+  uint64 admission_cursor = 4;
+  oneof outcome {
+    Pending pending = 5;
+    Effected effected = 6;
+    CommandFailure failed = 7;
+    CommandNoop noop = 8;
+  }
+}
+
+message AdmittedCommand {
+  ducktape.agentplane.protocol.v1.Command command = 1;
+  uint64 admission_cursor = 2;
+  oneof outcome {
+    Pending pending = 3;
+    Effected effected = 4;
+    CommandFailure failed = 5;
+    CommandNoop noop = 6;
+  }
+}
+
+// Absence through a projection checkpoint is not proof that the runner never admitted the command.
+message NotObservedThrough {
+  string command_id = 1;
+  uint64 through_cursor = 2;
+}
+
+message CommandLookupEntry {
+  oneof result {
+    AdmittedCommand admitted = 1;
+    NotObservedThrough not_observed = 2;
+  }
+}
+
+message CommandLookup {
+  Position position = 1;
+  repeated CommandLookupEntry entries = 2;
+}
+
+// Query results are complete selected values at position. The sync engine coordinates their
+// installation with live updates; reading a page alone never advances a subscription token.
+message SegmentsPage {
+  Position position = 1;
+  repeated Segment segments = 2;
+  // True iff no more items existed in the requested direction at position.
+  bool exhausted = 3;
+}
+
+message CommandsPage {
+  Position position = 1;
+  repeated CommandSummary commands = 2;
+  bool exhausted = 3;
+}
+
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_NOT_YET_ARCHIVED = 1;
+  AVAILABILITY_LOST = 2;
+  AVAILABILITY_NOT_CAPTURED = 3;
+  AVAILABILITY_EXPIRED = 4;
+}
+
+// A whole immutable value, or a reason it is unavailable. Transport failure is an error, and an
+// included empty byte string is a successful read. Storage chunking is not query pagination.
+message Payload {
+  oneof result {
+    bytes data = 1;
+    Availability unavailable = 2;
+  }
+}
