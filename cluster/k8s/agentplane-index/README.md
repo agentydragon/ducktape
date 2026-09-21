@@ -34,5 +34,5 @@ ServiceAccount token. ImagePolicy `flux-system/agentplane-index` advances both w
 published devel images.
 
 See the [service contract](../../../agentplane/indexing/SPEC.md) and
-[database configuration](db/README.md). Index state is rebuildable; full initial ingestion is
+[database configuration](database.md). Index state is rebuildable; full initial ingestion is
 asynchronous, and mixed-revision search during updates is reported in the response.

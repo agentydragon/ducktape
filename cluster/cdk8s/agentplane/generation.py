@@ -29,15 +29,22 @@ def environment_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
     ]
 
 
-def write_environment_manifests(root: Path, env: Environment, build: Callable[[App], Chart]) -> Chart:
+def write_environment_manifests(
+    root: Path,
+    env: Environment,
+    build: Callable[[App], Chart],
+    *,
+    write_kustomization: bool = True,
+) -> Chart:
     """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
     `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
     `Cluster` -- accepted for both non-production environments.
 
-    Also (re)writes its root Kustomization: the one generated file plus the environment's
-    hand-written `extra_resources`. The sibling image-pins/ Component stays hand-written,
-    same as litellm/ha-mcp. Returns the chart so the per-environment Flux factory can build
-    health checks from these same objects.
+    Optionally rewrites the root Kustomization: the generated file plus the environment's
+    hand-written `extra_resources`. Agentplane testing keeps its root Kustomization
+    hand-written because Flux image automation updates its inline `images:` tags. Returns
+    the chart so the per-environment Flux factory can build health checks from these same
+    objects.
     """
     env_dir = f"cluster/k8s/{env.namespace}"
     out_dir = root / env_dir
@@ -46,8 +53,9 @@ def write_environment_manifests(root: Path, env: Environment, build: Callable[[A
     chart = build(app)
     app.synth()
 
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]),
-    )
+    if write_kustomization:
+        write_yaml(
+            out_dir / "kustomization.yaml",
+            kustomize_kustomization(resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]),
+        )
     return chart

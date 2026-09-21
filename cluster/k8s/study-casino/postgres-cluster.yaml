@@ -54,7 +54,7 @@ spec:
         login: true
         passwordSecret:
           name: study-casino-db-readonly
-        comment: "Read-only access for sandbox agents (see cluster/k8s/study-casino/db/readonly-role.sql)"
+        comment: "Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)"
 
   bootstrap:
     initdb:

@@ -174,7 +174,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("grocy-vallejo-user-perms", ("cluster/k8s/grocy/vallejo/user-perms", "cluster/k8s/grocy/user-perms-base")),
     ("haku-console", ("cluster/k8s/haku/console", "cluster/k8s/haku/console-namespace")),
-    ("haku-mailbox", ("cluster/k8s/haku/mailbox", "cluster/k8s/haku/mailbox-namespace")),
+    ("haku-mailbox", ("cluster/k8s/haku/mailbox",)),
     ("haku-forgejo-tea", ("cluster/k8s/haku/forgejo-tea",)),
     ("haku-ui-image-webhook", ("cluster/k8s/haku/ui-image-webhook",)),
     ("haku-workloads", ("cluster/k8s/haku/workloads",)),

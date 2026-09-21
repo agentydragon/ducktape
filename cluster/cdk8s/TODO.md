@@ -121,7 +121,7 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   would close. The outpost/provider referential-integrity half of that test walks
   Authentik's own blueprint DSL (`!Find`/`!KeyOf`) and stays a real external-format
   check regardless of conversion.
-- **`cluster/k8s/haku/mailbox/app/`** — `test_mailbox_plan.py`'s init/prod image
+- **`cluster/k8s/haku/mailbox/`** — `test_mailbox_plan.py`'s init/prod image
   equality and configMapGenerator-name-vs-mount-name checks. Small enough this might
   not be worth a dedicated cdk8s chart on its own; reconsider if `mailbox/` gets
   touched for another reason first.
