@@ -1,12 +1,13 @@
 import { snakeCamelMapper } from "@electric-sql/client";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import { createCollection, useLiveQuery } from "@tanstack/react-db";
-import { type JSX, useEffect, useMemo, useState } from "react";
+import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
+const RefreshConversation = createContext<() => void>(() => undefined);
 type Decimal = z.output<typeof decimal>;
 export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
@@ -137,12 +138,17 @@ function ActiveConversation({
   useEffect(() => {
     if (segmentCount > 60) onRotate();
   }, [onRotate, segmentCount]);
+  useEffect(() => {
+    if (!query.isError) return;
+    const retry = window.setTimeout(onRotate, 1_000);
+    return () => window.clearTimeout(retry);
+  }, [onRotate, query.isError]);
   return (
-    <>
+    <RefreshConversation.Provider value={onRotate}>
       {query.isError && <p role="alert">Conversation synchronization stopped.</p>}
       {!query.isError && !caughtUp && <p role="status">Catching up conversation…</p>}
       {onRows(caughtUp ? rows : [], interest)}
-    </>
+    </RefreshConversation.Provider>
   );
 }
 
@@ -158,6 +164,7 @@ export function ConversationCollection({
   const [interest, setInterest] = useState<EntityInterest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
+  const rotate = useCallback(() => setGeneration((value) => value + 1), []);
   useEffect(() => {
     const controller = new AbortController();
     let retry: number | undefined;
@@ -180,14 +187,7 @@ export function ConversationCollection({
   }, [beforeCursor, generation, threadId]);
   if (error) return <p role="alert">Conversation sync failed: {error}</p>;
   if (!interest) return <p role="status">Loading conversation…</p>;
-  return (
-    <ActiveConversation
-      threadId={threadId}
-      interest={interest}
-      onRows={children}
-      onRotate={() => setGeneration((value) => value + 1)}
-    />
-  );
+  return <ActiveConversation threadId={threadId} interest={interest} onRows={children} onRotate={rotate} />;
 }
 
 function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
@@ -231,37 +231,75 @@ export function PayloadBody({
   follow: boolean;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
+  const refreshConversation = useContext(RefreshConversation);
   const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
-  const [extent, setExtent] = useState<{ key: string; chunkCount: string; contentBytes: string } | null>(null);
+  const [selection, setSelection] = useState<{
+    key: string;
+    reference: PayloadRef;
+    follow: boolean;
+    chunkCount: string;
+    contentBytes: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    setExtent(null);
     setError(null);
     const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-interest`, window.location.href);
     url.search = new URL(chunkUrl(threadId, reference, false)).search;
-    void fetch(url, { signal: controller.signal })
-      .then(async (response) => {
-        if (response.status === 410) throw new Error("Payload revision is unavailable");
-        if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
-        const value = (await response.json()) as { chunk_count: string; content_bytes: string };
-        setExtent({ key: referenceKey, chunkCount: value.chunk_count, contentBytes: value.content_bytes });
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(displayableError(reason));
-      });
-    return () => controller.abort();
-  }, [reference, referenceKey, threadId]);
-  if (error) return <p role="alert">{error}</p>;
+    let retry: number | undefined;
+    let attempt = 0;
+    const load = (): void => {
+      if (retry !== undefined) window.clearTimeout(retry);
+      void fetch(url, { signal: controller.signal })
+        .then(async (response) => {
+          if (response.status === 410) {
+            refreshConversation();
+            throw new Error("Payload revision is unavailable after conversation reset");
+          }
+          if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
+          const value = (await response.json()) as { chunk_count: string; content_bytes: string };
+          if (!controller.signal.aborted) {
+            setSelection({
+              key: referenceKey,
+              reference,
+              follow,
+              chunkCount: value.chunk_count,
+              contentBytes: value.content_bytes,
+            });
+            setError(null);
+          }
+        })
+        .catch((reason: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(displayableError(reason));
+          retry = window.setTimeout(load, Math.min(5_000, 250 * 2 ** attempt++));
+        });
+    };
+    const online = (): void => {
+      if (!controller.signal.aborted) load();
+    };
+    window.addEventListener("online", online);
+    load();
+    return () => {
+      controller.abort();
+      if (retry !== undefined) window.clearTimeout(retry);
+      window.removeEventListener("online", online);
+    };
+  }, [follow, reference, referenceKey, refreshConversation, threadId]);
+  if (!selection) return error ? <p role="alert">{error}</p> : children(null);
   return (
-    <ActivePayloadBody
-      threadId={threadId}
-      reference={reference}
-      extent={extent?.key === referenceKey ? extent : null}
-      follow={follow}
-    >
-      {children}
-    </ActivePayloadBody>
+    <>
+      {selection.key !== referenceKey && <p role="status">Loading newer revision; showing last complete revision.</p>}
+      {error && <p role="alert">{error}; retrying.</p>}
+      <ActivePayloadBody
+        threadId={threadId}
+        reference={selection.reference}
+        extent={selection}
+        follow={selection.follow}
+      >
+        {children}
+      </ActivePayloadBody>
+    </>
   );
 }
 
