@@ -13,18 +13,7 @@ export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-type StoredState = ConversationStoredEntity["state"];
-type StoredViewState = Extract<StoredState, { controls: unknown }>;
-type ConversationState =
-  | Exclude<StoredState, StoredViewState>
-  | (StoredViewState & {
-      operational: {
-        operational_version: string;
-        status: "active" | "ended" | "failed";
-        last_verified_cursor: string;
-        feed_error: { cursor: string; message: string } | null;
-      };
-    });
+type ConversationState = ConversationStoredEntity["state"];
 
 export interface ConversationEntity {
   threadId: string;
