@@ -353,6 +353,7 @@ py_test(
         "//agentplane/runner:service",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
