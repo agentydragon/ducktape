@@ -568,7 +568,6 @@ function VirtualizedHistory({
     if (Math.abs(element.scrollTop - previousBottom) > 2) return false;
     atBottom.current = true;
     cancelRestoration();
-    element.scrollTop = element.scrollHeight;
     return true;
   };
   function correctRestoration(): number | null {
@@ -612,6 +611,7 @@ function VirtualizedHistory({
   // ResizeObserver below preserves the first visible row explicitly. This is an
   // instance hook in the pinned virtual-core version, rather than an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+  const renderedTotalSize = virtualizer.getTotalSize();
   const expectUserScroll = () => {
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
@@ -664,8 +664,9 @@ function VirtualizedHistory({
   useLayoutEffect(() => {
     const element = viewport.current;
     const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
-    if (element && atBottom.current && segments.length > previousCount.current)
-      element.scrollTop = element.scrollHeight;
+    // `onChange` runs while virtual-core has calculated a new total but before React
+    // commits that height. Follow only after the rendered height is available.
+    if (element && atBottom.current) element.scrollTop = element.scrollHeight;
     if (
       element &&
       !atBottom.current &&
@@ -680,7 +681,7 @@ function VirtualizedHistory({
     }
     previousCount.current = segments.length;
     previousFirstKey.current = firstKey;
-  }, [segments, virtualizer]);
+  }, [segments, renderedTotalSize, virtualizer]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const content = contents.current;
@@ -795,7 +796,7 @@ function VirtualizedHistory({
         }
       }}
     >
-      <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+      <div ref={contents} style={{ height: renderedTotalSize, position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const entity = segments[item.index];
           return entity ? (
