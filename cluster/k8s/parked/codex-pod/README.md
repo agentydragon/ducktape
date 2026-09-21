@@ -7,13 +7,24 @@ driver isn't present, and its `codex-workspace` PVC then failed to attach — th
 Deployment sat `ProgressDeadlineExceeded` rather than being fixed. `agent-sandbox`'s
 `SandboxTemplate`-based codex workspace (`cluster/k8s/agents/agent-sandbox/`) is the
 newer pattern for this workload. Manifests kept here for reference; re-wiring means
-adding its Flux Kustomization to the central cdk8s chart and fixing the nodeSelector gap.
+restoring the image build/publish workflow and Flux image scan/policy, adding its Flux
+Kustomization to the central cdk8s chart, and fixing the nodeSelector gap.
 
-Codex agent pod running the Nix-built `codex-pod` image
-(`x/codex_pod_image/`, `.#codex-pod-image`). Edit the tool set in that `buildEnv`
-→ CI builds+pushes the image → Flux image automation rolls this Deployment.
+The Nix image source (`x/codex_pod_image/`) and `.#codex-pod-image` output remain
+in the repo, but its current flake evaluation fails because the image imports
+`codex-claude.nix` without its required `config` argument. Automatic build/publish and
+Flux image scanning are retired; the evaluation issue is a separate, deferred change.
 Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 <../../../../docs/container-images.md> § Forgejo-hosted images.
+
+## Historical image build workflow
+
+While active, `.github/workflows/codex-pod-image.yml` ran on selected `devel` pushes
+or manual dispatches. It watched `x/codex_pod_image/`, `flake.lock`,
+`nix/flake/packages.nix`, and its setup files. It ran
+`nix build .#codex-pod-image`, then used `skopeo` to push a timestamped `devel-*`
+tag to the Forgejo `ducktape-ci/codex-pod` repository. That workflow is retired. The
+flake output is retained, but its current evaluation failure is noted above.
 
 ## Pieces
 
@@ -25,13 +36,11 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
   agent-box's unattended `ducktape.codex`). Baked directly rather than via the
   upstream `programs.codex` module, whose config.toml comes from a home-manager
   _activation_ script that never runs in this activation-less image.
-- **CI**: `.github/workflows/codex-pod-image.yml` builds `.#codex-pod-image` and
-  `skopeo copy`s a `devel-<ts>-<sha7>` tag to our Forgejo registry
-  `git.allegedly.works/ducktape-ci/codex-pod` (as the `ducktape-ci` tenant).
-- **Auto-roll**: `ImageRepository` (authenticated `secretRef`) + `ImagePolicy` in
-  `cluster/k8s/flux-image-automation-forgejo/`; the cluster-wide `all-images`
-  `ImageUpdateAutomation` writes the resolved tag into `deployment.yaml`'s
-  `{"$imagepolicy": "flux-system:codex-pod"}` marker.
+- **Former CI**: see [Historical image build workflow](#historical-image-build-workflow).
+- **Former auto-roll**: the `ImageRepository` and `ImagePolicy` have been removed from
+  `cluster/k8s/flux-image-automation-forgejo/`. The archived Deployment keeps its last
+  published image tag without an automation marker; restore the marker and policy when
+  reactivating the experiment.
 - **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
   `ducktape-ci` Forgejo user (Terraform) and a `forgejo-images-creds` Secret
   reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).

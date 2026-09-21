@@ -69,7 +69,6 @@ IMAGES = (
     "authentik-jwt-rotation",
     "aw-server",
     "cli-proxy-api",
-    "codex-pod",
     "cpap-gateway",
     "cpap-sync",
     "forgejo-token-rotation",

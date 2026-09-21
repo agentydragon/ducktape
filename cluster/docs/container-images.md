@@ -57,8 +57,9 @@ to the old path.
 ## Forgejo-hosted images
 
 The default for a new in-cluster image: a **private** package in our own registry (no
-GHCR "make public" toil, credential provisioned in code). Reference implementation:
-`codex-pod`.
+GHCR "make public" toil, credential provisioned in code). Historical reference:
+`codex-pod` (<../k8s/parked/codex-pod/README.md>); its automatic build/publish and
+Flux image scan are retired.
 
 1. **Tenant + credential** — `cluster/k8s/forgejo-images/` provisions the
    `ducktape-ci` Forgejo user (`tf/gitops/forgejo-images`, password from the SOPS

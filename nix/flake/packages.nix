@@ -90,9 +90,9 @@ ducktapePkgs
   # Build: nix build .#haku-sandbox-image
   # Load:  docker load < result
   haku-sandbox-image = import ../../cluster/k8s/haku/workspaces/image { inherit pkgs; };
-  # Codex pod image (plain Docker, no NixOS/systemd). Tool set is a
-  # buildEnv; see cluster/k8s/agents/codex-pod/README.md.
-  # Build: nix build .#codex-pod-image
+  # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
+  # output retained; see cluster/k8s/parked/codex-pod/README.md for status.
+  # Build: nix build .#codex-pod-image (currently fails at evaluation; see parked README)
   # Load:  docker load < result
   codex-pod-image = import ../../x/codex_pod_image {
     inherit
