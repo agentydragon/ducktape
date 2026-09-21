@@ -527,6 +527,8 @@ function VirtualizedHistory({
   const previousScrollHeight = useRef(0);
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
+  const captureNextScroll = useRef(false);
+  const captureExpiry = useRef<number | null>(null);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -549,6 +551,14 @@ function VirtualizedHistory({
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
     restoringAnchor.current = null;
+  };
+  const expectUserScroll = () => {
+    captureNextScroll.current = true;
+    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+    captureExpiry.current = window.setTimeout(() => {
+      captureNextScroll.current = false;
+      captureExpiry.current = null;
+    }, 100);
   };
   const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
@@ -612,6 +622,7 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
+      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -624,10 +635,12 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
+        expectUserScroll();
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
         cancelRestoration();
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
@@ -646,6 +659,7 @@ function VirtualizedHistory({
       }}
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
+        expectUserScroll();
         if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
         touchY.current = next ?? null;
       }}
@@ -658,6 +672,8 @@ function VirtualizedHistory({
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
+        if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
+        captureNextScroll.current = false;
         const viewportTop = element.getBoundingClientRect().top;
         const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
           (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
