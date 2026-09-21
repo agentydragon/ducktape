@@ -291,13 +291,14 @@ metadata:
   name: gatus-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   healthChecks:
     - apiVersion: v1
       kind: Namespace
       name: gatus
   interval: 10m
   path: ./cluster/k8s/gatus/namespace
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -2180,6 +2181,7 @@ metadata:
   name: gatus-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: gatus-namespace
       namespace: ducktape-flux
@@ -2192,7 +2194,7 @@ spec:
       namespace: gatus
   interval: 10m
   path: ./cluster/k8s/gatus/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

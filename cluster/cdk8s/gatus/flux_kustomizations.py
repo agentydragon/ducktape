@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -67,7 +68,8 @@ def gatus_db(chart: Chart, gatus_namespace: Kustomization, cnpg: Kustomization) 
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/gatus/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -92,7 +94,8 @@ def gatus_namespace(chart: Chart) -> Kustomization:
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/gatus/namespace",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gatus")],
         ),
