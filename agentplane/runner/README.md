@@ -76,3 +76,16 @@ and deleting the only state volume are not supported recovery paths. That node-l
 mount is the required ownership assumption; RWO alone does not prevent two processes on its node
 from opening it. Session metadata and native resume files remain beside the database. There is no
 JSONL reader or old-data migration.
+
+### Bounded session history
+
+The SQLite journal stores a recovery checkpoint in the same transaction as each event.
+Opening a session reads that checkpoint and validates the last event, without decoding
+historical frames. Attachments query exclusive-cursor pages of 128 events on a separate
+read connection, limited to the published cursor. A slow attachment retains one page.
+Completed command IDs and debug checkpoint identities are looked up by their indexed
+keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
+
+This changes the disposable journal schema: recreate old staging runner state rather than
+replaying it into a compatibility checkpoint. The native harness's own history and memory
+usage are separate from the runner journal's bounds.

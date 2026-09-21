@@ -81,15 +81,15 @@ async def test_publication_waits_for_committed_replay(
     commit_gate.armed = True
     append = asyncio.create_task(journal.append(observation))
     await commit_gate.reached.wait()
-    assert journal.since(0) == [first]
+    assert (await journal.since(0, limit=128)) == [first]
     assert not follower.done()
     async with Journal.open(tmp_path / "journal.sqlite", "test-source") as reader:
-        assert reader.entries == [first]
+        assert (await reader.since(0, limit=128)) == [first]
     commit_gate.release.set()
     published = await append
     await follower
     async with Journal.open(tmp_path / "journal.sqlite", "test-source") as reader:
-        assert [entry.SerializeToString() for entry in reader.entries] == [
+        assert [entry.SerializeToString() for entry in (await reader.since(0, limit=128))] == [
             first.SerializeToString(),
             published.SerializeToString(),
         ]
@@ -109,13 +109,13 @@ async def test_failed_commit_stops_publication_and_recovery_preserves_the_commit
         commit_gate.release.set()
         with pytest.raises(JournalStorageError):
             await append
-        assert journal.entries == [first]
+        assert (await journal.since(0, limit=128)) == [first]
         with pytest.raises(JournalStorageError, match="reopen"):
             await follower
         with pytest.raises(JournalStorageError, match="reopen"):
             await journal.append(event_pb2.HarnessLost())
     async with Journal.open(path, "test-source") as recovered:
-        assert recovered.entries[0] == first
+        assert (await recovered.since(0, limit=128))[0] == first
         assert recovered.last_cursor == 1 + int(persisted)
         next_cursor = recovered.last_cursor + 1
         assert (await recovered.append(event_pb2.HarnessLost())).cursor == next_cursor
@@ -161,9 +161,9 @@ async def test_admission_dedup_uses_the_full_frozen_command(journal: Journal, tm
     with pytest.raises(CommandConflictError):
         await journal.admit(command)
     # Mutating a public replay object cannot rewrite future replay or the canonical command.
-    journal.entries[0].event.command_admitted.command.submit_input.text = "mutated replay"
+    (await journal.since(0, limit=128))[0].event.command_admitted.command.submit_input.text = "mutated replay"
     async with Journal.open(tmp_path / "journal.sqlite", "test-source") as recovered:
-        assert recovered.entries == [admission]
+        assert (await recovered.since(0, limit=128)) == [admission]
         assert await recovered.admit(command_pb2.Command.FromString(original)) is None
 
 
@@ -172,8 +172,8 @@ async def test_concurrent_admission_has_one_identity_and_contiguous_publication(
     admissions = await asyncio.gather(*(journal.admit(command) for _ in range(8)))
     assert sum(entry is not None for entry in admissions) == 1
     await asyncio.gather(*(journal.append(event_pb2.TextDelta(item_id="test-item", text=str(i))) for i in range(8)))
-    assert [entry.cursor for entry in journal.entries] == list(range(1, 10))
-    assert journal.entries[0].event.command_admitted.command == command
+    assert [entry.cursor for entry in (await journal.since(0, limit=128))] == list(range(1, 10))
+    assert (await journal.since(0, limit=128))[0].event.command_admitted.command == command
 
 
 async def test_cancelled_commit_requires_recovery_even_if_sqlite_committed(
@@ -194,7 +194,7 @@ async def test_cancelled_commit_requires_recovery_even_if_sqlite_committed(
     async with Journal.open(path, "test-source") as recovered:
         assert recovered.last_cursor == 1
         assert await recovered.admit(command) is None
-        assert recovered.entries[0].event.command_admitted.command == command
+        assert (await recovered.since(0, limit=128))[0].event.command_admitted.command == command
 
 
 async def test_invalid_multi_command_outcome_rolls_back_earlier_updates(journal: Journal) -> None:
@@ -214,7 +214,7 @@ async def test_stale_storage_owner_cannot_publish_a_gap(journal: Journal, tmp_pa
         await journal.append(event_pb2.HarnessStarted(pid=123))
         with pytest.raises(JournalStorageError):
             await other.append(event_pb2.HarnessLost())
-        assert other.entries == []
+        assert (await other.since(0, limit=128)) == []
     assert (await journal.append(event_pb2.TextDelta(item_id="test-item", text="next"))).cursor == 2
 
 
@@ -237,6 +237,52 @@ async def test_sqlite_runtime_and_storage_contract(journal: Journal, tmp_path: P
             )
     finally:
         await engine.dispose()
+
+
+async def test_recovery_reads_checkpoint_and_replay_reads_only_requested_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "long.sqlite"
+    async with Journal.open(path, "long-source") as journal:
+        await journal.append(event_pb2.HarnessStarted(pid=123))
+        await journal.append(event_pb2.TurnStarted(turn_id="active-turn"))
+        for _ in range(260):
+            await journal.append(event_pb2.Native(line="old history"))
+        await journal.append(event_pb2.DebugCheckpoint(name="boundary", command_id="old-command"))
+    decoded: list[int] = []
+    decode = Journal._decode
+
+    def counting_decode(payload: bytes, source_id: str, cursor: int) -> event_log_pb2.EventEntry:
+        decoded.append(cursor)
+        return decode(payload, source_id, cursor)
+
+    monkeypatch.setattr(Journal, "_decode", staticmethod(counting_decode))
+    async with Journal.open(path, "long-source") as recovered:
+        assert decoded == [263]
+        assert recovered.recovery_state.harness_running
+        assert recovered.recovery_state.active_turn_id == "active-turn"
+        assert await recovered.reached_checkpoint("boundary", "old-command")
+        assert not await recovered.reached_checkpoint("boundary", "other-command")
+        page = await recovered.since(128, limit=30)
+        assert [entry.cursor for entry in page] == list(range(129, 159))
+        assert decoded == [263, *range(129, 159)]
+        assert await recovered.since(263, limit=30) == []
+        await recovered.append(event_pb2.HarnessLost())
+        assert not recovered.recovery_state.harness_running
+        assert recovered.recovery_state.active_turn_id == "active-turn"
+        await recovered.append(event_pb2.TurnCompleted(turn_id="active-turn"))
+    async with Journal.open(path, "long-source") as recovered:
+        assert recovered.recovery_state.active_turn_id == ""
+        assert not recovered.recovery_state.harness_running
+    with pytest.raises(ValueError, match="source"):
+        async with Journal.open(path, "wrong-source"):
+            pass
+
+
+@pytest.mark.parametrize(("after", "limit"), [(-1, 1), (1, 1), (0, 0)])
+async def test_replay_rejects_invalid_page(journal: Journal, after: int, limit: int) -> None:
+    with pytest.raises(ValueError, match="page size"):
+        await journal.since(after, limit=limit)
 
 
 if __name__ == "__main__":

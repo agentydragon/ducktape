@@ -119,7 +119,7 @@ async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(t
             assert adapter.interrupted_turn_ids == ["turn-1"]
             assert [
                 entry.event.command_admitted.command.command_id
-                for entry in session.journal.entries
+                for entry in (await session.journal.since(0, limit=128))
                 if entry.event.HasField("command_admitted")
             ] == ["input-1", "interrupt-1"]
             input_entry = await session.journal.get("input-1")

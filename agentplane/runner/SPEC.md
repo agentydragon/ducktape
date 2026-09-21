@@ -225,3 +225,14 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Transport security; the listener is plaintext on loopback.
 - Recovery semantics for a turn lost mid-tool beyond reporting `PROCESS_LOST`.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
+
+### History-independent recovery and replay
+
+- Session recovery reads a durable checkpoint, not all historical events. The checkpoint and
+  event publication boundary commit atomically with each event and command outcome.
+- Each attachment reads bounded pages from durable storage. Slow readers do not accumulate
+  a private copy of the intervening history in runner memory.
+- Historical command identities and debug checkpoints remain queryable in durable storage;
+  in-memory scheduling tracks outstanding work and releases terminal commands.
+- These bounds exclude the native harness process and the size of individual events and
+  outstanding work. Native harness resume may still read its own history.
