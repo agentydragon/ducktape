@@ -383,17 +383,21 @@ def create_electric_proxy(electric_url: str, instance_name: str, pool: asyncpg.P
         )
         gate: PayloadGate | None = app.state.payload_gate
         has_subset = request.method == "POST" or any(key.startswith("subset__") for key in request.query_params)
-        hold_response = gate is not None and gate.active and gate.payload_ref == payload_ref and gate.part == part
-        if hold_response and has_subset:
-            gate.arrived.set()
-            await gate.release.wait()
-            gate.active = False
+        matching_gate = (
+            gate
+            if gate is not None and gate.active and gate.payload_ref == payload_ref and gate.part == part and has_subset
+            else None
+        )
+        if matching_gate is not None:
+            matching_gate.arrived.set()
+            await matching_gate.release.wait()
+            matching_gate.active = False
         response = await _forward_electric(request, app.state.electric_url, instance_name, shape)
-        if hold_response and has_subset:
-            gate.active = False
-            gate.response_body = bytes(response.body)
-            gate.arrived.set()
-            gate.completed.set()
+        if matching_gate is not None:
+            matching_gate.active = False
+            matching_gate.response_body = bytes(response.body)
+            matching_gate.arrived.set()
+            matching_gate.completed.set()
         return response
 
     return app
@@ -498,24 +502,49 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
             conversation_id,
             payload_ref,
         )
+        if owner is None:
+            payload_requests.append(
+                {
+                    "conversationId": conversation_id,
+                    "payloadRef": payload_ref,
+                    "itemId": None,
+                    "field": None,
+                    "sourceId": None,
+                    "generationId": None,
+                    "revision": None,
+                    "chunkCount": None,
+                    "contentBytes": None,
+                    "part": part,
+                    "method": request.method,
+                    "dispatch": None,
+                    "manifestFound": False,
+                    "status": 410,
+                    "electricQuery": dict(request.query_params.multi_items()),
+                }
+            )
+            return Response(
+                content=json.dumps({"detail": "Payload revision is unavailable or expired"}),
+                status_code=410,
+                media_type="application/json",
+            )
         backend, name = await app.state.round_robin.choose()
-        payload_requests.append(
-            {
-                "conversationId": conversation_id,
-                "payloadRef": payload_ref,
-                "itemId": owner["item_id"] if owner is not None else None,
-                "field": owner["field_name"] if owner is not None else None,
-                "sourceId": owner["source_id"] if owner is not None else None,
-                "generationId": str(owner["generation_id"]) if owner is not None else None,
-                "revision": str(owner["revision"]) if owner is not None else None,
-                "chunkCount": owner["chunk_count"] if owner is not None else None,
-                "contentBytes": str(owner["content_bytes"]) if owner is not None else None,
-                "part": part,
-                "method": request.method,
-                "dispatch": name,
-                "electricQuery": dict(request.query_params.multi_items()),
-            }
-        )
+        payload_request = {
+            "conversationId": conversation_id,
+            "payloadRef": payload_ref,
+            "itemId": owner["item_id"],
+            "field": owner["field_name"],
+            "sourceId": owner["source_id"],
+            "generationId": str(owner["generation_id"]),
+            "revision": str(owner["revision"]),
+            "chunkCount": owner["chunk_count"],
+            "contentBytes": str(owner["content_bytes"]),
+            "part": part,
+            "method": request.method,
+            "dispatch": name,
+            "manifestFound": True,
+            "electricQuery": dict(request.query_params.multi_items()),
+        }
+        payload_requests.append(payload_request)
         body = await request.body()
         headers = {
             key: value
@@ -530,6 +559,7 @@ def create_gateway(pool: asyncpg.Pool, electric_backends: list[str], frontend_di
                 content=body,
                 headers=headers,
             )
+        payload_request["status"] = upstream.status_code
         response_headers = {key: value for key, value in upstream.headers.items() if key.lower() not in _HOP_HEADERS}
         response_headers["x-gateway-dispatch"] = name
         return Response(content=upstream.content, status_code=upstream.status_code, headers=response_headers)

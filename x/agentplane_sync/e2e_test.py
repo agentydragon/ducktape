@@ -1175,11 +1175,38 @@ async def test_electric_end_to_end() -> None:
                             )
                             assert payload_log_override.status_code == 400, payload_log_override.text
                             foreign_payload_ref = payload_probes["payload-small"]["payloadRef"]
+                            proxy_requests_before_foreign_ref = (
+                                proxy_one.state.request_count + proxy_two.state.request_count
+                            )
                             wrong_conversation_ref = await api.get(
                                 f"/api/electric/alpha-large/payload/{foreign_payload_ref}/chunks?offset=now",
                                 headers=AUTH,
                             )
                             assert wrong_conversation_ref.status_code == 410, wrong_conversation_ref.text
+                            assert (
+                                proxy_one.state.request_count + proxy_two.state.request_count
+                                == proxy_requests_before_foreign_ref
+                            ), "A foreign payload reference must not be forwarded to either Electric proxy"
+                            foreign_ref_metric = (await api.get("/api/proxy-metrics", headers=AUTH)).json()[
+                                "payloadRequests"
+                            ][-1]
+                            assert foreign_ref_metric == {
+                                "conversationId": "alpha-large",
+                                "payloadRef": foreign_payload_ref,
+                                "itemId": None,
+                                "field": None,
+                                "sourceId": None,
+                                "generationId": None,
+                                "revision": None,
+                                "chunkCount": None,
+                                "contentBytes": None,
+                                "part": "chunks",
+                                "method": "GET",
+                                "dispatch": None,
+                                "manifestFound": False,
+                                "status": 410,
+                                "electricQuery": {"offset": "now"},
+                            }, foreign_ref_metric
                         diagnostics["auth"] = {
                             "crossConversation": denied.status_code,
                             "getTableOverride": get_override.status_code,
@@ -1193,6 +1220,13 @@ async def test_electric_end_to_end() -> None:
                             "payloadExactSubset": payload_exact_subset.status_code,
                             "payloadBroaderSubset": payload_broader_subset.status_code,
                             "payloadLogOverride": payload_log_override.status_code,
+                            "foreignPayloadRef": {
+                                "status": wrong_conversation_ref.status_code,
+                                "forwardedToProxy": (
+                                    proxy_one.state.request_count + proxy_two.state.request_count
+                                    != proxy_requests_before_foreign_ref
+                                ),
+                            },
                             "payloadForeignConversationRef": wrong_conversation_ref.status_code,
                         }
 
@@ -1933,13 +1967,9 @@ async def test_electric_end_to_end() -> None:
                                 ]
                             )
                             await page.get_by_role("button", name="Close payload").click()
-                            initial_output_gc = await _wait_for_payload_gc(
-                                page, tool_shape_ref, tool_collection_id
-                            )
+                            initial_output_gc = await _wait_for_payload_gc(page, tool_shape_ref, tool_collection_id)
 
-                            closed_chunks = [
-                                f"closed-interest-{index:02d}:" + "x" * 8_192 for index in range(64)
-                            ]
+                            closed_chunks = [f"closed-interest-{index:02d}:" + "x" * 8_192 for index in range(64)]
                             closed_delta_start = base_cursor + 13
                             closed_delta_end = closed_delta_start + len(closed_chunks) - 1
                             closed_delta_result = await apply_batch(
@@ -2052,7 +2082,9 @@ async def test_electric_end_to_end() -> None:
                             }
                             retired_closed_body_collections = [
                                 entry
-                                for entry in await page.evaluate("() => window.__syncEvidence.retiredPayloadCollections")
+                                for entry in await page.evaluate(
+                                    "() => window.__syncEvidence.retiredPayloadCollections"
+                                )
                                 if entry["shapeRef"] == closed_payload_ref
                             ]
                             assert len(retired_closed_body_collections) == len(revisit_evidence), (
@@ -2100,9 +2132,9 @@ async def test_electric_end_to_end() -> None:
                             requests_before_empty_open = len(
                                 [
                                     request
-                                    for request in (
-                                        await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
-                                    ).json()["payloadRequests"]
+                                    for request in (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
+                                        "payloadRequests"
+                                    ]
                                     if request["field"] == "output" and request["itemId"] == "tool-row"
                                 ]
                             )
@@ -2120,9 +2152,9 @@ async def test_electric_end_to_end() -> None:
                             requests_after_empty_commit = len(
                                 [
                                     request
-                                    for request in (
-                                        await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
-                                    ).json()["payloadRequests"]
+                                    for request in (await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)).json()[
+                                        "payloadRequests"
+                                    ]
                                     if request["field"] == "output" and request["itemId"] == "tool-row"
                                 ]
                             )
@@ -2173,12 +2205,11 @@ async def test_electric_end_to_end() -> None:
                                 and urlsplit(event.get("url", "")).path == older_manifest_path
                                 and event.get("event") in {"request", "requestfailed"}
                             ]
+                            assert any(event["event"] == "request" for event in stale_manifest_browser_events), (
+                                stale_manifest_browser_events
+                            )
                             assert any(
-                                event["event"] == "request" for event in stale_manifest_browser_events
-                            ), stale_manifest_browser_events
-                            assert any(
-                                event["event"] == "requestfailed"
-                                and event.get("failure") == "net::ERR_ABORTED"
+                                event["event"] == "requestfailed" and event.get("failure") == "net::ERR_ABORTED"
                                 for event in stale_manifest_browser_events
                             ), stale_manifest_browser_events
                             await page.get_by_role("button", name="Open older output").click()
@@ -2553,9 +2584,7 @@ async def test_electric_end_to_end() -> None:
                                 arg=str(restart_cursor),
                                 timeout=60_000,
                             )
-                            await page.screenshot(
-                                path=outputs / "alpha-large-electric-restarted.png", full_page=True
-                            )
+                            await page.screenshot(path=outputs / "alpha-large-electric-restarted.png", full_page=True)
                             wal_state = await pool.fetchrow("""SELECT current_setting('wal_level') AS wal_level,
                                 (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical') AS logical_slots,
                                 (SELECT count(*) FROM pg_replication_slots WHERE slot_type='logical' AND active) AS active_slots,
@@ -2699,9 +2728,7 @@ async def test_electric_end_to_end() -> None:
                             )
                             text_collection_id = await _payload_collection_id(page, "alpha-large", text_shape_ref)
                             await page.get_by_role("button", name="Close payload").click()
-                            text_collection_gc = await _wait_for_payload_gc(
-                                page, text_shape_ref, text_collection_id
-                            )
+                            text_collection_gc = await _wait_for_payload_gc(page, text_shape_ref, text_collection_id)
                             replacement_cursor = stream_end_cursor + 1
                             text_replacement_result = await apply_batch(
                                 pool,
@@ -2887,7 +2914,7 @@ async def test_electric_end_to_end() -> None:
                                     "chunkRows": len(stale_revision_rows),
                                     "contentBytes": stale_revision_wire_bytes,
                                     "responseBytes": sum(record["responseBytes"] for record in stale_revision_records),
-                                "chunkIndexes": [int(row["chunkIndex"]) for row in stale_revision_rows],
+                                    "chunkIndexes": [int(row["chunkIndex"]) for row in stale_revision_rows],
                                 },
                                 "queryPlan": stale_revision_plan,
                             }
@@ -2924,10 +2951,7 @@ async def test_electric_end_to_end() -> None:
                                 probe_rows.sort(key=lambda row: int(row["chunkIndex"]))
                                 assert [int(row["chunkIndex"]) for row in probe_rows] == list(
                                     range(probe["chunkCount"])
-                                ), {
-                                    "probe": probe,
-                                    "records": probe_records,
-                                }
+                                ), {"probe": probe, "records": probe_records}
                                 assert sum(int(row["contentBytes"]) for row in probe_rows) == probe["contentBytes"]
                                 stored_history_rows = await pool.fetchval(
                                     """SELECT count(*) FROM projected_payload_chunk
@@ -2969,6 +2993,21 @@ async def test_electric_end_to_end() -> None:
                             assert any(request["field"] == "arguments" for request in payload_metrics)
                             assert any(request["field"] == "output" for request in payload_metrics)
                             assert not any(request["field"] == "reasoning" for request in payload_metrics)
+                            payload_shape_requests = [
+                                request for request in payload_metrics if request["part"] in {"chunks", "revision"}
+                            ]
+                            delivered_payload_shape_requests = [
+                                request for request in payload_shape_requests if request["manifestFound"]
+                            ]
+                            assert all(
+                                request["field"] in {"text", "arguments", "output"}
+                                for request in delivered_payload_shape_requests
+                            ), delivered_payload_shape_requests
+                            assert all(
+                                request["status"] == 410 and request["dispatch"] is None
+                                for request in payload_metrics
+                                if request.get("manifestFound") is False
+                            ), payload_metrics
                             main_view_records = [
                                 record
                                 for record in response_records
@@ -2987,11 +3026,6 @@ async def test_electric_end_to_end() -> None:
                                 for record in response_records
                                 if record.get("payloadPart") in {"chunks", "revision"}
                             ]
-                            assert all(
-                                request["field"] in {"text", "arguments", "output"}
-                                for request in payload_metrics
-                                if request["part"] in {"chunks", "revision"}
-                            ), payload_metrics
                             assert payload_chunk_records, response_records
                             assert not page_errors, page_errors
                             diagnostics["payload"] = payload_metrics

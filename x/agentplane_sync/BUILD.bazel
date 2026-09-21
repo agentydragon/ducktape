@@ -67,3 +67,24 @@ py_test(
         "@pypi//uvicorn",
     ],
 )
+
+py_test(
+    name = "shape_capacity_test",
+    size = "medium",
+    srcs = ["shape_capacity_test.py"],
+    requires_docker = True,
+    deps = [
+        ":projector",
+        "//:conftest",
+        "//third_party/containers:electric_1_8",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
