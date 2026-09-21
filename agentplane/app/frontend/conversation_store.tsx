@@ -25,7 +25,11 @@ export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-type ConversationState = ConversationStoredEntity["state"];
+type ConversationState =
+  | Exclude<ConversationStoredEntity["state"], { controls: object }>
+  | (Omit<Extract<ConversationStoredEntity["state"], { controls: object }>, "command_revision_cursor"> & {
+      command_revision_cursor: Decimal;
+    });
 
 export interface ConversationEntity {
   threadId: string;
@@ -314,7 +318,8 @@ function PendingPageRows({
   role: "current" | "older" | "candidate";
   children: (rows: ConversationEntity[]) => JSX.Element;
 }): JSX.Element {
-  if (selection.collection === null)
+  const collection = selection.collection;
+  if (collection === null)
     return (
       <PendingPageResult
         selection={selection}
@@ -332,7 +337,7 @@ function PendingPageRows({
     );
   return (
     <LivePendingPageRows
-      selection={selection}
+      selection={{ ...selection, collection }}
       sourceId={sourceId}
       projectionEpoch={projectionEpoch}
       viewRevisionCursor={viewRevisionCursor}
@@ -405,28 +410,34 @@ function PendingPageResult({
   role: "current" | "older" | "candidate";
   children: (rows: ConversationEntity[]) => JSX.Element;
 }): JSX.Element {
+  const collection = selection.collection;
   const scopeMatches =
     selection.interest.source_id === sourceId && selection.interest.projection_epoch === projectionEpoch;
   const caughtUp =
     scopeMatches && ready && decimalBigInt(viewRevisionCursor) >= BigInt(selection.interest.through_cursor);
   useEffect(() => {
-    const collection = selection.collection;
     if (collection === null) return;
     traceCollection("subscribed", `command-${role}`, collection);
     return () => {
       if (traceCollection("unsubscribed", `command-${role}`, collection))
         collection.once("status:cleaned-up", () => traceCollection("collected", `command-${role}`, collection));
     };
-  }, [role, selection]);
+  }, [collection, role]);
   useEffect(() => {
-    if (selection.collection !== null) traceCollection("query", `command-${role}`, selection.collection);
-  }, [ready, role, rows, selection]);
+    if (collection !== null) traceCollection("query", `command-${role}`, collection);
+  }, [collection, ready, role, rows]);
   useEffect(() => {
     if (!scopeMatches) onScopeMismatch();
   }, [onScopeMismatch, scopeMatches]);
   useEffect(() => {
     if (caughtUp) onCaughtUp?.();
   }, [caughtUp, onCaughtUp]);
+  if (!caughtUp && role === "current")
+    return (
+      <p role="status" data-command-catchup="true">
+        Catching up command updates…
+      </p>
+    );
   return children(caughtUp ? rows : []);
 }
 
