@@ -21,6 +21,7 @@ py_test(
     srcs = ["test_actions_artifact.py"],
     data = [
         "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s/agents/ha-mcp/app:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
@@ -34,6 +35,7 @@ py_test(
         ":tool_resolve",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
