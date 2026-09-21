@@ -858,7 +858,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         public_coder_agent_namespace_kustomization,
         external_creds_kustomization,
-        agent_shared_secrets_kustomization,
         cert_manager_environment_kustomization,
         cert_manager_trust_kustomization,
         reflector_kustomization,
