@@ -93,6 +93,9 @@ including a same-count replacement; text deltas do not advance it. A runner `Att
 snapshot can be ahead of the archive and must not seed event-derived controls.
 An HTTP admission receipt likewise does not advance projection or subscription progress.
 
+The projection schema is experimental staging state. An incompatible stored view change resets
+and recreates that materialization; it does not retain a tolerant reader or a data backfill path.
+
 A body is either included whole at its reference or explicitly omitted. Included empty
 content, content not yet observed, omitted content, and unavailable content are different
 states. An actively streaming value is complete **at its current revision**; it is not
@@ -161,9 +164,10 @@ provides the existing client integration. These are capabilities to exercise aga
 pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
 Mutable entity and command collections use changes-only logs and TanStack's on-demand
-snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
-reading window, or explicitly selected command IDs. Pending membership comes from a
-count-limited keyset interest, never from a dynamic all-pending entity predicate. Bootstrap takes a
+snapshot reconciliation. Indexed predicates fix each entity shape to the selected tail and
+optional reading window. A separate SQL keyset interest returns at most 30 pending command IDs;
+the command collection follows only that bounded selection or explicitly selected command IDs.
+Bootstrap takes a
 current snapshot of that entire bounded shape; it does not replay earlier item revisions.
 The proxy accepts only a whole-shape subset query and owns all selection predicates.
 Payload shapes select one content field and generation. A pinned reference limits its

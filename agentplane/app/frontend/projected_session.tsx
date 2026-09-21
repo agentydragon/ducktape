@@ -555,10 +555,15 @@ function PendingCommandRows({
     )
       rows.set(row.entityId, row);
   }
+  const orderedRows = [...rows.values()].sort((left, right) => {
+    if (decimalBigInt(left.cursor) > decimalBigInt(right.cursor)) return -1;
+    if (decimalBigInt(left.cursor) < decimalBigInt(right.cursor)) return 1;
+    return left.entityId.localeCompare(right.entityId);
+  });
   return (
     <Stack role="region" aria-label="Command updates" gap="xs">
       <Text size="sm">Command updates · {unresolvedCount} pending</Text>
-      {[...rows.values()].map((row) => {
+      {orderedRows.map((row) => {
         if (!("outcome" in row.state)) return null;
         return (
           <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
