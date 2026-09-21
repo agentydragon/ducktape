@@ -122,9 +122,10 @@ function entityCollection(threadId: string, interest: EntityInterest) {
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
-      syncMode: "eager",
+      syncMode: "on-demand",
       shapeOptions: {
         url: entityUrl(threadId, interest),
+        params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
       },
     })
@@ -172,9 +173,10 @@ function commandCollection(threadId: string, sourceId: string, projectionEpoch: 
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => row.entityId,
-      syncMode: "eager",
+      syncMode: "on-demand",
       shapeOptions: {
         url: commandUrl(threadId, sourceId, projectionEpoch, selected),
+        params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
       },
     })

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
@@ -28,6 +29,7 @@ _ENTITY_COLUMNS = (
 )
 _CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 _PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log"})
+_SUBSET_QUERY = frozenset({"subset__where", "subset__params"})
 _INTEREST_QUERY = frozenset(
     {
         "anchor_cursor",
@@ -253,20 +255,45 @@ class ElectricProxy:
     async def _forward(
         self, request: Request, *, table: str, columns: str, where: str, params: dict[str, str]
     ) -> StreamingResponse:
-        if rejected := set(request.query_params) - _PASSTHROUGH_QUERY - _INTEREST_QUERY:
+        # Mutable rows bootstrap from a current snapshot. Replaying a full shape log
+        # would make reload cost proportional to the number of past revisions.
+        log_mode = "changes_only" if table == "conversation_entity" else "full"
+        subset_keys = _SUBSET_QUERY if log_mode == "changes_only" else frozenset()
+        allowed = _PASSTHROUGH_QUERY | subset_keys
+        if rejected := set(request.query_params) - allowed - _INTEREST_QUERY:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported sync parameters: {sorted(rejected)}")
-        if (log := request.query_params.get("log")) is not None and log != "full":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "the conversation sync log must be full")
+        for key in allowed:
+            if len(request.query_params.getlist(key)) > 1:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"duplicate sync parameter: {key}")
+        if (log := request.query_params.get("log")) is not None and log != log_mode:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"the selected sync log must be {log_mode}")
+        if (
+            "subset__where" in request.query_params
+            and request.query_params["subset__where"].strip().casefold() != "true = true"
+        ):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "snapshots must select the whole fixed interest")
+        if "subset__params" in request.query_params:
+            try:
+                subset_params = json.loads(request.query_params["subset__params"])
+            except json.JSONDecodeError as error:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "subset parameters must be JSON") from error
+            if subset_params not in ({}, []):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "snapshots do not accept caller parameters")
         query: list[tuple[str, str | int | float | bool | None]] = [
-            (key, value) for key, value in request.query_params.multi_items() if key in _PASSTHROUGH_QUERY
+            (key, value) for key, value in request.query_params.multi_items() if key in allowed and key != "log"
         ]
-        query.extend([("table", table), ("columns", columns), ("where", where), ("replica", "full")])
+        query.extend([("table", table), ("columns", columns), ("where", where), ("replica", "full"), ("log", log_mode)])
+        if log_mode == "changes_only":
+            query.append(("queryable_columns", columns))
         query.extend((f"params[{index}]", value) for index, value in params.items())
         upstream = self._client.build_request(
             "GET",
             "/v1/shape",
             params=httpx.QueryParams(query),
-            headers={"accept": request.headers.get("accept", "application/json")},
+            headers={
+                "accept": request.headers.get("accept", "application/json"),
+                **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
+            },
         )
         try:
             response = await self._client.send(upstream, stream=True)

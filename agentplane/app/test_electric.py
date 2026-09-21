@@ -68,7 +68,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=full"
+            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=changes_only"
         )
     await electric.aclose()
 
@@ -80,7 +80,8 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
     assert query["table"] == "conversation_entity"
-    assert query["log"] == "full"
+    assert query["log"] == "changes_only"
+    assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
     assert "cursor >= $4" in query["where"]
     assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
@@ -99,12 +100,71 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         stale_tail = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=0&offset=-1")
         arbitrary = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&table=event")
-        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=changes_only")
+        bad_log = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&log=full")
     await electric.aclose()
 
     assert stale_tail.status_code == 409
     assert arbitrary.status_code == 400
     assert bad_log.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "subset",
+    [
+        {"subset__where": "true = true"},
+        {"subset__where": "TRUE = TRUE", "subset__params": "{}"},
+        {"subset__where": "true = true", "subset__params": "[]"},
+    ],
+)
+async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]) -> None:
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(
+            f"/threads/{THREAD}/sync/entities",
+            params={"anchor_cursor": "99", "tail_from": "70", "offset": "0_0", "handle": "fixed", **subset},
+            headers={"electric-protocol-version": "1.0"},
+        )
+    await electric.aclose()
+    assert response.status_code == 200
+    forwarded = seen[0].url.params
+    assert forwarded["log"] == "changes_only"
+    assert "cursor >= $4" in forwarded["where"]
+    assert forwarded["params[4]"] == "70"
+    assert seen[0].headers["electric-protocol-version"] == "1.0"
+    for key, value in subset.items():
+        assert forwarded[key] == value
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "subset__where=entity_id+%3D+'other'",
+        "subset__params=%7B%221%22%3A%22other%22%7D",
+        "subset__params=invalid-json",
+        "subset__params=null",
+        "subset__limit=1",
+        "subset__offset=1",
+        "subset__order_by=cursor",
+        "subset__where=true+%3D+true&subset__where=false",
+        "offset=now&offset=-1",
+        "queryable_columns=state",
+    ],
+)
+async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(query: str) -> None:
+    async def unexpected(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("rejected snapshots must not reach Electric")
+
+    app, electric = make_app(httpx.MockTransport(unexpected))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&{query}")
+    await electric.aclose()
+    assert response.status_code == 400
 
 
 async def test_payload_shape_uses_server_verified_exact_revision() -> None:
