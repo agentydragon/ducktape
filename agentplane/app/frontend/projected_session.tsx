@@ -525,6 +525,7 @@ function VirtualizedHistory({
   const pointerScrolling = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
+  const restoringAnchor = useRef<string | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
@@ -537,6 +538,27 @@ function VirtualizedHistory({
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
   });
+  const cancelRestoration = () => {
+    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+    restorationFrame.current = null;
+    restoringAnchor.current = null;
+  };
+  const restoreAnchor = (anchor: { key: string; offset: number }) => {
+    const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+    if (index < 0) return;
+    cancelRestoration();
+    restoringAnchor.current = anchor.key;
+    virtualizer.scrollToIndex(index, { align: "start" });
+    restorationFrame.current = requestAnimationFrame(() => {
+      const measured = virtualizer.getVirtualItems().find((item) => item.index === index);
+      if (viewport.current && restoringAnchor.current === anchor.key && measured)
+        viewport.current.scrollTop = measured.start + anchor.offset;
+      restorationFrame.current = requestAnimationFrame(() => {
+        if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
+        restorationFrame.current = null;
+      });
+    });
+  };
   useLayoutEffect(() => {
     const element = viewport.current;
     const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
@@ -552,12 +574,7 @@ function VirtualizedHistory({
       const index = segments.findIndex(
         (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
       );
-      if (index >= 0) {
-        virtualizer.scrollToIndex(index, { align: "start" });
-        requestAnimationFrame(() => {
-          if (viewport.current && readingAnchor.current) viewport.current.scrollTop += readingAnchor.current.offset;
-        });
-      }
+      if (index >= 0) restoreAnchor(readingAnchor.current);
     }
     previousCount.current = segments.length;
     previousFirstKey.current = firstKey;
@@ -575,29 +592,14 @@ function VirtualizedHistory({
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
-      else if (readingAnchor.current) {
-        const anchor = readingAnchor.current;
-        const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
-        if (index >= 0) {
-          if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-          virtualizer.scrollToIndex(index, { align: "start" });
-          restorationFrame.current = requestAnimationFrame(() => {
-            if (viewport.current && readingAnchor.current?.key === anchor.key) {
-              const measured = virtualizer.getVirtualItems().find((item) => item.index === index);
-              if (measured) viewport.current.scrollTop = measured.start + anchor.offset;
-            }
-            restorationFrame.current = null;
-          });
-        }
-      }
+      else if (readingAnchor.current && restoringAnchor.current === null) restoreAnchor(readingAnchor.current);
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
     return () => {
       observer.disconnect();
-      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-      restorationFrame.current = null;
+      cancelRestoration();
     };
   }, [segments, virtualizer]);
   return (
@@ -608,18 +610,15 @@ function VirtualizedHistory({
       tabIndex={0}
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
-        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-        restorationFrame.current = null;
+        cancelRestoration();
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
-        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-        restorationFrame.current = null;
+        cancelRestoration();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
-        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-        restorationFrame.current = null;
+        cancelRestoration();
         pointerScrolling.current = true;
       }}
       onPointerUp={() => {
@@ -629,8 +628,7 @@ function VirtualizedHistory({
         pointerScrolling.current = false;
       }}
       onTouchStart={(event) => {
-        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-        restorationFrame.current = null;
+        cancelRestoration();
         touchY.current = event.touches[0]?.clientY ?? null;
       }}
       onTouchMove={(event) => {
@@ -646,6 +644,7 @@ function VirtualizedHistory({
         if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
+        if (restoringAnchor.current !== null) return;
         const items = virtualizer.getVirtualItems();
         const first = items.find((item) => item.end > element.scrollTop) ?? items[0];
         const firstEntity = first ? segments[first.index] : undefined;
