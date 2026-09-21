@@ -508,6 +508,7 @@ metadata:
   name: matrix-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/matrix/namespace
   prune: false
@@ -2234,6 +2235,7 @@ metadata:
   name: matrix-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: matrix-namespace
       namespace: ducktape-flux
@@ -2243,7 +2245,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/matrix/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
