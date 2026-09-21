@@ -694,6 +694,21 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         "feed_error": None,
     }
 
+    await store.end_feed(thread, lease=lease, error="projection invariant failed")
+    async with replica._sessions() as session:
+        unknown_failure = await session.get(
+            ConversationEntity,
+            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+        )
+        assert unknown_failure is not None
+        operational = ConversationOperationalState.model_validate(unknown_failure.state["operational"])
+    assert operational.model_dump() == {
+        "operational_version": "3",
+        "status": "failed",
+        "last_verified_cursor": "1",
+        "feed_error": {"cursor": None, "message": "projection invariant failed"},
+    }
+
 
 async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-invalid-origin", SPEC)

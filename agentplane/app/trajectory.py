@@ -359,7 +359,7 @@ class ConversationControlsState(BaseModel):
 class ConversationFeedErrorState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    cursor: str
+    cursor: str | None
     message: str
 
 
@@ -1247,8 +1247,7 @@ async def _set_conversation_operational(
                     None
                     if error is None
                     else ConversationFeedErrorState(
-                        cursor=str(error_cursor if error_cursor is not None else checkpoint.through_cursor),
-                        message=error,
+                        cursor=None if error_cursor is None else str(error_cursor), message=error
                     )
                 ),
             )

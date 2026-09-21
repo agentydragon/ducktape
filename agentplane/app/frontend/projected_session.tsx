@@ -946,8 +946,9 @@ function ProjectedSessionBody({
         )}
         {operational?.feed_error && (
           <Text role="alert" c="red">
-            Rejected event {operational.feed_error.cursor}: {operational.feed_error.message}. Showing verified history
-            through event {operational.last_verified_cursor}.
+            {operational.feed_error.cursor === null
+              ? `Projection failed: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`
+              : `Rejected event ${operational.feed_error.cursor}: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`}
           </Text>
         )}
         {modelError && (
