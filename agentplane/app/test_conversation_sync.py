@@ -271,7 +271,7 @@ async def _history_windows(
 
     # A disconnected client refreshes its interest instead of replaying an unbounded backlog.
     expired = await client_two.get(f"{path}/entities", params=previous_params | {"offset": "-1"})
-    assert expired.status_code == 409
+    assert expired.status_code == 410
     tail = await client_two.get(f"{path}/interest")
     tail.raise_for_status()
     tail_interest = tail.json()

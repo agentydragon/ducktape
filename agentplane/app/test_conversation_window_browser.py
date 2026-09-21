@@ -76,7 +76,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
         }""",
         initial_entity_url,
     )
-    assert stale_status == 409
+    assert stale_status == 410
 
     # The live collection rotates before it retains more than two 30-row pages, while DOM
     # virtualization keeps only the measured viewport and overscan mounted.
