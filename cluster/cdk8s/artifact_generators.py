@@ -1,7 +1,7 @@
 """Typed cdk8s synthesis for source-watcher ArtifactGenerator resources.
 
 The artifact inventory is explicit here. The validation suite checks that each
-entry has exactly one active Flux consumer and that its copy operations preserve
+entry has exactly one declared Flux consumer and that its copy operations preserve
 the consumer's rendered Kustomize resources.
 """
 
@@ -116,6 +116,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ha-mcp", ("cluster/k8s/agents/ha-mcp/app",)),
     ("haku-openclaw-spike-app", ("cluster/k8s/agents/haku-openclaw-spike/app",)),
     ("haku-openclaw-spike-backup", ("cluster/k8s/agents/haku-openclaw-spike/backup",)),
+    ("haku-managed-agent", ("haku/runtime/managed_agent/self_hosted/deploy",)),
     ("kubectl-passthrough-mcp", ("cluster/k8s/agents/kubectl-passthrough-mcp/app",)),
     ("loki-read-proxy", ("cluster/k8s/agents/loki-read-proxy",)),
     ("agents-mitmproxy-namespace", ("cluster/k8s/agents/mitmproxy-namespace",)),

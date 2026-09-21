@@ -13,9 +13,9 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
-    """Every generated artifact has exactly one live consumer, the directory it packages, and
-    packaging that directory the way the generator does leaves `kustomize build` unchanged."""
+    """Every generated artifact has one declared consumer and preserves its Kustomize output."""
     root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent.resolve()
+    repository_root = root.parent.parent
     kustomize = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
 
     generators = [
@@ -31,7 +31,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         for artifact in generator["spec"]["artifacts"]
     }
 
-    # A parked directory keeps its consumer declaration while nothing generates for it.
+    # The conventional parked tree keeps consumer declarations without packaging them.
     consumers: dict[str, list[tuple[Path, dict]]] = {}
     flux_chart = root / "flux/kustomizations.k8s.yaml"
     for document in yaml.safe_load_all(flux_chart.read_text()):
@@ -41,15 +41,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         if source.get("kind") != "ExternalArtifact":
             continue
         relative = document["spec"]["path"].removeprefix("./")
-        consumer_dir = (root.parent.parent / relative).resolve()
-        if "parked" in consumer_dir.relative_to(root).parts:
+        consumer_dir = (repository_root / relative).resolve()
+        if Path(relative).parts[:3] == ("cluster", "k8s", "parked"):
             continue
         consumers.setdefault(source["name"], []).append((consumer_dir, document))
     assert set(consumers) == set(generated_artifacts)
 
     for artifact_name, (generator, artifact) in generated_artifacts.items():
         consumer_dir, consumer = one(consumers[artifact_name])
-        relative = f"cluster/k8s/{consumer_dir.relative_to(root)}"
+        relative = consumer["spec"]["path"].removeprefix("./")
+        assert consumer_dir == (repository_root / relative).resolve()
         aliases = {source["alias"] for source in generator["spec"]["sources"]}
         assert consumer["spec"]["sourceRef"] == {
             "kind": "ExternalArtifact",
@@ -68,7 +69,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         packaged = packaged_root / relative
         for operation in artifact["copy"]:
             operation_source_relative = operation["from"].removeprefix(f"@{alias}/").removesuffix("/**")
-            operation_source = root / operation_source_relative.removeprefix("cluster/k8s/")
+            operation_source = repository_root / operation_source_relative
             operation_target = packaged_root / operation["to"].removeprefix("@artifact/")
             shutil.copytree(
                 operation_source, operation_target, ignore=shutil.ignore_patterns(*operation.get("exclude", []))

@@ -436,7 +436,7 @@ def haku_managed_agent(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/parked/managed-agent",
+            path="./haku/runtime/managed_agent/self_hosted/deploy",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

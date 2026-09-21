@@ -340,11 +340,12 @@ See `cluster/k8s/agents/tana-mcp/facade-deployment.yaml` for a working example
 
 ## Parked application manifests
 
-These applications remain in Git for possible revival, but are not currently reconciled
-cluster state. Their Flux Kustomizations are either retained as suspended declarations
-with the `ducktape.org/parked` annotation or removed from the active root bundle, as
-noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
-<../AGENTS.md> § "Parked (non-ducktape-owned) application manifests").
+These applications remain in Git for possible revival, but are not actively reconciled.
+Their Flux Kustomizations are either retained as suspended declarations with the
+`ducktape.org/parked` annotation or removed from the active root bundle, as noted below.
+Non-ducktape-owned manifests stay under `cluster/k8s/parked/<name>/`; ducktape-owned
+manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
+(non-ducktape-owned) application manifests").
 
 - **postscanmail-mcp**: `cluster/k8s/parked/postscanmail-mcp/` — decommissioned; its
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
@@ -361,13 +362,16 @@ noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
   Agent; already effectively dead (the cloud objects were deleted at Anthropic), now
   formally parked. HCL root (`tf/gitops/haku-cloud-agent/`) and design docs
   (`haku/runtime/managed_agent/anthropic_hosted/`) are ducktape-owned and untouched.
-- **Haku managed agent**: `cluster/k8s/parked/managed-agent/` — the self-hosted
-  in-cluster worker (Runtime B), decommissioned by operator request despite being
-  live at the time. Design/image source (`haku/runtime/managed_agent/self_hosted/`)
-  stays. Its `haku-forgejo-tea.sops.yaml` secret served a second consumer
-  (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker itself, so it was
-  split into its own small active Kustomization at `cluster/k8s/haku/forgejo-tea/`
-  rather than parked with the rest.
+- **Haku managed agent**: `haku/runtime/managed_agent/self_hosted/deploy/` — the
+  self-hosted in-cluster worker (Runtime B), parked by operator request despite
+  being live at the time. Its Flux Kustomization remains suspended; automatic image
+  build/publish is removed and its NixOS system is omitted from Attic targets, while
+  the flake output stays available for deliberate manual builds. Suspension does not
+  delete resources applied earlier.
+  Its `haku-forgejo-tea.sops.yaml` secret served a
+  second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker
+  itself, so it was split into its own small active Kustomization at
+  `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
 - **Paperless**: `cluster/k8s/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/k8s/parked/firecrawl/` — its namespace, database, and app

@@ -9,3 +9,9 @@
 
 # Read by //haku/base:test_agent_config_ssot (SSOT drift guard).
 exports_files(["haku.agent.yaml"])
+
+filegroup(
+    name = "deploy_manifests",
+    srcs = glob(["deploy/**"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)

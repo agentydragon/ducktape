@@ -5461,7 +5461,7 @@ spec:
       name: haku-managed-agent
       namespace: haku-sandbox
   interval: 10m
-  path: ./cluster/k8s/parked/managed-agent
+  path: ./haku/runtime/managed_agent/self_hosted/deploy
   prune: true
   retryInterval: 1m
   sourceRef:
