@@ -680,7 +680,7 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    airlock_kustomization = agents_flux_kustomizations.airlock(
+    agents_flux_kustomizations.airlock(
         flux_chart,
         forgejo_images_kustomization,
         gateway_kustomization,
@@ -851,9 +851,6 @@ def generate_manifests(root: Path) -> None:
         haku_namespace_kustomization,
         haku_console_namespace_kustomization,
         haku_egress_proxy_namespace_kustomization,
-    )
-    parked_flux_kustomizations.google_workspace_mcp(
-        flux_chart, airlock_kustomization, local_path_provisioner_kustomization, reflector_kustomization
     )
     monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_jwt_rotation_kustomization
