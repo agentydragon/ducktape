@@ -220,7 +220,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, snapshot_controller_crds_kustomization
     )
     forgejo_flux_kustomizations.forgejo_cache(flux_chart, valkey_kustomization, local_path_provisioner_kustomization)
-    haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
+    haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(flux_chart, kyverno_policies_kustomization)
     vpa_kustomization = vpa_flux_kustomizations.vpa(flux_chart, kyverno_kustomization, metrics_server_kustomization)
     clickhouse_kustomization = clickhouse_flux_kustomizations.clickhouse(flux_chart, clickhouse_operator_kustomization)
@@ -464,9 +464,7 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
     )
-    haku_ci_flux_kustomizations.haku_ci(
-        flux_chart, forgejo_kustomization, keda_kustomization, reflector_kustomization, haku_forgejo_tea_kustomization
-    )
+    haku_ci_flux_kustomizations.haku_ci(flux_chart, keda_kustomization)
     flux_grafana_secrets_flux_kustomizations.flux_grafana_secrets(
         flux_chart, grafana_instance_kustomization, grafana_operator_kustomization
     )

@@ -25,6 +25,8 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("CleanupPolicy", "kyverno.io/v2", "kyverno"),
         ("SandboxTemplate", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
         ("SandboxWarmPool", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
+        ("ScaledJob", "keda.sh/v1alpha1", "keda"),
+        ("TriggerAuthentication", "keda.sh/v1alpha1", "keda"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(
