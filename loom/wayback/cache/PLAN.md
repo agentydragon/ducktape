@@ -6,7 +6,7 @@ Status: parked as of 2026-09-14. The shared `wayback-cache` deployment is
 suspended and its SeaweedFS replay bucket was explicitly emptied and deleted.
 The source, tests, and deployment manifests remain parked for a future
 revival; the parked package now keeps its storage definitions beside the app
-under `loom/wayback/deploy/storage/`.
+in `loom/wayback/deploy/`.
 
 Companions:
 

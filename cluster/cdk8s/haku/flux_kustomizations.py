@@ -192,8 +192,6 @@ def haku_workspaces(
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
     external_secrets_config: Kustomization,
-    external_creds: Kustomization,
-    forgejo_images: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
@@ -218,13 +216,10 @@ def haku_workspaces(
                 haku_rbac,
                 # the fence haku-sandbox is opted into
                 haku_egress_proxy,
-                # cleanup-controller ClusterRole the janitor needs
+                # CleanupPolicy CRD and cleanup-controller permissions
                 kyverno_policies,
-                # Source Secret grants + ClusterSecretStore for the ESO
-                external_creds,
+                # ESO CRDs and shared ClusterSecretStore
                 external_secrets_config,
-                # mints the source forgejo-images-creds the ESO reflects
-                forgejo_images,
             ),
         ),
         description="General Haku workspaces in haku-sandbox.",

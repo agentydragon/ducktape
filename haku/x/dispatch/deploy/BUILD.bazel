@@ -1,0 +1,24 @@
+# These configMapGenerator inputs are also read directly by cluster validation,
+# the dispatcher's stamping/config contracts, and the LiteLLM manifest tests.
+exports_files(
+    [
+        "job-template.yaml",
+        "workers-litellm-config.yaml",
+        "zones.yaml",
+    ],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//haku/x/dispatch:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
+    ],
+)
+
+# Flattened resources for cluster/validation's focused dispatch render test.
+filegroup(
+    name = "manifests",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel"],
+    ),
+    visibility = ["//cluster/validation:__pkg__"],
+)

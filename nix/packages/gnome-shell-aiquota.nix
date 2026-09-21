@@ -3,6 +3,7 @@
   lib,
   pkgs,
   python314Packages,
+  claudeApi,
 }:
 let
   wheel = artifacts.aiquota;
@@ -13,13 +14,17 @@ python314Packages.buildPythonApplication {
   version = "latest";
   format = "wheel";
   src = wheel;
-  propagatedBuildInputs = with python314Packages; [
-    atomicwrites
-    httpx
-    platformdirs
-    pydantic
-    typer
-  ];
+  # SYNC: Match `ducktape-claude-api` in //aiquota:aiquota_wheel's `requires`.
+  propagatedBuildInputs =
+    with python314Packages;
+    [
+      atomicwrites
+      httpx
+      platformdirs
+      pydantic
+      typer
+    ]
+    ++ [ claudeApi ];
   pythonImportsCheck = [ "aiquota.cli" ];
   doCheck = false;
   dontUsePytestCheck = true;

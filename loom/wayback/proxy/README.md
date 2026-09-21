@@ -78,7 +78,7 @@ volume shared read-only with the agent.
 The package is currently parked: its suspended Flux declaration lives beside the
 package in `loom/wayback/deploy/flux-kustomization.yaml`, outside the active root
 bundle, and its SeaweedFS replay data has been purged. Its storage definitions
-live under `loom/wayback/deploy/storage/` for a future, deliberate revival.
+live in `loom/wayback/deploy/` for a future, deliberate revival.
 When restored, its ClusterIP service lets repeated lookups reuse stored metadata
 and replay bodies without re-hitting IA. Point the proxy at it through a
 port-forward:

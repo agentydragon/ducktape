@@ -1111,6 +1111,22 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  description: A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same token Airlock's `google` provider mints for every consumer -- currently granted `gmail.readonly` and `calendar.readonly` (Airlock's own config additionally requests several other `.readonly` scopes not yet granted; check cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before assuming more than Gmail and Calendar work). The proxy does not narrow what the token itself may do -- `google-readonly`'s own rules are what restrict this credential to Gmail and Calendar hosts/paths.
+  source:
+    secretRef:
+      name: google-access-token
+      key: access_token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: basic
@@ -1224,6 +1240,28 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - gmail.googleapis.com
+      methods:
+        - GET
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - www.googleapis.com
+      methods:
+        - GET
+      paths:
+        - /calendar/v3/**
+      credentialRef:
+        name: google-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -1406,7 +1444,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-app-config
-    secret.reloader.stakater.com/reload: agentplane-oidc
+    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret
   labels:
     app.kubernetes.io/name: agentplane-app
   name: agentplane-app
@@ -1495,7 +1533,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: session-secret
-                  name: agentplane-oidc
+                  name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset
@@ -1592,7 +1630,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: session-secret
-                  name: agentplane-oidc
+                  name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
@@ -2191,6 +2229,17 @@ data:
             url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ha-mcp/bearer-token
+      tana:
+        title: Tana MCP
+        description: Tana read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.
+          config:
+            transport: streamable-http
+            url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/tana-mcp/bearer-token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2198,7 +2247,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2337,6 +2386,9 @@ spec:
             - mountPath: /run/secrets/ha-mcp
               name: secret-ha-mcp-bearer
               readOnly: true
+            - mountPath: /run/secrets/tana-mcp
+              name: secret-tana-agentydragon-gmail-com-account-pat
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2451,6 +2503,12 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: ha-mcp-bearer
+        - name: secret-tana-agentydragon-gmail-com-account-pat
+          secret:
+            items:
+              - key: token
+                path: bearer-token
+            secretName: tana-agentydragon-gmail-com-account-pat
 ---
 apiVersion: v1
 kind: Service
@@ -2583,6 +2641,14 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: tana-mcp
+            k8s:io.kubernetes.pod.namespace: tana-mcp
+      toPorts:
+        - ports:
+            - port: "8263"
+              protocol: TCP
     - toEntities:
         - remote-node
         - host
@@ -2668,6 +2734,43 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 16
+  length: 64
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO-generated Agentplane staging session-signing key.
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: agentplane-staging-session-secret
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    immutable: true
+    name: agentplane-staging-session-secret
+    template:
+      data:
+        session-secret: "{{ .password }}"
+      type: Opaque
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -2915,6 +3018,7 @@ spec:
     - kubernetes
     - forgejo-haku
     - packages
+    - google-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

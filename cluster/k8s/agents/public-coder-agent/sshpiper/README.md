@@ -26,7 +26,7 @@ Four, all ed25519, none shared with anything else:
 | -------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Agent → piper (downstream) | Agent Pod, from `../app/devbox-ssh-key.sops.yaml` | `ssh_keys/public-coder-agent-devbox.pub`, rendered into the Pipe's `authorized_keys_data` |
 | piper host key             | `host-key.sops.yaml`, this Pod only               | Agent's `known_hosts`                                                                     |
-| piper → devbox (mapping)   | `devbox-key.sops.yaml`, this Pod only             | `coder`'s `authorized_keys` in `nix/nixos/hosts/public-coder-devbox`                      |
+| piper → devbox (mapping)   | `devbox-key.sops.yaml`, this Pod only             | `coder`'s `authorized_keys` in `openclaw/public_coder_agent/devbox/nixos.nix`             |
 | devbox host key            | `<../devbox/ssh-host-key.sops.yaml>`, the VM only | `ssh_keys/public-coder-devbox-host.pub`, rendered into the Pipe's `known_hosts_data`      |
 
 `pipe-devbox.k8s.yaml` is generated from those two `.pub` files and the devbox Service

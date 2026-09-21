@@ -264,7 +264,7 @@ Add or update:
   `litellm_key.haku_lane_local`, reflected `litellm-key-haku-lane-local`.
 - `haku/x/dispatch/deploy/litellm/generate_workers_litellm.py`: local model entries
   chained through `litellm_proxy/`.
-- `haku/x/dispatch/deploy/dispatcher/zones.yaml`: migrate to model lanes,
+- `haku/x/dispatch/deploy/zones.yaml`: migrate to model lanes,
   isolation profiles, and dispatch targets; add a local target.
 - `cluster/validation/test_haku_dispatch_zones_contract.py`: expected target set, model-lane parity, and
   provider/capability compatibility invariants.
