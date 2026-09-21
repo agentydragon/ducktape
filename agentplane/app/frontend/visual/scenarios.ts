@@ -331,7 +331,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: "/threads/5f1c4a2e-0000-4000-8000-000000000004",
     viewport: { width: 1200, height: 900 },
-    readySelectors: ['[role="status"]'],
+    readySelectors: ["textarea:disabled"],
     captureViewport: true,
   },
   session_phone: {
