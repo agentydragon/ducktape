@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -31,7 +32,8 @@ def litellm_db(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             path="./cluster/k8s/litellm/db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(litellm_namespace, cnpg, local_path_provisioner),
         ),
@@ -94,7 +96,8 @@ def litellm_namespace(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/litellm/namespace",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -117,7 +120,8 @@ def litellm_secrets(
             retry_interval="1m",
             interval="10m",
             path="./cluster/k8s/litellm/secrets",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),

@@ -465,9 +465,10 @@ metadata:
   name: litellm-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/k8s/litellm/namespace
-  prune: true
+  prune: false
   sourceRef:
     kind: ExternalArtifact
     name: litellm-namespace
@@ -2226,6 +2227,7 @@ metadata:
   name: litellm-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: litellm-namespace
       namespace: ducktape-flux
@@ -2235,7 +2237,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -2928,6 +2930,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-creds
       namespace: ducktape-flux
@@ -2937,7 +2940,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/secrets
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
