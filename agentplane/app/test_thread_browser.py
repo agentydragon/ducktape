@@ -32,11 +32,15 @@ from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import (
     ConversationEntity,
+    ConversationFeedErrorState,
+    ConversationOperationalState,
     ConversationPayloadChunk,
     ConversationPayloadManifest,
     ConversationProjectionCheckpoint,
     ConversationProjectionEvidence,
     ConversationProjectionNativeLink,
+    ConversationViewState,
+    FeedState,
     TrajectoryStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -1350,6 +1354,56 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await document.dispose()
 
 
+async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh_shape(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Command retained across terminal shape error")
+    async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
+        await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    pending = page.get_by_role("region", name="Pending commands")
+    await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+
+    async def terminal_shape_error(route: Route) -> None:
+        await route.fulfill(status=410, content_type="text/plain", body="command scope expired")
+
+    await page.route("**/sync/commands?*", terminal_shape_error, times=1)
+    await page.context.set_offline(True)
+    try:
+        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 410):
+            await page.context.set_offline(False)
+        stopped = page.get_by_role("alert").filter(has_text="Command synchronization stopped:")
+        await expect(stopped).to_be_visible()
+        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+
+        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
+            await stopped.get_by_role("button", name="Retry command synchronization", exact=True).click()
+        await expect(page.get_by_text("Command synchronization stopped:", exact=False)).to_have_count(0)
+        source.append(
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="test-command-after-terminal-shape-retry",
+                    origin_command_ids=[command.command_id],
+                    text=command.submit_input.text,
+                    turn_id="test-browser-turn",
+                )
+            )
+        )
+        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+            command.submit_input.text
+        )
+        await expect(pending).to_have_count(0)
+    finally:
+        await page.context.set_offline(False)
+        await page.unroute("**/sync/commands?*", terminal_shape_error)
+
+
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await expect(page.get_by_role("status")).to_have_text("Loading conversation…")
@@ -1401,6 +1455,65 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+
+
+async def test_unknown_projection_failure_keeps_verified_history_and_stops_browser(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    draft = "Retained draft while projection failure is reported"
+    await composer.fill(draft)
+
+    # This models only the persisted result of a batch-wide projection failure. The real
+    # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
+    (thread,) = await store.list_threads(sandbox=SANDBOX)
+    async with store._sessions() as session, session.begin():
+        checkpoint = await session.get(ConversationProjectionCheckpoint, thread.id)
+        assert checkpoint is not None
+        view = await session.get(
+            ConversationEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
+        )
+        assert view is not None
+        feed = await session.get(FeedState, thread.id)
+        assert feed is not None
+        state = ConversationViewState.model_validate(view.state)
+        view.state = state.model_copy(
+            update={
+                "operational": ConversationOperationalState(
+                    operational_version=str(int(state.operational.operational_version) + 1),
+                    status="failed",
+                    last_verified_cursor=str(checkpoint.through_cursor),
+                    feed_error=ConversationFeedErrorState(
+                        cursor=None, message="batch-wide projection invariant failed"
+                    ),
+                )
+            }
+        ).model_dump(mode="json")
+        feed.end = {"message": "batch-wide projection invariant failed"}
+
+    failure = page.get_by_role("alert")
+    await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")
+    await expect(failure).to_contain_text("Showing verified history through event 4.")
+    await expect(failure).not_to_contain_text("Rejected event")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+    await expect(composer).to_have_value(draft)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(composer).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    await page.screenshot(path=undeclared_outputs_dir() / "unknown-projection-failure-retained.png")
+
+    await page.reload()
+    await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")
+    await expect(failure).to_contain_text("Showing verified history through event 4.")
+    await expect(failure).not_to_contain_text("Rejected event")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(composer).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    assert await store.events(thread.id, limit=100) == source.entries
 
 
 if __name__ == "__main__":
