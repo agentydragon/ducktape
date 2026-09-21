@@ -15,6 +15,8 @@ export interface LocalCommandSnapshot {
   error: string | null;
 }
 
+export const MAX_RETAINED_COMMANDS = 128;
+
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
   if (typeof value.submittedAt !== "number") {
@@ -87,6 +89,11 @@ export class LocalCommands {
       }
       return existing;
     }
+    if (this.snapshot.commands.length >= MAX_RETAINED_COMMANDS) {
+      throw new Error(
+        `Dismiss or finish a retained command before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
+      );
+    }
     const value: LocalCommand = { command, submittedAt: Date.now(), admission: null };
     localStorage.setItem(this.key(command.commandId), encode(value));
     this.reload();
@@ -141,6 +148,23 @@ export class LocalCommands {
       changed = true;
     }
     if (changed) this.reload();
+  }
+
+  /** A projected command row is the durable admission fact after raw replay is removed. */
+  observeCommandIds(ids: ReadonlySet<string>): void {
+    let changed = false;
+    for (const id of ids) {
+      const key = this.key(id);
+      if (localStorage.getItem(key) === null) continue;
+      localStorage.removeItem(key);
+      changed = true;
+    }
+    if (changed) this.reload();
+  }
+
+  dismiss(id: string): void {
+    localStorage.removeItem(this.key(id));
+    this.reload();
   }
 
   private key(id: string): string {
