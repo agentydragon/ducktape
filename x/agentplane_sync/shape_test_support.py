@@ -96,7 +96,11 @@ def _sample_memory(electric: LoggedContainer) -> dict[str, Any]:
     sample: dict[str, Any] = {
         "cgroupUsageBytes": memory.get("usage"),
         "cgroupLimitBytes": memory.get("limit"),
-        "cgroupStats": memory_stats,
+        "cgroupKernelBytes": {
+            key: memory_stats[key]
+            for key in ("kernel_stack", "sock", "slab", "slab_reclaimable", "slab_unreclaimable")
+            if key in memory_stats
+        },
     }
     proc_status = container.exec_run(["cat", "/proc/1/status"])
     sample["pid1StatusExitCode"] = proc_status.exit_code

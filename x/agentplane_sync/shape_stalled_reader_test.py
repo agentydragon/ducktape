@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import fcntl
 import socket
+import struct
+import termios
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -25,7 +27,6 @@ from x.agentplane_sync.shape_test_support import (
     BOUNDED_HISTORY_TAIL_ROWS,
     SHAPE_LIMIT,
     _connect_postgres,
-    _messages,
     _read_live_page,
     _read_snapshot,
     _sample_memory,
@@ -45,8 +46,9 @@ async def _open_stalled_shape_request(
     electric_url: str, snapshot: dict[str, Any], where_clause: str, where_params: tuple[str, ...]
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     parsed = urlsplit(electric_url)
-    assert parsed.hostname is not None and parsed.port is not None
-    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+    assert parsed.hostname is not None
+    assert parsed.port is not None
+    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port, limit=4_096)
     raw_socket = writer.get_extra_info("socket")
     assert raw_socket is not None
     raw_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4_096)
@@ -76,7 +78,35 @@ async def _open_stalled_shape_request(
     return reader, writer
 
 
-async def _update_tail(pool: asyncpg.Pool, batch: int) -> str:
+def _stalled_reader_buffers(writer: asyncio.StreamWriter) -> dict[str, int]:
+    raw_socket = writer.get_extra_info("socket")
+    assert raw_socket is not None
+    kernel_queue = fcntl.ioctl(raw_socket.fileno(), termios.FIONREAD, struct.pack("I", 0))
+    return {
+        "kernelReceiveQueueBytes": struct.unpack("I", kernel_queue)[0],
+    }
+
+
+async def _wait_for_wal_processed(pool: asyncpg.Pool, target_lsn: str) -> dict[str, Any]:
+    latest_slots: list[dict[str, Any]] = []
+    for attempt in range(240):
+        rows = await pool.fetch(
+            """SELECT slot_name, active, restart_lsn::text AS restart_lsn,
+                      confirmed_flush_lsn::text AS confirmed_flush_lsn,
+                      confirmed_flush_lsn >= ($1::text)::pg_lsn AS processed_target
+               FROM pg_replication_slots
+               WHERE slot_type = 'logical'
+               ORDER BY slot_name""",
+            target_lsn,
+        )
+        latest_slots = [dict(row) for row in rows]
+        if any(slot["processed_target"] for slot in latest_slots):
+            return {"targetLsn": target_lsn, "attempt": attempt + 1, "slots": latest_slots}
+        await asyncio.sleep(0.05)
+    raise AssertionError({"targetLsn": target_lsn, "slots": latest_slots})
+
+
+async def _update_tail(pool: asyncpg.Pool, batch: int) -> tuple[str, str]:
     model = f"batch-{batch:03d}:" + (chr(65 + batch % 26) * (MODEL_BYTES - 10))
     await pool.execute(
         """UPDATE sync_view_row SET revision = revision + 1, model=$1
@@ -85,7 +115,9 @@ async def _update_tail(pool: asyncpg.Pool, batch: int) -> str:
         BOUNDED_HISTORY_CONVERSATION,
         BOUNDED_HISTORY_TAIL_ANCHOR,
     )
-    return model
+    target_lsn = await pool.fetchval("SELECT pg_current_wal_lsn()::text")
+    assert isinstance(target_lsn, str)
+    return model, target_lsn
 
 
 def _latest_models(operations: list[dict[str, Any]]) -> dict[str, str]:
@@ -112,6 +144,7 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
         "writeBatches": WRITE_BATCHES,
         "memorySamples": [],
         "healthyPages": [],
+        "walCheckpoints": [],
     }
     for image in (ryuk.IMAGE, postgres_18.IMAGE, electric_1_8_1.IMAGE):
         load_oci_image(image)
@@ -166,7 +199,8 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             electric_url, snapshot, where_clause, where_params
                         )
 
-                        expected_model = await _update_tail(pool, 0)
+                        expected_model, target_lsn = await _update_tail(pool, 0)
+                        evidence["walCheckpoints"].append(await _wait_for_wal_processed(pool, target_lsn))
                         first_page = await _read_live_page(
                             client,
                             shape_url,
@@ -180,6 +214,7 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         response_headers = await asyncio.wait_for(stalled_reader.readuntil(b"\r\n\r\n"), timeout=30)
                         assert response_headers.startswith(b"HTTP/1.1 200"), response_headers
                         evidence["stalledResponseHeaders"] = response_headers.decode(errors="replace").splitlines()
+                        evidence["stalledBuffersAtStart"] = _stalled_reader_buffers(stalled_writer)
                         evidence["healthyPages"].append(
                             {"batch": 0, "responseBytes": first_page["responseBytes"], "offset": healthy_offset}
                         )
@@ -188,7 +223,10 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         )
 
                         for batch in range(1, WRITE_BATCHES + 1):
-                            expected_model = await _update_tail(pool, batch)
+                            expected_model, target_lsn = await _update_tail(pool, batch)
+                            checkpoint = await _wait_for_wal_processed(pool, target_lsn)
+                            if batch % SAMPLE_EVERY == 0 or batch == WRITE_BATCHES:
+                                evidence["walCheckpoints"].append(checkpoint)
                             page = await _read_live_page(
                                 client,
                                 shape_url,
@@ -210,6 +248,9 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                                     {"stage": f"stalled-after-batch-{batch}", **_sample_memory(electric)}
                                 )
                                 _write_evidence(outputs / "stalled-reader-evidence.json", evidence)
+
+                        evidence["stalledBuffersBeforeDisconnect"] = _stalled_reader_buffers(stalled_writer)
+                        assert any(evidence["stalledBuffersBeforeDisconnect"].values()), evidence
 
                         stalled_writer.close()
                         await stalled_writer.wait_closed()
@@ -264,8 +305,9 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         evidence["stalledRssRangeKiB"] = max(rss) - min(rss)
                         assert evidence["stalledRssRangeKiB"] < 96 * 1024, evidence["memorySamples"]
                         evidence["conclusion"] = (
-                            "Finite sample: one unread response did not accumulate one application response per later write; "
-                            "the independent reader and resumed old offset both reached the latest 30 rows."
+                            "Finite sample: a real socket stopped after HTTP headers while its receive buffers filled; "
+                            "each write was observed through Electric's logical-replication checkpoint, and independent "
+                            "and resumed readers reached the latest 30 rows."
                         )
             finally:
                 if stalled_writer is not None:
