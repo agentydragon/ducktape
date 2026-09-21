@@ -473,7 +473,6 @@ py_test(
     srcs = ["test_trajectory.py"],
     deps = [
         ":conftest",
-        ":conversation_projection",
         ":presets",
         ":trajectory",
         "//:conftest",
@@ -481,6 +480,7 @@ py_test(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

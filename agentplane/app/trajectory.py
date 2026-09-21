@@ -673,7 +673,9 @@ class TrajectoryStore:
             await _set_conversation_operational(session, thread_id, status="active", error=None)
             await _notify(session)
 
-    async def end_feed(self, thread_id: UUID, *, lease: IngestionLease, error: str | None) -> None:
+    async def end_feed(
+        self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
+    ) -> None:
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
             state = await session.get(FeedState, thread_id)
@@ -681,7 +683,11 @@ class TrajectoryStore:
                 raise ValueError("cannot end a feed before persisting its attachment")
             state.end = {} if error is None else {"message": error}
             await _set_conversation_operational(
-                session, thread_id, status="ended" if error is None else "failed", error=error
+                session,
+                thread_id,
+                status="ended" if error is None else "failed",
+                error=error,
+                error_cursor=error_cursor,
             )
             await session.flush()
             await _notify(session)
@@ -904,7 +910,12 @@ async def _conversation_state(
 
 
 async def _set_conversation_operational(
-    session: AsyncSession, thread_id: UUID, *, status: Literal["active", "ended", "failed"], error: str | None
+    session: AsyncSession,
+    thread_id: UUID,
+    *,
+    status: Literal["active", "ended", "failed"],
+    error: str | None,
+    error_cursor: int | None = None,
 ) -> None:
     checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
     if checkpoint is None:
@@ -924,7 +935,10 @@ async def _set_conversation_operational(
                 feed_error=(
                     None
                     if error is None
-                    else ConversationFeedErrorState(cursor=str(checkpoint.through_cursor), message=error)
+                    else ConversationFeedErrorState(
+                        cursor=str(error_cursor if error_cursor is not None else checkpoint.through_cursor),
+                        message=error,
+                    )
                 ),
             )
         }

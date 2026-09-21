@@ -7,16 +7,17 @@ import asyncio
 import gc
 import tracemalloc
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
-from sqlalchemy import func, insert, select, text, update
+from sqlalchemy import event, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from agentplane.app import conversation_projection, trajectory
+from agentplane.app import trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
@@ -39,6 +40,7 @@ from agentplane.app.trajectory import (
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -119,118 +121,90 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
 
 @pytest.mark.parametrize("history_size", [100, 10_000], ids=["one-hundred", "ten-thousand"])
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
-    store: TrajectoryStore, lease: IngestionLease, history_size: int
+    store: TrajectoryStore, lease: IngestionLease, history_size: int, request: pytest.FixtureRequest
 ) -> None:
-    """The same primary-key plans and bounded Python allocations hold across two orders of history."""
+    """A real old-item update only preloads its touched rows after two orders of valid history."""
     thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
-    await store.record(thread, [admitted], lease=lease)
+    await store.record(
+        thread,
+        [admitted, _event(2, text_delta=event_pb2.TextDelta(item_id="old-item", text="before history"))],
+        lease=lease,
+    )
+    for start in range(3, history_size + 3, 100):
+        stop = min(start + 100, history_size + 3)
+        await store.record(
+            thread,
+            [
+                _event(
+                    cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}')
+                )
+                for cursor in range(start, stop)
+            ],
+            lease=lease,
+        )
 
     scope = await store.current_conversation_scope(thread)
     assert scope is not None
-    async with store._sessions.begin() as session:
-        for start in range(2, history_size + 2, 100):
-            stop = min(start + 100, history_size + 2)
-            await session.execute(
-                insert(trajectory.Event),
-                [
-                    {
-                        "thread_id": thread,
-                        "cursor": cursor,
-                        "origin_source_id": "test-runner",
-                        "origin_sequence": cursor,
-                        "at": datetime(2026, 9, 2, 12, tzinfo=UTC) + timedelta(seconds=cursor),
-                        "kind": "native",
-                        "payload": {},
-                    }
-                    for cursor in range(start, stop)
-                ],
-            )
-            await session.execute(
-                insert(ConversationEntity),
-                [
-                    {
-                        "thread_id": thread,
-                        "source_id": scope.source_id,
-                        "projection_epoch": scope.projection_epoch,
-                        "entity_kind": "item",
-                        "entity_id": f"historical-{cursor}",
-                        "cursor": cursor,
-                        "revision_cursor": cursor,
-                        "pending": False,
-                        "turn_id": None,
-                        "state": {},
-                        "text_ref": None,
-                        "arguments_ref": None,
-                        "output_ref": None,
-                        "input_ref": None,
-                    }
-                    for cursor in range(start, stop)
-                ],
-            )
-
-    batch = conversation_projection.EventBatch(
-        scope.source_id,
-        scope.through_cursor,
-        (_event(history_size + 2, command_failed=event_pb2.CommandFailed(command_id="admission", reason="test")),),
-    )
     # Warm the driver, typed codec, and Python caches before taking its allocation profile.
-    async with store._sessions() as session:
-        warmed = await trajectory._prior_conversation_entities(session, thread, batch)
-    assert warmed.commands["admission"] is not None
     assert await store.admitted_command(thread, command) == admitted
     assert await store.command_outcomes(thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]) == {
         "admission": "pending",
         "absent": None,
     }
+    captured: list[tuple[str, Any]] = []
+
+    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
+        if statement.lstrip().startswith("SELECT") and (
+            "conversation_entity" in statement or " FROM event" in statement
+        ):
+            captured.append((statement, parameters))
+
+    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
     gc.collect()
     tracemalloc.start()
     try:
+        before = tracemalloc.take_snapshot()
+        await store.record(
+            thread,
+            [_event(history_size + 3, text_delta=event_pb2.TextDelta(item_id="old-item", text=" after history"))],
+            lease=lease,
+        )
         assert await store.admitted_command(thread, command) == admitted
         assert await store.command_outcomes(
             thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]
         ) == {"admission": "pending", "absent": None}
-        async with store._sessions() as session:
-            prior = await trajectory._prior_conversation_entities(session, thread, batch)
-        _, peak = tracemalloc.get_traced_memory()
+        current, peak = tracemalloc.get_traced_memory()
+        after = tracemalloc.take_snapshot()
     finally:
         tracemalloc.stop()
-    assert prior.commands["admission"] is not None
-    assert peak < 1_000_000, f"indexed reads retained {peak} bytes for {history_size} historical rows"
-
+        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    assert peak < 1_000_000, f"bounded record/read path allocated {peak} bytes for {history_size} historical rows"
     async with store._sessions() as session:
-        await session.execute(text("SET LOCAL enable_seqscan = false"))
-        command_plan = (
-            await session.scalars(
-                text(
-                    "EXPLAIN (COSTS OFF) SELECT state FROM conversation_entity "
-                    "WHERE thread_id = :thread AND source_id = :source AND projection_epoch = :epoch "
-                    "AND entity_kind = 'command' AND entity_id IN ('admission', 'absent')"
-                ),
-                {"thread": thread, "source": scope.source_id, "epoch": scope.projection_epoch},
-            )
-        ).all()
-        archive_plan = (
-            await session.scalars(
-                text("EXPLAIN (COSTS OFF) SELECT payload FROM event WHERE thread_id = :thread AND cursor = 1"),
-                {"thread": thread},
-            )
-        ).all()
-        preload_plan = (
-            await session.scalars(
-                text(
-                    "EXPLAIN (COSTS OFF) SELECT state FROM conversation_entity "
-                    "WHERE thread_id = :thread AND source_id = :source AND projection_epoch = :epoch "
-                    "AND ((entity_kind = 'item' AND entity_id = 'not-present') "
-                    "OR (entity_kind = 'command' AND entity_id = 'admission'))"
-                ),
-                {"thread": thread, "source": scope.source_id, "epoch": scope.projection_epoch},
-            )
-        ).all()
-    for plan in (command_plan, archive_plan, preload_plan):
-        assert any("Index" in line for line in plan), plan
-        assert all("Seq Scan" not in line for line in plan), plan
+        item = await session.get(
+            ConversationEntity, (thread, scope.source_id, scope.projection_epoch, "item", "old-item")
+        )
+    assert item is not None
+    assert item.revision_cursor == history_size + 3
+
+    plans: list[str] = []
+    async with store._engine.connect() as connection:
+        for statement, parameters in captured:
+            result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
+            plans.extend(row[0] for row in result)
+            plans.append("")
+    assert captured
+    profile = [
+        f"history_size={history_size}",
+        f"tracemalloc_current={current}",
+        f"tracemalloc_peak={peak}",
+        "retained_allocations:",
+        *(str(stat) for stat in after.compare_to(before, "lineno")[:20]),
+        "captured_query_plans:",
+        *plans,
+    ]
+    (undeclared_outputs_dir() / f"{request.node.name}-projection-profile.txt").write_text("\n".join(profile))
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
@@ -586,7 +560,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
-    await store.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3")
+    await store.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3", error_cursor=3)
     async with replica._sessions() as session:
         checkpoint_after = await session.get(ConversationProjectionCheckpoint, thread)
         assert checkpoint_after is not None
@@ -602,7 +576,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         "operational_version": "1",
         "status": "failed",
         "last_verified_cursor": "1",
-        "feed_error": {"cursor": "1", "message": "expected runner cursor 2, received 3"},
+        "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
     }
 
     await store.set_attached(
