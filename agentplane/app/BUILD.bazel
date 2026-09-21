@@ -959,9 +959,11 @@ py_library(
     srcs = ["electric.py"],
     deps = [
         ":trajectory",
+        "@pypi//anyio",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//starlette",
     ],
 )
 

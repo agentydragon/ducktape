@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
+import anyio
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from starlette.types import Receive, Scope, Send
 
 from agentplane.app.trajectory import (
     ConversationEntityInterest,
@@ -85,6 +87,21 @@ class PayloadInterestResponse(BaseModel):
     present: bool
     chunk_count: str
     content_bytes: str
+
+
+class ElectricStreamingResponse(StreamingResponse):
+    def __init__(self, upstream: httpx.Response, headers: dict[str, str]) -> None:
+        super().__init__(upstream.aiter_raw(), status_code=upstream.status_code, headers=headers)
+        self._upstream = upstream
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # Disconnect can interrupt send while the body iterator is suspended at yield.
+            # Own cleanup at the response boundary, including AnyIO cancellation scopes.
+            with anyio.CancelScope(shield=True):
+                await self._upstream.aclose()
 
 
 class ElectricProxy:
@@ -225,16 +242,9 @@ class ElectricProxy:
         except httpx.RequestError as error:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
 
-        async def body() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in response.aiter_raw():
-                    yield chunk
-            finally:
-                await response.aclose()
-
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
         headers["cache-control"] = "private, no-store"
-        return StreamingResponse(body(), status_code=response.status_code, headers=headers)
+        return ElectricStreamingResponse(response, headers)
 
 
 router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["conversation-sync"])
