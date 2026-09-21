@@ -149,7 +149,8 @@ ducktapePkgs
   # its build/test configuration and handles fresh-disk setup through NixOS
   # systemd units.
   public-coder-devbox-container-disk =
-    import ../../cluster/k8s/agents/public-coder-agent/devbox/container-disk.nix {
-      inherit pkgs self;
-    };
+    import ../../openclaw/public_coder_agent/devbox/container-disk.nix
+      {
+        inherit pkgs self;
+      };
 }

@@ -4,7 +4,7 @@ metadata:
     name: public-coder-agent-sshpiper-devbox-key
     namespace: public-coder-agent
     annotations:
-        description: The mapping key sshpiper signs with to open coder@public-coder-devbox. Public half is committed at ssh_keys/public-coder-agent-sshpiper.pub and authorized for `coder` alone in nix/nixos/hosts/public-coder-devbox; rotating means updating that file and rebuilding the VM image.
+        description: The mapping key sshpiper signs with to open coder@public-coder-devbox. Public half is committed at ssh_keys/public-coder-agent-sshpiper.pub and authorized for `coder` alone in openclaw/public_coder_agent/devbox/nixos.nix; rotating means updating that file and rebuilding the VM image.
 type: kubernetes.io/ssh-auth
 stringData:
     ssh-privatekey: ENC[AES256_GCM,data:MbK35fv2e3gEJmjn1x25VxE4pb1PyFrKMvqxwBtHWqaObVR2a7tcqMFeWJOgCZHaqIEy0WXlgwLbk5MDxCe1OriaOPoga2+QwQg1bE4qReHMdourMc2FCAIXt0llO2dRMhPdfARcqaoEEIEZmGA1ytbf5r51di3JwoCspoe+1yiHDpmoaKfQSXas+KtGz4J2vij8H6g5BbNgkuDDj9t+UWKsOPC3BbeuMAhBj74sybszHMTRBjjEIFmZf97+8r+ndKYpv8rlBIMAVaspFT83KULH319xphhJDPr1Hvjq8bTsstYpKWK4ipjrlKDZIF34mdO7Z0h4R3duiUJK6Ly6jNlTQD5As4DC57381FOGHm+Cl42UGFGaBQA/JY9bJCTv9jkDModq7xcz0adjr7sGPcWIfu82dHnp6jPDWZqLgkWMQNUasLpGm/Roipgb3Q/zCdeFDeJTlCb70Oi8tqbeA17wH8EIdY+SZqdPiDuBcBvPc1jI5teXVUhMIh9ctg38xuJgMBsuZmkfZTUk3gTEYIqUjenZIMu5glH1cdz0T9Fo7zkWhedkV3J8J0uflHtw8gr5w2Fl04Ituuh5ygOpcMpgLxE=,iv:O5sJCDfKyk0OOmwrt8LI5JcPFzZulxZene68/28aqiI=,tag:2k0Wz7OGsm3zFJwab05EUw==,type:str]
@@ -29,6 +29,6 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-09-09T04:11:19Z"
-    mac: ENC[AES256_GCM,data:vPkQixFBoo4UVXkz4kLM2VygN5gQudtOiT3WLPieu6JOsnk6ah3EAhHiHmReiKUDBmYLiQzfxMpVncUHedKAryrCs1Vah1KGQMudjT3kTFYYr01n3mJcst5Yf8aEc/VMUy25ELrGvlC6gAg/bLJpH8RVXQoDhngIjwOisG/Nif4=,iv:l0ZzGKyttKJoiIruJ5gCt1R3HRlRJfehlKPVUm/AtEs=,tag:UDQ83680uN2Yw6kdWoajYA==,type:str]
+    lastmodified: "2026-09-21T07:55:17Z"
+    mac: ENC[AES256_GCM,data:pqwhFOZvmz0rcGTjenvwUwOlx3tRDem0quW4m2S3DSAzj1Lmv7SRvKSyJC0FuH/L9RG959o+Aa+YB1sV64VwIpdkt2PP7Tyqh2EXORjsFGt45kVnFbibZsZQocBMspI5tYqg1CEZLGUOmQJx4LWnr9bVK0glxCi97jItPS33U9A=,iv:ZbwoTS0bSGC6n4SEyuIo/Gwka//5XS2bB13aqIUFMik=,tag:98pbA3OfhltZrHXPKxaCvw==,type:str]
     version: 3.13.3
