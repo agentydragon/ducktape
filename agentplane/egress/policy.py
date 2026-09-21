@@ -67,6 +67,7 @@ class Index:
     # advances that often. One that stops is the failure this exists to expose: a wedged list, a
     # watch that never returns, or one the server keeps refusing leaves the index frozen while
     # every answer it gives stays plausible and `synced` stays true.
+    watched_kinds: frozenset[str] = WATCHED_KINDS
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
@@ -74,8 +75,10 @@ class Index:
         return (
             not self.draining
             and self.synced
-            and self.refreshed.keys() >= WATCHED_KINDS
-            and all(0 <= (now - self.refreshed[kind]).total_seconds() <= stale_after_seconds for kind in WATCHED_KINDS)
+            and self.refreshed.keys() >= self.watched_kinds
+            and all(
+                0 <= (now - self.refreshed[kind]).total_seconds() <= stale_after_seconds for kind in self.watched_kinds
+            )
         )
 
     async def notify(self) -> None:

@@ -34,40 +34,42 @@ class Informer:
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
         namespace: str,
-        credentials_namespace: str,
+        credentials_namespace: str | None,
         resync_seconds: int,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
-        self._watch = ListWatch(
-            kinds=(
-                WatchedKind(
-                    name=POLICIES_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, POLICIES_PLURAL),
-                    parse=EgressPolicy.model_validate,
-                    key=_name,
-                    names=lambda: set(index.policies),
-                    apply=lambda name, obj: apply_to(index.policies, name, obj),
-                ),
-                WatchedKind(
-                    name=BINDINGS_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
-                    parse=EgressBinding.model_validate,
-                    key=_name,
-                    names=lambda: set(index.bindings),
-                    apply=lambda name, obj: apply_to(index.bindings, name, obj),
-                ),
-                WatchedKind(
-                    name=CREDENTIALS_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, CREDENTIALS_PLURAL),
-                    parse=EgressCredential.model_validate,
-                    key=_name,
-                    names=lambda: set(index.credentials),
-                    apply=lambda name, obj: apply_to(index.credentials, name, obj),
-                ),
+        kinds = [
+            WatchedKind(
+                name=POLICIES_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, namespace, POLICIES_PLURAL),
+                parse=EgressPolicy.model_validate,
+                key=_name,
+                names=lambda: set(index.policies),
+                apply=lambda name, obj: apply_to(index.policies, name, obj),
+            ),
+            WatchedKind(
+                name=BINDINGS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
+                parse=EgressBinding.model_validate,
+                key=_name,
+                names=lambda: set(index.bindings),
+                apply=lambda name, obj: apply_to(index.bindings, name, obj),
+            ),
+            WatchedKind(
+                name=CREDENTIALS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, namespace, CREDENTIALS_PLURAL),
+                parse=EgressCredential.model_validate,
+                key=_name,
+                names=lambda: set(index.credentials),
+                apply=lambda name, obj: apply_to(index.credentials, name, obj),
+            ),
+        ]
+        if credentials_namespace is not None:
+            kinds.append(
                 WatchedKind(
                     name="secrets",
                     list=core_v1.list_namespaced_secret,
@@ -76,12 +78,11 @@ class Informer:
                     key=lambda secret: secret.name,
                     names=lambda: set(index.secrets),
                     apply=lambda name, obj: apply_to(index.secrets, name, obj),
-                ),
-            ),
-            resync_seconds=resync_seconds,
-            on_change=self._changed,
-            on_cycle=self._completed,
-            clock=clock,
+                )
+            )
+        index.watched_kinds = frozenset(kind.name for kind in kinds)
+        self._watch = ListWatch(
+            kinds=kinds, resync_seconds=resync_seconds, on_change=self._changed, on_cycle=self._completed, clock=clock
         )
 
     async def run(self) -> None:

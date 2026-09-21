@@ -50,8 +50,8 @@ class Settings(BaseSettings):
         description="The one namespace holding the EgressPolicy, EgressBinding and EgressCredential objects this "
         "proxy enforces. One deployment serves one policy set; a caller's own namespace is unrelated to it."
     )
-    credentials_namespace: str = Field(
-        default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
+    credentials_namespace: str | None = Field(
+        default=None, description="Namespace the rules' Secrets are read from. Unset disables Secret access."
     )
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,

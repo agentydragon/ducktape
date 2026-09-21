@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_bazel
-from kubernetes_asyncio.client import ApiClient
+from kubernetes_asyncio.client import ApiClient, CoreV1Api
 
 from agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, informer
 from agentplane.egress.policy import Index
@@ -82,6 +84,26 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
 
     # A bound so a regression fails here rather than hanging out the test target's own timeout.
     await asyncio.wait_for(end_watches_until_the_policies_cycle_completes(), timeout=10)
+
+
+async def test_secret_access_can_be_disabled(api_client: ApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    secret_list = AsyncMock(side_effect=AssertionError("Secret reads must be disabled"))
+    monkeypatch.setattr(CoreV1Api, "list_namespaced_secret", secret_list)
+    index = Index()
+    task = asyncio.create_task(informer(index, api_client, credentials_namespace=None).run())
+    try:
+        await asyncio.wait_for(index.wait_for(lambda: index.synced), timeout=10)
+        assert index.policies
+        assert index.bindings
+        assert index.credentials
+        assert not index.secrets
+        secret_list.assert_not_awaited()
+        assert index.available(datetime.now(UTC), stale_after_seconds=180)
+        index.refreshed[POLICIES_PLURAL] -= timedelta(seconds=181)
+        assert not index.available(datetime.now(UTC), stale_after_seconds=180)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 if __name__ == "__main__":
