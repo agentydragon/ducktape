@@ -20,7 +20,7 @@ from util.testing.container_logs import LoggedContainer
 @dataclass(frozen=True)
 class ElectricService:
     database_url: str
-    url: str
+    _url: Callable[[], str]
     _stop: Callable[[], Awaitable[None]]
     _start: Callable[[float], Awaitable[None]]
     _wait_ready: Callable[[float], Awaitable[None]]
@@ -30,6 +30,11 @@ class ElectricService:
     async def stop(self) -> None:
         """Stop Electric while preserving its configured persistent state."""
         await self._stop()
+
+    @property
+    def url(self) -> str:
+        """Current host URL; Docker may choose a new published port after restart."""
+        return self._url()
 
     async def start(self, *, timeout_s: float = 60) -> None:
         """Start a previously stopped Electric container and wait for its health endpoint."""
@@ -124,15 +129,18 @@ async def electric_service(
                 await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
                 electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric", mode="rw")
             with electric:
-                url = f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
-                await _ready(url)
+
+                def url() -> str:
+                    return f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
+
+                await _ready(url())
 
                 async def stop() -> None:
                     await asyncio.to_thread(electric.get_wrapped_container().stop)
 
                 async def start(timeout_s: float) -> None:
                     await asyncio.to_thread(electric.get_wrapped_container().start)
-                    await _ready(url, timeout_s=timeout_s)
+                    await _ready(url(), timeout_s=timeout_s)
 
                 async def logs() -> str:
                     raw = await asyncio.to_thread(electric.get_wrapped_container().logs)
@@ -149,7 +157,7 @@ async def electric_service(
                         "status": container.status,
                         "state": container.attrs.get("State"),
                         "ports": network.get("Ports"),
-                        "url": url,
+                        "url": url(),
                     }
 
                 yield ElectricService(database_url, url, stop, start, wait_ready, logs, state)
