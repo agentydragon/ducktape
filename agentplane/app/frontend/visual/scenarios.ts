@@ -436,7 +436,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     sessionReplay: "catching-up",
-    readySelectors: ['[role="status"]', '[data-conversation-anchor="34"]'],
+    // The intentionally stale view state publishes only the verified prefix while it catches up.
+    readySelectors: ['[role="status"]', '[data-conversation-anchor="4"]'],
   },
   session_sync_unavailable: {
     element: "#app",
