@@ -261,11 +261,19 @@ async def _prove_changes_only_subset_recovery(
             assert set(pre_commit_models.values()) == {expected_model}
             assert pre_commit_subset["responseBytes"] <= MAX_FRESH_SUBSET_RESPONSE_BYTES
             xip_list = pre_commit_subset["metadata"].get("xip_list", [])
+            xmin = pre_commit_subset["metadata"].get("xmin")
+            xmax = pre_commit_subset["metadata"].get("xmax")
             assert isinstance(xip_list, list)
-            # The held write begins after the snapshot boundary, so the subset
-            # must exclude it and the live response after commit must retain it.
-            assert race_xid not in xip_list
-            assert pre_commit_subset["metadata"].get("xmax") == race_xid
+            assert isinstance(xmin, str)
+            assert isinstance(xmax, str)
+            race_xid_number = int(race_xid)
+            # PostgreSQL snapshots exclude a transaction at or after xmax, or
+            # one explicitly in progress in xip_list. The live shape must
+            # retain that excluded write after it commits.
+            held_write_is_invisible = race_xid_number >= int(xmin) and (
+                race_xid_number >= int(xmax) or race_xid in xip_list
+            )
+            assert held_write_is_invisible
         race_lsn = await connection.fetchval("SELECT pg_current_wal_lsn()::text")
     assert isinstance(race_lsn, str)
     race_checkpoint = await _wait_for_wal_processed(pool, race_lsn)
@@ -283,8 +291,7 @@ async def _prove_changes_only_subset_recovery(
         "preCommitSubset": {
             "rowCount": len(pre_commit_models),
             "responseBytes": pre_commit_subset["responseBytes"],
-            "heldWriteExcludedFromSnapshot": True,
-            "xmax": race_xid,
+            "snapshotMarksHeldWriteInvisible": True,
         },
         "committedWrite": {
             "walCheckpoint": race_checkpoint,
