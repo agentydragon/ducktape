@@ -560,7 +560,7 @@ function VirtualizedHistory({
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
-      if (element.scrollTop >= previousBottom - 24) atBottom.current = true;
+      if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
