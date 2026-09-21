@@ -505,22 +505,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: matrix-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 1h
-  path: ./cluster/k8s/matrix/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: matrix-namespace
-    namespace: ducktape-flux
-  timeout: 1m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: monitoring-crds
   namespace: ducktape-flux
 spec:
@@ -2227,31 +2211,6 @@ spec:
     name: litellm-db
     namespace: ducktape-flux
   timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: matrix-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: matrix-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/matrix/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: matrix-db
-    namespace: ducktape-flux
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -3978,18 +3937,9 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: matrix-namespace
-      namespace: ducktape-flux
-    - name: matrix-db
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: local-path-provisioner
+    - name: cnpg
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -3997,7 +3947,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix/app
+  path: ./cluster/k8s/matrix
   prune: true
   retryInterval: 1m
   sourceRef:
