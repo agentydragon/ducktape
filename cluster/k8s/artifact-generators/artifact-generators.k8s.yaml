@@ -205,11 +205,6 @@ spec:
       name: kubevirt
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
-      name: public-coder-agent-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agentplane-index/**"
           to: "@artifact/cluster/k8s/agentplane-index/"
       name: agentplane-index
@@ -376,6 +371,12 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
       name: public-coder-agent-app
       originRevision: "@repo"
     - copy:
@@ -407,16 +408,6 @@ spec:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/devbox/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/devbox/"
       name: public-coder-agent-devbox
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
-      name: public-coder-agent-proxy
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
-      name: public-coder-agent-sshpiper
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/shared-rbac/**"

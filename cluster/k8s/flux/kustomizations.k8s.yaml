@@ -60,22 +60,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: public-coder-agent-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 1h
-  path: ./cluster/k8s/agents/public-coder-agent/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: artifact-generators
   namespace: ducktape-flux
 spec:
@@ -1181,40 +1165,6 @@ spec:
     name: external-snapshotter-source
     namespace: ducktape-flux
   timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Terminating SSH bastion for the Agent's route to its devbox. The Agent authenticates with a key valid only here; this Pod holds the key that opens coder@public-coder-devbox.
-  name: public-coder-agent-sshpiper
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: public-coder-agent-namespace
-      namespace: ducktape-flux
-    - name: sshpiper-crds
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: public-coder-agent-sshpiper
-      namespace: public-coder-agent
-  interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/sshpiper
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-sshpiper
-    namespace: ducktape-flux
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -5318,62 +5268,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: OpenClaw Iron proxy plus interception CA.
-  name: public-coder-agent-proxy
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: public-coder-agent-namespace
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: matrix
-      namespace: ducktape-flux
-    - name: aiquota
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: public-coder-agent-proxy
-      namespace: public-coder-agent
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: public-coder-agent-proxy-root-ca
-      namespace: public-coder-agent
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: brave-search-api-key
-      namespace: public-coder-agent
-  interval: 1h
-  path: ./cluster/k8s/agents/public-coder-agent/proxy
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-proxy
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     ducktape.org/parked: "true"
   name: haku-dispatch
   namespace: ducktape-flux
@@ -5477,7 +5371,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: OpenClaw coder agent at public-coder-agent.allegedly.works -- Authentik-gated, egress-confined to its own proxy.
+    description: OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; devbox and backups reconcile separately.
   name: public-coder-agent-app
   namespace: ducktape-flux
 spec:
@@ -5487,24 +5381,38 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
-    - name: public-coder-agent-namespace
+    - name: cert-manager
       namespace: ducktape-flux
-    - name: public-coder-agent-proxy
+    - name: cert-manager-trust
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
+    - name: sshpiper-crds
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: public-coder-agent
       namespace: public-coder-agent
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: public-coder-agent-proxy
+      namespace: public-coder-agent
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: public-coder-agent-sshpiper
+      namespace: public-coder-agent
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: public-coder-agent-proxy-root-ca
+      namespace: public-coder-agent
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: brave-search-api-key
+      namespace: public-coder-agent
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/app
-  prune: false
+  prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -5525,10 +5433,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: public-coder-agent-namespace
-      namespace: ducktape-flux
-    - name: public-coder-agent-proxy
-      namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: forgejo-images
