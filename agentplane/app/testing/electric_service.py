@@ -107,7 +107,7 @@ async def electric_service(
                 # The upstream image runs as UID 1000; Kubernetes supplies this through the
                 # deployment's fsGroup, while a Docker bind mount preserves the test process UID.
                 await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
-                electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric")
+                electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric", mode="rw")
             with electric:
                 url = f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
                 await _ready(url)
