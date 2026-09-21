@@ -455,6 +455,7 @@ function VirtualizedHistory({
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const scrollMetrics = useRef({ top: 0, contentHeight: 0, viewportHeight: 0 });
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
@@ -510,7 +511,19 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+        const previous = scrollMetrics.current;
+        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
+        else if (
+          element.scrollTop < previous.top &&
+          element.scrollHeight === previous.contentHeight &&
+          element.clientHeight === previous.viewportHeight
+        )
+          atBottom.current = false;
+        scrollMetrics.current = {
+          top: element.scrollTop,
+          contentHeight: element.scrollHeight,
+          viewportHeight: element.clientHeight,
+        };
         const first = virtualizer.getVirtualItems()[0];
         const firstEntity = first ? segments[first.index] : undefined;
         if (first && firstEntity) {
