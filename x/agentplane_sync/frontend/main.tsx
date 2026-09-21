@@ -129,7 +129,11 @@ function App() {
   const conversationId = query.get("conversation") ?? "alpha-large";
   const collection = useMemo(() => makeRows(conversationId), [conversationId]);
   const tail = useLiveQuery(
-    (q) => q.from({ row: collection }).orderBy(({ row }) => row.anchor, "desc").limit(30),
+    (q) =>
+      q
+        .from({ row: collection })
+        .orderBy(({ row }) => row.anchor, "desc")
+        .limit(30),
     [collection]
   );
   const tailRows = tail.data ?? [];
@@ -147,7 +151,9 @@ function App() {
     const unique = new Map<string, ViewRow>();
     for (const row of tailRows) unique.set(row.rowKey, row);
     for (const rows of Object.values(historyByPage)) for (const row of rows) unique.set(row.rowKey, row);
-    return [...unique.values()].sort((left, right) => (left.anchor < right.anchor ? -1 : left.anchor > right.anchor ? 1 : 0));
+    return [...unique.values()].sort((left, right) =>
+      left.anchor < right.anchor ? -1 : left.anchor > right.anchor ? 1 : 0
+    );
   }, [tailRows, historyByPage]);
   const toolRow = allRows.find((row) => row.rowKey === "item:tool-row");
   const liveRow = allRows.find((row) => row.rowKey === "item:live-item");
@@ -155,7 +161,10 @@ function App() {
   const commandRow = allRows.find((row) => row.rowKey === "command:sync-command");
   const interestedRow = interest ? allRows.find((row) => row.itemId === interest.itemId) : undefined;
   const interestedVersion = interest && interestedRow ? rowVersion(interestedRow, interest.field) : 0n;
-  const oldestAnchor = allRows.reduce<bigint | null>((oldest, row) => (oldest === null || row.anchor < oldest ? row.anchor : oldest), null);
+  const oldestAnchor = allRows.reduce<bigint | null>(
+    (oldest, row) => (oldest === null || row.anchor < oldest ? row.anchor : oldest),
+    null
+  );
 
   useEffect(() => {
     window.__syncEvidence.rowKeys = tailRows.map((row) => row.rowKey);
@@ -261,7 +270,9 @@ function App() {
     <main data-testid="sync-app" data-status={tail.isError ? "error" : tail.isLoading ? "loading" : "ready"}>
       <h1>Thread {conversationId}</h1>
       <output data-testid="tail-count">{tailRows.length}</output>
-      <output data-testid="history-count">{Object.values(historyByPage).reduce((total, rows) => total + rows.length, 0)}</output>
+      <output data-testid="history-count">
+        {Object.values(historyByPage).reduce((total, rows) => total + rows.length, 0)}
+      </output>
       <output data-testid="exact-bigint">
         {tailRows.some((row) => row.anchor === BigInt("9007199254740993")) ? "exact" : "waiting"}
       </output>
@@ -287,7 +298,8 @@ function App() {
         </button>
       </div>
       <div className="atomic" data-testid="atomic-state">
-        {toolRow?.argumentsRevision.toString() ?? "missing"}|{controlRow?.model ?? "missing"}|{commandRow?.status ?? "missing"}
+        {toolRow?.argumentsRevision.toString() ?? "missing"}|{controlRow?.model ?? "missing"}|
+        {commandRow?.status ?? "missing"}
       </div>
       <output data-testid="payload-body">{payloadText}</output>
       <div className="viewport" ref={viewport} data-testid="viewport">

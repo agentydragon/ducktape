@@ -9,7 +9,7 @@ from typing import Any
 
 import asyncpg
 
-from agentplane.protocol import event_pb2, event_log_pb2
+from agentplane.protocol import event_log_pb2, event_pb2
 
 POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807
 _SCHEMA = Path(__file__).with_name("schema.sql").read_text()
@@ -63,15 +63,15 @@ ON CONFLICT (conversation_id, row_key) DO UPDATE SET
 """
 
 
-class ProjectionGap(ValueError):
+class ProjectionGapError(ValueError):
     """A source batch skipped a cursor already required by the projection."""
 
 
-class ProjectionConflict(ValueError):
+class ProjectionConflictError(ValueError):
     """A previously applied source cursor was reused with different content."""
 
 
-class UnknownItem(ValueError):
+class UnknownItemError(ValueError):
     """A semantic update referenced an item that has no start row."""
 
 
@@ -91,7 +91,14 @@ async def initialize_database(pool: asyncpg.Pool) -> None:
 def _row_keys(entry: event_log_pb2.EventEntry) -> set[str]:
     event = entry.event
     case = event.WhichOneof("observation")
-    if case in {"item_started", "text_delta", "tool_arguments_delta", "tool_arguments", "tool_output_delta", "item_completed"}:
+    if case in {
+        "item_started",
+        "text_delta",
+        "tool_arguments_delta",
+        "tool_arguments",
+        "tool_output_delta",
+        "item_completed",
+    }:
         return {f"item:{getattr(event, case).item_id}"}
     if case == "command_admitted":
         return {f"command:{event.command_admitted.command.command_id}"}
@@ -132,12 +139,7 @@ def _new_row(conversation_id: str, row_key: str, entity_kind: str, cursor: int) 
 
 
 def _payload(
-    conversation_id: str,
-    item_id: str,
-    field_name: str,
-    cursor: int,
-    operation: str,
-    content: str,
+    conversation_id: str, item_id: str, field_name: str, cursor: int, operation: str, content: str
 ) -> tuple[str, str, str, int, str, str]:
     return conversation_id, item_id, field_name, cursor, operation, content
 
@@ -176,86 +178,83 @@ def _apply_event(
         row = rows.get(key)
         if row is None:
             if not create:
-                raise UnknownItem(f"{key} has no projected start row at cursor {cursor}")
+                raise UnknownItemError(f"{key} has no projected start row at cursor {cursor}")
             row = _new_row(conversation_id, key, kind, cursor)
             rows[key] = row
         elif row["entity_kind"] != kind:
-            raise ProjectionConflict(f"{key} changed entity kind from {row['entity_kind']} to {kind}")
+            raise ProjectionConflictError(f"{key} changed entity kind from {row['entity_kind']} to {kind}")
         row["revision"] = cursor
         return row
 
     if case == "item_started":
-        value = event.item_started
-        key = f"item:{value.item_id}"
+        started = event.item_started
+        key = f"item:{started.item_id}"
         row = row_for(key, "item", create=True)
-        row["item_id"] = value.item_id
-        row["item_kind"] = value.kind
-        row["tool_name"] = value.tool_name or None
+        row["item_id"] = started.item_id
+        row["item_kind"] = started.kind
+        row["tool_name"] = started.tool_name or None
         row["status"] = "streaming"
     elif case in {"text_delta", "tool_arguments_delta", "tool_arguments", "tool_output_delta"}:
-        value = getattr(event, case)
-        row = row_for(f"item:{value.item_id}", "item")
-        row["item_id"] = value.item_id
+        delta = getattr(event, case)
+        row = row_for(f"item:{delta.item_id}", "item")
+        row["item_id"] = delta.item_id
         if case == "text_delta":
             field_name = "reasoning" if row["item_kind"] == event_pb2.ITEM_KIND_REASONING else "text"
-            _append_payload(row, payload_parts, field_name, cursor, value.text)
+            _append_payload(row, payload_parts, field_name, cursor, delta.text)
         elif case == "tool_arguments_delta":
-            _append_payload(row, payload_parts, "arguments", cursor, value.partial_json)
+            _append_payload(row, payload_parts, "arguments", cursor, delta.partial_json)
         elif case == "tool_arguments":
-            _append_payload(row, payload_parts, "arguments", cursor, value.arguments_json, "replace")
+            _append_payload(row, payload_parts, "arguments", cursor, delta.arguments_json, "replace")
         else:
-            _append_payload(row, payload_parts, "output", cursor, value.text)
+            _append_payload(row, payload_parts, "output", cursor, delta.text)
     elif case == "item_completed":
-        value = event.item_completed
-        row = row_for(f"item:{value.item_id}", "item")
-        outcome = value.WhichOneof("outcome")
+        completed = event.item_completed
+        row = row_for(f"item:{completed.item_id}", "item")
+        outcome = completed.WhichOneof("outcome")
         if outcome == "text":
             field_name = "reasoning" if row["item_kind"] == event_pb2.ITEM_KIND_REASONING else "text"
-            _append_payload(row, payload_parts, field_name, cursor, value.text, "replace")
+            _append_payload(row, payload_parts, field_name, cursor, completed.text, "replace")
             row["status"] = "complete"
         elif outcome == "tool":
-            _append_payload(row, payload_parts, "output", cursor, value.tool.output, "replace")
-            row["status"] = "tool_succeeded" if value.tool.succeeded else "tool_failed"
+            _append_payload(row, payload_parts, "output", cursor, completed.tool.output, "replace")
+            row["status"] = "tool_succeeded" if completed.tool.succeeded else "tool_failed"
         else:
             row["status"] = "complete"
     elif case == "command_admitted":
-        command_id = event.command_admitted.command.command_id
+        admitted_command = event.command_admitted.command.command_id
+        command_id = admitted_command
         row = row_for(f"command:{command_id}", "command", create=True)
         row["command_id"] = command_id
         row["status"] = "pending"
     elif case in {"command_failed", "command_noop"}:
-        value = getattr(event, case)
-        row = row_for(f"command:{value.command_id}", "command", create=True)
-        row["command_id"] = value.command_id
+        command_update = getattr(event, case)
+        row = row_for(f"command:{command_update.command_id}", "command", create=True)
+        row["command_id"] = command_update.command_id
         row["status"] = "failed" if case == "command_failed" else "noop"
     elif case == "model_changed":
-        value = event.model_changed
+        model_change = event.model_changed
         row = row_for("control:model", "control", create=True)
-        row["model"] = value.model
+        row["model"] = model_change.model
         row["status"] = "current"
-        if value.command_id:
-            command = row_for(f"command:{value.command_id}", "command", create=True)
-            command["command_id"] = value.command_id
+        if model_change.command_id:
+            command = row_for(f"command:{model_change.command_id}", "command", create=True)
+            command["command_id"] = model_change.command_id
             command["status"] = "applied"
     elif case == "turn_started":
-        value = event.turn_started
-        row = row_for(f"turn:{value.turn_id}", "turn", create=True)
+        turn_started = event.turn_started
+        row = row_for(f"turn:{turn_started.turn_id}", "turn", create=True)
         row["status"] = "active"
-        row["model"] = value.model
+        row["model"] = turn_started.model
     elif case == "turn_completed":
-        value = event.turn_completed
-        row = row_for(f"turn:{value.turn_id}", "turn", create=True)
-        row["status"] = str(value.status)
+        turn_completed = event.turn_completed
+        row = row_for(f"turn:{turn_completed.turn_id}", "turn", create=True)
+        row["status"] = str(turn_completed.status)
     else:
         return
 
 
 async def apply_batch(
-    pool: asyncpg.Pool,
-    *,
-    conversation_id: str,
-    source_id: str,
-    entries: list[event_log_pb2.EventEntry],
+    pool: asyncpg.Pool, *, conversation_id: str, source_id: str, entries: list[event_log_pb2.EventEntry]
 ) -> ApplyResult:
     if not entries:
         raise ValueError("A projection batch must contain at least one EventEntry")
@@ -279,10 +278,13 @@ async def apply_batch(
             "SELECT source_id, through_cursor FROM projection_checkpoint WHERE conversation_id = $1 FOR UPDATE",
             conversation_id,
         )
+        if checkpoint is None:
+            raise ProjectionConflictError(f"Conversation {conversation_id} has no projection checkpoint")
         if checkpoint["source_id"] != source_id:
-            raise ProjectionConflict(f"Conversation {conversation_id} is already owned by source {checkpoint['source_id']}")
+            raise ProjectionConflictError(
+                f"Conversation {conversation_id} is already owned by source {checkpoint['source_id']}"
+            )
         through = int(checkpoint["through_cursor"])
-        original_through = through
         duplicate_events = 0
         new_entries: list[event_log_pb2.EventEntry] = []
 
@@ -298,11 +300,13 @@ async def apply_batch(
                     cursor,
                 )
                 if prior is None or bytes(prior) != digest:
-                    raise ProjectionConflict(f"Cursor {cursor} was already covered with different or missing evidence")
+                    raise ProjectionConflictError(
+                        f"Cursor {cursor} was already covered with different or missing evidence"
+                    )
                 duplicate_events += 1
                 continue
             if cursor != through + 1:
-                raise ProjectionGap(f"Expected source cursor {through + 1}, got {cursor}")
+                raise ProjectionGapError(f"Expected source cursor {through + 1}, got {cursor}")
             await connection.execute(
                 """INSERT INTO projection_event (conversation_id, source_id, source_cursor, digest)
                    VALUES ($1, $2, $3, $4)""",
@@ -337,12 +341,9 @@ async def apply_batch(
             )
         if rows:
             await connection.executemany(
-                _UPSERT_ROW,
-                [tuple(row[field] for field in _ROW_FIELDS) for row in rows.values()],
+                _UPSERT_ROW, [tuple(row[field] for field in _ROW_FIELDS) for row in rows.values()]
             )
         await connection.execute(
-            "UPDATE projection_checkpoint SET through_cursor = $2 WHERE conversation_id = $1",
-            conversation_id,
-            through,
+            "UPDATE projection_checkpoint SET through_cursor = $2 WHERE conversation_id = $1", conversation_id, through
         )
         return ApplyResult(through, duplicate_events, len(rows), len(payload_parts))

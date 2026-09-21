@@ -28,7 +28,7 @@ from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from x.agentplane_sync.projector import ApplyResult, UnknownItem, apply_batch, initialize_database
+from x.agentplane_sync.projector import ApplyResult, UnknownItemError, apply_batch, initialize_database
 from x.agentplane_sync.service import SubsetGate, create_electric_proxy, create_gateway
 
 if TYPE_CHECKING:
@@ -309,7 +309,7 @@ async def _check_projector_retry_and_race(pool: asyncpg.Pool) -> dict[str, Any]:
         _text_entry("runner-race", 3, "race-item", "+will-rollback"),
         _text_entry("runner-race", 4, "missing-item", "invalid"),
     ]
-    with pytest.raises(UnknownItem):
+    with pytest.raises(UnknownItemError):
         await apply_batch(pool, conversation_id="race-thread", source_id="runner-race", entries=failed_batch)
     after_failure = await pool.fetchrow(
         "SELECT through_cursor FROM projection_checkpoint WHERE conversation_id='race-thread'"
