@@ -533,11 +533,17 @@ function ProjectedSessionBody({
   const running = available && !thread.archived && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelError, setModelError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void models().then((catalog) => {
-      if (active) setModelOptions(catalog[thread.harness] ?? []);
-    });
+    void models().then(
+      (catalog) => {
+        if (active) setModelOptions(catalog[thread.harness] ?? []);
+      },
+      (reason: unknown) => {
+        if (active) setModelError(displayableError(reason));
+      }
+    );
     return () => {
       active = false;
     };
@@ -582,24 +588,40 @@ function ProjectedSessionBody({
         .map((row) => {
           if (!("outcome" in row.state)) return null;
           return (
-            <Stack key={row.entityId} gap="xs">
+            <Paper key={row.entityId} p="xs" withBorder>
               <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-                {row.state.operation} · {row.state.outcome}
+                {row.state.outcome === "pending"
+                  ? "Saved · awaiting effect"
+                  : `${row.state.operation.replaceAll("_", " ")} · ${row.state.outcome}`}
                 {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
               </Text>
+              {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
               <Evidence threadId={threadId} entity={row} />
-            </Stack>
+            </Paper>
           );
         })}
       {commands.local.commands.map((value) => (
         <Paper key={value.command.commandId} p="xs" withBorder>
-          <Text size="sm">Pending locally saved command</Text>
+          <Text size="sm">{value.admission ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
+          {value.command.operation.case === "submitInput" && <Markdown source={value.command.operation.value.text} />}
+          {value.command.operation.case === "changeModel" && (
+            <Text>Change model to {value.command.operation.value.model}</Text>
+          )}
+          {value.command.operation.case === "interruptTurn" && (
+            <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+          )}
+          {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
           {commands.errors.get(value.command.commandId) && (
             <Text c="red">{commands.errors.get(value.command.commandId)}</Text>
           )}
           {!value.admission && <Button onClick={() => void commands.deliver(value)}>Retry</Button>}
         </Paper>
       ))}
+      {modelError && (
+        <Text role="alert" c="red">
+          {modelError}
+        </Text>
+      )}
       <Textarea
         value={draft}
         onChange={(event) => setDraft(event.currentTarget.value)}
@@ -675,6 +697,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [before, setBefore] = useState<string | undefined>();
   const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const sandboxAvailable =
     environment.connection === "connected" &&
@@ -683,10 +706,13 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
       (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
     ) === true;
   useEffect(() => {
-    void getThread(threadId).then((value) => {
-      setThread(value);
-      setName(value.name ?? "");
-    });
+    void getThread(threadId).then(
+      (value) => {
+        setThread(value);
+        setName(value.name ?? "");
+      },
+      (reason: unknown) => setError(displayableError(reason))
+    );
   }, [threadId]);
   return (
     <Stack style={{ flex: 1, minHeight: 0 }}>
@@ -699,9 +725,18 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
           value={name}
           placeholder={threadId}
           onChange={(event) => setName(event.currentTarget.value)}
-          onBlur={() => void renameThread(threadId, name.trim() || null).then(setThread)}
+          onBlur={() =>
+            void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
+              setError(displayableError(reason))
+            )
+          }
         />
       </Group>
+      {error && (
+        <Text role="alert" c="red">
+          {error}
+        </Text>
+      )}
       {thread && (
         <Text size="xs" c="dimmed">
           {thread.sandbox}
