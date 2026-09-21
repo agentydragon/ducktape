@@ -1,11 +1,11 @@
 import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { ItemKind } from "../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import {
   command,
   conversationEvidence,
@@ -42,14 +42,11 @@ const LIFECYCLE_LABELS: Record<string, string> = {
 };
 
 function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
-  if (!event || typeof event !== "object")
-    return { label: LIFECYCLE_LABELS[observation] ?? observation, diagnostic: null };
-  const fields = event as Record<string, unknown>;
-  const status = typeof fields.status === "string" ? fields.status : null;
-  const diagnostic = typeof fields.error === "string" && fields.error ? fields.error : null;
-  if (observation === "turn_completed" && status?.endsWith("FAILED")) return { label: "Turn failed", diagnostic };
-  if (observation === "turn_completed" && status?.endsWith("INTERRUPTED"))
-    return { label: "Turn interrupted", diagnostic };
+  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
+  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
+  const diagnostic = completed?.error || null;
+  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
+  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
   return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
 }
 
