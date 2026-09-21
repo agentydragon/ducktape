@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: codex-pod
   annotations:
-    description: "Parked Codex pod image experiment (see cluster/k8s/parked/codex-pod/README.md)."
+    description: "Parked Codex pod image experiment (see x/codex_pod_image/deploy/README.md)."
   labels:
     app.kubernetes.io/name: codex-pod
     goldilocks.fairwinds.com/enabled: "true"

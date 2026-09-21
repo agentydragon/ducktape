@@ -407,13 +407,15 @@ noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
   and unparked. Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
-- **codex-pod, codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
-  `cluster/k8s/parked/<name>/` — four successive Codex-in-a-pod experiments, previously
+- **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
+  `cluster/k8s/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
   under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure
-  manual-`kubectl apply` spikes — `codex-pod` was Flux-wired once but had already
-  retired its `flux-kustomization.yaml` before this move). `codex-pod`'s Nix flake
-  source (`x/codex_pod_image/`) stays live and unparked; the other three had no
-  ducktape-owned source elsewhere.
+  manual-`kubectl apply` spikes). **codex-pod**: `x/codex_pod_image/deploy/` — its
+  manifests now live beside their ducktape-owned Nix image source; it was Flux-wired
+  once, but its Flux Kustomization had already been retired. The image source remains
+  in place for possible revival, though its flake evaluation currently fails. Its two
+  SOPS Secret manifests remain parked at `cluster/k8s/parked/codex-pod/`; replace
+  them with runtime-managed credentials before reactivation.
 - **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/k8s/forgejo/budget-namespace/` because the active ledger Terraform
