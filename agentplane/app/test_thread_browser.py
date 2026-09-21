@@ -287,6 +287,22 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
                 )
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reloaded.png")
+                await page.context.set_offline(True)
+                source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
+                async with asyncio.timeout(10):
+                    while True:
+                        scope = await store.current_conversation_scope(thread)
+                        if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
+                            break
+                        await asyncio.sleep(0.01)
+                await expect(
+                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
+                ).to_have_count(1)
+                await page.context.set_offline(False)
+                await expect(
+                    page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
+                ).to_have_count(1)
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reconnected.png")
         finally:
             await store.close()
 
