@@ -409,22 +409,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: litellm-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/k8s/litellm/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: litellm-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: local-path-provisioner
   namespace: ducktape-flux
 spec:
@@ -1931,31 +1915,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: litellm-db
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: litellm-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/litellm/db
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: litellm-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-filer-db
   namespace: ducktape-flux
 spec:
@@ -2404,34 +2363,6 @@ spec:
     name: haku-console-namespace
     namespace: ducktape-flux
   timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: litellm-secrets
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: litellm-namespace
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/litellm/secrets
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: litellm-secrets
-    namespace: ducktape-flux
-  timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -5024,31 +4955,28 @@ metadata:
   name: litellm
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: external-secrets-config
+    - name: cnpg
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: litellm-secrets
-      namespace: ducktape-flux
-    - name: litellm-db
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: reflector
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/litellm/app
+  path: ./cluster/k8s/litellm
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: litellm
     namespace: ducktape-flux
   timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

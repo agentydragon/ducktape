@@ -50,6 +50,10 @@ from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -418,13 +422,8 @@ class LiteLLMServiceMonitor(Construct):
 def litellm(
     flux_chart: Chart,
     root: Path,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    litellm_secrets: Kustomization,
-    litellm_db: Kustomization,
-    gateway: Kustomization,
-    cert_manager_environment: Kustomization,
-    reflector: Kustomization,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
@@ -443,27 +442,20 @@ def litellm(
         "litellm",
         spec=KustomizationSpec(
             interval="10m",
-            path=f"./{APP_DIR}",
+            path="./cluster/k8s/litellm",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
             ),
             timeout="10m",
-            # The Tana credential is an optional reflected env Secret. LiteLLM
-            # serves other providers without it, so Tana-MCP health must not
-            # gate reconciliation of the shared proxy.
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                litellm_secrets,
-                litellm_db,
-                gateway,
-                cert_manager_environment,
-                reflector,
-                # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-                # litellm-servicemonitor Kustomization, #7103).
-                monitoring_crds,
-            ),
+            retry_interval="1m",
+            wait=True,
+            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
         ),
     )
     write_yaml(

@@ -174,7 +174,6 @@ def generate_manifests(root: Path) -> None:
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(flux_chart)
     kvm_device_plugin_flux_kustomizations.kvm_device_plugin(flux_chart)
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
-    litellm_namespace_kustomization = litellm_flux_kustomizations.litellm_namespace(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_kustomization = monitoring_flux_kustomizations.grafana_helmrepository(flux_chart)
@@ -281,9 +280,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db_kustomization = forgejo_flux_kustomizations.forgejo_db(
         flux_chart, forgejo_namespace_kustomization, cnpg_kustomization
     )
-    litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
-        flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
@@ -332,9 +328,6 @@ def generate_manifests(root: Path) -> None:
     )
     haku_console_namespace_kustomization = haku_flux_kustomizations.haku_console_namespace(
         flux_chart, external_secrets_config_kustomization
-    )
-    litellm_secrets_kustomization = litellm_flux_kustomizations.litellm_secrets(
-        flux_chart, external_creds_kustomization, litellm_namespace_kustomization, external_secrets_config_kustomization
     )
     ntfy_kustomization = ntfy.ntfy(
         flux_chart,
@@ -740,16 +733,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_jwt_rotation_kustomization
     )
     litellm_kustomization = litellm_proxy.litellm(
-        flux_chart,
-        root,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        litellm_secrets_kustomization,
-        litellm_db_kustomization,
-        gateway_kustomization,
-        cert_manager_environment_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, root, cnpg_kustomization, external_secrets_operator_kustomization, monitoring_crds_kustomization
     )
     aiquota_kustomization = aiquota.aiquota(
         flux_chart,
