@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import Set
+from typing import cast
 
 import pytest_bazel
 from playwright.async_api import Page, expect
@@ -37,7 +38,7 @@ async def await_command_query(page: Page, role: str, excluded_ids: Set[str] = fr
         """({ role, excludedIds }) => (window.__agentplaneConversationCollectionTrace ?? []).some(event =>
             event.kind === 'query' && event.role === role && event.ready && !excludedIds.includes(event.id)
         )""",
-        {"role": role, "excludedIds": list(excluded_ids)},
+        arg={"role": role, "excludedIds": list(excluded_ids)},
     )
     trace = await command_trace(page)
     return next(
@@ -59,13 +60,15 @@ async def await_collected(page: Page, ids: set[str]) -> None:
                 event.size === 0 && event.subscriberCount === 0
             ));
         }""",
-        list(ids),
+        arg=list(ids),
     )
 
 
 async def reader_layout(page: Page) -> dict[str, float | str]:
-    return await page.evaluate(
-        """() => {
+    return cast(
+        dict[str, float | str],
+        await page.evaluate(
+            """() => {
             const history = document.querySelector('[aria-label="Thread history"]');
             const composer = document.querySelector('textarea[placeholder="Enter sends, Ctrl+Enter for a new line"]');
             const anchor = history?.querySelector('[data-conversation-anchor]');
@@ -83,6 +86,7 @@ async def reader_layout(page: Page) -> dict[str, float | str]:
                 anchorTop: anchorBox.top,
             };
         }"""
+        ),
     )
 
 
