@@ -106,7 +106,7 @@ async def container(harness: protocol_pb2.Harness, endpoint: AnthropicMessages |
 
 
 async def test_the_image_runs_a_turn(container: str, harness: protocol_pb2.Harness, model: ScriptedModel) -> None:
-    client = RunnerClient(container)
+    client = RunnerClient(container, capture_history=True)
     attachment = await client.attach("image-1", spec=launches.spec(harness, Path(WORKSPACE)))
     assert attachment.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
     await attachment.send("input-1", "Reply with exactly: IMAGE_OK")

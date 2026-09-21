@@ -95,3 +95,7 @@ SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache.
 instance has its own scope, preserving reset-on-new-harness behavior. These lookup tables are
 scratch state: they disappear when the journal connection closes and are not recovery evidence.
 The current Claude message's block map and unconfirmed inputs remain in memory.
+
+The Python `RunnerClient` tracks its consumed cursor without retaining every received event.
+Tests that inspect an attachment's complete `seen` history explicitly enable
+`capture_history=True`; application clients use the bounded default.
