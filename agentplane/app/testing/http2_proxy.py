@@ -91,7 +91,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
     container = (
         LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
         .with_kwargs(network_mode="host")
-        .with_volume(str(certificate.directory), "/test", mode="ro")
+        .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
         .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
     )
     url = f"https://127.0.0.1:{port}"
