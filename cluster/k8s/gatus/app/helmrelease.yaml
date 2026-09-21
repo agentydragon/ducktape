@@ -16,8 +16,11 @@ metadata:
 spec:
   interval: 15m
   install:
-    remediation:
-      retries: 3
+    strategy:
+      name: RetryOnFailure
+  upgrade:
+    strategy:
+      name: RetryOnFailure
   chart:
     spec:
       chart: gatus

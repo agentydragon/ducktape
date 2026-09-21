@@ -174,7 +174,6 @@ def generate_manifests(root: Path) -> None:
     )
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart)
     forgejo_namespace_kustomization = forgejo_flux_kustomizations.forgejo_namespace(flux_chart)
-    gatus_namespace_kustomization = gatus_flux_kustomizations.gatus_namespace(flux_chart)
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart)
     hubble_ui_flux_kustomizations.hubble_ui(flux_chart)
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
@@ -303,9 +302,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db_kustomization = forgejo_flux_kustomizations.forgejo_db(
         flux_chart, forgejo_namespace_kustomization, cnpg_kustomization
     )
-    gatus_db_kustomization = gatus_flux_kustomizations.gatus_db(
-        flux_chart, gatus_namespace_kustomization, cnpg_kustomization
-    )
     litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
         flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
@@ -431,7 +427,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers_tf_kustomization = authentik_flux_kustomizations.sso_providers_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_kustomization
     )
-    gatus_sso_tf_kustomization = gatus_flux_kustomizations.gatus_sso_tf(
+    gatus_flux_kustomizations.gatus_sso_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_kustomization
     )
     parked_flux_kustomizations.openhands(
@@ -552,15 +548,7 @@ def generate_manifests(root: Path) -> None:
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
         flux_chart, grafana_operator_kustomization, grafana_db_kustomization, sso_providers_tf_kustomization
     )
-    gatus_flux_kustomizations.gatus(
-        flux_chart,
-        gatus_namespace_kustomization,
-        gatus_db_kustomization,
-        gatus_sso_tf_kustomization,
-        litellm_secrets_kustomization,
-        gateway_kustomization,
-        monitoring_crds_kustomization,
-    )
+    gatus_flux_kustomizations.gatus(flux_chart, cnpg_kustomization, monitoring_crds_kustomization)
     flux_webhook_flux_kustomizations.flux_webhook(
         flux_chart,
         flux_webhook_token_kustomization,

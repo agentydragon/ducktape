@@ -310,11 +310,6 @@ spec:
       name: flux-image-automation-ghcr
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/gatus/namespace/**"
-          to: "@artifact/cluster/k8s/gatus/namespace/"
-      name: gatus-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/monitoring/grafana-operator/**"
           to: "@artifact/cluster/k8s/monitoring/grafana-operator/"
       name: grafana-operator
@@ -629,14 +624,9 @@ spec:
       name: forgejo-db
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/gatus/app/**"
-          to: "@artifact/cluster/k8s/gatus/app/"
+        - from: "@repo/cluster/k8s/gatus/**"
+          to: "@artifact/cluster/k8s/gatus/"
       name: gatus
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/gatus/db/**"
-          to: "@artifact/cluster/k8s/gatus/db/"
-      name: gatus-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/gatus/sso-tf/**"
