@@ -86,10 +86,15 @@ Three positions have distinct meanings:
 Electric offsets, shape handles and transaction snapshot metadata are engine-owned. They
 must not be compared with runner cursors or replaced by a maximum observed item revision.
 
-`ViewState` carries the committed projection position, controls and unresolved command
-count. That count covers all commands, not merely the loaded page. A runner `Attached`
+`ViewState` carries the committed projection position, controls, unresolved command
+count, and a command-summary revision cursor. The revision changes when a command is admitted
+or settles, including a same-count swap; item text deltas do not change it. The count covers all
+commands, not merely the loaded page. A runner `Attached`
 snapshot can be ahead of the archive and must not seed event-derived controls.
 An HTTP admission receipt likewise does not advance projection or subscription progress.
+
+The projection schema is experimental staging state. An incompatible stored view change resets
+and recreates that materialization; it does not retain a tolerant reader or a data backfill path.
 
 A body is either included whole at its reference or explicitly omitted. Included empty
 content, content not yet observed, omitted content, and unavailable content are different
