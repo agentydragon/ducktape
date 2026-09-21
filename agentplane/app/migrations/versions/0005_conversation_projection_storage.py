@@ -4,13 +4,16 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0005_conversation_projection_storage"
+revision = "0005_conversation_projection"
 down_revision = "0004_followable_event_entries"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    op.create_index("ix_event_thread_at", "event", ["thread_id", "at"])
+    op.add_column("event", sa.Column("origin_sequence", sa.BigInteger(), nullable=False))
+    op.create_index("ix_event_thread_origin_sequence", "event", ["thread_id", "origin_sequence"])
     op.create_table(
         "conversation_projection_checkpoint",
         sa.Column(
@@ -94,6 +97,16 @@ def upgrade() -> None:
         sa.Column("projection_epoch", sa.Text(), primary_key=True),
         sa.Column("item_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
+    )
+    op.create_table(
+        "conversation_projection_native_link",
+        sa.Column(
+            "thread_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        ),
+        sa.Column("source_id", sa.Text(), primary_key=True),
+        sa.Column("projection_epoch", sa.Text(), primary_key=True),
+        sa.Column("item_cursor", sa.BigInteger(), primary_key=True),
+        sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("source_sequence", sa.BigInteger(), primary_key=True),
     )
     synced_tables = (
@@ -102,6 +115,7 @@ def upgrade() -> None:
         "conversation_payload_manifest",
         "conversation_payload_chunk",
         "conversation_projection_evidence",
+        "conversation_projection_native_link",
         "event",
     )
     for table in synced_tables:
@@ -114,6 +128,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP PUBLICATION IF EXISTS electric_publication_agentplane_conversation")
     op.drop_table("conversation_projection_evidence")
+    op.drop_table("conversation_projection_native_link")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
     op.drop_index("ix_conversation_entity_scope_pending_cursor", table_name="conversation_entity")
@@ -121,3 +136,6 @@ def downgrade() -> None:
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")
     op.drop_table("conversation_projection_checkpoint")
+    op.drop_index("ix_event_thread_at", table_name="event")
+    op.drop_index("ix_event_thread_origin_sequence", table_name="event")
+    op.drop_column("event", "origin_sequence")
