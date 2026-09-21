@@ -485,7 +485,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
-    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 400
+    await expect_reading_anchor(page, reading_anchor)
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
     # Scroll events are queued. Grow a rendered item in the same task as returning to the
@@ -494,8 +495,8 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await history.evaluate(
         """area => {
             area.scrollTo({ top: area.scrollHeight });
-            const message = area.querySelector('.agentplane-markdown:last-of-type');
-            message.style.minHeight = '240px';
+            const message = [...area.querySelectorAll('.agentplane-markdown')].at(-1);
+            message.style.minHeight = `${message.offsetHeight + 240}px`;
         }"""
     )
     await expect_history_bottom(page)
