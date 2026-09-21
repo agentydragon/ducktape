@@ -15,6 +15,29 @@ export type Route = [
 
 export const routes: Route[] = [];
 
+/** A real Electric HTTP shape batch: row operations followed by a completed-snapshot control. */
+export interface ElectricShapeMessage {
+  headers: { operation: "insert" | "update" | "delete" } | { control: "up-to-date" | "must-refetch" };
+  key?: string;
+  value?: Record<string, unknown>;
+}
+
+/**
+ * Build the same JSON and protocol headers consumed by `electricCollectionOptions` in production.
+ * Visual conversation scenes use this rather than an EventSource replay so the collection's column
+ * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
+ */
+export function electricShape(rows: readonly ElectricShapeMessage[], handle: string): Response {
+  return new Response(JSON.stringify([...rows, { headers: { control: "up-to-date" } }]), {
+    headers: {
+      "content-type": "application/json",
+      "electric-handle": handle,
+      "electric-offset": "0_0",
+      "electric-up-to-date": "",
+    },
+  });
+}
+
 interface Ledger {
   pending: string[];
   violations: string[];
