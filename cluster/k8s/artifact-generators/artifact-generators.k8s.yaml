@@ -369,11 +369,6 @@ spec:
       name: loki-read-proxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
-      name: agents-mitmproxy-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
       name: plaid-mcp

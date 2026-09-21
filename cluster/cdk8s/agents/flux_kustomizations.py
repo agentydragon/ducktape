@@ -573,31 +573,7 @@ def agent_machine_access_tf(
     )
 
 
-def agents_mitmproxy_namespace(chart: Chart) -> Kustomization:
-    name = "agents-mitmproxy-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path="./cluster/k8s/agents/mitmproxy-namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="2m",
-        ),
-    )
-
-
-def agents_mitmproxy(
-    chart: Chart,
-    agents_mitmproxy_namespace: Kustomization,
-    cert_manager_environment: Kustomization,
-    cert_manager_trust: Kustomization,
-    reflector: Kustomization,
-) -> Kustomization:
+def agents_mitmproxy(chart: Chart, cert_manager_trust: Kustomization) -> Kustomization:
     name = "agents-mitmproxy"
     return flux_kustomization(
         chart,
@@ -606,13 +582,13 @@ def agents_mitmproxy(
             interval="10m",
             path="./cluster/k8s/agents/mitmproxy",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
             ),
             timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(
-                agents_mitmproxy_namespace, cert_manager_environment, cert_manager_trust, reflector
-            ),
+            # Installs Bundle CRDs and transitively the Certificate CRDs.
+            depends_on=[flux_kustomization_depends_on(cert_manager_trust)],
         ),
     )
 
