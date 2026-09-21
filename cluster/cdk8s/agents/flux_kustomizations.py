@@ -115,7 +115,7 @@ def agent_workspaces_app(
     )
 
 
-def airlock(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
+def airlock(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
     name = "airlock"
     return flux_kustomization(
         chart,
@@ -140,7 +140,7 @@ def airlock(chart: Chart, external_secrets_config: Kustomization) -> Kustomizati
                     api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock"
                 )
             ],
-            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
+            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
         ),
     )
 
@@ -176,7 +176,7 @@ def alloy_otlp_bearer(
     )
 
 
-def authentik_jwt_rotation(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
+def authentik_jwt_rotation(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
     name = "authentik-jwt-rotation"
     return flux_kustomization(
         chart,
@@ -189,7 +189,7 @@ def authentik_jwt_rotation(chart: Chart, external_secrets_config: Kustomization)
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
+            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="external-secrets.io/v1",
@@ -204,7 +204,7 @@ def authentik_jwt_rotation(chart: Chart, external_secrets_config: Kustomization)
 
 
 def claude_sandbox_secrets(
-    chart: Chart, claude_rbac: Kustomization, external_secrets_config: Kustomization
+    chart: Chart, claude_rbac: Kustomization, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "claude-sandbox-secrets"
     return flux_kustomization(
@@ -223,7 +223,7 @@ def claude_sandbox_secrets(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_config),
+            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -416,7 +416,7 @@ def kubectl_passthrough_mcp(chart: Chart) -> Kustomization:
     )
 
 
-def loki_read_proxy(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
+def loki_read_proxy(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
     name = "loki-read-proxy"
     return flux_kustomization(
         chart,
@@ -428,7 +428,7 @@ def loki_read_proxy(chart: Chart, external_secrets_config: Kustomization) -> Kus
             path="./cluster/k8s/agents/loki-read-proxy",
             prune=True,
             wait=True,
-            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
+            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
