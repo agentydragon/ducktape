@@ -56,7 +56,7 @@ async def pending_interest(
     if thread_id != THREAD:
         return None
     assert page_size == 30
-    if before_cursor is not None and before_cursor < 10:
+    if before_cursor is not None and before_cursor <= 61:
         return ConversationPendingInterest(SCOPE, 95, 33, (), None)
     return ConversationPendingInterest(
         SCOPE,
