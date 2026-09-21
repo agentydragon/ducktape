@@ -1,6 +1,6 @@
 module ducktape.build/cli-proxy-api
 
-go 1.26.0
+go 1.27.1
 
 require (
 	github.com/andybalholm/brotli v1.2.4
