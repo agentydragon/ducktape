@@ -2,11 +2,11 @@
 # Exports the API key and renders ~/.config/bazel/buildbuddy.bazelrc from it.
 { config, ... }:
 {
-  # The shared cluster Secret is the only copy of this key; .sops.yaml grants
-  # this file the workstation and agent keys so it can be read here directly.
+  # This external-creds Secret is the only encrypted source of this key.
+  # .sops.yaml grants the workstation and agent keys so it can be read here directly.
   # Declaring it through sopsEnv also gives the template below its placeholder.
   ducktape.sopsEnv.BUILDBUDDY_API_KEY = {
-    sopsFile = ../../../cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml;
+    sopsFile = ../../../cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml;
     key = "stringData/api-key";
     name = "buildbuddy_api_key";
   };

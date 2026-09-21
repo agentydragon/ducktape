@@ -396,7 +396,7 @@ in
       };
   };
 
-  # Materialize the reflected BuildBuddy Secret only at runtime. bbr needs the
+  # Materialize the ESO-synced BuildBuddy Secret only at runtime. bbr needs the
   # environment key; Bazel reads the matching credential rc imported by ~/.bazelrc.
   systemd.services.public-coder-devbox-buildbuddy = {
     description = "Install the public-coder-devbox BuildBuddy credential";

@@ -2872,6 +2872,10 @@ spec:
       kind: ExternalSecret
       name: github-secrets-sync-pat
       namespace: flux-system
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: buildbuddy-api-key
+      namespace: flux-system
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync/secrets
   prune: false
@@ -3333,6 +3337,10 @@ spec:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: openclaw-telegram-bot-token
+      namespace: claude-sandbox
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: buildbuddy-api-key
       namespace: claude-sandbox
   interval: 10m
   path: ./cluster/k8s/agents/claude-sandbox-secrets
@@ -6643,10 +6651,22 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: agent-shared-secrets
+      namespace: ducktape-flux
+    - name: public-coder-agent-app
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine
       name: public-coder-devbox
+      namespace: public-coder-agent
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: buildbuddy-api-key
       namespace: public-coder-agent
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/devbox

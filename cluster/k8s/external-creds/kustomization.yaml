@@ -7,6 +7,7 @@ resources:
   - aws-route53-cert-manager.sops.yaml
   - aws-route53-dns-automation.sops.yaml
   - coinbase-api-credentials.sops.yaml
+  - buildbuddy-api-key.sops.yaml
   - gemini.sops.yaml
   - github-agentydragon-agent.sops.yaml
   - github-agentydragon-2.sops.yaml

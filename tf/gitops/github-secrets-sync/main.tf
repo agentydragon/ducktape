@@ -37,7 +37,7 @@ data "kubernetes_secret" "ci_age_key" {
 data "kubernetes_secret" "buildbuddy_api_key" {
   metadata {
     name      = "buildbuddy-api-key"
-    namespace = "claude-sandbox"
+    namespace = "flux-system"
   }
 }
 

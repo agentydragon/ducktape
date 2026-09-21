@@ -91,11 +91,11 @@ this non-root image pod has not) and no boot-time render script:
   (`forgejo-tea`) mounted at `/home/codex/.config/tea/config.yml`. Smoke test with
   `tea whoami`. The token does not expand repository permissions; it follows the
   account's existing collaborator grants.
-- **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
-  `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
-  it. That Secret
-  (`cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`) is reflected
-  into `codex-pod` — no per-pod key, just the one shared key.
+- **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the
+  `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr`
+  reads it. This deployment is parked and is no longer an approved recipient
+  of the key. Add an explicit external-creds consumer and ESO source wiring
+  before reactivating it.
 - **LiteLLM (Codex model)** — Codex routes to LiteLLM's Codex-subscription models,
   served by CLIProxyAPI over a native `/v1/responses` passthrough, instead of an
   interactive ChatGPT sign-in. The baked `~/.codex/config.toml`

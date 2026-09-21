@@ -35,7 +35,7 @@ _TEST_SECRET_FILES = {
     "github-pat-agentydragon-agent.yaml": "secrets/github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml": "secrets/github-ci-read-pat.yaml",
     "claude-web-k8s-jwt.yaml": "secrets/claude-web-k8s-jwt.yaml",
-    "buildbuddy-api-key.sops.yaml": "cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml",
+    "buildbuddy-api-key.sops.yaml": "cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml",
 }
 
 _CONTAINER_NAME = "ducktape-container-e2e"

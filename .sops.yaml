@@ -94,14 +94,11 @@ creation_rules:
           - *claude-web
 
   # BuildBuddy API key — the widest-audience shared credential here. Flux
-  # applies the Secret and reflects it to the agent namespaces; the in-cluster
-  # tofu-controller reads it from claude-sandbox to set the ducktape
-  # BUILDBUDDY_API_KEY GitHub Actions secret (tf/gitops/github-secrets-sync);
-  # and every workstation and agent identity that runs bbr decrypts this file
-  # directly. Recipients are the union of the two rules this replaced, so no
-  # reader lost access when the duplicate under secrets/ was removed. More
-  # specific than the generic cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/agents/shared-secrets/buildbuddy-api-key\.sops\.yaml$
+  # applies the canonical Secret from external-creds, ESO distributes it to
+  # approved namespaces, and every workstation and agent identity that runs
+  # bbr decrypts this file directly. More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/external-creds/buildbuddy-api-key\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

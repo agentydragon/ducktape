@@ -193,7 +193,7 @@ fresh Firecracker VM (~4-5s uptime). Useful for one-off commands from Claude Cod
 
 ```bash
 export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
-  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
+  cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml)
 
 bb execute \
   -remote_header="x-buildbuddy-api-key=$BUILDBUDDY_API_KEY" \
@@ -246,7 +246,7 @@ echo $BUILDBUDDY_API_KEY
 
 # Option B: decrypt from SOPS secret
 export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
-  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
+  cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml)
 ```
 
 ---

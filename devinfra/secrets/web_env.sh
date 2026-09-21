@@ -28,7 +28,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # the only copy of this key. CI does not decrypt it: tofu reads the same Secret
 # in-cluster and sets it as a GitHub Actions repository secret, so CI needs the
 # BuildBuddy capability without the broader CI decryption identity.
-try_export BUILDBUDDY_API_KEY "$REPO_ROOT/cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml" '["stringData"]["api-key"]' "BuildBuddy remote cache/execution (bbr)"
+try_export BUILDBUDDY_API_KEY "$REPO_ROOT/cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml" '["stringData"]["api-key"]' "BuildBuddy remote cache/execution (bbr)"
 
 # Machine-user GitHub PAT (agentydragon-agent)
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically."

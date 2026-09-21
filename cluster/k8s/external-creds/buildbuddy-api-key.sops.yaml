@@ -1,22 +1,15 @@
-# BuildBuddy API key, and the only copy of it in this repo.
-#
-# Flux applies it here and the reflector fans it into the agent namespaces
-# that run bbr. The in-cluster tofu-controller reads it from claude-sandbox to
-# set the ducktape BUILDBUDDY_API_KEY GitHub Actions secret, so CI is fed from
-# this file too rather than from a separately-maintained value. Workstations
-# and agent sessions decrypt it directly for $BUILDBUDDY_API_KEY and the
-# generated buildbuddy.bazelrc, which is why .sops.yaml gives this one file
-# the user and agent keys on top of the usual cluster pair.
+# Canonical SOPS source for the BuildBuddy API key. ESO distributes it to the
+# approved cluster consumers; the in-cluster tofu-controller reads the
+# claude-sandbox copy to set the ducktape BUILDBUDDY_API_KEY GitHub Actions
+# secret. Workstations and agent sessions also decrypt this source directly
+# for $BUILDBUDDY_API_KEY and the generated buildbuddy.bazelrc, which is why
+# .sops.yaml gives this file the workstation and agent keys as well as the
+# usual cluster pair.
 apiVersion: v1
 kind: Secret
 metadata:
     name: buildbuddy-api-key
-    namespace: claude-sandbox
-    annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: codex-pod,public-coder-agent
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: codex-pod,public-coder-agent
+    namespace: ducktape-flux
 type: Opaque
 stringData:
     api-key: ENC[AES256_GCM,data:/+HkUjwFIo3/Tnn8A8GEx+7d0Mk=,iv:s+T541iPK9sls7FhqX2zXGUfB+utlyL7U2DeZLnydHc=,tag:+zWGwmYtdmu1yagQhAsVGg==,type:str]
@@ -122,6 +115,6 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1756xpy6yg7r8vdducm5cdn4cqt3m5qkcncxumsh8htlfdzpae4cq0c6gqf
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-08-23T22:49:34Z"
-    mac: ENC[AES256_GCM,data:34Xjq9RtM5TQLA/+wY8W4RetNn65T5b/5KvrvtB+zTwJTlbnSj8oeooYPJhM0Pbh8JRKcL2KE828zlsGxhPKZ3vd5k72E7OzBsqR7ZphLpLGRQS2vHlfcc3GRz8ekr3dkg7Gea95vGBVJaNqFpjGWoze1+tMi66UKBmKLOkWqyI=,iv:Zx2vdA0lbB+Wr80i3GPSkhUFPYWVdf8eI5qfZOEWhXo=,tag:q8oED/dzwE5RTklS66AtfA==,type:str]
+    lastmodified: "2026-09-20T23:19:08Z"
+    mac: ENC[AES256_GCM,data:egQLRJdAaITEhgO2SHHnVPM14ruk9TPkG+RQdLZyEsjgGt04PWRbkDk3/Pw1MIXDKsK/3x7XXoJ9cyuy8u76JmoX/5H5LpjWMGr60E0CwbPu3Af3T3pie6H257/TUNrGQqLk6Xe0vdaD7nS4o75J7MQXPJXl7nXac7p6Dg2iF+w=,iv:gGgA4r1NgdkxES0Bc0QZlb/81Z0CnQ30lZdOnnoiIso=,tag:VObNHmTqsEqIkWn7xCkgwg==,type:str]
     version: 3.13.3
