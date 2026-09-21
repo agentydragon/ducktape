@@ -38,7 +38,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
                 params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
                 initial = await client.get("/v1/shape", params=params)
-                initial.raise_for_status()
+                assert initial.status_code == 200, initial.text
                 entities = [message["value"] for message in initial.json() if "value" in message]
                 first = next(row for row in entities if row["entity_id"] == "first")
                 assert str(first["revision_cursor"]) == "4"
@@ -96,7 +96,7 @@ async def _cross_replica_sync(
         selection = interest.json()
         entity_params = {"anchor_cursor": selection["anchor_cursor"], "tail_from": selection["tail_from"]}
         initial = await client_one.get(f"{path}/entities", params=entity_params | {"offset": "-1"})
-        initial.raise_for_status()
+        assert initial.status_code == 200, initial.text
         rows = [message["value"] for message in initial.json() if "value" in message]
         first_item = next(row for row in rows if row["entity_id"] == "first")
         raw_ref = first_item["text_ref"]
