@@ -65,5 +65,10 @@ The consolidated source at #7567 `82cccee817` was compared with verification sou
 `1f6e388baf`: changes are limited to the reviewed pytest fixture and concrete Electric
 service class, the active-view transport recovery candidate and its unit dependency/tests,
 and correction of the terminal-command browser test's subscription isolation/assertions.
-The last two still require their real-browser proofs. The pending-page phone resize and
-scroll-anchor failures remain open; consolidation does not establish acceptance.
+The active-view recovery passed the real offline pending-page case at `d5b40e8f71`,
+[d079cd18](https://app.buildbuddy.io/invocation/d079cd18-af62-48d2-95ee-e6dffb1438ca):
+the database committed while the browser stayed offline, then reconnect refreshed current
+IDs while retaining the older selected terminal outcome, document, draft and reader anchor.
+The network trace and PNG were inspected. Terminal-command recovery still needs its focused
+proof. Pending-page phone resize and scroll-anchor failures remain open; consolidation does
+not establish acceptance.
