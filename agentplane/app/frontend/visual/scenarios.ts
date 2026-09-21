@@ -32,7 +32,8 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
-  /** Exercise the production interest and Electric shape synchronization boundary. */
+  /** Exercise the production interest and Electric shape synchronization boundary. `gap` is an
+   * unresolved interest rejection, unlike a retired ready shape, whose 410 triggers a refresh. */
   sessionReplay?: "catching-up" | "gap";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
