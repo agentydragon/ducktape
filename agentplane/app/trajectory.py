@@ -171,14 +171,6 @@ class ConversationEntity(Base):
             "cursor",
             postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
-        Index(
-            "ix_conversation_entity_scope_segment_cursor",
-            "thread_id",
-            "source_id",
-            "projection_epoch",
-            "cursor",
-            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
-        ),
     )
 
     thread_id: Mapped[UUID] = mapped_column(

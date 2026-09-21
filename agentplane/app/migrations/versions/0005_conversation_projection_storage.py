@@ -66,12 +66,6 @@ def upgrade() -> None:
         ["thread_id", "source_id", "projection_epoch", "cursor"],
         postgresql_where=sa.text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
     )
-    op.create_index(
-        "ix_conversation_entity_scope_segment_cursor",
-        "conversation_entity",
-        ["thread_id", "source_id", "projection_epoch", "cursor"],
-        postgresql_where=sa.text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
-    )
     op.create_table(
         "conversation_payload_manifest",
         sa.Column(

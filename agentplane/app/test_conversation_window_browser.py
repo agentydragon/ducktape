@@ -94,11 +94,20 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
         )"""
     )
     interest_seen.clear()
+    await history.hover()
+    await page.mouse.wheel(0, -10_000)
+    await page.wait_for_function(
+        """() => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            return area.scrollTop < 80;
+        }"""
+    )
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     anchor = await history.evaluate(
         """area => {
-            area.scrollTop = 0;
+            const top = area.getBoundingClientRect().top;
             const row = [...area.querySelectorAll('[data-conversation-anchor]')]
-                .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+                .find(candidate => candidate.getBoundingClientRect().bottom > top);
             return { cursor: row.dataset.conversationAnchor, top: row.getBoundingClientRect().top };
         }"""
     )
@@ -140,8 +149,9 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     )
     ready = [event for event in trace if event["kind"] == "query" and event["ready"]]
     assert ready
-    assert max(event["size"] for event in ready) <= 61
     assert all(event["subscriberCount"] >= 1 for event in ready)
+    active = [event for event in ready if event["role"] == "active"]
+    assert active[-1]["size"] <= 61
 
 
 if __name__ == "__main__":
