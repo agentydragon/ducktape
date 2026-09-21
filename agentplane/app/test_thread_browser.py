@@ -160,7 +160,9 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         )
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect(
-            page.get_by_text("Sandbox no longer exists. Showing archived Thread history.", exact=True)
+            page.get_by_text(
+                "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
+            )
         ).to_be_visible()
         await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
         await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
@@ -171,7 +173,9 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         await expect(page).to_have_url(url)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect(
-            page.get_by_text("Sandbox no longer exists. Showing archived Thread history.", exact=True)
+            page.get_by_text(
+                "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
+            )
         ).to_be_visible()
         assert await store.events(thread_id, limit=100) == thread_source.entries
 
@@ -542,7 +546,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(error_text).to_have_count(1)
     await expect(error_text).to_be_in_viewport()
     await expect_history_bottom(page)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
@@ -555,7 +559,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await page.reload()
     await expect(error_text).to_be_in_viewport()
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
         await expect_raw_prefix(page, failed.cursor)
@@ -605,7 +609,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_text("Turn test-following-turn: COMPLETED", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
     await expect(error_text).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_text(
+    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
         [command.submit_input.text, following.submit_input.text]
     )
     await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
@@ -642,7 +646,7 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
             )
         )
     )
-    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(composer).to_have_value("")
 
 
@@ -813,7 +817,9 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
                 )
             )
         )
-        await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+            command.submit_input.text
+        )
         await expect_raw_prefix(page, 6)
         await expect(pending).to_have_count(0)
         assert source.commands.empty(), "reload/replay must not automatically send the Command again"
@@ -875,7 +881,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
             )
         )
     )
-    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect_raw_prefix(page, 8)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
@@ -956,7 +962,9 @@ async def test_eventsource_reconnects_unconfirmed_command_without_reloading(thre
                 )
             )
         )
-        await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+            command.submit_input.text
+        )
         await expect_raw_prefix(page, 8)
         await expect(pending).to_have_count(0)
         assert await document.evaluate("original => original === document")
