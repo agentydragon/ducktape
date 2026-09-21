@@ -89,12 +89,6 @@ class Electric(Construct):
             ports=[ContainerPort(name="http", number=PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/v1/health", port=PORT, initial_delay_seconds=5, period_seconds=10),
             liveness=http_probe("/v1/health", port=PORT, initial_delay_seconds=20, period_seconds=30),
-            # WAL-loss recovery takes Electric out of service while it drops shapes and builds a
-            # fresh replication pipeline. The real PG18/Electric 1.8.1 probe remained unready
-            # for over one minute, so permit three minutes before liveness can restart it.
-            startup=http_probe(
-                "/v1/health", port=PORT, initial_delay_seconds=0, period_seconds=10, failure_threshold=18
-            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
