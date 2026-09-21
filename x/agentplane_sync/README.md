@@ -126,6 +126,29 @@ this spike; the bounded reset result above applies only to the tested
 in-memory, active-subset flow. Do not infer a bounded cold-cache reset from the
 30-row bootstrap result.
 
+### Bounded history memory result
+
+The separate 1.8.1 growth probe passed in [RBE invocation
+`111334db`](https://app.buildbuddy.io/invocation/111334db-bc7c-46a8-82b8-ff91a7b9ffde)
+(test time 208.68s). Its `bounded-history-evidence.json` artifact records a
+30-row tail snapshot of 9,072 bytes, then holds that active shape while the
+conversation grows from 100 to 10,000 and 100,000 database rows. At each
+growth step one selected-row revision produced a 471-byte Electric response
+(398-byte selected update); no excluded old rows appeared on the wire. The
+active shape remained at 30 rows. The fixed tail predicate passed its BIGINT
+bound as the decimal string `9007199254740993` through `params[1]`.
+
+PID 1 RSS measured 313,424 KiB just after the initial tail snapshot, 311,912
+KiB at 10,000 rows, and 318,604 KiB at 100,000 rows; its observed high-water
+was 324,188 KiB. cgroup usage was 264,339,456 bytes after the initial tail
+snapshot and 270,516,224 bytes at 100,000 rows. Two cycles rotated interests,
+waited for the 75-second shape expiry, observed 409 `must-refetch` on the old
+handle, and reopened the same 30 rows on a fresh handle. After expiry RSS was
+307,484 and 307,724 KiB; after reopening it was 307,468 and 307,708 KiB.
+These are samples from one finite run, not a universal or steady-state memory
+bound. The JSON records process name and executable only; it does not record
+the process command line.
+
 ### Immutable body revision experiment
 
 The current working extension stores independent text, argument, output, and
