@@ -99,9 +99,6 @@ CREDENTIALS = (
             ApprovedConsumer("haku-console", "github-agentydragon-agent-haku-console-reader"),
             ApprovedConsumer("monitoring", "github-agentydragon-agent-monitoring-reader"),
             ApprovedConsumer(
-                "agentplane-egress-credentials", "github-agentydragon-agent-agentplane-egress-credentials-reader"
-            ),
-            ApprovedConsumer(
                 "agentplane-staging-egress-credentials",
                 "github-agentydragon-agent-agentplane-staging-egress-credentials-reader",
             ),
