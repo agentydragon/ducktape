@@ -32,6 +32,7 @@ py_library(
         "//agentplane/app:bridge",
         "//agentplane/app:decisions",
         "//agentplane/app:egress",
+        "//agentplane/app:electric",
         "//agentplane/app:identity",
         "//agentplane/app:inventory",
         "//agentplane/app:live",
