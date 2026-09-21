@@ -12,8 +12,9 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_index("ix_event_thread_at", "event", ["thread_id", "at"])
+    op.add_column("event", sa.Column("origin_source_id", sa.Text(), nullable=False))
     op.add_column("event", sa.Column("origin_sequence", sa.BigInteger(), nullable=False))
-    op.create_index("ix_event_thread_origin_sequence", "event", ["thread_id", "origin_sequence"])
+    op.create_index("ix_event_thread_origin", "event", ["thread_id", "origin_source_id", "origin_sequence"])
     op.create_table(
         "conversation_projection_checkpoint",
         sa.Column(
@@ -95,7 +96,7 @@ def upgrade() -> None:
         ),
         sa.Column("source_id", sa.Text(), primary_key=True),
         sa.Column("projection_epoch", sa.Text(), primary_key=True),
-        sa.Column("item_cursor", sa.BigInteger(), primary_key=True),
+        sa.Column("entity_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
     )
     op.create_table(
@@ -105,7 +106,7 @@ def upgrade() -> None:
         ),
         sa.Column("source_id", sa.Text(), primary_key=True),
         sa.Column("projection_epoch", sa.Text(), primary_key=True),
-        sa.Column("item_cursor", sa.BigInteger(), primary_key=True),
+        sa.Column("entity_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("source_sequence", sa.BigInteger(), primary_key=True),
     )
@@ -137,5 +138,6 @@ def downgrade() -> None:
     op.drop_table("conversation_entity")
     op.drop_table("conversation_projection_checkpoint")
     op.drop_index("ix_event_thread_at", table_name="event")
-    op.drop_index("ix_event_thread_origin_sequence", table_name="event")
+    op.drop_index("ix_event_thread_origin", table_name="event")
     op.drop_column("event", "origin_sequence")
+    op.drop_column("event", "origin_source_id")

@@ -661,8 +661,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         (3, 1, 2),
     ]
     assert [chunk.text for chunk in chunks] == ["hello world", "!"]
-    assert [(row.item_cursor, row.observation_cursor) for row in evidence] == [(1, 1)]
-    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
+    assert [(row.entity_cursor, row.observation_cursor) for row in evidence] == [(1, 1)]
+    assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
     await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
     async with store._sessions() as session:
