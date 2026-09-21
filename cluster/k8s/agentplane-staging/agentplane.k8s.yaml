@@ -726,6 +726,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    credentials_namespace: agentplane-egress-credentials
     projected_token_audiences:
       - https://localhost:7445
 immutable: false
@@ -771,7 +772,6 @@ spec:
       containers:
         - args:
             - --rules-namespace=agentplane-staging
-            - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
             - --agent-api-port=8082

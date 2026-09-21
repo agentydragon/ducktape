@@ -5,7 +5,7 @@ model_rosters.py for the model-name scheme.
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane.app_settings import settings
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, settings
 from cluster.cdk8s.litellm.keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import codex_responses_name
 
@@ -30,6 +30,7 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 def config() -> dict:
     return settings(
         namespace=_NAMESPACE,
+        public_coder_policies=[BASIC_POLICY, GITHUB_PUBLIC_POLICY],
         # What the session form offers per harness: the native subscription lanes the
         # staging key admits (litellm_key.agentplane_staging in tf/gitops/litellm-keys).
         harness_claude=CLAUDE_CLIENT_MODELS,

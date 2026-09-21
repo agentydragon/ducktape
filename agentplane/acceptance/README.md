@@ -105,7 +105,8 @@ kubeconfig and a route to the cluster.
 
 Bazel excludes `manual` targets from package patterns, so `:all` only runs the fast
 offline driver tests. It does not run any deployed vertical scenario. Name the live
-scenario explicitly. Start with the egress vertical slice:
+scenario explicitly. The egress vertical slice runs against **staging**, where the real GitHub
+credential is available; testing has no access to it:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
@@ -114,7 +115,7 @@ bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
 `:test_instructions`, and `:test_mcp`.
 
-By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
+The other targets default to `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
 RBAC on `serviceaccounts/token`, and the app only admits subjects its `AGENTPLANE_TOKEN_SUBJECTS`
 names, so a token for any other ServiceAccount is refused with `403`.

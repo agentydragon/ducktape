@@ -62,6 +62,7 @@ class EgressProps:
     # The interception CA's Secret/Bundle/ConfigMap name; the runner SandboxTemplate
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
+    credentials_namespace: str | None
 
 
 @dataclass(frozen=True)

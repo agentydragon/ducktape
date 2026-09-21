@@ -6,7 +6,7 @@ routes and policies passed in here.
 from __future__ import annotations
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
-# The EgressPolicy objects egress creates in every environment, named here
+# The EgressPolicy objects egress can create, named here
 # because the presets bind them.
 BASIC_POLICY = "basic"
 GITHUB_PUBLIC_POLICY = "github-public"
@@ -21,6 +21,7 @@ def settings(
     harness_claude: list[str],
     harness_codex: list[str],
     thread_preset_codex_model: str,
+    public_coder_policies: list[str],
     action_policy_sets: list[str] | None = None,
 ) -> dict:
     return {
@@ -49,7 +50,7 @@ def settings(
             "public-coder": {
                 "title": "Public coder",
                 "template": "agentplane-runner",
-                "policies": [BASIC_POLICY, GITHUB_PUBLIC_POLICY],
+                "policies": public_coder_policies,
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
                 "bootstrap": (

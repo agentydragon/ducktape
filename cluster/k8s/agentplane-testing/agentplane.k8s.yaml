@@ -179,7 +179,6 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -767,7 +766,6 @@ spec:
       containers:
         - args:
             - --rules-namespace=agentplane-testing
-            - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
             - --agent-api-port=8082
@@ -1050,39 +1048,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: github-pat
-  namespace: agentplane-testing
-spec:
-  description: A GitHub personal access token belonging to the bot account agentydragon-agent. Requests carrying it act as that account and are attributable to it. The proxy does not narrow what the token itself may do — the rule's hosts and methods are the only limit it adds, so treat anything the token can reach on those hosts as reachable.
-  source:
-    secretRef:
-      name: agentplane-github-pat
-      key: token
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
-  source:
-    secretRef:
-      name: haku-forgejo-git
-      key: password
-  targets:
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
   name: kubernetes-workload
   namespace: agentplane-testing
 spec:
@@ -1153,19 +1118,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
   name: packages
   namespace: agentplane-testing
 spec:
@@ -1192,23 +1144,6 @@ spec:
       methods:
         - GET
         - HEAD
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-public
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - api.github.com
-        - github.com
-        - "*.githubusercontent.com"
-      methods:
-        - GET
-        - POST
-      credentialRef:
-        name: github-pat
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

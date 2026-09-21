@@ -56,8 +56,11 @@ py_test(
     srcs = ["test_egress.py"],
     # kubectl reads the caller's own kubeconfig to mint the app's token; with neither of these it
     # falls back to http://localhost:8080 and fails for a reason that looks nothing like the cause.
+    env = {
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE": "agentplane-staging",
+        "AGENTPLANE_ACCEPTANCE_URL": "https://agentplane-staging.allegedly.works",
+    },
     env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
         "HOME",
         "KUBECONFIG",
     ],
