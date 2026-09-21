@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - ankiweb-credentials.sops.yaml
   - attic-push-token.sops.yaml
-  - brave-search-api-key.sops.yaml

@@ -1710,7 +1710,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/shared-secrets
-  prune: false
+  prune: true
   sourceRef:
     kind: ExternalArtifact
     name: agent-shared-secrets
@@ -5576,8 +5576,6 @@ spec:
     - name: public-coder-agent-namespace
       namespace: ducktape-flux
     - name: external-creds
-      namespace: ducktape-flux
-    - name: agent-shared-secrets
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux

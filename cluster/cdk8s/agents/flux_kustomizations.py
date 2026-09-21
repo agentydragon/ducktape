@@ -899,7 +899,6 @@ def public_coder_agent_proxy(
     external_secrets_config: Kustomization,
     public_coder_agent_namespace: Kustomization,
     external_creds: Kustomization,
-    agent_shared_secrets: Kustomization,
     cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     reflector: Kustomization,
@@ -927,8 +926,6 @@ def public_coder_agent_proxy(
                 external_secrets_config,
                 public_coder_agent_namespace,
                 external_creds,
-                # Retain/order the old reflected source while the Brave ExternalSecret adopts its target.
-                agent_shared_secrets,
                 cert_manager_environment,
                 cert_manager_trust,
                 reflector,
@@ -1056,13 +1053,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
         spec=KustomizationSpec(
             interval="10m",
             path="./cluster/k8s/agents/shared-secrets",
-            # Keep the legacy Brave source declared during ESO adoption; remove it with pruning
-            # enabled after the new proxy ExternalSecret is Ready.
-            # CLEANUP: restore pruning once the Telegram, BuildBuddy, and Brave ExternalSecrets
-            # are Ready and their staged handoffs/inventories are verified. The handoffs use
-            # creationPolicy: Orphan to preserve existing target names without ownership; cleanup
-            # must account for that lifecycle first.
-            prune=False,
+            prune=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
