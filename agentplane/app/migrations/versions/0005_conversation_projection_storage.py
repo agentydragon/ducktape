@@ -16,8 +16,8 @@ def upgrade() -> None:
         sa.Column(
             "thread_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
         ),
-        sa.Column("source_id", sa.Text(), primary_key=True),
-        sa.Column("projection_epoch", sa.Text(), primary_key=True),
+        sa.Column("source_id", sa.Text(), nullable=False),
+        sa.Column("projection_epoch", sa.Text(), nullable=False),
         sa.Column("through_cursor", sa.BigInteger(), nullable=False),
     )
     op.create_table(
@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.Column("entity_id", sa.Text(), primary_key=True),
         sa.Column("cursor", sa.BigInteger(), nullable=False),
         sa.Column("revision_cursor", sa.BigInteger(), nullable=False),
+        sa.Column("pending", sa.Boolean(), nullable=False),
         sa.Column("turn_id", sa.Text()),
         sa.Column("state", postgresql.JSONB(), nullable=False),
         sa.Column("text_ref", postgresql.JSONB(none_as_null=True)),
@@ -42,6 +43,16 @@ def upgrade() -> None:
         "ix_conversation_entity_scope_revision",
         "conversation_entity",
         ["thread_id", "source_id", "projection_epoch", "revision_cursor"],
+    )
+    op.create_index(
+        "ix_conversation_entity_scope_cursor",
+        "conversation_entity",
+        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
+    )
+    op.create_index(
+        "ix_conversation_entity_scope_pending_cursor",
+        "conversation_entity",
+        ["thread_id", "source_id", "projection_epoch", "pending", "cursor", "entity_kind", "entity_id"],
     )
     op.create_table(
         "conversation_payload_manifest",
@@ -84,12 +95,28 @@ def upgrade() -> None:
         sa.Column("observation_cursor", sa.BigInteger(), primary_key=True),
         sa.Column("source_sequence", sa.BigInteger(), primary_key=True),
     )
+    synced_tables = (
+        "conversation_projection_checkpoint",
+        "conversation_entity",
+        "conversation_payload_manifest",
+        "conversation_payload_chunk",
+        "conversation_projection_evidence",
+        "event",
+    )
+    for table in synced_tables:
+        op.execute(f'ALTER TABLE "{table}" REPLICA IDENTITY FULL')
+    op.execute("GRANT USAGE ON SCHEMA public TO electric")
+    op.execute(f"GRANT SELECT ON {', '.join(synced_tables)} TO electric")
+    op.execute(f"CREATE PUBLICATION electric_publication_agentplane_conversation FOR TABLE {', '.join(synced_tables)}")
 
 
 def downgrade() -> None:
+    op.execute("DROP PUBLICATION IF EXISTS electric_publication_agentplane_conversation")
     op.drop_table("conversation_projection_evidence")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
+    op.drop_index("ix_conversation_entity_scope_pending_cursor", table_name="conversation_entity")
+    op.drop_index("ix_conversation_entity_scope_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")
     op.drop_table("conversation_projection_checkpoint")

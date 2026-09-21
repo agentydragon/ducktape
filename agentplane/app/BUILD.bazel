@@ -452,6 +452,7 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
+        ":conversation_projection",
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",

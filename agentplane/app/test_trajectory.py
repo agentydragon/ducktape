@@ -18,6 +18,11 @@ from agentplane.app import trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
+    ConversationEntity,
+    ConversationPayloadChunk,
+    ConversationPayloadManifest,
+    ConversationProjectionError,
+    ConversationProjectionEvidence,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -588,6 +593,86 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
             await asyncio.wait_for(changed.wait(), timeout=5)
     finally:
         await engine.dispose()
+
+
+async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = _event(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
+    first.event.source_sequences.append(9007)
+    await store.record(
+        thread, [first, _event(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
+    )
+    await store.record(thread, [_event(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
+    async with store._sessions() as session:
+        item = await session.scalar(
+            select(ConversationEntity).where(
+                ConversationEntity.thread_id == thread,
+                ConversationEntity.entity_kind == "item",
+                ConversationEntity.entity_id == "old",
+            )
+        )
+        manifests = (
+            await session.scalars(
+                select(ConversationPayloadManifest)
+                .where(ConversationPayloadManifest.thread_id == thread)
+                .order_by(ConversationPayloadManifest.revision_cursor)
+            )
+        ).all()
+        chunks = (
+            await session.scalars(
+                select(ConversationPayloadChunk)
+                .where(ConversationPayloadChunk.thread_id == thread)
+                .order_by(ConversationPayloadChunk.chunk_index)
+            )
+        ).all()
+        evidence = (
+            await session.scalars(
+                select(ConversationProjectionEvidence).where(ConversationProjectionEvidence.thread_id == thread)
+            )
+        ).all()
+    assert item is not None
+    assert item.text_ref == {
+        "source_id": "test-runner",
+        "projection_epoch": "v1",
+        "owner_cursor": "1",
+        "owner_item_id": "old",
+        "field": "text",
+        "revision_cursor": "3",
+        "generation": "1",
+    }
+    assert [(manifest.revision_cursor, manifest.generation, manifest.chunk_count) for manifest in manifests] == [
+        (2, 1, 1),
+        (3, 1, 2),
+    ]
+    assert [chunk.text for chunk in chunks] == ["hello world", "!"]
+    assert [(row.item_cursor, row.observation_cursor, row.source_sequence) for row in evidence] == [(1, 1, 9007)]
+
+    await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
+    async with store._sessions() as session:
+        replacement = await session.scalar(
+            select(ConversationPayloadManifest).where(
+                ConversationPayloadManifest.thread_id == thread, ConversationPayloadManifest.revision_cursor == 4
+            )
+        )
+        item = await session.scalar(
+            select(ConversationEntity).where(
+                ConversationEntity.thread_id == thread,
+                ConversationEntity.entity_kind == "item",
+                ConversationEntity.entity_id == "old",
+            )
+        )
+    assert replacement is not None
+    assert replacement.present
+    assert replacement.chunk_count == replacement.content_bytes == 0
+    assert item is not None
+    assert item.text_ref is not None
+    assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
+
+    with pytest.raises(ConversationProjectionError, match="cursor 5"):
+        await store.record(thread, [_event(5)], lease=lease)
+    assert await store.last_cursor(thread) == 4
 
 
 if __name__ == "__main__":
