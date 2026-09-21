@@ -449,6 +449,32 @@ before enrollment can work. Browser permission is requested only from an explici
 click. Real browser/OS push-service delivery still needs operator acceptance; transport and
 service-worker tests do not establish that production experience.
 
+### Lazy conversation evidence
+
+`GET /threads/{thread_id}/conversation/evidence` lists observations associated with
+one `entity_kind`/`entity_id`, scoped by the exact `source_id` and `projection_epoch`.
+It returns observation cursors and whether native links exist, without reading frame bodies.
+`after_cursor` is exclusive; `next_after_cursor` is null at the end of the page sequence.
+
+`GET /threads/{thread_id}/conversation/evidence/{observation_cursor}/frames` expands
+one association under the same scope and entity. It pages native links by exclusive
+`after_sequence`, returning whole raw entries. Missing captured frames are explicitly
+`unavailable`; an association with no native links returns an empty page. All returned
+cursors/sequences are decimal strings. Both reads default to 30 records and allow up to
+200, reject stale source/epoch references with 410, and require the normal app identity.
+
+`GET /threads/{thread_id}/conversation/observations` reads the original archive,
+including semantic observations, unlinked native frames, stderr, and debug checkpoints.
+With no cursor it selects the latest 30 records. Supply either exclusive `before_cursor`
+or `after_cursor` to page older or newer; responses remain in chronological order and
+provide both continuation cursors. The limit is a record count (1–200), with no body
+truncation. Reads seek through the archive primary key and retain only the selected page.
+Raw source/sequence identities do not depend on the current projection epoch. This read
+requires the same app identity and is intended for explicit debug inspection.
+
+Command evidence stays attached to the stable admission position when a later observation
+settles it, including shared input confirmations and lifecycle effects.
+
 ### Ingestion batching and client memory
 
 The runner feed commits batches of at most 128 events, flushing a partial batch after
