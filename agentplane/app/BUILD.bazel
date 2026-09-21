@@ -246,6 +246,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
