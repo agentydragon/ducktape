@@ -25,11 +25,7 @@ export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-type ConversationState =
-  | Exclude<ConversationStoredEntity["state"], { controls: object }>
-  | (Omit<Extract<ConversationStoredEntity["state"], { controls: object }>, "command_revision_cursor"> & {
-      command_revision_cursor: Decimal;
-    });
+type ConversationState = ConversationStoredEntity["state"];
 
 export interface ConversationEntity {
   threadId: string;
@@ -65,7 +61,7 @@ const stateSchema = z.union([
       harness_state: z.string().nullable(),
     }),
     unresolved_count: z.number().int(),
-    command_revision_cursor: decimal,
+    command_revision_cursor: z.string().regex(/^-?\d+$/),
     operational: z.object({
       operational_version: z.string(),
       status: z.enum(["active", "ended", "failed"]),
