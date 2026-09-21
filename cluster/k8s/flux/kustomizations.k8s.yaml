@@ -670,24 +670,6 @@ kind: Kustomization
 metadata:
   annotations:
     ducktape.org/parked: "true"
-  name: firecrawl-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 1h
-  path: ./cluster/k8s/parked/firecrawl/namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: firecrawl-namespace
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 1m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
   name: gecko-namespace
   namespace: ducktape-flux
 spec:
@@ -2160,33 +2142,6 @@ kind: Kustomization
 metadata:
   annotations:
     ducktape.org/parked: "true"
-  name: firecrawl-db
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: firecrawl-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/firecrawl/db
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: firecrawl-db
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
   name: inventree-db
   namespace: ducktape-flux
 spec:
@@ -2527,37 +2482,6 @@ spec:
     name: authentik
     namespace: ducktape-flux
   timeout: 10m0s
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
-  name: firecrawl
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: firecrawl-namespace
-      namespace: ducktape-flux
-    - name: firecrawl-db
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/parked/firecrawl/app
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: firecrawl
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

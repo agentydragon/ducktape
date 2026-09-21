@@ -192,7 +192,6 @@ def generate_manifests(root: Path) -> None:
     browsertrix_namespace_kustomization = parked_flux_kustomizations.browsertrix_namespace(flux_chart)
     parked_flux_kustomizations.browsertrix_retained(flux_chart)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
-    firecrawl_namespace_kustomization = parked_flux_kustomizations.firecrawl_namespace(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
     inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
     paperless_namespace_kustomization = parked_flux_kustomizations.paperless_namespace(flux_chart)
@@ -305,9 +304,6 @@ def generate_manifests(root: Path) -> None:
     grafana_db_kustomization = monitoring_flux_kustomizations.grafana_db(
         flux_chart, monitoring_namespace_kustomization, cnpg_kustomization
     )
-    firecrawl_db_kustomization = parked_flux_kustomizations.firecrawl_db(
-        flux_chart, firecrawl_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     inventree_db_kustomization = parked_flux_kustomizations.inventree_db(
         flux_chart, inventree_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
     )
@@ -347,9 +343,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         gateway_kustomization,
         monitoring_crds_kustomization,
-    )
-    parked_flux_kustomizations.firecrawl(
-        flux_chart, firecrawl_namespace_kustomization, firecrawl_db_kustomization, gateway_kustomization
     )
     parked_flux_kustomizations.paperless(
         flux_chart,
