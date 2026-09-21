@@ -121,8 +121,8 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
 
 @pytest.mark.parametrize(
     ("history_size", "materialized_item_count"),
-    [(100, 0), (10_000, 0), (10_000, 2_000)],
-    ids=["one-hundred-native", "ten-thousand-native", "ten-thousand-with-two-thousand-items"],
+    [(200, 100), (4_000, 2_000), (40_000, 20_000)],
+    ids=["one-hundred-items", "two-thousand-items", "twenty-thousand-items"],
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
     store: TrajectoryStore,
@@ -132,6 +132,9 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     request: pytest.FixtureRequest,
 ) -> None:
     """A real old-item update only preloads its touched rows after large frame and entity histories."""
+    # This test deliberately creates 20,000 materialized entities in bounded record batches.
+    # Keep the writer fence valid for that workload; this does not change the test timeout.
+    assert await store.renew_ingestion(lease, timedelta(minutes=10))
     thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
@@ -191,6 +194,10 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
 
     plans: list[str] = []
     async with store._engine.connect() as connection:
+        # Use normal planner statistics after the actual write workload.  The artifact below is
+        # deliberately the captured production statements, not a hand-written query with planner
+        # switches, so its buffers compare point lookups across entity cardinalities.
+        await connection.exec_driver_sql("ANALYZE conversation_entity")
         for statement, parameters in captured:
             result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
             plans.extend(row[0] for row in result)
