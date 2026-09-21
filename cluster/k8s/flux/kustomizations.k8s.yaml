@@ -2033,6 +2033,7 @@ metadata:
   name: grafana-db
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-namespace
       namespace: ducktape-flux
@@ -2045,7 +2046,7 @@ spec:
       namespace: monitoring
   interval: 10m
   path: ./cluster/k8s/monitoring/grafana-db
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact

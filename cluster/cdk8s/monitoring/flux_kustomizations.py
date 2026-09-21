@@ -6,6 +6,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
@@ -146,7 +147,8 @@ def grafana_db(chart: Chart, monitoring_namespace: Kustomization, cnpg: Kustomiz
             retry_interval="1m",
             interval="10m",
             path="./cluster/k8s/monitoring/grafana-db",
-            prune=True,
+            prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
                 name="monitoring-grafana-db",
