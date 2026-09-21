@@ -41,6 +41,14 @@ oci_image_py(
 )
 
 oci_image_py(
+    name = "electric_1_8_1",
+    testonly = True,
+    image = "@electric_1_8_1_linux_amd64",
+    tag = "electricsql/electric:1.8.1",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_py(
     name = "pgvector_pg18",
     testonly = True,
     image = "@pgvector_pg18_linux_amd64",

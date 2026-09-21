@@ -13,7 +13,7 @@ import httpx
 import pytest_bazel
 from testcontainers.core.network import Network
 
-from third_party.containers import electric_1_8, postgres_18, ryuk
+from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -76,7 +76,7 @@ async def _wait_electric(url: str) -> dict[str, Any]:
             except httpx.HTTPError as error:
                 last_error = error
             await asyncio.sleep(0.1)
-    raise TimeoutError("Electric 1.8.0 did not reach /v1/health active") from last_error
+    raise TimeoutError("Electric 1.8.1 did not reach /v1/health active") from last_error
 
 
 async def _seed_history(pool: asyncpg.Pool, conversation_id: str, count: int) -> None:
@@ -120,7 +120,6 @@ def _shape_params(conversation_id: str) -> dict[str, str]:
         "table": "sync_view_row",
         "where": f"conversation_id = '{conversation_id}'",
         "columns": SHAPE_COLUMNS,
-        "queryable_columns": "conversation_id,row_key",
         "replica": "full",
         "log": "full",
         "live": "false",
@@ -195,12 +194,12 @@ async def test_electric_shape_capacity_and_memory() -> None:
     outputs = undeclared_outputs_dir() / "electric-shape-capacity"
     outputs.mkdir(parents=True, exist_ok=True)
     evidence: dict[str, Any] = {
-        "electricImage": electric_1_8.IMAGE.tag,
+        "electricImage": electric_1_8_1.IMAGE.tag,
         "configuredMaxShapes": SHAPE_LIMIT,
         "historySizes": {"capacity-small": SMALL_ROW_COUNT, "capacity-large": LARGE_ROW_COUNT},
         "samples": [],
     }
-    for image in (ryuk.IMAGE, postgres_18.IMAGE, electric_1_8.IMAGE):
+    for image in (ryuk.IMAGE, postgres_18.IMAGE, electric_1_8_1.IMAGE):
         load_oci_image(image)
 
     with Network() as network:
@@ -233,7 +232,7 @@ async def test_electric_shape_capacity_and_memory() -> None:
                 }
 
                 electric = (
-                    LoggedContainer(electric_1_8.IMAGE.tag, test_name="electric-shape-capacity-electric")
+                    LoggedContainer(electric_1_8_1.IMAGE.tag, test_name="electric-shape-capacity-electric")
                     .with_network(network)
                     .with_network_aliases("electric")
                     .with_exposed_ports(3000)

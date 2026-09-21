@@ -256,6 +256,16 @@ oci.pull(
     tag = "1.8.0",
 )
 
+# Electric 1.8.1 is the current Agentplane deployment runtime; the focused
+# shape-capacity test exercises this exact version.
+oci.pull(
+    name = "electric_1_8_1",
+    digest = "sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211",
+    image = "mirror.gcr.io/electricsql/electric",
+    platforms = ["linux/amd64"],
+    tag = "1.8.1",
+)
+
 # Test infrastructure: PostgreSQL with pgvector, for //haku/recall_index tests. The stock
 # postgres image ships no `vector` extension, and the index's core invariant (the tip join is
 # the only thing that makes content searchable) is only testable against the real operator.
@@ -357,7 +367,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8", "electric_1_8_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8", "electric_1_8_1", "electric_1_8_1_linux_amd64", "electric_1_8_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants

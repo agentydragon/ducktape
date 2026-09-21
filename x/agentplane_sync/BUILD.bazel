@@ -5,6 +5,7 @@ package(default_testonly = True)
 # gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
 # gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
 # gazelle:resolve py third_party.containers.electric_1_8 //third_party/containers:electric_1_8
+# gazelle:resolve py third_party.containers.electric_1_8_1 //third_party/containers:electric_1_8_1
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
 # gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
 
@@ -76,7 +77,7 @@ py_test(
     deps = [
         ":projector",
         "//:conftest",
-        "//third_party/containers:electric_1_8",
+        "//third_party/containers:electric_1_8_1",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
         "//util:oci",
