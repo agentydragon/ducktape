@@ -25,7 +25,6 @@ configMapGenerator:
       - blueprints/proxmox-sso.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso-retire.yaml
-      - blueprints/manifold-mcp-sso-retire.yaml
       - blueprints/plaid-link-sso.yaml
       - blueprints/embedded-outpost.yaml
       - blueprints/airlock-sso-retire.yaml
@@ -33,7 +32,6 @@ configMapGenerator:
       - blueprints/adsb-sso.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/fava-sso-retire.yaml
-      - blueprints/postscanmail-mcp-sso-retire.yaml
       - blueprints/activitywatch-sso.yaml
       - blueprints/haku-ui-sso.yaml
     namespace: authentik
