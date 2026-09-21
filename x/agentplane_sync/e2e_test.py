@@ -691,6 +691,7 @@ def _capture_electric(
                     "generationId": manifest.get("generationId"),
                     "chunkCount": manifest.get("chunkCount"),
                     "contentBytes": manifest.get("contentBytes"),
+                    "sourceCursor": manifest.get("sourceCursor"),
                 }
             )
             write_journal()

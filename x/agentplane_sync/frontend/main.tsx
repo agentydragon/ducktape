@@ -308,18 +308,38 @@ function PayloadPanel({
       })
       .then((value) => {
         if (!current) return;
-        if (
-          value.payloadRef !== selectedRef ||
-          value.conversationId !== conversationId ||
-          value.itemId !== selection.itemId ||
-          value.fieldName !== selection.field ||
-          value.generationId !== selection.generationId ||
-          value.revision !== selection.revision ||
-          value.sourceCursor !== selection.revision ||
-          value.chunkCount !== selection.chunkCount ||
-          value.contentBytes !== selection.contentBytes
-        ) {
-          throw new Error("Payload manifest does not match the selected row revision");
+        const expected = {
+          payloadRef: selectedRef,
+          conversationId,
+          itemId: selection.itemId,
+          fieldName: selection.field,
+          generationId: selection.generationId,
+          revision: selection.revision.toString(),
+          sourceCursor: selection.revision.toString(),
+          chunkCount: selection.chunkCount,
+          contentBytes: selection.contentBytes.toString(),
+        };
+        const actual = {
+          payloadRef: value.payloadRef,
+          conversationId: value.conversationId,
+          itemId: value.itemId,
+          fieldName: value.fieldName,
+          generationId: value.generationId,
+          revision: value.revision.toString(),
+          sourceCursor: value.sourceCursor.toString(),
+          chunkCount: value.chunkCount,
+          contentBytes: value.contentBytes.toString(),
+        };
+        const mismatch = Object.fromEntries(
+          Object.keys(expected)
+            .filter((key) => expected[key as keyof typeof expected] !== actual[key as keyof typeof actual])
+            .map((key) => [
+              key,
+              { expected: expected[key as keyof typeof expected], actual: actual[key as keyof typeof actual] },
+            ])
+        );
+        if (Object.keys(mismatch).length > 0) {
+          throw new Error(`Payload manifest does not match selected row revision: ${JSON.stringify(mismatch)}`);
         }
         setManifest(value);
         setManifestState("ready");
