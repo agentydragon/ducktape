@@ -478,7 +478,9 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
             _event(
                 4,
                 command_admitted=event_pb2.CommandAdmitted(
-                    command=command_pb2.Command(command_id="test-failed", interrupt=command_pb2.Interrupt())
+                    command=command_pb2.Command(
+                        command_id="test-failed", interrupt_turn=command_pb2.InterruptTurn(turn_id="test-turn")
+                    )
                 ),
             ),
             _event(
