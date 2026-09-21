@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import tempfile
 from datetime import timedelta
 from pathlib import Path
@@ -93,6 +94,18 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     finally:
                         await connection.close()
 
+                    same_state_restart: dict[str, object]
+                    try:
+                        await service.start(timeout_s=5)
+                    except TimeoutError:
+                        same_state_restart = {"health": "timed_out", "slot": await _slot_state_after_restart(service)}
+                    else:
+                        raise AssertionError("Electric resumed a lost replication slot without an explicit reset")
+                    _write_artifact("same-state-restart.json", json.dumps(same_state_restart, indent=2, sort_keys=True))
+
+                    await service.stop()
+                    await _drop_lost_slot(service)
+                    await asyncio.to_thread(_reset_state_dir, Path(state_dir))
                     await service.start()
                     stale = await client.get(
                         "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
@@ -133,6 +146,23 @@ async def _connect(service: ElectricService) -> asyncpg.Connection:
     return await asyncpg.connect(service.database_url.replace("postgresql+asyncpg", "postgresql"))
 
 
+async def _slot_state_after_restart(service: ElectricService) -> dict[str, object]:
+    connection = await _connect(service)
+    try:
+        return await _slot_state(connection)
+    finally:
+        await connection.close()
+
+
+async def _drop_lost_slot(service: ElectricService) -> None:
+    connection = await _connect(service)
+    try:
+        assert (await _slot_state(connection))["wal_status"] == "lost"
+        await connection.execute("SELECT pg_drop_replication_slot($1)", _SLOT)
+    finally:
+        await connection.close()
+
+
 async def _slot_state(connection: asyncpg.Connection) -> dict[str, object]:
     row = await connection.fetchrow(
         """
@@ -159,6 +189,12 @@ def _values(response: httpx.Response) -> list[dict[str, object]]:
 def _write_artifact(name: str, body: str) -> None:
     path = undeclared_outputs_dir() / name
     path.write_text(body + "\n")
+
+
+def _reset_state_dir(path: Path) -> None:
+    shutil.rmtree(path)
+    path.mkdir(mode=0o777)
+    path.chmod(0o777)
 
 
 if __name__ == "__main__":

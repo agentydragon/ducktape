@@ -22,15 +22,15 @@ class ElectricService:
     database_url: str
     url: str
     _stop: Callable[[], Awaitable[None]]
-    _start: Callable[[], Awaitable[None]]
+    _start: Callable[[float], Awaitable[None]]
 
     async def stop(self) -> None:
         """Stop Electric while preserving its configured persistent state."""
         await self._stop()
 
-    async def start(self) -> None:
+    async def start(self, *, timeout_s: float = 60) -> None:
         """Start a previously stopped Electric container and wait for its health endpoint."""
-        await self._start()
+        await self._start(timeout_s)
 
 
 async def _connect(dsn: str) -> asyncpg.Connection:
@@ -42,8 +42,8 @@ async def _connect(dsn: str) -> asyncpg.Connection:
                 await asyncio.sleep(0.1)
 
 
-async def _ready(url: str) -> None:
-    async with asyncio.timeout(60), httpx.AsyncClient(base_url=url, timeout=2) as client:
+async def _ready(url: str, *, timeout_s: float = 60) -> None:
+    async with asyncio.timeout(timeout_s), httpx.AsyncClient(base_url=url, timeout=2) as client:
         while True:
             try:
                 response = await client.get("/v1/health")
@@ -115,8 +115,8 @@ async def electric_service(
                 async def stop() -> None:
                     await asyncio.to_thread(electric.get_wrapped_container().stop)
 
-                async def start() -> None:
+                async def start(timeout_s: float) -> None:
                     await asyncio.to_thread(electric.get_wrapped_container().start)
-                    await _ready(url)
+                    await _ready(url, timeout_s=timeout_s)
 
                 yield ElectricService(database_url, url, stop, start)
