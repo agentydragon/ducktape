@@ -11,7 +11,11 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection
+from agentplane.app.trajectory import (
+    ConversationEntityInterest,
+    ConversationInterestExpiredError,
+    ConversationPayloadSelection,
+)
 
 _PAGE_SIZE = 30
 _SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
@@ -20,7 +24,7 @@ _ENTITY_COLUMNS = (
     "text_ref,arguments_ref,output_ref,input_ref"
 )
 _CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
-_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live"})
+_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor"})
 _INTEREST_QUERY = frozenset(
     {
         "anchor_cursor",
@@ -43,10 +47,15 @@ _RESPONSE_HEADERS = frozenset(
         "content-encoding",
         "content-type",
         "electric-cursor",
+        "electric-has-data",
         "electric-handle",
+        "electric-internal-known-error",
         "electric-offset",
         "electric-schema",
+        "electric-snapshot",
+        "electric-up-to-date",
         "etag",
+        "retry-after",
         "vary",
     }
 )
@@ -89,7 +98,12 @@ class ElectricProxy:
     async def entity_interest(
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
     ) -> ConversationEntityInterest:
-        interest = await self._resolve_entities(thread_id, anchor_cursor, before_cursor, _PAGE_SIZE)
+        try:
+            interest = await self._resolve_entities(thread_id, anchor_cursor, before_cursor, _PAGE_SIZE)
+        except ConversationInterestExpiredError as error:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
         if interest is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"no conversation for thread {thread_id}")
         return interest
@@ -217,6 +231,7 @@ class ElectricProxy:
                 await response.aclose()
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
+        headers["cache-control"] = "private, no-store"
         return StreamingResponse(body(), status_code=response.status_code, headers=headers)
 
 

@@ -262,6 +262,10 @@ class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
 
 
+class ConversationInterestExpiredError(ValueError):
+    """A bounded browser interest must be resolved again at the current projection position."""
+
+
 class CommandIdConflictError(ValueError):
     """A Thread command id was already admitted with a different immutable Command."""
 
@@ -428,6 +432,23 @@ class TrajectoryStore:
             anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
             if anchor < 0 or anchor > scope.through_cursor:
                 raise ValueError("conversation anchor is outside the projected prefix")
+            if anchor_cursor is not None:
+                newer = list(
+                    await session.scalars(
+                        select(ConversationEntity.cursor)
+                        .where(
+                            ConversationEntity.thread_id == thread_id,
+                            ConversationEntity.source_id == scope.source_id,
+                            ConversationEntity.projection_epoch == scope.projection_epoch,
+                            ConversationEntity.entity_kind.in_(segment_kinds),
+                            ConversationEntity.cursor > anchor,
+                        )
+                        .order_by(ConversationEntity.cursor)
+                        .limit(page_size * 2 + 1)
+                    )
+                )
+                if len(newer) > page_size * 2:
+                    raise ConversationInterestExpiredError("conversation interest must rotate")
 
             async def lower(before: int) -> int:
                 cursors = list(

@@ -52,18 +52,20 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
         return httpx.Response(
             200,
             stream=httpx.ByteStream(b'[{"headers":{"control":"up-to-date"}}]'),
-            headers={"electric-offset": "7_0", "x-private": "no"},
+            headers={"electric-offset": "7_0", "electric-up-to-date": "true", "x-private": "no"},
         )
 
     app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false"
+            f"/threads/{THREAD}/sync/entities?anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache"
         )
     await electric.aclose()
 
     assert response.status_code == 200
     assert response.headers["electric-offset"] == "7_0"
+    assert response.headers["electric-up-to-date"] == "true"
+    assert response.headers["cache-control"] == "private, no-store"
     assert "x-private" not in response.headers
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
