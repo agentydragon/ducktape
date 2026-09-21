@@ -1712,11 +1712,72 @@ async def test_electric_end_to_end() -> None:
                                 (str(base_cursor + 6), "model-v2", "applied"),
                             }
                             assert all(tuple(state) in allowed_states for state in states), states
-                            await _assert_rendered_payload(
-                                page,
-                                expected=r_plus_one_content + " +second",
-                                payload_ref=payload_ref_r_plus_one,
-                                revision=base_cursor + 4,
+                            payload_ref_r_plus_two = await pool.fetchval(
+                                "SELECT text_payload_ref FROM sync_view_row WHERE conversation_id='alpha-large' AND row_key='item:live-item'"
+                            )
+                            assert isinstance(payload_ref_r_plus_two, str)
+                            assert payload_ref_r_plus_two != payload_ref_r_plus_one
+                            expected_r_plus_two_content = r_plus_one_content + " +second"
+                            try:
+                                follow_latest_visible = await _assert_rendered_payload(
+                                    page,
+                                    expected=expected_r_plus_two_content,
+                                    payload_ref=payload_ref_r_plus_two,
+                                    revision=base_cursor + 4,
+                                )
+                            except Exception as error:
+                                current_state = await page.evaluate(
+                                    """() => {
+                                      const row = document.querySelector('[data-row-key="item:live-item"]')
+                                      const body = document.querySelector('[data-testid=payload-body]')
+                                      return {
+                                        row: row ? {...row.dataset} : null,
+                                        body: body ? {...body.dataset, content: body.textContent ?? ''} : null,
+                                        payloadStates: window.__syncEvidence.payloadStates,
+                                        retiredPayloadCollections: window.__syncEvidence.retiredPayloadCollections,
+                                        pageErrors: window.__syncEvidence.pageErrors,
+                                      }
+                                    }"""
+                                )
+                                _write_json(
+                                    outputs / "payload-followlatest-rplus-two-failure.json",
+                                    {
+                                        "error": repr(error),
+                                        "expected": {
+                                            "payloadRef": payload_ref_r_plus_two,
+                                            "revision": str(base_cursor + 4),
+                                            "contentBytes": len(expected_r_plus_two_content.encode("utf-8")),
+                                            "contentSha256": hashlib.sha256(
+                                                expected_r_plus_two_content.encode("utf-8")
+                                            ).hexdigest(),
+                                        },
+                                        "browser": current_state,
+                                        "payloadNetwork": [
+                                            record
+                                            for record in response_records
+                                            if record.get("payloadRef")
+                                            in {payload_ref_r_plus_one, payload_ref_r_plus_two}
+                                        ],
+                                        "payloadRequests": (
+                                            await _api_get(app_url, "/api/proxy-metrics", headers=AUTH)
+                                        ).json()["payloadRequests"],
+                                    },
+                                )
+                                await page.screenshot(
+                                    path=outputs / "payload-followlatest-rplus-two-failure.png", full_page=True
+                                )
+                                raise
+                            _write_json(
+                                outputs / "payload-followlatest-rplus-two-evidence.json",
+                                {
+                                    "previousRevision": r_plus_one_visible,
+                                    "nextRevision": follow_latest_visible,
+                                    "revisionAdvanced": str(base_cursor + 4),
+                                    "payloadReferenceAdvanced": {
+                                        "previous": payload_ref_r_plus_one,
+                                        "current": payload_ref_r_plus_two,
+                                    },
+                                },
                             )
                             await page.get_by_role("button", name="Open arguments").click()
                             arguments_ref = await pool.fetchval(
