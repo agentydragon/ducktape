@@ -152,35 +152,6 @@ def augur_evidence(
     )
 
 
-def budget(
-    chart: Chart, budget_ledger: Kustomization, gateway: Kustomization, authentik: Kustomization
-) -> Kustomization:
-    name = "budget"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path="./cluster/k8s/parked/budget",
-            prune=True,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                # provisions budget-ledger-git-creds in the budget ns
-                budget_ledger,
-                gateway,
-                authentik,
-            ),
-        ),
-    )
-
-
 def buildbuddy_executor(chart: Chart) -> Kustomization:
     name = "buildbuddy-executor"
     return flux_kustomization(
@@ -416,135 +387,6 @@ def haku_dispatch(
     )
 
 
-def inventree(
-    chart: Chart,
-    forgejo_images: Kustomization,
-    inventree_namespace: Kustomization,
-    inventree_db: Kustomization,
-    sso_providers_tf: Kustomization,
-    reflector: Kustomization,
-    gateway: Kustomization,
-    authentik: Kustomization,
-) -> Kustomization:
-    name = "inventree"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            suspend=True,
-            interval="10m",
-            timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="inventree-app", namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/inventree/app",
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images,
-                inventree_namespace,
-                inventree_db,
-                # writes inventree-sso-providers into the authentik namespace
-                sso_providers_tf,
-                # mirrors inventree-sso-providers into the inventree namespace
-                reflector,
-                gateway,
-                authentik,
-            ),
-        ),
-    )
-
-
-def inventree_db(
-    chart: Chart, inventree_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
-    name = "inventree-db"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            suspend=True,
-            interval="10m",
-            timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/inventree/db",
-            prune=True,
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(inventree_namespace, cnpg, local_path_provisioner),
-        ),
-    )
-
-
-def inventree_namespace(chart: Chart) -> Kustomization:
-    name = "inventree-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="1h",
-            path="./cluster/k8s/parked/inventree/namespace",
-            prune=False,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="1m",
-        ),
-    )
-
-
-def inventree_token_provisioner(
-    chart: Chart,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    inventree: Kustomization,
-    claude_rbac: Kustomization,
-) -> Kustomization:
-    name = "inventree-token-provisioner"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            suspend=True,
-            interval="10m",
-            path="./cluster/k8s/parked/inventree/token-provisioner",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            # Explicitly health-check the InvenTree HelmRelease so the Job starts only after
-            # InvenTree pods are ready (HelmRelease wait:true guarantees this).
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="inventree", namespace="inventree"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                # InvenTree HelmRelease is fully deployed
-                inventree,
-                # claude-sandbox namespace exists
-                claude_rbac,
-            ),
-        ),
-    )
-
-
 def haku_managed_agent(
     chart: Chart,
     forgejo_images: Kustomization,
@@ -565,7 +407,7 @@ def haku_managed_agent(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/parked/managed-agent",
+            path="./haku/runtime/managed_agent/self_hosted/deploy",
             prune=True,
             wait=True,
             source_ref=KustomizationSpecSourceRef(

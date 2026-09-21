@@ -8,7 +8,7 @@ from typing import Any
 import litellm
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices
 
-from tana.litellm_proxy.provider import register_litellm_provider
+from tana.litellm_proxy.provider import TanaLiteLLM, register_litellm_provider
 
 DEMO_TOOL = {
     "type": "function",
@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument("--stream", action="store_true", help="Use LiteLLM streaming mode.")
     args = parser.parse_args()
 
-    register_litellm_provider()
+    register_litellm_provider(TanaLiteLLM())
     messages: list[dict[str, str]] = []
     if args.system:
         messages.append({"role": "system", "content": args.system})

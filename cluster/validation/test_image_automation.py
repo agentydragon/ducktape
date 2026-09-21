@@ -72,8 +72,8 @@ def test_non_ghcr_repository_exempt_from_webhook() -> None:
     # Non-GHCR (e.g. Forgejo) images can't use the GitHub registry_package webhook,
     # so they aren't required in the Receiver.
     cluster = _cluster(
-        _repo("codex-pod", image="git.allegedly.works/ducktape-ci/codex-pod"),
-        _policy("codex-pod", "codex-pod"),
+        _repo("forgejo-example", image="git.allegedly.works/ducktape-ci/forgejo-example"),
+        _policy("forgejo-example", "forgejo-example"),
         _receiver([]),
     )
     assert check_image_automation_webhook(cluster) == []

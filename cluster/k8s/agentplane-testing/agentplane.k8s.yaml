@@ -696,7 +696,7 @@ spec:
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: agentplane-egress-upstream-ca
+  name: agentplane-testing-egress-upstream-ca
 spec:
   sources:
     - useDefaultCAs: true
@@ -767,7 +767,7 @@ spec:
       containers:
         - args:
             - --rules-namespace=agentplane-testing
-            - --credentials-namespace=agentplane-egress-credentials
+            - --credentials-namespace=agentplane-testing-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
             - --agent-api-port=8082
@@ -890,7 +890,7 @@ spec:
           secret:
             secretName: agentplane-testing-egress-ca
         - configMap:
-            name: agentplane-egress-upstream-ca
+            name: agentplane-testing-egress-upstream-ca
           name: upstream-ca
         - emptyDir: {}
           name: confdir
@@ -1068,21 +1068,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
-  source:
-    secretRef:
-      name: haku-forgejo-git
-      key: password
-  targets:
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
   name: kubernetes-workload
   namespace: agentplane-testing
 spec:
@@ -1149,19 +1134,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: kubernetes-workload
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -3104,3 +3076,68 @@ spec:
         - ports:
             - port: "5556"
               protocol: TCP
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Outbound credentials readable only by the agentplane-testing egress proxy.
+  name: agentplane-testing-egress-credentials
+spec: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-testing-egress-credentials
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress-credentials-reader
+  namespace: agentplane-testing-egress-credentials
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-testing-egress
+  namespace: agentplane-testing-egress-credentials
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-egress-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-testing
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agentplane-github-pat
+  namespace: agentplane-testing-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: agentplane-github-pat

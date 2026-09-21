@@ -6,6 +6,6 @@ generatorOptions:
 resources:
   - namespace.yaml
   - pvc.yaml
-  - codex-bootstrap-identity.sops.yaml
-  - forgejo-tea.sops.yaml
   - deployment.yaml
+# The two SOPS Secret manifests remain parked under cluster/k8s/parked/codex-pod/.
+# Replace them with runtime-managed credentials before reactivating this experiment.

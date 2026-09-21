@@ -49,8 +49,8 @@ counts before the cutover.
 ## Rebuild and restore
 
 1. Take the two backups above and record their checksums and source row counts.
-2. Reconcile the central ClickHouse resources. The `clickhouse-namespace`
-   Kustomization creates the namespace, the operator watches it, and the
+2. Reconcile the central ClickHouse resources. The `clickhouse-operator`
+   Kustomization creates the namespace and operator, and the
    schema Job creates both `aiquota` and the empty `langfuse` database.
 3. Wait for the `clickhouse` Flux Kustomization, both ClickHouse replicas,
    all three Keeper members, and `clickhouse-schema` to become Ready.

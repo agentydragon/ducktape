@@ -320,6 +320,7 @@ py_library(
         ":actions",
         ":actions_staging_policies",
         ":chart",
+        ":egress_credentials",
         ":environment",
         ":generation",
         ":staging_config",
@@ -342,6 +343,7 @@ py_library(
         ":actions_testing_fixtures",
         ":chart",
         ":dex",
+        ":egress_credentials",
         ":environment",
         ":generation",
         ":testing_config",
@@ -391,9 +393,37 @@ py_test(
     deps = [
         ":app_settings",
         ":conftest",
+        ":testing",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "egress_credentials",
+    srcs = ["egress_credentials.py"],
+    deps = [
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_egress_credentials",
+    srcs = ["test_egress_credentials.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":egress_credentials",
+        "//:conftest",
+        "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
 )

@@ -19,10 +19,10 @@ spec:
   timeout: 15m # Extended timeout (PostgreSQL + PVC binding + init containers)
   install:
     remediation:
-      retries: 3
+      retries: -1 # Runtime prerequisites may become ready after admission.
   upgrade:
     remediation:
-      retries: 3 # Retry transient upgrade failures (e.g. slow S3 backend readiness) instead of going Stalled
+      retries: -1 # Keep retrying while runtime prerequisites converge.
   chart:
     spec:
       chart: forgejo

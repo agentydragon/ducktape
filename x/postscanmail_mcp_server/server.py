@@ -9,10 +9,12 @@ observed payload shapes instead. Mutating/action response shapes are
 undocumented, so those tools return the upstream JSON verbatim (`object`).
 
 This server is **not** auth-aware — it speaks to PostScan Mail with a single
-static `x-api-key` for the account-wide developer key. Per-caller auth and
-the agentydragon-only ACL are enforced upstream by the `mcp-oauth-facade`
-sidecar in the same Kubernetes pod (see
-<cluster/k8s/parked/postscanmail-mcp/deployment.yaml>).
+static `x-api-key` for the account-wide developer key. Its former Kubernetes
+deployment paired it with an `mcp-oauth-facade` sidecar for per-caller auth
+and the agentydragon-only ACL (see
+<cluster/k8s/parked/postscanmail-mcp/deployment.yaml>). That app is now
+decommissioned; any revival must restore an authentication boundary before
+exposing this server.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ ActionKind = Literal["open", "discard", "rescan", "shred"]
 
 # MCP tool annotations advertise each tool's kind so clients (claude.ai / Claude Code) group
 # them and relax approval prompts. All fields are hints (advisory, not a security boundary);
-# haku-console enforces its own approval policy server-side regardless. See
+# an integrating server must enforce its own approval policy server-side. See
 # <mcp_infra/docs/tool_annotations.md>. openWorldHint is left at its default (true) for every
 # tool — PostScan Mail is an external, changing world, not the tool's own state.
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)

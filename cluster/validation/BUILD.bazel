@@ -27,6 +27,7 @@ py_test(
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",
+        "//haku/runtime/managed_agent/self_hosted:deploy_manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -183,7 +184,6 @@ py_library(
         ":cluster",
         ":k8s",
         ":kustomize",
-        "@pypi//networkx",
     ],
 )
 

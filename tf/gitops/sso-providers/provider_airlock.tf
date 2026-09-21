@@ -2,11 +2,6 @@
 # The backend exchanges the authorization code and signs an HttpOnly session
 # cookie; the browser never receives Authentik access or ID tokens.
 
-resource "random_password" "airlock_session_secret" {
-  length  = 64
-  special = false
-}
-
 resource "authentik_provider_oauth2" "airlock" {
   name               = "airlock-server"
   client_id          = "airlock-server"
@@ -61,8 +56,7 @@ resource "kubernetes_secret" "airlock_oidc" {
   }
 
   data = {
-    client-id      = authentik_provider_oauth2.airlock.client_id
-    client-secret  = authentik_provider_oauth2.airlock.client_secret
-    session-secret = random_password.airlock_session_secret.result
+    client-id     = authentik_provider_oauth2.airlock.client_id
+    client-secret = authentik_provider_oauth2.airlock.client_secret
   }
 }

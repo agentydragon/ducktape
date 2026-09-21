@@ -6,6 +6,7 @@ resources:
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
+  - session-secret-eso.yaml
   - serviceaccount.yaml
   - rbac.yaml
   - deployment.yaml

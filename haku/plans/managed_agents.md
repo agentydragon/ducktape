@@ -112,9 +112,9 @@ headless-MCP-auth mechanism the PLAN's _MCP auth provisioning_ spike was for:
 Candidate servers to wire (each already has or could expose a gated public route):
 `haku-console` (already wired this way for Tana + Grocy: a `static_bearer` bound to
 the console's aggregated `/mcp`, superseding a per-source `tana-mcp-ro`-style
-facade), PostScanMail, the Google Workspace MCP, Manifold — the
-`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor
-as a single endpoint.
+facade), the Google Workspace MCP, and the
+`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor as
+a single endpoint.
 
 ### Two caveats that shape the source split
 

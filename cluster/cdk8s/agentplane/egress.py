@@ -117,12 +117,10 @@ _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
-# The proxy's own upstream trust, separate from the bundle a runner mounts.
-_UPSTREAM_CA_BUNDLE = "agentplane-egress-upstream-ca"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
-def _egress_credentials(scope: Construct, *, namespace: str) -> None:
+def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
     EgressCredential(
         scope,
         "egresscredential-agentplane-workload",
@@ -166,32 +164,33 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         ),
     )
 
-    EgressCredential(
-        scope,
-        "egresscredential-forgejo-haku",
-        metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
-        spec=EgressCredentialSpec(
-            description=(
-                "The password of the `haku` account on the internal Forgejo, the service user that "
-                "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
-                "its full authority -- it is the account's own password, not a scoped token, so it "
-                "reaches every repository haku can reach and the web UI besides. The proxy narrows "
-                "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
-                "account."
+    if include_forgejo_credential:
+        EgressCredential(
+            scope,
+            "egresscredential-forgejo-haku",
+            metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
+            spec=EgressCredentialSpec(
+                description=(
+                    "The password of the `haku` account on the internal Forgejo, the service user that "
+                    "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
+                    "its full authority -- it is the account's own password, not a scoped token, so it "
+                    "reaches every repository haku can reach and the web UI besides. The proxy narrows "
+                    "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
+                    "account."
+                ),
+                source=EgressCredentialSpecSource(
+                    secret_ref=EgressCredentialSpecSourceSecretRef(name="haku-forgejo-git", key="password")
+                ),
+                # Git over HTTP and Forgejo's REST API both authenticate with `Basic
+                # base64(haku:<password>)`, so the placeholder travels as the password half. A client
+                # sends the username itself; only the secret half is substituted here.
+                targets=[
+                    EgressCredentialSpecTargets(
+                        header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+                    )
+                ],
             ),
-            source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="haku-forgejo-git", key="password")
-            ),
-            # Git over HTTP and Forgejo's REST API both authenticate with `Basic
-            # base64(haku:<password>)`, so the placeholder travels as the password half. A client
-            # sends the username itself; only the secret half is substituted here.
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
-                )
-            ],
-        ),
-    )
+        )
 
     EgressCredential(
         scope,
@@ -216,7 +215,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     )
 
 
-def _egress_policies(scope: Construct, *, namespace: str) -> None:
+def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-basic",
@@ -273,25 +272,26 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             ]
         ),
     )
-    EgressPolicy(
-        scope,
-        "egresspolicy-forgejo-haku",
-        metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
-        spec=EgressPolicySpec(
-            rules=[
-                # No method or path list. The credential is haku's whole account, so a verb or path
-                # list here would narrow the request without narrowing the authority behind it --
-                # the same reason the Kubernetes rule carries none. What it does admit is the whole
-                # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
-                # web UI.
-                EgressPolicySpecRules(
-                    hosts=[FORGEJO_HOST],
-                    cluster_internal=True,
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
-                )
-            ]
-        ),
-    )
+    if include_forgejo_credential:
+        EgressPolicy(
+            scope,
+            "egresspolicy-forgejo-haku",
+            metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
+            spec=EgressPolicySpec(
+                rules=[
+                    # No method or path list. The credential is haku's whole account, so a verb or path
+                    # list here would narrow the request without narrowing the authority behind it --
+                    # the same reason the Kubernetes rule carries none. What it does admit is the whole
+                    # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
+                    # web UI.
+                    EgressPolicySpecRules(
+                        hosts=[FORGEJO_HOST],
+                        cluster_internal=True,
+                        credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
+                    )
+                ]
+            ),
+        )
     EgressPolicy(
         scope,
         "egresspolicy-packages",
@@ -376,15 +376,19 @@ class Egress(Construct):
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
-        self._add_upstream_bundle()
+        self.upstream_bundle = self._add_upstream_bundle()
         settings_cm = self._add_settings_configmap()
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
         self._add_network_policy()
         if env.replicas.pdb_min_available is not None:
             self._add_pdb(env.replicas.pdb_min_available)
-        _egress_credentials(self, namespace=env.namespace)
-        _egress_policies(self, namespace=env.namespace)
+        _egress_credentials(
+            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+        )
+        _egress_policies(
+            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount
@@ -487,7 +491,7 @@ class Egress(Construct):
             ),
         )
 
-    def _add_upstream_bundle(self) -> None:
+    def _add_upstream_bundle(self) -> Bundle:
         """What this proxy verifies destinations against, as distinct from what a runner trusts.
 
         The runner's bundle carries the interception root, because the proxy is what answers it.
@@ -499,10 +503,10 @@ class Egress(Construct):
         and is the Kubernetes CA -- not `cluster-root-ca-secret`, which is cert-manager's own root
         for issuing internal leaves and signs nothing the API server presents.
         """
-        Bundle(
+        return Bundle(
             self,
             "upstream-bundle",
-            metadata=ApiObjectMetadata(name=_UPSTREAM_CA_BUNDLE),
+            metadata=ApiObjectMetadata(name=f"{self.env.namespace}-egress-upstream-ca"),
             spec=BundleSpec(
                 sources=[
                     BundleSpecSources(use_default_c_as=True),
@@ -556,7 +560,7 @@ class Egress(Construct):
         upstream_ca_volume = Volume.from_config_map(
             self,
             "upstream-ca-volume",
-            ConfigMap.from_config_map_name(self, "upstream-ca-ref", _UPSTREAM_CA_BUNDLE),
+            ConfigMap.from_config_map_name(self, "upstream-ca-ref", self.upstream_bundle.name),
             name="upstream-ca",
         )
 
@@ -592,7 +596,7 @@ class Egress(Construct):
             args=cli_args(
                 Settings,
                 rules_namespace=self.env.namespace,
-                credentials_namespace="agentplane-egress-credentials",
+                credentials_namespace=self.env.egress.credentials_namespace,
                 listen_port=PROXY_PORT,
                 admin_port=ADMIN_PORT,
                 agent_api_port=_AGENT_API_PORT,

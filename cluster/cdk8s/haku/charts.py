@@ -52,6 +52,7 @@ EXTRA_RESOURCES = (
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
     "web-push-vapid.sops.yaml",
+    "../console-namespace",
     "static-metadata.yaml",
     "image-metadata.yaml",
 )
@@ -93,12 +94,9 @@ def write_console_manifests(root: Path) -> Chart:
 def haku_console(
     flux_chart: Chart,
     health_checks: list[KustomizationSpecHealthChecks],
-    haku_workspaces: Kustomization,
-    haku_console_namespace: Kustomization,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
     forgejo_images: Kustomization,
-    haku_state: Kustomization,
     gateway: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
@@ -133,18 +131,14 @@ def haku_console(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
                 )
             ],
+            # haku-state writes a credential into this namespace; gating on it (or
+            # haku-workspaces -> haku-egress-proxy -> haku-state) blocks namespace
+            # creation. Pods can wait for credentials after this layer is admitted.
             depends_on=flux_kustomization_depends_on_many(
-                # Ready before claims target a migrated namespace, so the API cannot
-                # point at a pool Flux has not reconciled.
-                haku_workspaces,
-                # Supplies the namespace and private-image pull Secret.
-                haku_console_namespace,
                 # The Cluster operator and the storage class its PVCs bind.
                 cnpg,
                 local_path_provisioner,
                 forgejo_images,
-                # Creates the shared haku-ui/backend -> haku-console MCP static-Agent token.
-                haku_state,
                 gateway,
                 # TF creates the Authentik clients and haku-console-oidc Secret;
                 # the console does OIDC discovery synchronously at startup.

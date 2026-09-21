@@ -234,8 +234,9 @@ layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its
 Kustomization remains in the central chart with `spec.suspend: true` and
 `metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
 the parked workload manifests. `cluster/validation/test_cluster_integration.py`'s
-`test_parked_manifests_location` checks that the annotation matches whether `spec.path`
-is under `cluster/k8s/parked/`.
+`test_parked_manifests_location` requires paths under `cluster/k8s/parked/` to carry the
+annotation. A parked ducktape-owned project may keep its manifests in its own `deploy/`
+directory instead.
 
 When explicitly asked to fully unwire a decommissioned app, remove its Kustomization
 constructor and call from the generated central chart; keep the manifests under

@@ -51,9 +51,7 @@ class FakeCrane(Crane):
 
 def test_the_digest_target_is_the_image_label_plus_suffix() -> None:
     assert image().digest_label == "//airlock:image.digest"
-    assert image(target="@ducktape_manifold_mcp_server//:image").digest_label == (
-        "@ducktape_manifold_mcp_server//:image.digest"
-    )
+    assert image(target="@external//:image").digest_label == "@external//:image.digest"
 
 
 def test_outputs_are_found_by_label_not_by_guessing_a_path() -> None:
@@ -71,8 +69,8 @@ def test_outputs_are_found_by_label_not_by_guessing_a_path() -> None:
 
 
 def test_an_image_the_build_never_produced_has_no_uri() -> None:
-    """`//...` does not reach an external repository, so manifold-mcp-server is
-    absent from every sweep and must take the slow path."""
+    """`//...` does not reach an external repository, so its digest is absent from
+    every sweep and must take the slow path."""
     assert digest_uri(image(target="@repo//:image"), invocation().by_label()) is None
 
 

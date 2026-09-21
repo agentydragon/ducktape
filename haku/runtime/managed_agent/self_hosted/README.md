@@ -1,5 +1,11 @@
 # Managed Agents — self-hosted sandbox (Runtime B)
 
+> **Parked.** The Flux Kustomization is suspended and CI no longer builds or publishes
+> this worker image. The flake package remains available for deliberate manual builds.
+> Suspending Flux does not delete resources it applied previously; this change does not
+> remove any lingering cluster resources. See [`deploy/README.md`](deploy/README.md)
+> for the archived manifests and the conditions for reactivation.
+
 Runtime B from <../../../plans/runtime_options.md>: Anthropic runs the agent loop;
 tool execution runs in a worker **you** run in `haku-sandbox` (self-hosted
 sandbox, `config.type: self_hosted`). The Anthropic-hosted-sandbox alternative is
@@ -86,7 +92,8 @@ durable memory, so a cold session just re-orients.
 | `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI        |
 | `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                          | `haku-managed-agent` |
 | `worker.py`             | the poll loop (anthropic Python SDK environment worker)                              | `haku-managed-agent` |
-| `nixos.nix`             | full-NixOS worker image (`nix build .#haku-managed-agent-image`)                     | CI / build           |
+| `nixos.nix`             | full-NixOS worker system                                                             | manual image build   |
+| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                  | manual image build   |
 
 ## Trust split — keep the org key off the worker
 
@@ -108,8 +115,10 @@ container can't mount the API filesystems, so the pod runs the closure
 **directly** — k8s execs `/sw/bin/haku-managed-agent-run` (a wrapper that puts the tool
 closure on PATH and execs `entrypoint.sh`) as the non-root `haku` uid with all
 caps dropped. Build the uncompressed rootfs tarball with `nix build
-.#haku-managed-agent-image`; CI imports it (`podman import`) and pushes to GHCR, pinned
-by Flux — see <../../../../cluster/docs/container-images.md>.
+.#haku-managed-agent-image`; this is currently a manual output. There is no automatic
+image build/publish job or Flux image policy while the experiment is parked. If Runtime B
+is deliberately reactivated, choose and restore an image publication/pinning path as part
+of that change.
 
 `tea` is available in the image and logged in via the `haku-forgejo-tea` Secret
 mounted at `/home/haku/.config/tea/config.yml`. The token is minted by
@@ -127,13 +136,12 @@ path — redundant here with in-pod `kubectl`, kept for parity).
 ## k8s wiring
 
 The `haku-managed-agent` Deployment, its `haku-managed-agent` ServiceAccount (bound to
-`haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
-clone/git env live in <../../../../cluster/k8s/parked/managed-agent/README.md> (that
-dir's README is the bring-up runbook). The worker reuses Haku's `haku-sandbox`
+`haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret, and the clone/git env live
+in <deploy/README.md>. The worker reuses Haku's `haku-sandbox`
 perimeter (`haku-sandbox-admin` RBAC, `haku-egress-proxy` egress + CA injection,
 ResourceQuota); none of it relies on agent restraint.
 
-## Bring-up
+## Bring-up (only after explicit reactivation)
 
 ```sh
 ./provision.sh                                   # org ANTHROPIC_API_KEY, outside the worker
@@ -147,8 +155,9 @@ ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in C
 These are **control-plane** objects at Anthropic — `haku.{agent,environment,deployment}.yaml`
 are version-controlled here but applied with `ant` (org `ANTHROPIC_API_KEY`),
 **not** Flux. Editing the YAML alone changes nothing live. The two image-side
-files (`worker.py`, `nixos.nix`, `entrypoint.sh`) are the only ones that flow
-through CI + Flux. Live IDs: agent `agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
+files (`worker.py`, `nixos.nix`, `image.nix`, `entrypoint.sh`) no longer flow through
+CI + Flux while this experiment is parked. The recorded control-plane IDs are agent
+`agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
 `depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
 `env_015uqL9WAMSDytQEWWmLG9zF`.
 

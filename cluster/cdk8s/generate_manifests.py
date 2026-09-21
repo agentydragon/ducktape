@@ -27,9 +27,6 @@ from cluster.cdk8s import (
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
-from cluster.cdk8s.agentplane_egress_credentials import (
-    flux_kustomizations as agentplane_egress_credentials_flux_kustomizations,
-)
 from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import artifact_generators as artifact_generators_factory
@@ -154,9 +151,6 @@ def generate_manifests(root: Path) -> None:
     flux_app = App(outdir=str(flux_output))
     flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
-    agentplane_egress_credentials_namespace_kustomization = (
-        agentplane_egress_credentials_flux_kustomizations.agentplane_egress_credentials_namespace(flux_chart)
-    )
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
     haku_egress_proxy_namespace_kustomization = agents_flux_kustomizations.haku_egress_proxy_namespace(flux_chart)
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
@@ -164,7 +158,6 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
-    clickhouse_namespace_kustomization = clickhouse_flux_kustomizations.clickhouse_namespace(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
     evidence_flux_kustomizations.evidence_market_roster(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
@@ -172,7 +165,6 @@ def generate_manifests(root: Path) -> None:
         flux_image_automation_ghcr_flux_kustomizations.flux_image_automation_ghcr(flux_chart)
     )
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart)
-    forgejo_namespace_kustomization = forgejo_flux_kustomizations.forgejo_namespace(flux_chart)
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart)
     hubble_ui_flux_kustomizations.hubble_ui(flux_chart)
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
@@ -180,7 +172,6 @@ def generate_manifests(root: Path) -> None:
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(flux_chart)
     kvm_device_plugin_flux_kustomizations.kvm_device_plugin(flux_chart)
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart)
-    litellm_namespace_kustomization = litellm_flux_kustomizations.litellm_namespace(flux_chart)
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(flux_chart)
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_kustomization = monitoring_flux_kustomizations.grafana_helmrepository(flux_chart)
@@ -190,16 +181,13 @@ def generate_manifests(root: Path) -> None:
     openebs_lvm_flux_kustomizations.openebs_lvm(flux_chart)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
-    inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart)
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(flux_chart)
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
         flux_chart
     )
-    ssh_mcp_namespace_kustomization = ssh_mcp_generation.ssh_mcp_namespace(flux_chart)
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     (talos_cloud_controller_manager_flux_kustomizations.talos_cloud_controller_manager(flux_chart))
-    tofu_state_namespace_kustomization = tofu_state_flux_kustomizations.tofu_state_namespace(flux_chart)
     user_agentydragon_kustomization = user_agentydragon_flux_kustomizations.user_agentydragon(flux_chart)
     valkey_kustomization = valkey_flux_kustomizations.valkey(flux_chart)
     gaffer_private_source_flux_kustomizations.gaffer_private_source(
@@ -211,12 +199,12 @@ def generate_manifests(root: Path) -> None:
     keda_kustomization = keda_flux_kustomizations.keda(flux_chart, kyverno_kustomization)
     kyverno_policies_kustomization = kyverno_flux_kustomizations.kyverno_policies(flux_chart, kyverno_kustomization)
     metrics_server_kustomization = metrics_server_flux_kustomizations.metrics_server(flux_chart, kyverno_kustomization)
-    reloader_kustomization = reloader_flux_kustomizations.reloader(flux_chart, kyverno_kustomization)
+    reloader_flux_kustomizations.reloader(flux_chart, kyverno_kustomization)
     cdi_kustomization = kubevirt_flux_kustomizations.cdi(
         flux_chart, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
     clickhouse_operator_kustomization = clickhouse_flux_kustomizations.clickhouse_operator(
-        flux_chart, clickhouse_namespace_kustomization, monitoring_crds_kustomization
+        flux_chart, monitoring_crds_kustomization
     )
     flux_monitoring_flux_kustomizations.flux_monitoring(flux_chart, monitoring_crds_kustomization)
     monitoring_flux_kustomizations.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
@@ -240,9 +228,7 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.public_coder_agent_sshpiper(
         flux_chart, public_coder_agent_namespace_kustomization, sshpiper_crds_kustomization
     )
-    forgejo_cache_kustomization = forgejo_flux_kustomizations.forgejo_cache(
-        flux_chart, forgejo_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
-    )
+    forgejo_flux_kustomizations.forgejo_cache(flux_chart, valkey_kustomization, local_path_provisioner_kustomization)
     haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(flux_chart, kyverno_policies_kustomization)
     vpa_kustomization = vpa_flux_kustomizations.vpa(flux_chart, kyverno_kustomization, metrics_server_kustomization)
@@ -285,21 +271,10 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
-    forgejo_db_kustomization = forgejo_flux_kustomizations.forgejo_db(
-        flux_chart, forgejo_namespace_kustomization, cnpg_kustomization
-    )
-    litellm_db_kustomization = litellm_flux_kustomizations.litellm_db(
-        flux_chart, litellm_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
-    inventree_db_kustomization = parked_flux_kustomizations.inventree_db(
-        flux_chart, inventree_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
-    tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(
-        flux_chart, tofu_state_namespace_kustomization, cnpg_kustomization, local_path_provisioner_kustomization
-    )
+    tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(flux_chart, cnpg_kustomization)
     seaweedfs_secrets_kustomization = seaweedfs_flux_kustomizations.seaweedfs_secrets(
         flux_chart, seaweedfs_namespace_kustomization, external_secrets_operator_kustomization
     )
@@ -312,9 +287,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_environment_kustomization,
         cert_manager_trust_kustomization,
         reflector_kustomization,
-    )
-    github_api_proxy_identity_kustomization = github_api_proxy_flux_kustomizations.github_api_proxy_identity(
-        flux_chart, cert_manager_environment_kustomization, cert_manager_issuer_config_kustomization
     )
     parked_flux_kustomizations.docker_ci(flux_chart, cert_manager_environment_kustomization, claude_rbac_kustomization)
     atuin_kustomization = atuin_flux_kustomizations.atuin(
@@ -334,25 +306,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     infra_drift_flux_kustomizations.infra_drift(flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization)
-    (
-        agentplane_egress_credentials_flux_kustomizations.agentplane_egress_credentials(
-            flux_chart,
-            agentplane_egress_credentials_namespace_kustomization,
-            external_creds_kustomization,
-            external_secrets_config_kustomization,
-        )
-    )
     agents_flux_kustomizations.alloy_otlp_bearer(
         flux_chart, external_secrets_config_kustomization, claude_rbac_kustomization, haku_rbac_kustomization
     )
     github_secrets_sync_secrets_kustomization = github_secrets_sync_flux_kustomizations.github_secrets_sync_secrets(
         flux_chart, external_creds_kustomization, external_secrets_config_kustomization
-    )
-    haku_console_namespace_kustomization = haku_flux_kustomizations.haku_console_namespace(
-        flux_chart, external_secrets_config_kustomization
-    )
-    litellm_secrets_kustomization = litellm_flux_kustomizations.litellm_secrets(
-        flux_chart, external_creds_kustomization, litellm_namespace_kustomization, external_secrets_config_kustomization
     )
     ntfy_kustomization = ntfy.ntfy(
         flux_chart,
@@ -465,15 +423,9 @@ def generate_manifests(root: Path) -> None:
     )
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
-        forgejo_namespace_kustomization,
-        forgejo_db_kustomization,
-        forgejo_cache_kustomization,
-        gateway_kustomization,
-        cert_manager_kustomization,
-        seaweedfs_cluster_kustomization,
-        reflector_kustomization,
-        sso_providers_tf_kustomization,
-        authentik_kustomization,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
     headlamp_flux_kustomizations.headlamp(flux_chart, gateway_kustomization, sso_providers_tf_kustomization)
@@ -523,7 +475,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_agentydragon_repos_kustomization = forgejo_flux_kustomizations.forgejo_agentydragon_repos(
         flux_chart, forgejo_kustomization, tofu_controller_kustomization, tofu_state_db_kustomization
     )
-    budget_ledger_kustomization = forgejo_flux_kustomizations.budget_ledger(
+    forgejo_flux_kustomizations.budget_ledger(
         flux_chart,
         forgejo_kustomization,
         tofu_controller_kustomization,
@@ -575,9 +527,6 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_public_s3_kustomization,
         local_path_provisioner_kustomization,
     )
-    parked_flux_kustomizations.budget(
-        flux_chart, budget_ledger_kustomization, gateway_kustomization, authentik_kustomization
-    )
     activitywatch_flux_kustomizations.activitywatch(
         flux_chart,
         external_secrets_config_kustomization,
@@ -623,7 +572,7 @@ def generate_manifests(root: Path) -> None:
         reflector_kustomization,
         monitoring_crds_kustomization,
     )
-    tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
+    agents_flux_kustomizations.tana_mcp(
         flux_chart,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
@@ -651,13 +600,10 @@ def generate_manifests(root: Path) -> None:
     )
     github_api_proxy_flux_kustomizations.github_api_proxy(
         flux_chart,
-        external_secrets_config_kustomization,
-        github_api_proxy_identity_kustomization,
-        forgejo_images_kustomization,
-        seaweedfs_csi_kustomization,
+        external_secrets_operator_kustomization,
+        cert_manager_kustomization,
+        cert_manager_issuer_config_kustomization,
         monitoring_crds_kustomization,
-        gateway_kustomization,
-        reloader_kustomization,
     )
     github_exporter_flux_kustomizations.github_exporter(
         flux_chart,
@@ -725,16 +671,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    inventree_kustomization = parked_flux_kustomizations.inventree(
-        flux_chart,
-        forgejo_images_kustomization,
-        inventree_namespace_kustomization,
-        inventree_db_kustomization,
-        sso_providers_tf_kustomization,
-        reflector_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
-    )
     parked_flux_kustomizations.sdr(
         flux_chart,
         external_secrets_config_kustomization,
@@ -743,13 +679,7 @@ def generate_manifests(root: Path) -> None:
         authentik_kustomization,
     )
     ssh_mcp_kustomization = ssh_mcp_generation.ssh_mcp(
-        flux_chart,
-        root,
-        mesh,
-        devbox_service,
-        ssh_mcp_namespace_kustomization,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
+        flux_chart, root, mesh, devbox_service, external_secrets_operator_kustomization
     )
     study_casino_flux_kustomizations.study_casino(
         flux_chart, cnpg_kustomization, external_secrets_operator_kustomization
@@ -761,24 +691,13 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         agentplane_index_kustomization,
         haku_namespace_kustomization,
-        haku_console_namespace_kustomization,
         haku_egress_proxy_namespace_kustomization,
     )
     monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_jwt_rotation_kustomization
     )
     litellm_kustomization = litellm_proxy.litellm(
-        flux_chart,
-        root,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        litellm_secrets_kustomization,
-        litellm_db_kustomization,
-        gateway_kustomization,
-        cert_manager_environment_kustomization,
-        reflector_kustomization,
-        tana_mcp_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, root, cnpg_kustomization, external_secrets_operator_kustomization, monitoring_crds_kustomization
     )
     aiquota_kustomization = aiquota.aiquota(
         flux_chart,
@@ -832,13 +751,6 @@ def generate_manifests(root: Path) -> None:
         home_assistant_kustomization,
         monitoring_crds_kustomization,
     )
-    parked_flux_kustomizations.inventree_token_provisioner(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        inventree_kustomization,
-        claude_rbac_kustomization,
-    )
     agents_flux_kustomizations.forgejo_token_rotation(
         flux_chart,
         forgejo_images_kustomization,
@@ -873,7 +785,7 @@ def generate_manifests(root: Path) -> None:
         flux_image_automation_forgejo_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    haku_workspaces_kustomization = haku_flux_kustomizations.haku_workspaces(
+    haku_flux_kustomizations.haku_workspaces(
         flux_chart,
         agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
@@ -923,7 +835,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         public_coder_agent_namespace_kustomization,
         external_creds_kustomization,
-        agent_shared_secrets_kustomization,
         cert_manager_environment_kustomization,
         cert_manager_trust_kustomization,
         reflector_kustomization,
@@ -945,12 +856,9 @@ def generate_manifests(root: Path) -> None:
     haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
         haku_console_health_checks,
-        haku_workspaces_kustomization,
-        haku_console_namespace_kustomization,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         forgejo_images_kustomization,
-        haku_state_kustomization,
         gateway_kustomization,
         agent_machine_access_tf_kustomization,
         reflector_kustomization,

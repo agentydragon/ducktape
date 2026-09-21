@@ -13,7 +13,7 @@ operator prerequisites; `cert-manager-issuer-config` supplies the required issue
 substitution. Registry, storage, identity, and routing services may converge after
 admission. The init container retries through normal Pod reconciliation.
 
-Ownership changes follow the [handoff procedure](../../../../debug/flux_app_consolidation_handoff.md).
+Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.md#migrating-stateful-flux-kustomizations).
 
 | Path     | Role                                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------------------- |

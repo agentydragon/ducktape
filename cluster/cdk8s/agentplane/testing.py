@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     add_testing_fixtures,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
     ActionsProps,
@@ -125,7 +126,11 @@ ENV = Environment(
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca"),
+    egress=EgressProps(
+        ca_secret_name="agentplane-testing-egress-ca",
+        credentials_namespace=TESTING_NAMESPACE,
+        include_forgejo_credential=False,
+    ),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
@@ -146,6 +151,13 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
+    EgressCredentials(
+        chart,
+        "egress-credentials",
+        namespace=ENV.egress.credentials_namespace,
+        proxy_namespace=ENV.namespace,
+        include_forgejo=ENV.egress.include_forgejo_credential,
+    )
     return chart
 
 
