@@ -462,15 +462,17 @@ ownership: an account's bindings must not fight a reconciler for the same object
 replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
 remains, each with what it needs; an entry leaves when its set can be written.
 
-- **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
-  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana`),
-  `home_assistant_reads` (`home-assistant`), and the console's own
-  in-process `sandbox` (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`,
-  `grants_whoami`, `grants_own_revoke`). Each is a plain `exact_actions` set once the backend is an
-  ActionGroup in the Action Service settings, with its executor credential (operator OAuth
-  linkage for Google, a static bearer or in-cluster route for the rest) and network-policy egress.
-  `sandbox` and `grants` are console-internal servers with no Action Service counterpart at all;
-  they need an equivalent surface before a set can name them.
+- **`exact_tools` for servers with no ActionGroup**: `grocy_reads` (`grocy-sf`),
+  `tana_safe_tools` (`tana`), and the console's own in-process `sandbox` (`haku_sandbox_control`)
+  and `grants` servers (`kubernetes_reads`, `grants_whoami`, `grants_own_revoke`). Each is a plain
+  `exact_actions` set once the backend is an ActionGroup in the Action Service settings, with its
+  executor credential (a static bearer or in-cluster route) and network-policy egress. `sandbox`
+  and `grants` are console-internal servers with no Action Service counterpart at all; they need
+  an equivalent surface before a set can name them. `home_assistant_reads` is done
+  (`home-assistant-reads` `ActionPolicySet`, bound to `claude-ai`). `gmail_reads`/
+  `google_calendar_reads` needed no set at all: `agentplane-staging`'s `google-readonly`
+  `EgressCredential`/`EgressPolicy` substitutes the operator's Google token directly at the egress
+  proxy, bypassing the Action/ActionPolicySet path entirely.
 - **`home_assistant_entity_control`** (`home_assistant_desk_light_control`): every Home Assistant
   write is one generic `ha_call_service`, so the console's evaluator allow-lists the argument keys
   it has reviewed and admits one entity with its listed services. Argument-only, so once a
@@ -525,8 +527,9 @@ per-agent progress:
     grant surface. That trio is the whole remaining distance for this agent, and it is the same
     blocker `PC_EGRESS` meets from the other side.
 - **`haku_v1`** = thirteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, Home
-  Assistant, the console's `sandbox` server and the `grants` trio. Only its GitHub leaves are
-  ported, so it is the long pole and every unported item above is on it.
+  Assistant, the console's `sandbox` server and the `grants` trio. GitHub, Home Assistant, and
+  Gmail/Calendar (the latter two via egress substitution, not a set) are answered; Grocy, Tana,
+  `sandbox`, and the `grants` trio are the remaining long pole.
 
 Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
 affordances it retires.
@@ -958,6 +961,11 @@ executing as the **acting operator's own Google account** rather than a service 
 Action Service has no counterpart for that: its executors hold a linkage credential, not the
 caller's personal account. So this needs the operator-linked Google credential path to exist before
 a group can name either, which is why it does not move on the same clock as a bearer remote.
+
+Wanted for write access (send/label/schedule, behind operator approval per Action, the same shape
+as `github`) but not on `haku_v1`'s critical path: `CONSOLE_POLICIES`'s `gmail_reads`/
+`google_calendar_reads` are already answered by the `google-readonly` egress substitution, so
+nothing here blocks porting `haku_v1`.
 
 ### `MCP_CONSOLE_INTERNAL` — counterparts for the console-internal servers
 
