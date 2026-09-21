@@ -79,13 +79,14 @@ class Event(Base):
     __tablename__ = "event"
     __table_args__ = (
         Index("ix_event_thread_at", "thread_id", "at"),
-        Index("ix_event_thread_origin_sequence", "thread_id", "origin_sequence"),
+        Index("ix_event_thread_origin", "thread_id", "origin_source_id", "origin_sequence"),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    origin_source_id: Mapped[str] = mapped_column(Text)
     origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
@@ -217,7 +218,7 @@ class ConversationProjectionEvidence(Base):
     )
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
 
@@ -229,7 +230,7 @@ class ConversationProjectionNativeLink(Base):
     )
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    item_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
@@ -414,6 +415,7 @@ class TrajectoryStore:
                     Event(
                         thread_id=thread_id,
                         cursor=entry.cursor,
+                        origin_source_id=entry.origin.source_id,
                         origin_sequence=entry.origin.sequence,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
@@ -690,7 +692,7 @@ async def _record_conversation_projection(
             "thread_id": thread_id,
             "source_id": evidence.source_id,
             "projection_epoch": evidence.projection_epoch,
-            "item_cursor": evidence.item_cursor,
+            "entity_cursor": evidence.entity_cursor,
             "observation_cursor": evidence.observation_cursor,
         }
         await session.execute(insert(ConversationProjectionEvidence).values(**values).on_conflict_do_nothing())

@@ -136,7 +136,7 @@ class ViewState:
 class EvidenceAssociation:
     source_id: str
     projection_epoch: str
-    item_cursor: int
+    entity_cursor: int
     observation_cursor: int
     source_sequences: tuple[int, ...]
 
