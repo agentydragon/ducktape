@@ -32,14 +32,6 @@ import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
-declare global {
-  interface Window {
-    __agentplaneScrollTrace?: unknown[];
-  }
-}
-function scrollTrace(kind: string, data: Record<string, unknown>): void {
-  (window.__agentplaneScrollTrace ??= []).push({ kind, time: performance.now(), ...data });
-}
 const LIFECYCLE_LABELS: Record<string, string> = {
   turn_started: "Turn started",
   turn_completed: "Turn completed",
@@ -536,7 +528,7 @@ function VirtualizedHistory({
   const restoringAnchor = useRef<string | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
   const requestedBefore = useRef<string | null>(null);
   const virtualizer = useVirtualizer({
     count: segments.length,
@@ -554,20 +546,23 @@ function VirtualizedHistory({
     restorationFrame.current = null;
     restoringAnchor.current = null;
   };
-  const restoreAnchor = (anchor: { key: string; offset: number }) => {
+  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
-    scrollTrace("restore-start", { anchor, index, scrollTop: viewport.current?.scrollTop });
-    virtualizer.scrollToIndex(index, { align: "start" });
+    const correctFromDom = (): boolean => {
+      const element = viewport.current;
+      const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+      if (!element || !row) return false;
+      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      element.scrollTop += currentOffset - anchor.offset;
+      return true;
+    };
+    if (!correctFromDom()) virtualizer.scrollToIndex(index, { align: "start" });
     restorationFrame.current = requestAnimationFrame(() => {
-      const measured = virtualizer.getVirtualItems().find((item) => item.index === index);
-      scrollTrace("restore-frame", { anchor, index, measured, scrollTop: viewport.current?.scrollTop });
-      if (viewport.current && restoringAnchor.current === anchor.key && measured)
-        viewport.current.scrollTop = measured.start + anchor.offset;
+      if (restoringAnchor.current === anchor.key) correctFromDom();
       restorationFrame.current = requestAnimationFrame(() => {
-        scrollTrace("restore-finish", { anchor, index, scrollTop: viewport.current?.scrollTop });
         if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
         restorationFrame.current = null;
       });
@@ -600,12 +595,6 @@ function VirtualizedHistory({
     previousScrollHeight.current = element.scrollHeight;
     previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
-      scrollTrace("resize", {
-        anchor: readingAnchor.current,
-        restoring: restoringAnchor.current,
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-      });
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
@@ -665,28 +654,18 @@ function VirtualizedHistory({
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
-        const items = virtualizer.getVirtualItems();
-        const first = items.find((item) => item.end > element.scrollTop) ?? items[0];
-        const firstEntity = first ? segments[first.index] : undefined;
         const viewportTop = element.getBoundingClientRect().top;
-        const domFirst = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+        const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
           (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
         );
-        scrollTrace("scroll-capture", {
-          scrollTop: element.scrollTop,
-          virtual:
-            first && firstEntity ? { entityKey: `${firstEntity.entityKind}:${firstEntity.entityId}`, ...first } : null,
-          dom: domFirst
-            ? {
-                key: domFirst.dataset.conversationAnchor,
-                offset: domFirst.getBoundingClientRect().top - viewportTop,
-              }
-            : null,
-        });
+        const firstEntity = first
+          ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
+          : undefined;
         if (first && firstEntity) {
           readingAnchor.current = {
             key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-            offset: element.scrollTop - first.start,
+            cursor: firstEntity.cursor.toString(),
+            offset: first.getBoundingClientRect().top - viewportTop,
           };
         }
         // Retain one segment across adjacent reading windows so the virtualizer can restore
