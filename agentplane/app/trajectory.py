@@ -77,6 +77,7 @@ class Thread(Base):
 
 class Event(Base):
     __tablename__ = "event"
+    __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -338,7 +339,7 @@ class TrajectoryStore:
         async with self._sessions() as session:
             return (
                 await session.scalar(
-                    select(func.coalesce(func.max(Event.cursor), 0)).where(Event.thread_id == thread_id)
+                    select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
                 )
                 or 0
             )
@@ -523,14 +524,18 @@ class TrajectoryStore:
     ) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it. Archived
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
-        last = (
-            select(Event.thread_id, func.max(Event.cursor).label("last_cursor"), func.max(Event.at).label("last_at"))
-            .group_by(Event.thread_id)
-            .subquery()
+        last_cursor = (
+            select(Event.cursor)
+            .where(Event.thread_id == Thread.id)
+            .order_by(Event.cursor.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        last_at = (
+            select(Event.at).where(Event.thread_id == Thread.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
         )
         query = (
-            select(Thread, last.c.last_cursor, last.c.last_at, FeedState.attached)
-            .outerjoin(last, last.c.thread_id == Thread.id)
+            select(Thread, last_cursor, last_at, FeedState.attached)
             .outerjoin(FeedState, FeedState.thread_id == Thread.id)
             .order_by(Thread.created_at.desc())
         )
@@ -1115,8 +1120,12 @@ def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.Even
 
 
 async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:
-    last = await session.execute(select(func.max(Event.cursor), func.max(Event.at)).where(Event.thread_id == thread_id))
-    last_cursor, last_at = last.one()
+    last_cursor = await session.scalar(
+        select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
+    )
+    last_at = await session.scalar(
+        select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
+    )
     state = await session.get(FeedState, thread_id)
     return last_cursor, last_at, (state.attached if state is not None else None)
 

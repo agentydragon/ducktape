@@ -11,6 +11,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.create_index("ix_event_thread_at", "event", ["thread_id", "at"])
     op.create_table(
         "conversation_projection_checkpoint",
         sa.Column(
@@ -120,3 +121,4 @@ def downgrade() -> None:
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")
     op.drop_table("conversation_projection_checkpoint")
+    op.drop_index("ix_event_thread_at", table_name="event")

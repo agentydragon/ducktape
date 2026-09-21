@@ -117,11 +117,10 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     empty = await store.thread(
         "sb-2", "s-9", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, cwd="/w", model="m")
     )
-    await store.record(
-        thread,
-        [_event(1, harness_started=event_pb2.HarnessStarted(pid=1)), _event(2, harness_lost=event_pb2.HarnessLost())],
-        lease=lease,
-    )
+    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    second.event.at.FromDatetime(datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC))
+    await store.record(thread, [first, second], lease=lease)
 
     views = {view.id: view for view in await store.list_threads()}
 
@@ -134,7 +133,7 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         "last_cursor": 2,
     }
     assert views[thread].harness is Harness.CLAUDE
-    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
+    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 1, tzinfo=UTC)
     assert (views[empty].harness, views[empty].last_cursor, views[empty].last_event_at) == ("HARNESS_CODEX", 0, None)
     assert views[empty].harness is Harness.CODEX
     # No feed has ever attached to either thread (only their event log was replayed), so the
@@ -145,6 +144,15 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+    async with store._sessions() as session:
+        await session.execute(text("SET LOCAL enable_seqscan = false"))
+        plan = (
+            await session.scalars(
+                text("EXPLAIN (COSTS OFF) SELECT at FROM event WHERE thread_id = :thread ORDER BY at DESC LIMIT 1"),
+                {"thread": thread},
+            )
+        ).all()
+    assert any("ix_event_thread_at" in line for line in plan)
 
 
 @pytest.mark.parametrize("cursors", [pytest.param([2], id="initial-gap"), pytest.param([1, 3], id="batch-gap"), [2, 1]])
