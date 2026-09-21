@@ -986,17 +986,32 @@ function pendingCommandInterest(threadId: string, beforeCursor: string | null): 
   };
 }
 
-if (scenario.pendingCommands === "mixed") {
+if (scenario.pendingCommands === "mixed" || scenario.pendingCommands === "outcomes") {
   const local = new LocalCommands(THREADS[2].id);
-  local.remember(
-    create(CommandSchema, {
-      commandId: "locally-retained",
-      operation: {
-        case: "submitInput",
-        value: { text: "Continue when ready. This message has no saved confirmation yet." },
-      },
-    })
-  );
+  if (scenario.pendingCommands === "mixed") {
+    local.remember(
+      create(CommandSchema, {
+        commandId: "locally-retained",
+        operation: {
+          case: "submitInput",
+          value: { text: "Continue when ready. This message has no saved confirmation yet." },
+        },
+      })
+    );
+  } else {
+    local.remember(
+      create(CommandSchema, {
+        commandId: "queued-model",
+        operation: { case: "changeModel", value: { model: "next-model" } },
+      })
+    );
+    local.remember(
+      create(CommandSchema, {
+        commandId: "queued-interrupt",
+        operation: { case: "interruptTurn", value: { turnId: "turn-visual" } },
+      })
+    );
+  }
 }
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the

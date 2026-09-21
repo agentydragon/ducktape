@@ -13,7 +13,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
-from sqlalchemy import event, func, select, text, update
+from sqlalchemy import event, func, insert, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -254,7 +254,7 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
                     cursor,
                     command_admitted=event_pb2.CommandAdmitted(
                         command=command_pb2.Command(
-                            command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
+                            command_id=command_id, change_model=command_pb2.ChangeModel(model="test")
                         )
                     ),
                 )
@@ -312,25 +312,6 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
     assert await store.renew_ingestion(lease, timedelta(minutes=10))
     thread = await store.thread("sb-1", "pending-command-pages", SPEC)
     cursor = 1
-    for batch_start in range(0, 1_000, 50):
-        batch: list[event_log_pb2.EventEntry] = []
-        for index in range(batch_start, batch_start + 50):
-            command_id = f"settled-{index}"
-            batch.extend(
-                [
-                    _event(
-                        cursor,
-                        command_admitted=event_pb2.CommandAdmitted(
-                            command=command_pb2.Command(
-                                command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
-                            )
-                        ),
-                    ),
-                    _event(cursor + 1, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")),
-                ]
-            )
-            cursor += 2
-        await store.record(thread, batch, lease=lease)
     pending: list[event_log_pb2.EventEntry] = []
     for index in range(61):
         pending.append(
@@ -338,7 +319,7 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
                 cursor,
                 command_admitted=event_pb2.CommandAdmitted(
                     command=command_pb2.Command(
-                        command_id=f"pending-{index}", submit_input=command_pb2.SubmitInput(text="saved")
+                        command_id=f"pending-{index}", change_model=command_pb2.ChangeModel(model="test")
                     )
                 ),
             )
@@ -346,31 +327,16 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
         cursor += 1
     await store.record(thread, pending, lease=lease)
 
-    captured: list[tuple[str, Any]] = []
-
-    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if (
-            statement.lstrip().startswith("SELECT")
-            and "conversation_entity" in statement
-            and "ORDER BY conversation_entity.cursor DESC" in statement
-            and "LIMIT" in statement
-        ):
-            captured.append((statement, parameters))
-
-    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
-    try:
-        first = await store.pending_command_interest(thread)
-    finally:
-        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    first = await store.pending_command_interest(thread)
     assert first is not None
     assert first.unresolved_count == 61
     assert first.command_revision_cursor == cursor - 1
     assert first.command_ids == tuple(f"pending-{index}" for index in range(60, 30, -1))
-    assert first.next_before_cursor == 2_032
+    assert first.next_before_cursor == 32
     second = await store.pending_command_interest(thread, before_cursor=first.next_before_cursor)
     assert second is not None
     assert second.command_ids == tuple(f"pending-{index}" for index in range(30, 0, -1))
-    assert second.next_before_cursor == 2_002
+    assert second.next_before_cursor == 2
     last = await store.pending_command_interest(thread, before_cursor=second.next_before_cursor)
     assert last is not None
     assert last.command_ids == ("pending-0",)
@@ -384,7 +350,7 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
                 cursor + 1,
                 command_admitted=event_pb2.CommandAdmitted(
                     command=command_pb2.Command(
-                        command_id="replacement", submit_input=command_pb2.SubmitInput(text="saved")
+                        command_id="replacement", change_model=command_pb2.ChangeModel(model="test")
                     )
                 ),
             ),
@@ -414,16 +380,74 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
         view.unresolved_count,
     )
 
-    assert len(captured) == 1
+    # Bulk profile rows isolate the query planner from fold/payload work above. They model a
+    # command-dense historical prefix after a separate real folded same-count swap.
+    async with store._sessions.begin() as session:
+        checkpoint = await session.get(ConversationProjectionCheckpoint, thread)
+        view_row = await session.get(
+            ConversationEntity,
+            (thread, refreshed.scope.source_id, refreshed.scope.projection_epoch, "view_state", "current"),
+        )
+        assert checkpoint is not None
+        assert view_row is not None
+        checkpoint.through_cursor = 2_063
+        view_row.cursor = 2_063
+        view_row.revision_cursor = 2_063
+        stored_view = ConversationViewState.model_validate(view_row.state)
+        view_row.state = stored_view.model_copy(
+            update={"operational": stored_view.operational.model_copy(update={"last_verified_cursor": "2063"})}
+        ).model_dump(mode="json")
+        await session.execute(
+            insert(ConversationEntity),
+            [
+                {
+                    "thread_id": thread,
+                    "source_id": refreshed.scope.source_id,
+                    "projection_epoch": refreshed.scope.projection_epoch,
+                    "entity_kind": "command",
+                    "entity_id": f"settled-{index}",
+                    "cursor": 64 + index,
+                    "revision_cursor": 64 + index,
+                    "pending": False,
+                    "turn_id": None,
+                    "state": {
+                        "operation": "change_model",
+                        "outcome": "noop",
+                        "outcome_cursor": str(64 + index),
+                        "outcome_reason": "done",
+                    },
+                    "text_ref": None,
+                    "arguments_ref": None,
+                    "output_ref": None,
+                    "input_ref": None,
+                }
+                for index in range(2_000)
+            ],
+        )
+    captured: list[tuple[str, Any]] = []
+
+    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
+        if "ORDER BY conversation_entity.cursor DESC" in statement and "LIMIT" in statement:
+            captured.append((statement, parameters))
+
     async with store._engine.connect() as connection:
         await connection.exec_driver_sql("ANALYZE conversation_entity")
+    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    try:
+        profiled = await store.pending_command_interest(thread)
+    finally:
+        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    assert profiled is not None
+    assert profiled.command_ids == refreshed.command_ids
+    assert len(captured) == 1
+    async with store._engine.connect() as connection:
         statement, parameters = captured[0]
         result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
         plan = "\n".join(row[0] for row in result)
     assert "ix_conversation_entity_pending_command_cursor" in plan
     assert "Rows Removed by Filter" not in plan
     (undeclared_outputs_dir() / f"{request.node.name}-pending-command-profile.txt").write_text(
-        f"settled_command_count=1000\npending_command_count=61\n{plan}\n"
+        f"settled_command_count=2000\npending_command_count=61\n{plan}\n"
     )
 
 
