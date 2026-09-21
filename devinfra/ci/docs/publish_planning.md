@@ -85,11 +85,11 @@ made is a rollout.
 
 Some rows are outside the sweep, and no amount of care here brings them in:
 
-| Row           | Why                                                                       |
-| ------------- | ------------------------------------------------------------------------- |
-| `aw-importer` | `@ducktape_activitywatch//importer:…` — external repo; `//...` misses it  |
+| Row           | Why                                                                        |
+| ------------- | -------------------------------------------------------------------------- |
+| `aw-importer` | `@ducktape_activitywatch//importer:…` — external repo; `//...` misses it   |
 | `gterm-theme` | `tags = ["manual"]` (needs libgirepository, libdbus), so wildcards skip it |
-| `debundle`    | builds under `-c opt`, a different configuration                         |
+| `debundle`    | builds under `-c opt`, a different configuration                           |
 
 Before Manifold MCP was decommissioned, measured coverage on devel's sweep was **41 of
 42** images and **47 of 50** releases. Its image is no longer in the publishing roster.
