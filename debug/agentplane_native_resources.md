@@ -8,7 +8,9 @@ request. Exact prior user and assistant messages must reach the controlled upstr
 
 Run `bbr test //agentplane/runner:test_native_resources`. Each shard emits a JSON
 artifact with kernel-reported native RSS/high-water RSS and CPU ticks, native directory
-file count/size, and resumed conversation text bytes. No process arguments, environment,
+regular-file logical/allocated size grouped by top-level directory, and resumed
+conversation text bytes. Symlinks are counted separately; their targets do not inflate
+native persistence. No process arguments, environment,
 native file contents or prompt content are written into those artifacts.
 
 The native process metrics exclude Agentplane's Python process and the model server.
@@ -18,4 +20,9 @@ are not a wall-clock latency benchmark. Native context compaction, tool-heavy se
 real upstream token accounting and months of native persistence remain separate from
 the Agentplane conversation storage contract.
 
-Status: implementation prepared; measurements pending.
+Initial run at `e782b5b60f` completed all six measurement cases, but two empty pytest
+shards made its overall result fail. The matrix now uses two shards. That first
+directory scan followed file symlinks, making Codex's native directory appear to own
+about 1 GiB even after one turn; its totals are not valid persistence measurements.
+The corrected scan uses `lstat`, excludes symlink targets and reports per-directory
+logical and allocated bytes. Corrected measurements are pending.
