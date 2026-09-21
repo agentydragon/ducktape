@@ -21,8 +21,10 @@ from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
     ConversationEntity,
+    ConversationOperationalState,
     ConversationPayloadChunk,
     ConversationPayloadManifest,
+    ConversationProjectionCheckpoint,
     ConversationProjectionError,
     ConversationProjectionEvidence,
     ConversationProjectionNativeLink,
@@ -565,6 +567,61 @@ async def test_feed_attachment_and_terminal_state_survive_the_owner(
         await store.set_attached(thread, attached, lease=lease)
     with pytest.raises(IngestionLeaseLostError):
         await store.end_feed(thread, lease=lease, error=None)
+
+
+async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
+    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-operational", SPEC)
+    attached = protocol_pb2.Attached(session_id="s-operational", spec=SPEC)
+    await store.set_attached(thread, attached, lease=lease)
+    await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
+    async with replica._sessions() as session:
+        checkpoint_before = await session.get(ConversationProjectionCheckpoint, thread)
+        assert checkpoint_before is not None
+        view_before = await session.get(
+            ConversationEntity,
+            (thread, checkpoint_before.source_id, checkpoint_before.projection_epoch, "view_state", "current"),
+        )
+        assert view_before is not None
+        semantic_revision = (view_before.cursor, view_before.revision_cursor)
+
+    await store.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3")
+    async with replica._sessions() as session:
+        checkpoint_after = await session.get(ConversationProjectionCheckpoint, thread)
+        assert checkpoint_after is not None
+        view_after = await session.get(
+            ConversationEntity,
+            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+        )
+        assert view_after is not None
+        operational = ConversationOperationalState.model_validate(view_after.state["operational"])
+    assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
+    assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
+    assert operational.model_dump() == {
+        "operational_version": "1",
+        "status": "failed",
+        "last_verified_cursor": "1",
+        "feed_error": {"cursor": "1", "message": "expected runner cursor 2, received 3"},
+    }
+
+    await store.set_attached(
+        thread, protocol_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1), lease=lease
+    )
+    async with replica._sessions() as session:
+        view_reset = await session.get(
+            ConversationEntity,
+            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+        )
+        assert view_reset is not None
+        reset = ConversationOperationalState.model_validate(view_reset.state["operational"])
+    assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
+    assert reset.model_dump() == {
+        "operational_version": "2",
+        "status": "active",
+        "last_verified_cursor": "1",
+        "feed_error": None,
+    }
 
 
 async def test_ingested_events_project_the_durable_attachment_without_replay_regression(
