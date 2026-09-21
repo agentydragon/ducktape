@@ -183,10 +183,23 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     source.attached.active_turn_id = "test-projected-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-projected-turn")))
-    source.append(
+    first = source.append(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Projected browser prefix")))
+    native = source.append(
+        event_pb2.Event(
+            native=event_pb2.Native(
+                direction=event_pb2.DIRECTION_FROM_HARNESS,
+                line=json.dumps({"type": "test-text-delta", "text": "Projected browser prefix"}),
+            )
+        )
+    )
+    observed = source.append(
+        event_pb2.Event(
+            source_sequences=[native.cursor],
+            text_delta=event_pb2.TextDelta(item_id="first", text="Projected browser prefix"),
+        )
+    )
     source.append(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
@@ -243,6 +256,17 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
                 ).to_be_visible()
+                assert not any("/conversation/evidence" in url for url in requests)
+                first_card = page.locator(f'[data-conversation-anchor="{first.cursor}"]')
+                await first_card.locator("summary", has_text="Evidence").click()
+                frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
+                await expect(frame_summary).to_be_visible()
+                assert not any("/frames?" in url for url in requests)
+                await frame_summary.click()
+                frame = first_card.locator("pre")
+                await expect(frame).to_contain_text("test-text-delta")
+                assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
+                await first_card.locator("summary", has_text="Evidence").click()
                 tool_card = page.locator(f'[data-conversation-anchor="{tool.cursor}"]')
                 await tool_card.locator("summary", has_text="Arguments").click()
                 await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
