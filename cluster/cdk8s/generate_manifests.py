@@ -153,7 +153,6 @@ def generate_manifests(root: Path) -> None:
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
-    public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart)
@@ -222,9 +221,6 @@ def generate_manifests(root: Path) -> None:
     )
     snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(
         flux_chart, snapshot_controller_crds_kustomization
-    )
-    agents_flux_kustomizations.public_coder_agent_sshpiper(
-        flux_chart, public_coder_agent_namespace_kustomization, sshpiper_crds_kustomization
     )
     forgejo_flux_kustomizations.forgejo_cache(flux_chart, valkey_kustomization, local_path_provisioner_kustomization)
     haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
@@ -687,7 +683,7 @@ def generate_manifests(root: Path) -> None:
     litellm_kustomization = litellm_proxy.litellm(
         flux_chart, root, cnpg_kustomization, external_secrets_operator_kustomization, monitoring_crds_kustomization
     )
-    aiquota_kustomization = aiquota.aiquota(
+    aiquota.aiquota(
         flux_chart,
         root,
         external_secrets_config_kustomization,
@@ -812,20 +808,6 @@ def generate_manifests(root: Path) -> None:
         litellm_keys_tf_kustomization,
         kyverno_policies_kustomization,
     )
-    public_coder_agent_proxy_kustomization = agents_flux_kustomizations.public_coder_agent_proxy(
-        flux_chart,
-        external_secrets_config_kustomization,
-        public_coder_agent_namespace_kustomization,
-        external_creds_kustomization,
-        cert_manager_environment_kustomization,
-        cert_manager_trust_kustomization,
-        reflector_kustomization,
-        forgejo_images_kustomization,
-        agent_machine_access_tf_kustomization,
-        matrix_kustomization,
-        aiquota_kustomization,
-        litellm_keys_tf_kustomization,
-    )
     parked_flux_kustomizations.haku_dispatch(
         flux_chart,
         cnpg_kustomization,
@@ -851,16 +833,13 @@ def generate_manifests(root: Path) -> None:
     )
     public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
-        public_coder_agent_namespace_kustomization,
-        public_coder_agent_proxy_kustomization,
-        external_secrets_config_kustomization,
-        external_creds_kustomization,
-        litellm_keys_tf_kustomization,
+        cert_manager_kustomization,
+        cert_manager_trust_kustomization,
+        external_secrets_operator_kustomization,
+        sshpiper_crds_kustomization,
     )
     agents_flux_kustomizations.public_coder_agent_devbox(
         flux_chart,
-        public_coder_agent_namespace_kustomization,
-        public_coder_agent_proxy_kustomization,
         kubevirt_kustomization,
         forgejo_images_kustomization,
         external_creds_kustomization,
