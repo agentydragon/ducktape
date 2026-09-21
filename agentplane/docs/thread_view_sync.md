@@ -14,7 +14,7 @@ representations remain implementation decisions to validate with the sync integr
 - Opening a Thread reads its tail and current controls without replaying its history.
   Earlier items load only on demand. A tab left open for months retains a limited tail
   and reading window, with eviction and virtualization.
-- Agentplane must not require a complete conversation in process memory. Resident state
+- Neither browser nor server processes may require a complete conversation in memory. Resident state
   scales with selected windows/content, active execution state and bounded processing
   batches, not total conversation length or the number of raw frames.
 - Text and tool arguments stream when the harness exposes deltas. Completion may replace
@@ -204,6 +204,28 @@ including subset query bodies. Proxy replicas share authorization state and the 
 Electric endpoint; browser sessions must not require replica affinity. Commands continue
 through the app's existing admission API. The proxy does not own another conversation
 cache or implement snapshot/live reconciliation.
+
+### Server memory ownership
+
+The full durable conversation belongs in storage; no integration-app replica needs an
+in-memory copy of it. Updating an old item requires indexed reads of that item and the
+batch's other affected entities, independent of the size of the preceding history.
+
+| Component                 | Resident state target                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Integration app/projector | Current batch, touched entity metadata, checkpoint and bounded queues; release after commit.                          |
+| Read/auth proxy           | Requested window or selected content and bounded transport buffers; no per-listener conversation copy.                |
+| Runner                    | Required active execution state, recovery checkpoint and bounded journal buffers; page historical entries from disk.  |
+| Electric                  | Bounded replication buffers and caches for active shapes; persisted shape history must not require full residency.    |
+| Postgres                  | Durable records and indexes with configured buffer/query memory; conversation size does not mandate loading all rows. |
+
+Electric's server memory behavior is an adoption gate, not an established property of the
+spike. Measure its resident memory as stored history grows with fixed active subscriptions,
+and during initial shape creation, reconnect, restart and a stalled downstream reader.
+Identify supported cache/shape lifecycle controls and replication backpressure; document
+any unavoidable per-shape metadata growth. Browser transfer measurements do not establish
+server memory bounds. Selected large content and concurrent work may cost proportional
+memory, but inactive conversation history must remain pageable from durable storage.
 
 ## Storage and durability
 
