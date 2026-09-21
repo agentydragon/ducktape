@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
@@ -45,6 +46,17 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(
+                text(
+                    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric') "
+                    "THEN CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'; END IF; END $$"
+                )
+            )
+    finally:
+        admin_engine.dispose()
     db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
