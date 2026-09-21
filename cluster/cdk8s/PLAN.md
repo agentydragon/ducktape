@@ -91,7 +91,7 @@ Independent of each other; fan out.
 - Cycle check. `test_cluster_integration.test_no_dependency_errors` exercises the check over
   the emitted local Flux graph; the cycle-specific tests in `test_dependencies.py` exercise
   it on synthetic graphs. In-chart `dependsOn` entries now come from earlier Kustomization
-  objects, including `ssh-mcp -> ssh-mcp-namespace`. The remaining literal edge,
+  objects. The remaining literal edge,
   `artifact-generators -> flux-system`, targets the bootstrap Kustomization outside this
   chart. Revisit whether the output-level check still adds value once construction order
   makes an in-chart cycle impossible.
@@ -138,10 +138,9 @@ Decide from the count Wave 3 reports, not before.
 Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, then
 node taking values, then dependents).
 
-- **Namespace Kustomizations.** Every `*-namespace` directory (a Namespace, at most an
-  ExternalSecret). The `ssh-mcp-namespace` node has its own factory in
-  `ssh_mcp/generation.py` and is passed to its dependent; other namespace resources
-  remain separate conversions.
+- **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
+  at most an ExternalSecret) need either conversion or consolidation into their
+  application's owner. SSH-MCP includes its namespace in the application owner.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
   `agents/haku-egress-proxy` (one `IronProxy` construct for its two iron deployments and
   `public-coder-agent/proxy`), `agents/haku-openclaw-spike/app`,

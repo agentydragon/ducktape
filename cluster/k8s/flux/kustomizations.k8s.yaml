@@ -660,30 +660,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Namespace for the standalone SSH MCP backend.
-  name: ssh-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: ssh-mcp
-  interval: 10m
-  path: ./cluster/k8s/ssh-mcp/namespace
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  timeout: 2m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: The sshpiper Pipe CRD, sourced from the tag used by the deployed image.
   name: sshpiper-crds
   namespace: ducktape-flux
@@ -4790,11 +4766,9 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: ssh-mcp-namespace
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/ssh-mcp
