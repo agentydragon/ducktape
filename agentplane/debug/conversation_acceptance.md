@@ -49,9 +49,9 @@ measurements; it does not override a failure in the assembled regression.
 
 ## Stack review
 
-Runner #7535, batching #7546, fold #7523, and native resource measurements #7562
-are merged into devel. The remaining implementation stack is storage #7540 → lazy
-debug #7555 → Electric backend #7563 → frontend #7537 → bounded pending-command
+Runner #7535, batching #7546, fold #7523, storage #7540, and native resource
+measurements #7562 are merged into devel. The remaining implementation stack is
+lazy debug #7555 → Electric backend #7563 → frontend #7537 → bounded pending-command
 membership #7567. Native harness optimization remains outside this work.
 
 Backend #7563 incorporates WAL recovery #7560, rejected-feed lifecycle #7565, and
@@ -81,3 +81,10 @@ changes. The rebase also relocates this evidence under `agentplane/debug/` and i
 the fresh-response unit mock correction from `8c66265f7d`, whose Vitest target passed
 [9eebb776](https://app.buildbuddy.io/invocation/9eebb776-2e3e-447e-8036-9fd7264fcc61).
 Current-head CI and the final assembled regression remain separate gates.
+
+After storage merged, the four remaining PRs were rebased onto devel `e8f47b3932`.
+The intermediate debug PR now explicitly declares the bridge's `:ingestion` Bazel
+dependency, correcting its Gazelle drift and missing-module CI failure. Gazelle
+reports no app BUILD drift at each rebased stack level. The assembled code is
+unchanged apart from the landed devel update to Nix Attic CI; fresh PR checks
+remain authoritative for these new heads.
