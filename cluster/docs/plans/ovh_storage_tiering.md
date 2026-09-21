@@ -101,7 +101,7 @@ For immediate/manual repair, use the same copy-only command from a master pod:
 
 ```bash
 # weed shell reads commands on stdin (no `-c` flag on this build)
-printf 'volume.fix.replication\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell   # dry-run
+printf 'volume.fix.replication -collectionPattern=* -apply=false\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell   # dry-run
 printf 'lock\nvolume.fix.replication -apply -doDelete=false -maxParallelization=2 -maxParallelizationPerServer=1\nunlock\n' | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell
 ```
 
@@ -110,7 +110,7 @@ keep `-doDelete=false` unless a human has reviewed that cleanup (the boolean val
 attached to the flag). It fixes **one** missing replica per volume per run and needs a target
 server with a **free volume slot** — a server's
 capacity is a slot count (disk ÷ `volumeSizeLimitMB`, 16 GB here; the hdd group also carries
-`maxVolumeCounts: 300` + `minFreeSpacePercent: 10` overcommit), so a slot-full server can't
+`maxVolumeCounts: 400` + `minFreeSpacePercent: 10` overcommit), so a slot-full server can't
 receive replicas even with disk free.
 
 Before any planned volume-server outage, evacuation, or storage rename, set
