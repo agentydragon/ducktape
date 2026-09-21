@@ -1095,6 +1095,9 @@ function currentSubset(query: URLSearchParams): boolean {
     throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
   }
   if (query.get("offset") !== "now") throw new Error("current Electric snapshots must start the stream at offset now");
+  if (query.get("source_id") !== CONVERSATION_SOURCE || query.get("projection_epoch") !== CONVERSATION_EPOCH) {
+    throw new Error("current Electric shapes must select the resolved conversation source and projection epoch");
+  }
   return true;
 }
 
