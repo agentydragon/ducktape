@@ -196,6 +196,22 @@ settings and the existing stateful resource, then reconcile the replacement and 
 uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
 does not make deletion safe.
 
+**Flux ownership labels can affect operator-managed traffic.** Before moving a custom
+resource between Kustomizations, inspect its generated Services' selectors, workload
+Pod templates, and existing Pod labels. Operators may propagate
+`kustomize.toolkit.fluxcd.io/*` labels into selectors. Changing ownership can disconnect
+running Pods before they roll; an unavailable replica can prolong the outage.
+
+Confirmed with Opstree Redis operator managing Langfuse Valkey: changing the owner
+from `langfuse-cache` to `langfuse` removed the master Service's endpoints. Orphan
+protection prevents deletion but does not prevent this routing failure. If ownership
+labels participate in selectors, include an explicit label-transition procedure in the
+handoff. Verify ready EndpointSlice backends and a connection from the consuming
+workload afterward; unchanged resource/PVC identities, identical rendered manifests,
+and Flux readiness alone do not prove service continuity. See the
+[Redis operator incident and guarded recovery](docs/lessons_learned/2026_09_20_redis_operator_flux_labels.md),
+including upstream issue #1347 and the partial fix in PR #1382.
+
 **Custom resources must transitively depend on the Kustomization providing their
 CRDs/operator.** An application HelmRelease may share a Kustomization with resources
 from separately installed operators (for example, a CNPG Cluster or ExternalSecret).

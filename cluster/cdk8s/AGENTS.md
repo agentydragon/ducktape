@@ -365,15 +365,19 @@ Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing
-   else. Merge and let it reconcile — this is what makes the handoff safe.
+   else. Merge and let it reconcile to protect against deletion during the handoff.
 2. Only then: delete the old Kustomization(s), let the new one render and claim the
-   same objects. Flux's SSA apply adopts them (updates the ownership label); no race
-   left, since the old CR's deletion no longer touches them.
+   same objects. Flux's SSA apply adopts them (updates the ownership label); the old
+   owner's deletion can no longer delete the transferred objects.
 
 Live-cluster ownership concern, not manifest content — `kustomize build`/`flux build
 --dry-run` render correctly either way and can't catch it. Verify via the live cluster
 (`kubectl get <kind> -n <namespace> -o jsonpath='{.metadata.uid}'` unchanged = adopted,
 not recreated), not by diffing rendered YAML.
+
+Adoption can also change operator-generated Service selectors. Follow
+[the ownership-label traffic checks](../AGENTS.md#migrating-stateful-flux-kustomizations)
+and verify service continuity separately from object survival.
 
 Complementary, resource-level tool: `kustomize.toolkit.fluxcd.io/prune: "disabled"`
 annotation, for a single object dropped from a still-live Kustomization's output (no CR
