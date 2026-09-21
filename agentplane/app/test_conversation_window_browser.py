@@ -96,8 +96,10 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     await expect(history.locator("[data-conversation-anchor]").first).to_be_attached()
     anchor = await history.evaluate(
         """area => {
+            const viewportTop = area.getBoundingClientRect().top;
             const row = [...area.querySelectorAll('[data-conversation-anchor]')]
-                .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+                .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+                .find(candidate => candidate.getBoundingClientRect().bottom > viewportTop);
             return { cursor: row.dataset.conversationAnchor, top: row.getBoundingClientRect().top };
         }"""
     )
