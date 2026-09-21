@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import pytest
 import pytest_bazel
+from google.protobuf import json_format
 
 from agentplane.app.conversation_projection import (
     AppendPayload,
@@ -198,6 +199,8 @@ def test_parallel_old_item_updates_keep_positions_fields_and_evidence() -> None:
     assert (answer.cursor, first.cursor, second.cursor) == (5, 6, 8)
     assert (first.revision_cursor, second.revision_cursor) == (12, 9)
     assert answer.turn_id == first.turn_id == second.turn_id == "turn-1"
+    assert first.arguments is not None
+    assert first.output is not None
     assert store.payloads[first.arguments.reference] == '{"path":"x"}'
     assert store.payloads[first.output.reference] == ""
     assert first.output.reference.field is PayloadField.OUTPUT
@@ -212,7 +215,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     store.apply(
         [entry(1, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="streamed")))]
     )
-    streamed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    streamed = output.reference
     store.apply(
         [
             entry(
@@ -225,7 +230,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
             )
         ]
     )
-    completed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    completed = output.reference
     assert store.payloads[completed] == ""
     assert completed.generation == completed.revision_cursor == 2
     assert completed.generation != streamed.generation
@@ -265,7 +272,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(ValueError, match="owner revision"):
         advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}))
-    unknown = entry(2, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="other", kind=99)))
+    unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
     with pytest.raises(ObservationNotUnderstoodError):
         advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}))
