@@ -1,0 +1,322 @@
+import { snakeCamelMapper } from "@electric-sql/client";
+import { electricCollectionOptions } from "@tanstack/electric-db-collection";
+import { createCollection, useLiveQuery } from "@tanstack/react-db";
+import { type JSX, useEffect, useMemo, useState } from "react";
+import { z } from "zod";
+
+import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
+
+const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
+type Decimal = z.output<typeof decimal>;
+export function decimalBigInt(value: Decimal): bigint {
+  return typeof value === "bigint" ? value : BigInt(value);
+}
+export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
+const payloadRefSchema = z.object({
+  source_id: z.string(),
+  projection_epoch: z.string(),
+  owner_cursor: z.string(),
+  owner_item_id: z.string(),
+  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
+  revision_cursor: z.string(),
+  generation: z.string(),
+});
+
+export interface ConversationEntity {
+  threadId: string;
+  sourceId: string;
+  projectionEpoch: string;
+  entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
+  entityId: string;
+  cursor: Decimal;
+  revisionCursor: Decimal;
+  pending: boolean;
+  turnId: string | null;
+  state: ConversationStoredEntity["state"];
+  textRef: PayloadRef | null;
+  argumentsRef: PayloadRef | null;
+  outputRef: PayloadRef | null;
+  inputRef: PayloadRef | null;
+}
+const stateSchema = z.union([
+  z.object({
+    controls: z.object({
+      applied_model: z.string().nullable(),
+      active_turn_id: z.string().nullable(),
+      harness_state: z.string().nullable(),
+    }),
+    unresolved_count: z.number().int(),
+  }),
+  z.object({
+    kind: z.number().int(),
+    tool_name: z.string(),
+    completion: z.string().nullable(),
+    tool_succeeded: z.boolean().nullable(),
+  }),
+  z.object({ harness_message_id: z.string(), origin_command_ids: z.array(z.string()) }),
+  z.object({ observation: z.string(), event: z.unknown() }),
+  z.object({
+    operation: z.string(),
+    outcome: z.enum(["pending", "effected", "failed", "noop"]),
+    outcome_cursor: z.string().nullable(),
+    outcome_reason: z.string().nullable(),
+  }),
+]);
+const entitySchema = z.object({
+  threadId: z.string(),
+  sourceId: z.string(),
+  projectionEpoch: z.string(),
+  entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
+  entityId: z.string(),
+  cursor: decimal,
+  revisionCursor: decimal,
+  pending: z.boolean(),
+  turnId: z.string().nullable(),
+  state: stateSchema,
+  textRef: payloadRefSchema.nullable(),
+  argumentsRef: payloadRefSchema.nullable(),
+  outputRef: payloadRefSchema.nullable(),
+  inputRef: payloadRefSchema.nullable(),
+});
+
+const chunkSchema = z.object({
+  threadId: z.string(),
+  sourceId: z.string(),
+  projectionEpoch: z.string(),
+  ownerCursor: decimal,
+  ownerId: z.string(),
+  field: z.string(),
+  generation: decimal,
+  chunkIndex: decimal,
+  text: z.string(),
+});
+type PayloadChunk = z.output<typeof chunkSchema>;
+
+function entityUrl(threadId: string, interest: EntityInterest): string {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
+  url.searchParams.set("anchor_cursor", interest.anchor_cursor);
+  url.searchParams.set("tail_from", interest.tail_from);
+  if (interest.window_from !== null) url.searchParams.set("window_from", interest.window_from);
+  if (interest.window_before !== null) url.searchParams.set("window_before", interest.window_before);
+  return url.toString();
+}
+
+function entityCollection(threadId: string, interest: EntityInterest) {
+  return createCollection(
+    electricCollectionOptions({
+      id: `agentplane-conversation:${threadId}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      gcTime: 1_000,
+      schema: entitySchema,
+      getKey: (row) => `${row.entityKind}:${row.entityId}`,
+      syncMode: "eager",
+      shapeOptions: {
+        url: entityUrl(threadId, interest),
+        columnMapper: snakeCamelMapper(),
+      },
+    })
+  );
+}
+
+function ActiveConversation({
+  threadId,
+  interest,
+  onRows,
+  onRotate,
+}: {
+  threadId: string;
+  interest: EntityInterest;
+  onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+  onRotate: () => void;
+}): JSX.Element {
+  const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
+  const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
+  const rows = query.data ?? [];
+  const view = rows.find((row) => row.entityKind === "view_state");
+  const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
+  const segmentCount = rows.filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind)).length;
+  useEffect(() => {
+    if (segmentCount > 60) onRotate();
+  }, [onRotate, segmentCount]);
+  return caughtUp ? onRows(rows, interest) : <p role="status">Catching up conversation…</p>;
+}
+
+export function ConversationCollection({
+  threadId,
+  beforeCursor,
+  children,
+}: {
+  threadId: string;
+  beforeCursor?: string;
+  children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+}): JSX.Element {
+  const [interest, setInterest] = useState<EntityInterest | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    let retry: number | undefined;
+    setInterest(null);
+    setError(null);
+    void conversationInterest(threadId, beforeCursor, controller.signal).then(
+      (value) => {
+        if (!controller.signal.aborted) setInterest(value);
+      },
+      (reason: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = displayableError(reason);
+        if (message.includes("404")) retry = window.setTimeout(() => setGeneration((value) => value + 1), 1000);
+        else setError(message);
+      }
+    );
+    return () => {
+      controller.abort();
+      if (retry !== undefined) window.clearTimeout(retry);
+    };
+  }, [beforeCursor, generation, threadId]);
+  if (error) return <p role="alert">Conversation sync failed: {error}</p>;
+  if (!interest) return <p role="status">Loading conversation…</p>;
+  return (
+    <ActiveConversation
+      key={`${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`}
+      threadId={threadId}
+      interest={interest}
+      onRows={children}
+      onRotate={() => setGeneration((value) => value + 1)}
+    />
+  );
+}
+
+function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-chunks`, window.location.href);
+  url.searchParams.set("source_id", reference.source_id);
+  url.searchParams.set("projection_epoch", reference.projection_epoch);
+  url.searchParams.set("owner_cursor", reference.owner_cursor);
+  url.searchParams.set("owner_id", reference.owner_item_id);
+  url.searchParams.set("field", reference.field);
+  url.searchParams.set("generation", reference.generation);
+  url.searchParams.set("revision_cursor", reference.revision_cursor);
+  if (follow) url.searchParams.set("follow", "true");
+  return url.toString();
+}
+
+function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean) {
+  return createCollection(
+    electricCollectionOptions({
+      id: `agentplane-payload:${threadId}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow}`,
+      gcTime: 1_000,
+      schema: chunkSchema,
+      getKey: (row) => row.chunkIndex.toString(),
+      syncMode: "eager",
+      shapeOptions: {
+        url: chunkUrl(threadId, reference, follow),
+        columnMapper: snakeCamelMapper(),
+      },
+    })
+  );
+}
+
+export function PayloadBody({
+  threadId,
+  reference,
+  follow,
+  children,
+}: {
+  threadId: string;
+  reference: PayloadRef;
+  follow: boolean;
+  children: (body: string | null) => JSX.Element;
+}): JSX.Element {
+  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const [extent, setExtent] = useState<{ key: string; chunkCount: string; contentBytes: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setExtent(null);
+    setError(null);
+    const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-interest`, window.location.href);
+    url.search = new URL(chunkUrl(threadId, reference, false)).search;
+    void fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 410) throw new Error("Payload revision is unavailable");
+        if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
+        const value = (await response.json()) as { chunk_count: string; content_bytes: string };
+        setExtent({ key: referenceKey, chunkCount: value.chunk_count, contentBytes: value.content_bytes });
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(displayableError(reason));
+      });
+    return () => controller.abort();
+  }, [reference, referenceKey, threadId]);
+  if (error) return <p role="alert">{error}</p>;
+  return (
+    <ActivePayloadBody
+      threadId={threadId}
+      reference={reference}
+      extent={extent?.key === referenceKey ? extent : null}
+      follow={follow}
+    >
+      {children}
+    </ActivePayloadBody>
+  );
+}
+
+function ActivePayloadBody({
+  threadId,
+  reference,
+  extent,
+  follow,
+  children,
+}: {
+  threadId: string;
+  reference: PayloadRef;
+  extent: { chunkCount: string; contentBytes: string } | null;
+  follow: boolean;
+  children: (body: string | null) => JSX.Element;
+}): JSX.Element {
+  const selectedRevision = follow ? "follow" : reference.revision_cursor;
+  const collection = useMemo(
+    () =>
+      chunkCollection(
+        threadId,
+        {
+          source_id: reference.source_id,
+          projection_epoch: reference.projection_epoch,
+          owner_cursor: reference.owner_cursor,
+          owner_item_id: reference.owner_item_id,
+          field: reference.field,
+          generation: reference.generation,
+          revision_cursor: follow ? reference.revision_cursor : selectedRevision,
+        },
+        follow
+      ),
+    [
+      follow,
+      reference.field,
+      reference.generation,
+      reference.owner_cursor,
+      reference.owner_item_id,
+      reference.projection_epoch,
+      reference.source_id,
+      selectedRevision,
+      threadId,
+    ]
+  );
+  const query = useLiveQuery((q) => q.from({ chunk: collection }), [collection]);
+  if (!extent) return children(null);
+  const expected = BigInt(extent.chunkCount);
+  const chunks = (query.data ?? [])
+    .filter((chunk) => decimalBigInt(chunk.chunkIndex) < expected)
+    .sort((left, right) =>
+      decimalBigInt(left.chunkIndex) < decimalBigInt(right.chunkIndex)
+        ? -1
+        : decimalBigInt(left.chunkIndex) > decimalBigInt(right.chunkIndex)
+          ? 1
+          : 0
+    );
+  const contiguous =
+    chunks.length === Number(expected) &&
+    chunks.every((chunk, index) => decimalBigInt(chunk.chunkIndex) === BigInt(index));
+  const body = contiguous ? chunks.map((chunk: PayloadChunk) => chunk.text).join("") : null;
+  const complete = body !== null && BigInt(new TextEncoder().encode(body).byteLength) === BigInt(extent.contentBytes);
+  return children(complete ? body : null);
+}

@@ -10,6 +10,7 @@ import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 import uvicorn
@@ -27,6 +28,7 @@ from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
@@ -115,6 +117,10 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    electric_url: str | None = Field(
+        default=None,
+        description="Cluster-internal Electric root URL; omitted leaves conversation sync routes disabled.",
+    )
     models: ModelCatalog = Field(
         description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
     )
@@ -224,6 +230,9 @@ async def async_main(settings: Settings) -> None:
             timeout=10,
         ) as actions_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+        httpx.AsyncClient(
+            base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)
+        ) as electric_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
@@ -257,6 +266,26 @@ async def async_main(settings: Settings) -> None:
             discover_sandboxes=running_sandboxes,
             sandbox_changes=live.changes,
         )
+
+        async def resolve_entity_interest(
+            thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None, page_size: int
+        ):
+            return await store.conversation_entity_interest(
+                thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=page_size
+            )
+
+        async def resolve_payload(
+            thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
+        ):
+            return await store.conversation_payload_selection(
+                thread_id,
+                owner_cursor=owner_cursor,
+                owner_id=owner_id,
+                field=field,
+                generation=generation,
+                revision_cursor=revision_cursor,
+            )
+
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)
             if settings.action_federation is not None and oidc is not None
@@ -275,6 +304,11 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
+            electric=(
+                ElectricProxy(electric_http, resolve_entity_interest, resolve_payload)
+                if settings.electric_url is not None
+                else None
+            ),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,

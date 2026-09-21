@@ -26,6 +26,24 @@ py_library(
 )
 
 py_library(
+    name = "electric",
+    srcs = ["electric.py"],
+    deps = [
+        ":container_security",
+        ":database",
+        ":environment",
+        ":node_scheduling",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:probes",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -149,6 +167,7 @@ py_library(
         ":container_security",
         ":database",
         ":egress",
+        ":electric",
         ":environment",
         ":llm_ingress",
         ":migrate_container",

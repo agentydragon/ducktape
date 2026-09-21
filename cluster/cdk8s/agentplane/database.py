@@ -58,19 +58,23 @@ POSTGRES_PORT = 5432
 # The two logical databases each service owns on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
 _ROLE_NAMES = ["actions", "egress"]
+_ELECTRIC_ROLE = "electric"
 
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
 )
 
 
-def _role_credentials(scope: Construct, id: str, *, role: str, namespace: str) -> None:
+def _role_credentials(
+    scope: Construct, id: str, *, role: str, namespace: str, database_name: str | None = None
+) -> None:
     """The ESO Password generator + ExternalSecret pair minting one managed role's
     login credentials, in the shape the Cluster's `managed.roles[].passwordSecret` and
     the role's own consumers (litellm, the actions/egress services) expect.
     """
     secret_name = f"postgres-{role}"
     host = f"{_CLUSTER_NAME}-rw.{namespace}.svc"
+    database = database_name or role
     Password(
         scope,
         f"{id}-generator",
@@ -92,8 +96,8 @@ def _role_credentials(scope: Construct, id: str, *, role: str, namespace: str) -
                         "password": "{{ .password }}",
                         "host": host,
                         "port": str(POSTGRES_PORT),
-                        "dbname": role,
-                        "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{role}",
+                        "dbname": database,
+                        "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{database}",
                     },
                 ),
             ),
@@ -121,6 +125,9 @@ class Db(Construct):
 
         for role in _ROLE_NAMES:
             _role_credentials(self, f"role-credentials-{role}", role=role, namespace=env.namespace)
+        _role_credentials(
+            self, "role-credentials-electric", role=_ELECTRIC_ROLE, namespace=env.namespace, database_name="app"
+        )
 
         Cluster(
             self,
@@ -154,6 +161,15 @@ class Db(Construct):
                             password_secret=ClusterSpecManagedRolesPasswordSecret(name=f"postgres-{role}"),
                         )
                         for role in _ROLE_NAMES
+                    ]
+                    + [
+                        ClusterSpecManagedRoles(
+                            name=_ELECTRIC_ROLE,
+                            ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                            login=True,
+                            replication=True,
+                            password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
+                        )
                     ]
                 ),
             ),

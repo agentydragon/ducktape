@@ -143,6 +143,18 @@ export class LocalCommands {
     if (changed) this.reload();
   }
 
+  /** A projected command row is the durable admission fact after raw replay is removed. */
+  observeCommandIds(ids: ReadonlySet<string>): void {
+    let changed = false;
+    for (const id of ids) {
+      const key = this.key(id);
+      if (localStorage.getItem(key) === null) continue;
+      localStorage.removeItem(key);
+      changed = true;
+    }
+    if (changed) this.reload();
+  }
+
   private key(id: string): string {
     return `${this.prefix}${encodeURIComponent(id)}`;
   }

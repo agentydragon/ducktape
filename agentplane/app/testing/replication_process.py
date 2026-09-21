@@ -34,6 +34,7 @@ from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
@@ -194,9 +195,20 @@ def _run(
     frontend_directory: Path | None,
     sandbox_state: ProvisioningState | None,
     replay_after: int | None,
+    electric_url: str | None,
 ) -> None:
     asyncio.run(
-        _serve(database_url, target, connection, boundary, cursor, frontend_directory, sandbox_state, replay_after)
+        _serve(
+            database_url,
+            target,
+            connection,
+            boundary,
+            cursor,
+            frontend_directory,
+            sandbox_state,
+            replay_after,
+            electric_url,
+        )
     )
 
 
@@ -209,6 +221,7 @@ async def _serve(
     frontend_directory: Path | None,
     sandbox_state: ProvisioningState | None,
     replay_after: int | None,
+    electric_url: str | None,
 ) -> None:
     store = (
         TrajectoryStore.connect(database_url)
@@ -237,7 +250,10 @@ async def _serve(
             running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
             core.pods[SANDBOX] = running
             index.pods[SANDBOX] = running
-    async with httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http:
+    async with (
+        httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
+        httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
+    ):
         app = create_app(
             SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
             bridge,
@@ -247,6 +263,24 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
+            electric=ElectricProxy(
+                electric_http,
+                lambda thread_id, anchor, before, page_size: store.conversation_entity_interest(
+                    thread_id, anchor_cursor=anchor, before_cursor=before, page_size=page_size
+                ),
+                lambda thread_id, owner_cursor, owner_id, field, generation, revision: (
+                    store.conversation_payload_selection(
+                        thread_id,
+                        owner_cursor=owner_cursor,
+                        owner_id=owner_id,
+                        field=field,
+                        generation=generation,
+                        revision_cursor=revision,
+                    )
+                ),
+            )
+            if electric_url is not None
+            else None,
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
@@ -316,12 +350,23 @@ async def app_process(
     frontend_directory: Path | None = None,
     sandbox_state: ProvisioningState | None = ProvisioningState.RUNNING,
     replay_after: int | None = None,
+    electric_url: str | None = None,
 ) -> AsyncIterator[AppProcess]:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process = context.Process(
         target=_run,
-        args=(database_url, target, child, boundary, cursor, frontend_directory, sandbox_state, replay_after),
+        args=(
+            database_url,
+            target,
+            child,
+            boundary,
+            cursor,
+            frontend_directory,
+            sandbox_state,
+            replay_after,
+            electric_url,
+        ),
     )
     process.start()
     child.close()

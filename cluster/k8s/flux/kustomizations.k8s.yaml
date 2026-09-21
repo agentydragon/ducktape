@@ -5048,6 +5048,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: agentplane-electric
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: agentplane-llm-ingress
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -5383,6 +5387,10 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
       name: egress
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-electric
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

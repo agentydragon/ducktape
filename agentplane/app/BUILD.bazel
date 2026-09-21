@@ -5,6 +5,34 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
+py_library(
+    name = "conversation_projection",
+    srcs = ["conversation_projection.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "test_conversation_projection",
+    srcs = ["test_conversation_projection.py"],
+    deps = [
+        ":conftest",
+        ":conversation_projection",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
@@ -38,8 +66,10 @@ py_library(
         ":auth_routes",
         ":bridge",
         ":consent",
+        ":conversation_debug",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -104,6 +134,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -336,6 +367,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":inventory",
         ":live",
         ":presets",
@@ -423,6 +455,8 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
+        ":conversation_debug",
+        ":conversation_projection",
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",
@@ -854,6 +888,7 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
@@ -881,6 +916,7 @@ py_test(
         ":conftest",
         ":trajectory",
         "//:conftest",
+        "//agentplane/app/testing:electric_service",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:command_pb2",
@@ -913,6 +949,82 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "electric",
+    srcs = ["electric.py"],
+    deps = [
+        ":trajectory",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_electric",
+    srcs = ["test_electric.py"],
+    deps = [
+        ":conftest",
+        ":electric",
+        ":trajectory",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_conversation_sync",
+    size = "medium",
+    srcs = ["test_conversation_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conversation_debug",
+    srcs = ["conversation_debug.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_conversation_debug",
+    size = "medium",
+    srcs = ["test_conversation_debug.py"],
+    requires_docker = True,
+    deps = [
+        ":action_policy",
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
+        ":presets",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -270,6 +270,42 @@ spec:
         username: egress
       type: kubernetes.io/basic-auth
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: postgres-electric-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-electric
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          kind: Password
+          name: postgres-electric-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-electric
+    template:
+      data:
+        dbname: app
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://electric:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/app
+        username: electric
+      type: kubernetes.io/basic-auth
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -311,6 +347,12 @@ spec:
         name: egress
         passwordSecret:
           name: postgres-egress
+      - ensure: present
+        login: true
+        name: electric
+        passwordSecret:
+          name: postgres-electric
+        replication: true
   monitoring:
     enablePodMonitor: true
   probes:
@@ -344,6 +386,210 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentplane-electric-storage
+  namespace: agentplane-staging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: seaweedfs-ovh
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-electric
+        cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-electric
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-electric
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-electric
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-electric
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-electric
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_INSECURE
+              value: "true"
+            - name: ELECTRIC_PORT
+              value: "3000"
+            - name: ELECTRIC_STORAGE
+              value: fast_file
+            - name: ELECTRIC_STORAGE_DIR
+              value: /var/lib/electric
+            - name: ELECTRIC_PERSISTENT_STATE
+              value: file
+            - name: ELECTRIC_MANUAL_TABLE_PUBLISHING
+              value: "true"
+            - name: ELECTRIC_REPLICATION_STREAM_ID
+              value: agentplane_conversation
+          image: docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: electric
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /var/lib/electric
+              name: pvc-agentplane-electric-storage
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: pvc-agentplane-electric-storage
+          persistentVolumeClaim:
+            claimName: agentplane-electric-storage
+            readOnly: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-electric
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -1515,6 +1761,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1612,6 +1860,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1812,6 +2062,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-electric
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "3000"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

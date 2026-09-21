@@ -18,6 +18,12 @@ from agentplane.app import trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
+    ConversationEntity,
+    ConversationPayloadChunk,
+    ConversationPayloadManifest,
+    ConversationProjectionError,
+    ConversationProjectionEvidence,
+    ConversationProjectionNativeLink,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -112,11 +118,10 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     empty = await store.thread(
         "sb-2", "s-9", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, cwd="/w", model="m")
     )
-    await store.record(
-        thread,
-        [_event(1, harness_started=event_pb2.HarnessStarted(pid=1)), _event(2, harness_lost=event_pb2.HarnessLost())],
-        lease=lease,
-    )
+    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    second.event.at.FromDatetime(datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC))
+    await store.record(thread, [first, second], lease=lease)
 
     views = {view.id: view for view in await store.list_threads()}
 
@@ -129,7 +134,7 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         "last_cursor": 2,
     }
     assert views[thread].harness is Harness.CLAUDE
-    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
+    assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 1, tzinfo=UTC)
     assert (views[empty].harness, views[empty].last_cursor, views[empty].last_event_at) == ("HARNESS_CODEX", 0, None)
     assert views[empty].harness is Harness.CODEX
     # No feed has ever attached to either thread (only their event log was replayed), so the
@@ -140,6 +145,15 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+    async with store._sessions() as session:
+        await session.execute(text("SET LOCAL enable_seqscan = false"))
+        plan = (
+            await session.scalars(
+                text("EXPLAIN (COSTS OFF) SELECT at FROM event WHERE thread_id = :thread ORDER BY at DESC LIMIT 1"),
+                {"thread": thread},
+            )
+        ).all()
+    assert any("ix_event_thread_at" in line for line in plan)
 
 
 @pytest.mark.parametrize("cursors", [pytest.param([2], id="initial-gap"), pytest.param([1, 3], id="batch-gap"), [2, 1]])
@@ -462,11 +476,19 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
         thread,
         [
             _event(
-                4, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+                4,
+                command_admitted=event_pb2.CommandAdmitted(
+                    command=command_pb2.Command(
+                        command_id="test-failed", interrupt_turn=command_pb2.InterruptTurn(turn_id="test-turn")
+                    )
+                ),
             ),
-            _event(5, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
-            _event(6, model_changed=event_pb2.ModelChanged(model="test-next-model")),
-            _event(7, harness_exited=event_pb2.HarnessExited()),
+            _event(
+                5, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+            ),
+            _event(6, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
+            _event(7, model_changed=event_pb2.ModelChanged(model="test-next-model")),
+            _event(8, harness_exited=event_pb2.HarnessExited()),
         ],
         lease=lease,
     )
@@ -478,26 +500,26 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     assert stopped.attached.active_turn_id == ""
     assert stopped.attached.spec.model == "test-next-model"
     assert stopped.attached.spec.reasoning_effort == SPEC.reasoning_effort
-    assert stopped.attached.last_cursor == 7
+    assert stopped.attached.last_cursor == 8
     view = await replica.get_thread(thread)
     assert view is not None
     assert view.model == "test-next-model"
     with pytest.raises(EventReplicationError, match="conflicting runner entry"):
-        await store.record(thread, [_event(7, harness_started=event_pb2.HarnessStarted())], lease=lease)
+        await store.record(thread, [_event(8, harness_started=event_pb2.HarnessStarted())], lease=lease)
     assert await replica.feed_state(thread) == stopped
     with pytest.raises(ValueError, match="older"):
         await store.set_attached(thread, attached, lease=lease)
     assert await replica.feed_state(thread) == stopped
-    await store.record(thread, [_event(8, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
+    await store.record(thread, [_event(9, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
     resumed = await replica.feed_state(thread)
     assert resumed is not None
     assert resumed.end is None
     assert resumed.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    await store.record(thread, [_event(9, harness_lost=event_pb2.HarnessLost())], lease=lease)
+    await store.record(thread, [_event(10, harness_lost=event_pb2.HarnessLost())], lease=lease)
     lost = await replica.feed_state(thread)
     assert lost is not None
     assert lost.attached.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
-    assert lost.attached.last_cursor == 9
+    assert lost.attached.last_cursor == 10
 
 
 async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
@@ -588,6 +610,174 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
             await asyncio.wait_for(changed.wait(), timeout=5)
     finally:
         await engine.dispose()
+
+
+async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = _event(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
+    first.event.source_sequences.append(9007)
+    await store.record(
+        thread, [first, _event(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
+    )
+    await store.record(thread, [_event(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
+    async with store._sessions() as session:
+        item = await session.scalar(
+            select(ConversationEntity).where(
+                ConversationEntity.thread_id == thread,
+                ConversationEntity.entity_kind == "item",
+                ConversationEntity.entity_id == "old",
+            )
+        )
+        manifests = (
+            await session.scalars(
+                select(ConversationPayloadManifest)
+                .where(ConversationPayloadManifest.thread_id == thread)
+                .order_by(ConversationPayloadManifest.revision_cursor)
+            )
+        ).all()
+        chunks = (
+            await session.scalars(
+                select(ConversationPayloadChunk)
+                .where(ConversationPayloadChunk.thread_id == thread)
+                .order_by(ConversationPayloadChunk.chunk_index)
+            )
+        ).all()
+        evidence = (
+            await session.scalars(
+                select(ConversationProjectionEvidence).where(ConversationProjectionEvidence.thread_id == thread)
+            )
+        ).all()
+        native_links = (
+            await session.scalars(
+                select(ConversationProjectionNativeLink).where(ConversationProjectionNativeLink.thread_id == thread)
+            )
+        ).all()
+    assert item is not None
+    assert item.text_ref == {
+        "source_id": "test-runner",
+        "projection_epoch": "v1",
+        "owner_cursor": "1",
+        "owner_item_id": "old",
+        "field": "text",
+        "revision_cursor": "3",
+        "generation": "1",
+    }
+    assert [(manifest.revision_cursor, manifest.generation, manifest.chunk_count) for manifest in manifests] == [
+        (2, 1, 1),
+        (3, 1, 2),
+    ]
+    assert [chunk.text for chunk in chunks] == ["hello world", "!"]
+    assert {(row.entity_cursor, row.observation_cursor) for row in evidence} == {(1, 1), (1, 2), (1, 3)}
+    assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
+
+    await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
+    async with store._sessions() as session:
+        replacement = await session.scalar(
+            select(ConversationPayloadManifest).where(
+                ConversationPayloadManifest.thread_id == thread, ConversationPayloadManifest.revision_cursor == 4
+            )
+        )
+        item = await session.scalar(
+            select(ConversationEntity).where(
+                ConversationEntity.thread_id == thread,
+                ConversationEntity.entity_kind == "item",
+                ConversationEntity.entity_id == "old",
+            )
+        )
+    assert replacement is not None
+    assert replacement.present
+    assert replacement.chunk_count == replacement.content_bytes == 0
+    assert item is not None
+    assert item.text_ref is not None
+    assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
+
+    with pytest.raises(ConversationProjectionError, match="cursor 5"):
+        await store.record(thread, [_event(5)], lease=lease)
+    assert await store.last_cursor(thread) == 4
+
+
+async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
+    confirmed = _event(
+        2,
+        harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+            harness_message_id="message", text="question", origin_command_ids=["input"], turn_id="turn"
+        ),
+    )
+    confirmed.event.source_sequences.extend([81, 82])
+    await store.record(
+        thread,
+        [
+            _event(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
+            confirmed,
+            _event(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
+        ],
+        lease=lease,
+    )
+    await store.record(
+        thread,
+        [
+            _event(
+                4,
+                item_started=event_pb2.ItemStarted(
+                    item_id="tool-b", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="later"
+                ),
+            ),
+            _event(
+                5,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-b", tool=event_pb2.ToolResult(output="B", succeeded=True)
+                ),
+            ),
+            _event(6, tool_arguments=event_pb2.ToolArguments(item_id="tool-a", arguments_json='{"path":"x"}')),
+            _event(
+                7,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool-a", tool=event_pb2.ToolResult(output="", succeeded=False)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        entities = {
+            (row.entity_kind, row.entity_id): row
+            for row in (
+                await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread))
+            ).all()
+        }
+        manifests = (
+            await session.scalars(
+                select(ConversationPayloadManifest)
+                .where(ConversationPayloadManifest.thread_id == thread)
+                .order_by(ConversationPayloadManifest.owner_id, ConversationPayloadManifest.revision_cursor)
+            )
+        ).all()
+    first, second = entities[("item", "tool-a")], entities[("item", "tool-b")]
+    assert (first.cursor, first.revision_cursor, second.cursor, second.revision_cursor) == (3, 7, 4, 5)
+    assert first.arguments_ref is not None
+    assert first.arguments_ref["revision_cursor"] == "6"
+    assert first.output_ref is not None
+    assert first.output_ref["revision_cursor"] == "7"
+    assert first.output_ref["generation"] == "7"
+    assert second.output_ref is not None
+    assert second.output_ref["revision_cursor"] == "5"
+    assert entities[("confirmed_input", "2")].input_ref is not None
+    assert entities[("command", "input")].pending is False
+    assert entities[("command", "input")].state["outcome"] == "effected"
+    assert [(manifest.owner_id, manifest.revision_cursor, manifest.chunk_count) for manifest in manifests] == [
+        ("input", 1, 1),
+        ("message", 2, 1),
+        ("tool-a", 3, 1),
+        ("tool-a", 6, 1),
+        ("tool-a", 7, 0),
+        ("tool-b", 5, 1),
+    ]
 
 
 if __name__ == "__main__":
