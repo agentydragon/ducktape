@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
@@ -10,28 +9,6 @@ import networkx as nx
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.crd_layering import CRD_TO_OPERATOR
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
-
-
-@dataclass
-class _DependencyRule:
-    prerequisite: str
-    must_come_before: list[str]
-    reason: str
-
-
-_DEPENDENCY_RULES: list[_DependencyRule] = [
-    # CRD provider ordering is enforced by validate_operator_dependencies().
-    _DependencyRule(
-        prerequisite="cert-manager",
-        must_come_before=["gateway", "authentik", "gitea"],
-        reason="TLS certificates required for gateway and applications",
-    ),
-    _DependencyRule(
-        prerequisite="gateway",
-        must_come_before=["authentik", "gitea", "matrix"],
-        reason="Applications need gateway for external access",
-    ),
-]
 
 
 class CyclicDependencyError(Exception):
@@ -43,25 +20,6 @@ def assert_no_cycles(g: nx.DiGraph) -> None:
     cycle = next(nx.simple_cycles(g), None)
     if cycle is not None:
         raise CyclicDependencyError(f"Circular dependency: {' -> '.join([*cycle, cycle[0]])}")
-
-
-def check_required_dependencies(cluster: ParsedCluster) -> list[str]:
-    """Check that critical dependencies are correctly set up."""
-    errors = []
-    g = cluster.graph
-
-    for rule in _DEPENDENCY_RULES:
-        if rule.prerequisite not in cluster.flux_kustomizations:
-            raise ValueError(f"Dependency rule references unknown kustomization: {rule.prerequisite}")
-        for dependent in rule.must_come_before:
-            if dependent not in cluster.flux_kustomizations:
-                continue
-            if cluster.flux_kustomizations[dependent].suspend:
-                continue
-            if not nx.has_path(g, dependent, rule.prerequisite):
-                errors.append(f"{dependent} should depend on {rule.prerequisite} ({rule.reason})")
-
-    return errors
 
 
 def validate_operator_dependencies(
@@ -195,7 +153,6 @@ def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     assert_no_cycles(cluster.graph)
 
     errors = []
-    errors.extend(check_required_dependencies(cluster))
     errors.extend(validate_operator_dependencies(cluster, k8s_dir))
     errors.extend(check_cross_namespace_references(cluster))
     return errors
