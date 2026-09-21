@@ -6,6 +6,20 @@ from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecDataFrom,
+    ExternalSecretSpecDataFromSourceRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+    ExternalSecretSpecTargetTemplate,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -34,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
@@ -53,6 +68,7 @@ _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
+_OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
@@ -212,6 +228,7 @@ ENV = Environment(
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
         reach_incluster_authentik=True,
         runner_zone="hil-ovh",
+        oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
         hostname="agentplane-actions-staging.allegedly.works",
@@ -248,6 +265,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
         chart,
@@ -257,6 +275,50 @@ def chart(app: App) -> Chart:
         include_forgejo=ENV.egress.include_forgejo_credential,
     )
     return chart
+
+
+def _add_session_secret(scope: Chart) -> None:
+    """Generate the staging app's local session-signing key with ESO.
+
+    Rotating this value invalidates existing browser sessions, but does not touch the
+    Authentik OAuth client credentials or the Agentplane testing environment.
+    """
+    Password(
+        scope,
+        "session-password-generator",
+        metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
+        spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
+    )
+    ExternalSecret(
+        scope,
+        "session-external-secret",
+        metadata=metadata(
+            _OIDC_SESSION_SECRET,
+            _NAMESPACE,
+            annotations={"description": "ESO-generated Agentplane staging session-signing key."},
+        ),
+        spec=ExternalSecretSpec(
+            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+            target=ExternalSecretSpecTarget(
+                name=_OIDC_SESSION_SECRET,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+                immutable=True,
+                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
+            ),
+            data_from=[
+                ExternalSecretSpecDataFrom(
+                    source_ref=ExternalSecretSpecDataFromSourceRef(
+                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                            api_version="generators.external-secrets.io/v1alpha1",
+                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                            name=_OIDC_SESSION_SECRET,
+                        )
+                    )
+                )
+            ],
+        ),
+    )
 
 
 def agentplane_staging(
@@ -294,7 +356,15 @@ def agentplane_staging(
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            health_checks=health_checks,
+            health_checks=[
+                *health_checks,
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name=_OIDC_SESSION_SECRET,
+                    namespace=_NAMESPACE,
+                ),
+            ],
             health_check_exprs=[
                 KustomizationSpecHealthCheckExprs(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
