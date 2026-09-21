@@ -1,9 +1,9 @@
-"""Real app processes with test-only gates at ingestion commit and browser SSE delivery.
+"""Real app processes with test-only gates at ingestion commit and browser sync delivery.
 
 The store's production record/fencing/projection code is unchanged. A SQLAlchemy transaction
 subclass pauses only the selected record call, after its real writes or after its real commit.
 Process readiness and checkpoint observations travel through a pipe, never filesystem sentinels.
-The replay gate holds actual ASGI response bytes without changing their payload or cursor.
+The replay gate holds actual Electric/reconciliation response bytes without rewriting data.
 """
 
 import asyncio
@@ -11,7 +11,7 @@ import multiprocessing
 import signal
 import socket
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -73,10 +73,6 @@ class ReplayAction(StrEnum):
     DISCONNECT = "disconnect"
 
 
-class ReplayDisconnectError(Exception):
-    """Unwind the held response after sending EOF, without a protocol end Event."""
-
-
 class ReplayGate:
     def __init__(self, after_cursor: int, connection: Connection) -> None:
         self.after_cursor = after_cursor
@@ -89,7 +85,7 @@ class ReplayGate:
         if not self._release.done():
             self._connection.send(ReplayHeld(cursor))
         # Closing the old browser document cancels its response, not the gate shared with the
-        # reloaded document's new SSE connection.
+        # reloaded document's new sync connection.
         pending = self._release
         action = await asyncio.shield(pending)
         if action is ReplayAction.DISCONNECT and self._release is pending:
@@ -102,27 +98,36 @@ class ReplayGate:
         return command
 
 
-class GatedThreadReplay:
-    def __init__(self, app: ASGIApp, *, gate: ReplayGate) -> None:
+class GatedConversationDelivery:
+    def __init__(self, app: ASGIApp, *, gate: ReplayGate, store: TrajectoryStore) -> None:
         self._app = app
         self._gate = gate
+        self._store = store
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        async def gated_send(message: Message) -> None:
-            if message["type"] == "http.response.body":
-                for line in message.get("body", b"").splitlines():
-                    if (
-                        line.startswith(b"id: ")
-                        and (cursor := int(line[4:])) > self._gate.after_cursor
-                        and await self._gate.hold(cursor) is ReplayAction.DISCONNECT
-                    ):
-                        await send({"type": "http.response.body", "body": b"", "more_body": False})
-                        raise ReplayDisconnectError
-            await send(message)
+        path = scope.get("path", "")
+        selected = scope["type"] == "http" and path.endswith(("/sync/entities", "/commands/reconcile"))
+        if not selected:
+            await self._app(scope, receive, send)
+            return
+        thread_id = UUID(path.split("/")[2])
+        messages: list[Message] = []
 
-        thread_replay = scope["type"] == "http" and scope["path"].endswith("/events/stream")
-        with suppress(ReplayDisconnectError):
-            await self._app(scope, receive, gated_send if thread_replay else send)
+        async def gated_send(message: Message) -> None:
+            messages.append(message)
+            if message["type"] != "http.response.body" or message.get("more_body", False):
+                return
+            # Only these finite, bounded-interest responses are buffered. The real backend
+            # continues ingesting and Electric still owns snapshot/offset reconciliation.
+            cursor = await self._store.last_cursor(thread_id)
+            if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
+                await send({"type": "http.response.start", "status": 503, "headers": []})
+                await send({"type": "http.response.body", "body": b"test transport interruption"})
+                return
+            for buffered in messages:
+                await send(buffered)
+
+        await self._app(scope, receive, gated_send)
 
 
 @dataclass(frozen=True)
@@ -286,7 +291,7 @@ async def _serve(
         # PostgreSQL notifications, and SSE generator all run here unchanged.
         app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
         if replay_after is not None:
-            app.add_middleware(GatedThreadReplay, gate=ReplayGate(replay_after, connection))
+            app.add_middleware(GatedConversationDelivery, gate=ReplayGate(replay_after, connection), store=store)
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await store.start_updates()
