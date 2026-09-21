@@ -221,8 +221,8 @@
       "sha256": "/IsxZjpTyk1rtenQ7GomVQov2hzfQcKsIeDPh6p9qhg="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-9abc0a7ec728/grafana.skill",
-      "sha256": "mrwKfscopLAruM8tv4fYUxg9F0CzXbiciyYXv1yDaII="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-87f6afbe4683/grafana.skill",
+      "sha256": "h/avvkaDIUFunaaQn/xSzEabkraZKQdqJnAOcQdYEAg="
     }
   }
 }
