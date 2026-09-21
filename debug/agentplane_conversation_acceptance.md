@@ -41,7 +41,14 @@ forward/backward paging and an untruncated stderr body over 2 MiB.
 The on-demand frontend drawer is implemented at `ee46509b9d`; it keeps one raw page,
 mounts JSON only for expanded observations, aborts page requests on disposal, and
 links from semantic evidence to its original chronological context. Real desktop
-and phone browser proof and rendered-image inspection remain pending.
+and phone browser cases passed at `647d5ed476`
+[5163ace0](https://app.buildbuddy.io/invocation/5163ace0-52d0-4115-9be7-055f00b2c347):
+no archive request before opening, exact original records, bounded replacement
+pages, backward/forward/latest/context navigation, draft and evidence-disclosure
+preservation, and cancellation when closing during an in-flight real response.
+Desktop and phone PNGs from the preceding successful paging run at `1265c9a818`
+[2271c3b1](https://app.buildbuddy.io/invocation/2271c3b1-cafb-444d-afba-9d8eef986b93)
+were downloaded and inspected; the drawer and its close control fit both viewports.
 
 ## Tail queries after settled commands
 
