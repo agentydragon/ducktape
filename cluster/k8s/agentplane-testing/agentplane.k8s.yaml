@@ -479,6 +479,8 @@ spec:
               value: "true"
             - name: ELECTRIC_REPLICATION_STREAM_ID
               value: agentplane_conversation
+            - name: ELECTRIC_MAX_SHAPES
+              value: "1024"
           image: docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211
           imagePullPolicy: IfNotPresent
           livenessProbe:
