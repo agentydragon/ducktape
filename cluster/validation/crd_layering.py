@@ -17,7 +17,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "external-secrets": set(),
     "cert-manager": {"Certificate", "CertificateRequest", "Issuer", "ClusterIssuer"},
     "cert-manager-config": set(),
-    "cert-manager-trust": set(),
+    "cert-manager-trust": {"Bundle"},
     "cert-manager-environment": set(),
     "cluster-ca": set(),
     "kyverno": {"ClusterPolicy", "Policy"},

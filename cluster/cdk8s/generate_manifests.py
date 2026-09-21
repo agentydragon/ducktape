@@ -510,7 +510,7 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    airlock_kustomization = agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
+    agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart,
         forgejo_images_kustomization,
@@ -692,7 +692,7 @@ def generate_manifests(root: Path) -> None:
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, forgejo_images_kustomization, grocy_vallejo_kustomization
     )
-    ha_mcp_kustomization = ha_mcp.ha_mcp(
+    ha_mcp.ha_mcp(
         flux_chart,
         root,
         external_secrets_config_kustomization,
@@ -751,13 +751,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         claude_rbac_kustomization,
         cnpg_kustomization,
-        external_creds_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        litellm_keys_tf_kustomization,
-        local_path_provisioner_kustomization,
-        reflector_kustomization,
     )
     agents_flux_kustomizations.agent_workspaces_app(
         flux_chart,
@@ -776,7 +770,7 @@ def generate_manifests(root: Path) -> None:
         litellm_kustomization,
         litellm_keys_tf_kustomization,
     )
-    haku_console_kustomization = haku_charts.haku_console(
+    haku_charts.haku_console(
         flux_chart,
         haku_console_health_checks,
         cnpg_kustomization,
@@ -815,18 +809,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         claude_rbac_kustomization,
         cnpg_kustomization,
-        external_creds_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        litellm_keys_tf_kustomization,
-        local_path_provisioner_kustomization,
-        reflector_kustomization,
-        sso_providers_tf_kustomization,
-        ssh_mcp_kustomization,
-        haku_console_kustomization,
-        ha_mcp_kustomization,
-        airlock_kustomization,
     )
     flux_app.synth()
 
