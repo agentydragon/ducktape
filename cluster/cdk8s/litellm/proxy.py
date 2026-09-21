@@ -149,10 +149,6 @@ def _literal_env(name: str, value: str) -> _EnvEntry:
     return _LiteralEnv(name, value)
 
 
-def _secret_env(name: str, secret_name: str, key: str, *, optional: bool = False) -> _EnvEntry:
-    return _SecretEnv(name, secret_name, key, optional)
-
-
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (_literal_env("HOST", "0.0.0.0"), _literal_env("PORT", "4000"), *entries)
 
@@ -161,8 +157,8 @@ def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
         _literal_env("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
-        _secret_env("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
-        _secret_env("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+        _SecretEnv("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
+        _SecretEnv("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
     )
 
 
@@ -175,16 +171,15 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                _secret_env("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
-                _secret_env("DATABASE_URL", "litellm-db-app", "uri"),
-                _secret_env("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
-                _secret_env("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
-                _secret_env("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
-                _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
-                _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
-                _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
-                _literal_env("TANA_FIREBASE_API_KEY", "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ"),
-                _secret_env(
+                _SecretEnv("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
+                _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
+                _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
+                _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
+                _SecretEnv("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
+                _SecretEnv("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
+                _SecretEnv("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
+                _SecretEnv("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _SecretEnv(
                     "TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token", optional=True
                 ),
             ),

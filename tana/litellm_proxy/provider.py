@@ -441,6 +441,7 @@ class TanaLiteLLM(CustomLLM):
         super().__init__()
         self._base_config = TanaProxyConfig.from_env(include_refresh_token=False)
         self._client = client or TanaProxyClient(self._base_config)
+        self._injected_client = client is not None
         self._clients_by_config: OrderedDict[TanaProxyConfig, _CredentialAwareChatClient] = OrderedDict()
         if isinstance(self._client, TanaProxyClient):
             self._clients_by_config[self._base_config] = cast(_CredentialAwareChatClient, self._client)
@@ -456,7 +457,18 @@ class TanaLiteLLM(CustomLLM):
 
         client = self._clients_by_config.get(config)
         if client is None:
-            client = TanaProxyClient(config)
+            injected_client = self._client if self._injected_client else None
+            client = TanaProxyClient(
+                config,
+                http_client=injected_client._http_client if injected_client is not None else None,
+                sync_http_client=injected_client._sync_http_client if injected_client is not None else None,
+                refresh_token_reader=(
+                    injected_client._refresh_token_reader
+                    if injected_client is not None
+                    else read_refresh_token_from_config
+                ),
+                now=injected_client._now if injected_client is not None else time.time,
+            )
             self._clients_by_config[config] = client
             if len(self._clients_by_config) > 16:
                 self._clients_by_config.popitem(last=False)
@@ -565,7 +577,7 @@ def _litellm_request_config(
     base_config: TanaProxyConfig, optional_params: Mapping[str, Any], *, api_base: Any, timeout: Any
 ) -> tuple[TanaProxyConfig, dict[str, Any]]:
     config_fields = {
-        "tana_firebase_api_key": ("firebase_api_key", str),
+        "firebase_api_key": ("firebase_api_key", str),
         "tana_user_context": ("user_context", str),
         "tana_tool_user_context": ("tool_user_context", str),
         "tana_ignore_large_context_warning": ("ignore_large_context_warning", bool),

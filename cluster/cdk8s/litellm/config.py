@@ -251,7 +251,7 @@ def _tana_entries() -> list[dict]:
             timeout=60,
             supports_function_calling=True,
             extra_litellm_params={
-                "tana_firebase_api_key": "os.environ/TANA_FIREBASE_API_KEY",
+                "firebase_api_key": "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ",
                 "tana_user_context": "Generic AI Query",
                 "tana_tool_user_context": "Ask Tana",
                 "tana_ignore_large_context_warning": True,

@@ -64,10 +64,11 @@ The LiteLLM model entries configure Tana through normal `litellm_params`:
   provider as `api_key`.
 - `api_base` selects the Tana Functions base URL and `timeout` sets the request
   timeout.
-- Provider-specific values such as `tana_firebase_api_key`,
-  `tana_user_context`, and `tana_tool_user_context` are custom model params.
-  LiteLLM passes them to the handler in `optional_params`; the adapter consumes
-  and removes them before forwarding generation options to Tana.
+- `firebase_api_key` is a non-secret value in `litellm_params`. The provider
+  also accepts custom context and warning settings such as `tana_user_context`
+  and `tana_tool_user_context`. LiteLLM passes these to the handler in
+  `optional_params`; the adapter consumes and removes them before forwarding
+  generation options to Tana.
 
 The adapter exchanges the refresh token for a Firebase ID token and caches
 only that short-lived ID token. The resigner owns and refreshes the Secret; this
