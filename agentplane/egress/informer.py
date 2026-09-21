@@ -39,7 +39,7 @@ class Informer:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
-        kinds = [
+        kinds: list[WatchedKind] = [
             WatchedKind(
                 name=POLICIES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,

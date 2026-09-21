@@ -41,6 +41,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
   latter two are resolved per request and must still be bound to the caller being decided; absent,
   stale, or mismatched context refuses with `credential-unavailable`.
+- A deployment may disable Secret access. It then performs no Secret reads; workload-token and
+  credentialless rules remain available, and rules requiring a Secret cannot substitute it.
 - **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
   carries this proxy's audience, so a destination validating its own — the API server against
   `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
