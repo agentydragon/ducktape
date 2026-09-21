@@ -16,8 +16,8 @@ def upgrade() -> None:
         sa.Column(
             "thread_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
         ),
-        sa.Column("source_id", sa.Text(), primary_key=True),
-        sa.Column("projection_epoch", sa.Text(), primary_key=True),
+        sa.Column("source_id", sa.Text(), nullable=False),
+        sa.Column("projection_epoch", sa.Text(), nullable=False),
         sa.Column("through_cursor", sa.BigInteger(), nullable=False),
     )
     op.create_table(
@@ -42,6 +42,11 @@ def upgrade() -> None:
         "ix_conversation_entity_scope_revision",
         "conversation_entity",
         ["thread_id", "source_id", "projection_epoch", "revision_cursor"],
+    )
+    op.create_index(
+        "ix_conversation_entity_scope_cursor",
+        "conversation_entity",
+        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
     )
     op.create_table(
         "conversation_payload_manifest",
@@ -90,6 +95,7 @@ def downgrade() -> None:
     op.drop_table("conversation_projection_evidence")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
+    op.drop_index("ix_conversation_entity_scope_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")
     op.drop_table("conversation_projection_checkpoint")

@@ -112,8 +112,8 @@ class ConversationProjectionCheckpoint(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
+    source_id: Mapped[str] = mapped_column(Text)
+    projection_epoch: Mapped[str] = mapped_column(Text)
     through_cursor: Mapped[int] = mapped_column(BigInteger)
 
 
@@ -123,6 +123,15 @@ class ConversationEntity(Base):
     __tablename__ = "conversation_entity"
     __table_args__ = (
         Index("ix_conversation_entity_scope_revision", "thread_id", "source_id", "projection_epoch", "revision_cursor"),
+        Index(
+            "ix_conversation_entity_scope_cursor",
+            "thread_id",
+            "source_id",
+            "projection_epoch",
+            "cursor",
+            "entity_kind",
+            "entity_id",
+        ),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
