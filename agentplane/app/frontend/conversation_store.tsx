@@ -188,17 +188,18 @@ export function CommandSelection({
 function ActiveConversation({
   threadId,
   interest,
+  collection,
   onRows,
   onRotate,
   onCaughtUp,
 }: {
   threadId: string;
   interest: EntityInterest;
+  collection: ReturnType<typeof entityCollection>;
   onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
   onCaughtUp?: () => void;
 }): JSX.Element {
-  const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
   const rows = query.data ?? [];
   const view = rows.find((row) => row.entityKind === "view_state");
@@ -233,9 +234,10 @@ export function ConversationCollection({
   beforeCursor?: string;
   children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
 }): JSX.Element {
-  const [interest, setInterest] = useState<EntityInterest | null>(null);
-  const interestRef = useRef<EntityInterest | null>(null);
-  const [pendingInterest, setPendingInterest] = useState<EntityInterest | null>(null);
+  type Selection = { interest: EntityInterest; collection: ReturnType<typeof entityCollection> };
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const selectionRef = useRef<Selection | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<Selection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const rotate = useCallback(() => setGeneration((value) => value + 1), []);
@@ -246,17 +248,18 @@ export function ConversationCollection({
     void conversationInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) {
-          if (interestRef.current === null) {
-            interestRef.current = value;
-            setInterest(value);
-          } else setPendingInterest(value);
+          const next = { interest: value, collection: entityCollection(threadId, value) };
+          if (selectionRef.current === null) {
+            selectionRef.current = next;
+            setSelection(next);
+          } else setPendingSelection(next);
         }
       },
       (reason: unknown) => {
         if (controller.signal.aborted) return;
         const message = displayableError(reason);
-        if (message.includes("404")) retry = window.setTimeout(() => setGeneration((value) => value + 1), 1000);
-        else setError(message);
+        if (!message.includes("404")) setError(message);
+        retry = window.setTimeout(() => setGeneration((value) => value + 1), 1_000);
       }
     );
     return () => {
@@ -264,22 +267,32 @@ export function ConversationCollection({
       if (retry !== undefined) window.clearTimeout(retry);
     };
   }, [beforeCursor, generation, threadId]);
-  if (error) return <p role="alert">Conversation sync failed: {error}</p>;
-  if (!interest) return <p role="status">Loading conversation…</p>;
+  if (!selection) {
+    if (error) return <p role="alert">Conversation sync failed: {error}</p>;
+    return <p role="status">Loading conversation…</p>;
+  }
   return (
     <>
-      <ActiveConversation threadId={threadId} interest={interest} onRows={children} onRotate={rotate} />
-      {pendingInterest && (
+      {error && <p role="alert">Conversation sync failed: {error}; showing the current window and retrying.</p>}
+      <ActiveConversation
+        threadId={threadId}
+        interest={selection.interest}
+        collection={selection.collection}
+        onRows={children}
+        onRotate={rotate}
+      />
+      {pendingSelection && (
         <div hidden>
           <ActiveConversation
             threadId={threadId}
-            interest={pendingInterest}
+            interest={pendingSelection.interest}
+            collection={pendingSelection.collection}
             onRows={() => <></>}
             onRotate={rotate}
             onCaughtUp={() => {
-              interestRef.current = pendingInterest;
-              setInterest(pendingInterest);
-              setPendingInterest(null);
+              selectionRef.current = pendingSelection;
+              setSelection(pendingSelection);
+              setPendingSelection(null);
             }}
           />
         </div>
