@@ -131,6 +131,9 @@ class ViewState:
     position: Position
     controls: Controls = Controls()
     unresolved_count: int = 0
+    # This changes only when a command is admitted or settles. It lets clients avoid treating
+    # ordinary item deltas as a reason to repage command summaries.
+    command_revision_cursor: int = 0
 
 
 @dataclass(frozen=True)
@@ -418,7 +421,9 @@ class _Fold:
                 ),
             )
         self.commands[command_id] = summary
-        self.state = replace(self.state, unresolved_count=self.state.unresolved_count + 1)
+        self.state = replace(
+            self.state, unresolved_count=self.state.unresolved_count + 1, command_revision_cursor=cursor
+        )
 
     def _settle(
         self, entry: event_log_pb2.EventEntry, command_id: str, outcome: CommandOutcome, reason: str | None = None
@@ -430,7 +435,9 @@ class _Fold:
         if self.state.unresolved_count == 0:
             raise ValueError("unresolved command count underflow")
         self.commands[command_id] = replace(summary, outcome=outcome, outcome_cursor=cursor, outcome_reason=reason)
-        self.state = replace(self.state, unresolved_count=self.state.unresolved_count - 1)
+        self.state = replace(
+            self.state, unresolved_count=self.state.unresolved_count - 1, command_revision_cursor=cursor
+        )
         self._evidence(summary.admission_cursor, entry)
 
     def _lifecycle(self, entry: event_log_pb2.EventEntry, observation: str) -> None:

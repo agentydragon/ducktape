@@ -274,6 +274,9 @@ async def async_main(settings: Settings) -> None:
                 thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=page_size
             )
 
+        async def resolve_pending_interest(thread_id: UUID, before_cursor: int | None, page_size: int):
+            return await store.pending_command_interest(thread_id, before_cursor=before_cursor, page_size=page_size)
+
         async def resolve_payload(
             thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
         ):
@@ -305,7 +308,13 @@ async def async_main(settings: Settings) -> None:
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
             electric=(
-                ElectricProxy(electric_http, resolve_entity_interest, resolve_payload, store.current_conversation_scope)
+                ElectricProxy(
+                    electric_http,
+                    resolve_entity_interest,
+                    resolve_payload,
+                    store.current_conversation_scope,
+                    resolve_pending_interest,
+                )
                 if settings.electric_url is not None
                 else None
             ),

@@ -13,7 +13,12 @@ from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
 from agentplane.app.electric import ElectricProxy, router
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, ConversationScope
+from agentplane.app.trajectory import (
+    ConversationEntityInterest,
+    ConversationPayloadSelection,
+    ConversationPendingInterest,
+    ConversationScope,
+)
 
 THREAD = UUID("00000000-0000-0000-0000-000000000123")
 SCOPE = ConversationScope(source_id="runner/source", projection_epoch="epoch-4", through_cursor=99)
@@ -45,10 +50,26 @@ async def current_scope(thread_id: UUID) -> ConversationScope | None:
     return SCOPE if thread_id == THREAD else None
 
 
+async def pending_interest(
+    thread_id: UUID, before_cursor: int | None, page_size: int
+) -> ConversationPendingInterest | None:
+    assert thread_id == THREAD
+    assert page_size == 30
+    if before_cursor is not None and before_cursor < 10:
+        return ConversationPendingInterest(SCOPE, 95, 33, (), None)
+    return ConversationPendingInterest(
+        SCOPE,
+        95,
+        33,
+        tuple(f"pending-{cursor}" for cursor in range(90 if before_cursor is None else before_cursor - 1, 60, -1)),
+        61,
+    )
+
+
 def make_app(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, entities, payload, current_scope)
+    app.state.electric = ElectricProxy(electric, entities, payload, current_scope, pending_interest)
     app.include_router(router)
     return app, electric
 
@@ -84,6 +105,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
     assert "cursor >= $4" in query["where"]
+    assert "pending = TRUE" not in query["where"]
     assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
         "1": str(THREAD),
         "2": "runner/source",
@@ -275,6 +297,33 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
     assert query["params[4]"] == "failed"
     assert query["params[5]"] == "future"
     assert "command_id" not in query
+
+
+async def test_pending_interest_is_server_paged_and_has_no_client_scope() -> None:
+    async def unexpected(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("pending interest is a SQL endpoint, not an Electric shape")
+
+    app, electric = make_app(httpx.MockTransport(unexpected))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        first = await client.get(f"/threads/{THREAD}/sync/pending-interest")
+        older = await client.get(f"/threads/{THREAD}/sync/pending-interest?before_cursor=61")
+        invalid = await client.get(f"/threads/{THREAD}/sync/pending-interest?before_cursor=-1")
+        absent = await client.get(f"/threads/{UUID(int=0)}/sync/pending-interest")
+    await electric.aclose()
+
+    assert first.json() == {
+        "source_id": "runner/source",
+        "projection_epoch": "epoch-4",
+        "through_cursor": "99",
+        "command_revision_cursor": "95",
+        "unresolved_count": 33,
+        "command_ids": [f"pending-{cursor}" for cursor in range(90, 60, -1)],
+        "next_before_cursor": "61",
+    }
+    assert older.json()["command_ids"] == []
+    assert older.json()["next_before_cursor"] is None
+    assert invalid.status_code == 422
+    assert absent.status_code == 404
 
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
