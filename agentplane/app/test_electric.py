@@ -7,7 +7,8 @@ import httpx
 import pytest_bazel
 from fastapi import FastAPI
 
-from agentplane.app.electric import ConversationScope, ElectricProxy, router
+from agentplane.app.electric import ElectricProxy, router
+from agentplane.app.trajectory import ConversationScope
 
 THREAD = UUID("00000000-0000-0000-0000-000000000123")
 
@@ -20,12 +21,12 @@ async def test_shape_definition_is_fixed_by_server() -> None:
         seen = request
         return httpx.Response(
             200,
-            content=b'[{"headers":{"control":"up-to-date"}}]',
+            stream=httpx.ByteStream(b'[{"headers":{"control":"up-to-date"}}]'),
             headers={"electric-offset": "7_0", "x-private": "no"},
         )
 
     async def scope(thread_id: UUID) -> ConversationScope | None:
-        return ConversationScope(thread_id=thread_id, source_id="runner/source", projection_epoch=4)
+        return ConversationScope(source_id="runner/source", projection_epoch="4", through_cursor=19)
 
     upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream), base_url="http://electric")
     app = FastAPI()
@@ -43,7 +44,7 @@ async def test_shape_definition_is_fixed_by_server() -> None:
     assert query["table"] == "conversation_entity"
     assert query["log"] == "changes_only"
     assert query["replica"] == "full"
-    assert json.loads(query["params"]) == {"1": str(THREAD), "2": "runner/source", "3": 4}
+    assert json.loads(query["params"]) == {"1": str(THREAD), "2": "runner/source", "3": "4"}
 
 
 async def test_client_cannot_override_shape_or_issue_arbitrary_subset() -> None:
@@ -51,7 +52,7 @@ async def test_client_cannot_override_shape_or_issue_arbitrary_subset() -> None:
         raise AssertionError("rejected requests must not reach Electric")
 
     async def scope(thread_id: UUID) -> ConversationScope | None:
-        return ConversationScope(thread_id=thread_id, source_id="source", projection_epoch=1)
+        return ConversationScope(source_id="source", projection_epoch="1", through_cursor=19)
 
     upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric")
     app = FastAPI()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
@@ -14,18 +13,13 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agentplane.app.trajectory import ConversationScope
+
 
 class ConversationShape(StrEnum):
     ENTITIES = "entities"
     PAYLOAD_MANIFESTS = "payload-manifests"
     PAYLOAD_CHUNKS = "payload-chunks"
-
-
-@dataclass(frozen=True)
-class ConversationScope:
-    thread_id: UUID
-    source_id: str
-    projection_epoch: int
 
 
 class Subset(BaseModel):
@@ -47,7 +41,7 @@ class Subset(BaseModel):
         return self
 
 
-_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "live_sse"})
+_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live"})
 _RESPONSE_HEADERS = frozenset(
     {
         "cache-control",
@@ -68,27 +62,27 @@ _SHAPE_TABLES = {
 }
 _SHAPE_COLUMNS = {
     ConversationShape.ENTITIES: (
-        "thread_id,source_id,projection_epoch,kind,cursor_or_id,segment_cursor,identity,revision,payload"
+        "thread_id,source_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,turn_id,state,"
+        "text_ref,arguments_ref,output_ref,input_ref"
     ),
     ConversationShape.PAYLOAD_MANIFESTS: (
         "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,revision_cursor,"
         "present,chunk_count,content_bytes"
     ),
     ConversationShape.PAYLOAD_CHUNKS: (
-        "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,revision_cursor,"
-        "chunk_index,content"
+        "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
     ),
 }
 _SHAPE_QUERYABLE_COLUMNS = {
-    ConversationShape.ENTITIES: "segment_cursor,cursor_or_id",
+    ConversationShape.ENTITIES: "cursor,entity_id",
     ConversationShape.PAYLOAD_MANIFESTS: "owner_id,field,generation,revision_cursor",
     ConversationShape.PAYLOAD_CHUNKS: "owner_id,field,generation,chunk_index",
 }
 _SHAPE_SUBSETS = {
     ConversationShape.ENTITIES: {
-        ("segment_cursor < $1", "segment_cursor DESC"),
-        ("segment_cursor > $1", "segment_cursor ASC"),
-        ("cursor_or_id = ANY($1)", "segment_cursor ASC"),
+        ("cursor < $1", "cursor DESC"),
+        ("cursor > $1", "cursor ASC"),
+        ("entity_id = ANY($1)", "cursor ASC"),
     },
     ConversationShape.PAYLOAD_MANIFESTS: {
         ("owner_id = $1 AND field = $2 AND generation = $3 AND revision_cursor = $4", "revision_cursor ASC")
@@ -119,14 +113,16 @@ class ElectricProxy:
         supplied = set(request.query_params)
         if rejected := supplied - _PASSTHROUGH_QUERY:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported sync parameters: {sorted(rejected)}")
-        params: list[tuple[str, str]] = [(key, value) for key, value in request.query_params.multi_items()]
+        params: list[tuple[str, str | int | float | bool | None]] = [
+            (key, value) for key, value in request.query_params.multi_items()
+        ]
         params.extend(
             [
                 ("table", _SHAPE_TABLES[shape]),
                 ("columns", _SHAPE_COLUMNS[shape]),
                 ("queryable_columns", _SHAPE_QUERYABLE_COLUMNS[shape]),
                 ("where", "thread_id = $1 AND source_id = $2 AND projection_epoch = $3"),
-                ("params", json.dumps({"1": str(scope.thread_id), "2": scope.source_id, "3": scope.projection_epoch})),
+                ("params", json.dumps({"1": str(thread_id), "2": scope.source_id, "3": scope.projection_epoch})),
                 ("log", "changes_only"),
                 ("replica", "full"),
             ]
@@ -134,7 +130,7 @@ class ElectricProxy:
         upstream = self._client.build_request(
             request.method,
             "/v1/shape",
-            params=params,
+            params=httpx.QueryParams(params),
             json=subset.model_dump(exclude_none=True) if subset is not None else None,
             headers={"accept": request.headers.get("accept", "application/json")},
         )
@@ -172,9 +168,8 @@ async def get_shape(
     offset: Annotated[str | None, Query()] = None,
     handle: Annotated[str | None, Query()] = None,
     live: Annotated[bool | None, Query()] = None,
-    live_sse: Annotated[bool | None, Query()] = None,
 ) -> StreamingResponse:
-    del offset, handle, live, live_sse
+    del offset, handle, live
     return await _proxy(request).forward(request, thread_id=thread_id, shape=shape, subset=None)
 
 

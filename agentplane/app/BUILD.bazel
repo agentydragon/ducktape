@@ -21,9 +21,9 @@ py_test(
     name = "test_conversation_projection",
     srcs = ["test_conversation_projection.py"],
     deps = [
+        ":conftest",
         ":conversation_projection",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
@@ -133,6 +133,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -948,6 +949,7 @@ py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
+        ":trajectory",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -960,6 +962,7 @@ py_test(
     deps = [
         ":conftest",
         ":electric",
+        ":trajectory",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
