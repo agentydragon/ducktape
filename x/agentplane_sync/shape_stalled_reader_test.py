@@ -155,7 +155,8 @@ async def _open_changes_only_at_now(
     assert response.status_code == 200, {"status": response.status_code, "body": response.text[:2000]}
     handle = response.headers.get("electric-handle")
     offset = response.headers.get("electric-offset")
-    assert handle and offset, {"headers": dict(response.headers), "body": response.text[:2000]}
+    assert handle, {"headers": dict(response.headers), "body": response.text[:2000]}
+    assert offset, {"headers": dict(response.headers), "body": response.text[:2000]}
     messages = _messages(response.content)
     return {
         "conversationId": BOUNDED_HISTORY_CONVERSATION,
@@ -194,7 +195,8 @@ async def _read_current_subset(
     body = response.json()
     data = body.get("data")
     metadata = body.get("metadata")
-    assert isinstance(data, list) and isinstance(metadata, dict), body
+    assert isinstance(data, list), body
+    assert isinstance(metadata, dict), body
     rows = [message["value"] for message in data if message.get("headers", {}).get("operation")]
     return {"rows": rows, "metadata": metadata, "responseBytes": len(response.content)}
 
