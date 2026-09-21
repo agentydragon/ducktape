@@ -50,6 +50,19 @@ py_library(
 )
 
 py_library(
+    name = "replication_source",
+    srcs = ["replication_source.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "electric_service",
     srcs = ["electric_service.py"],
     deps = [
@@ -66,14 +79,15 @@ py_library(
 )
 
 py_library(
-    name = "replication_source",
-    srcs = ["replication_source.py"],
+    name = "http2_proxy",
+    srcs = ["http2_proxy.py"],
     deps = [
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "//agentplane/runner:protocol_pb2",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
+        "//third_party/containers:nginx_unprivileged",
+        "//util:net",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//cryptography",
+        "@pypi//h2",
+        "@pypi//httpx",
     ],
 )

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
-import { LocalCommands } from "./local_commands";
+import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 
 const COMMAND = create(CommandSchema, {
   commandId: "input-1",
@@ -121,6 +121,27 @@ it("fails persistence before a caller can claim submission when storage is full"
   });
   expect(() => store.remember(COMMAND)).toThrow("storage full");
   expect(store.getSnapshot().commands).toEqual([]);
+});
+
+it("refuses to retain more commands than the bounded server selection can reconcile", () => {
+  const store = new LocalCommands("thread");
+  for (let index = 0; index < MAX_RETAINED_COMMANDS; index += 1) {
+    store.remember(
+      create(CommandSchema, {
+        commandId: `command-${index}`,
+        operation: { case: "stopRunnerSession", value: {} },
+      })
+    );
+  }
+  expect(() =>
+    store.remember(
+      create(CommandSchema, {
+        commandId: "one-too-many",
+        operation: { case: "stopRunnerSession", value: {} },
+      })
+    )
+  ).toThrow(`maximum ${MAX_RETAINED_COMMANDS}`);
+  expect(store.getSnapshot().commands).toHaveLength(MAX_RETAINED_COMMANDS);
 });
 
 it("preserves undecodable stored data and reports the problem instead of starting empty", () => {

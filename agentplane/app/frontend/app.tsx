@@ -9,7 +9,7 @@ import { ActionHistory } from "./actions_history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
-import { SessionView } from "./session";
+import { ProjectedSession } from "./projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
 import "./shell.css";
@@ -65,7 +65,7 @@ function SandboxRoute(): JSX.Element {
 function ThreadRoute(): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
   const navigate = useNavigate();
-  return <SessionView threadId={threadId} onBack={() => void navigate("/")} />;
+  return <ProjectedSession key={threadId} threadId={threadId} onBack={() => void navigate("/")} />;
 }
 
 function AppRoutes(): JSX.Element {

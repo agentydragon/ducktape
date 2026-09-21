@@ -32,6 +32,13 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
+export type EntityInterest = components["schemas"]["EntityInterestResponse"];
+export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
+export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
+export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
+export type EvidencePage = components["schemas"]["EvidencePage"];
+export type NativeFramePage = components["schemas"]["NativeFramePage"];
+export type ObservationPage = components["schemas"]["ObservationPage"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -50,6 +57,92 @@ export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+
+export async function reconcileCommands(
+  threadId: string,
+  sourceId: string,
+  projectionEpoch: string,
+  commandIds: string[],
+  signal?: AbortSignal
+): Promise<CommandReconciliationResponse> {
+  const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
+    params: { path: { thread_id: threadId } },
+    body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationObservations(
+  threadId: string,
+  cursor: { before?: string; after?: string },
+  signal?: AbortSignal
+): Promise<ObservationPage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations", {
+    params: {
+      path: { thread_id: threadId },
+      query: {
+        // openapi-fetch serializes query values without converting them to JS numbers.
+        before_cursor: cursor.before as unknown as number | undefined,
+        after_cursor: cursor.after as unknown as number | undefined,
+        limit: 30,
+      },
+    },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationEvidence(
+  threadId: string,
+  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  afterCursor = "0",
+  signal?: AbortSignal
+): Promise<EvidencePage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence", {
+    params: {
+      path: { thread_id: threadId },
+      query: {
+        source_id: scope.sourceId,
+        projection_epoch: scope.projectionEpoch,
+        entity_kind: scope.entityKind,
+        entity_id: scope.entityId,
+        after_cursor: afterCursor as unknown as number,
+        limit: 30,
+      },
+    },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationFrames(
+  threadId: string,
+  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  observationCursor: string,
+  afterSequence = "0",
+  signal?: AbortSignal
+): Promise<NativeFramePage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
+    params: {
+      path: { thread_id: threadId, observation_cursor: observationCursor as unknown as number },
+      query: {
+        source_id: scope.sourceId,
+        projection_epoch: scope.projectionEpoch,
+        entity_kind: scope.entityKind,
+        entity_id: scope.entityId,
+        after_sequence: afterSequence as unknown as number,
+        limit: 30,
+      },
+    },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
 
 /** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
 export function serviceAccountKey(account: CallerServiceAccount): string {
@@ -227,6 +320,18 @@ export async function command(threadId: string, message: Command): Promise<Event
 
 export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
+}
+
+export async function conversationInterest(
+  threadId: string,
+  beforeCursor?: string,
+  signal?: AbortSignal
+): Promise<EntityInterest> {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
+  if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Conversation interest failed with ${response.status}`);
+  return (await response.json()) as EntityInterest;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {
