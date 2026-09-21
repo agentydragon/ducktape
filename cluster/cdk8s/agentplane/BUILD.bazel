@@ -393,6 +393,7 @@ py_test(
     deps = [
         ":app_settings",
         ":conftest",
+        ":testing",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",

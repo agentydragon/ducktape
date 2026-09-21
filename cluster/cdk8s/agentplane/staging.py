@@ -204,7 +204,9 @@ ENV = Environment(
     app_config={**staging_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(ca_secret_name="agentplane-egress-ca"),
+    egress=EgressProps(
+        ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE, include_forgejo_credential=True
+    ),
     app=AppProps(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
@@ -248,7 +250,11 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_staging_action_policies(chart)
     EgressCredentials(
-        chart, "egress-credentials", namespace=STAGING_NAMESPACE, proxy_namespace=ENV.namespace, include_forgejo=True
+        chart,
+        "egress-credentials",
+        namespace=ENV.egress.credentials_namespace,
+        proxy_namespace=ENV.namespace,
+        include_forgejo=ENV.egress.include_forgejo_credential,
     )
     return chart
 
