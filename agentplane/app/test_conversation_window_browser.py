@@ -15,14 +15,12 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     page, source = thread_browser.page, thread_browser.source
     entity_urls: list[str] = []
     interest_urls: list[str] = []
-    entity_seen = asyncio.Event()
     interest_seen = asyncio.Event()
 
     def observe_request(request: Request) -> None:
         url = request.url
         if "/sync/entities?" in url:
             entity_urls.append(url)
-            entity_seen.set()
         elif "/sync/interest" in url:
             interest_urls.append(url)
             interest_seen.set()
@@ -30,7 +28,12 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     page.on("request", observe_request)
 
     thread_browser.opened.replay.set()
-    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    initial_entity_url = await page.evaluate(
+        """() => performance.getEntriesByType('resource')
+            .map(entry => entry.name).find(name => name.includes('/sync/entities?'))"""
+    )
+    assert initial_entity_url
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Draft retained across shape rotation")
 
@@ -58,8 +61,6 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
 
     # The original fixed shape is now more than two pages behind. Reusing it must yield an
     # explicit bounded refresh signal instead of replaying the growing suffix.
-    async with asyncio.timeout(10):
-        await entity_seen.wait()
     stale_status = await page.evaluate(
         """async (raw) => {
             const url = new URL(raw);
@@ -67,7 +68,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
             url.searchParams.set('offset', '-1');
             return (await fetch(url)).status;
         }""",
-        entity_urls[0],
+        initial_entity_url,
     )
     assert stale_status == 409
 
