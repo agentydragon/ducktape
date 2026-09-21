@@ -36,8 +36,8 @@ spec:
       name: agent-machine-access-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/authentik/app/**"
-          to: "@artifact/cluster/k8s/authentik/app/"
+        - from: "@repo/cluster/k8s/authentik/**"
+          to: "@artifact/cluster/k8s/authentik/"
       name: authentik
       originRevision: "@repo"
     - copy:
@@ -183,11 +183,6 @@ spec:
         - from: "@repo/cluster/k8s/volsync/**"
           to: "@artifact/cluster/k8s/volsync/"
       name: volsync
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/authentik/namespace/**"
-          to: "@artifact/cluster/k8s/authentik/namespace/"
-      name: authentik-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/cert-manager/trust/**"
@@ -489,19 +484,9 @@ spec:
       name: atuin-user-provisioner
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/authentik/db/**"
-          to: "@artifact/cluster/k8s/authentik/db/"
-      name: authentik-db
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/authentik/db-backups/**"
           to: "@artifact/cluster/k8s/authentik/db-backups/"
       name: authentik-db-backups
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/authentik/proxy-routes/**"
-          to: "@artifact/cluster/k8s/authentik/proxy-routes/"
-      name: authentik-proxy-routes
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
