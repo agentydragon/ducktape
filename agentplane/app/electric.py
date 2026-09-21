@@ -183,12 +183,22 @@ class ElectricProxy:
         request: Request,
         *,
         thread_id: UUID,
+        source_id: str,
+        projection_epoch: str,
         anchor_cursor: int,
         tail_from: int,
         window_from: int | None,
         window_before: int | None,
     ) -> StreamingResponse:
+        current_scope = await self._resolve_scope(thread_id)
+        if current_scope is None or (current_scope.source_id, current_scope.projection_epoch) != (
+            source_id,
+            projection_epoch,
+        ):
+            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
         expected = await self.entity_interest(thread_id, anchor_cursor, window_before)
+        if (expected.scope.source_id, expected.scope.projection_epoch) != (source_id, projection_epoch):
+            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
         if tail_from != expected.tail_from or window_from != expected.window_from:
             raise HTTPException(status.HTTP_409_CONFLICT, "conversation interest has changed; resolve it again")
         scope = expected.scope
@@ -335,6 +345,8 @@ async def get_interest(
 async def get_entities(
     request: Request,
     thread_id: UUID,
+    source_id: str,
+    projection_epoch: str,
     anchor_cursor: Annotated[int, Query(ge=0)],
     tail_from: Annotated[int, Query(ge=0)],
     window_from: Annotated[int | None, Query(ge=0)] = None,
@@ -349,6 +361,8 @@ async def get_entities(
     return await _proxy(request).entities(
         request,
         thread_id=thread_id,
+        source_id=source_id,
+        projection_epoch=projection_epoch,
         anchor_cursor=anchor_cursor,
         tail_from=tail_from,
         window_from=window_from,

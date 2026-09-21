@@ -116,7 +116,7 @@ async def _cross_replica_sync(
         interest = await client_one.get(f"{path}/interest")
         interest.raise_for_status()
         selection = interest.json()
-        entity_params = {"anchor_cursor": selection["anchor_cursor"], "tail_from": selection["tail_from"]}
+        entity_params = {key: selection[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
         initial = await _current_snapshot(client_one, f"{path}/entities", entity_params)
         assert initial.status_code == 200, initial.text
         rows = [message["value"] for message in initial.json()["data"] if "value" in message]
@@ -275,7 +275,7 @@ async def _history_windows(
     tail = await client_two.get(f"{path}/interest")
     tail.raise_for_status()
     tail_interest = tail.json()
-    tail_params = {"anchor_cursor": tail_interest["anchor_cursor"], "tail_from": tail_interest["tail_from"]}
+    tail_params = {key: tail_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
     snapshot = await _current_snapshot(client_two, f"{path}/entities", tail_params)
     snapshot.raise_for_status()
     assert snapshot.headers["cache-control"] == "private, no-store"
@@ -291,7 +291,10 @@ async def _history_windows(
         selected = await client_one.get(f"{path}/interest", params={"before_cursor": before})
         selected.raise_for_status()
         interest = selected.json()
-        window_params = {key: interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
+        window_params = {
+            key: interest[key]
+            for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
+        }
         page = await _current_snapshot(client_two, f"{path}/entities", window_params)
         page.raise_for_status()
         page_rows = [message["value"] for message in page.json()["data"] if "value" in message]
@@ -340,7 +343,8 @@ async def _history_windows(
     revisit.raise_for_status()
     revisit_interest = revisit.json()
     revisit_params = {
-        key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")
+        key: revisit_interest[key]
+        for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
     }
     revisit_page = await _current_snapshot(client_one, f"{path}/entities", revisit_params)
     versions = [

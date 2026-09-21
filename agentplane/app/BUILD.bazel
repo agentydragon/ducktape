@@ -936,16 +936,14 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
 py_test(
     name = "test_conversation_window_browser",
     size = "medium",
-    srcs = [
-        "test_conversation_window_browser.py",
-        "test_thread_browser.py",
-    ],
+    srcs = ["test_conversation_window_browser.py"],
     args = ["--ignore=agentplane/app/test_thread_browser.py"],
     data = [
         "//agentplane/app/frontend:bundle",
@@ -956,21 +954,11 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":trajectory",
+        ":test_thread_browser",
         "//:conftest",
-        "//agentplane/app/testing:electric_service",
-        "//agentplane/app/testing:http2_proxy",
-        "//agentplane/app/testing:replication_process",
-        "//agentplane/app/testing:replication_source",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
-        "//util/bazel:runfiles",
-        "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
-        "@pypi//protobuf",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
