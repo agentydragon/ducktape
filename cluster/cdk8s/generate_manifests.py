@@ -411,9 +411,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_registry_cache_bucket_kustomization = seaweedfs_flux_kustomizations.seaweedfs_registry_cache_bucket(
         flux_chart, seaweedfs_cluster_kustomization
     )
-    seaweedfs_csi_kustomization = seaweedfs_csi_flux_kustomizations.seaweedfs_csi(
-        flux_chart, seaweedfs_cluster_kustomization
-    )
+    seaweedfs_csi_flux_kustomizations.seaweedfs_csi(flux_chart, seaweedfs_cluster_kustomization)
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, seaweedfs_cluster_kustomization
     )
@@ -454,7 +452,6 @@ def generate_manifests(root: Path) -> None:
     oci_cache_flux_kustomizations.oci_cache(
         flux_chart, valkey_kustomization, seaweedfs_registry_cache_bucket_kustomization, monitoring_crds_kustomization
     )
-    parked_flux_kustomizations.archivebox(flux_chart, seaweedfs_csi_kustomization, local_path_provisioner_kustomization)
     seaweedfs_public_s3_kustomization = seaweedfs_flux_kustomizations.seaweedfs_public_s3(
         flux_chart,
         seaweedfs_external_credentials_kustomization,
