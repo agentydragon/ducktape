@@ -84,15 +84,9 @@ def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_stat
 
 def forgejo(
     chart: Chart,
-    forgejo_namespace: Kustomization,
-    forgejo_db: Kustomization,
-    forgejo_cache: Kustomization,
-    gateway: Kustomization,
-    cert_manager: Kustomization,
-    seaweedfs_cluster: Kustomization,
-    reflector: Kustomization,
-    sso_providers_tf: Kustomization,
-    authentik: Kustomization,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "forgejo"
@@ -106,10 +100,10 @@ def forgejo(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/forgejo/app",
+            path="./cluster/k8s/forgejo",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
-            # Health check ensures Forgejo is fully operational with SSO
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="forgejo", namespace="forgejo"
@@ -125,25 +119,9 @@ def forgejo(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
+            # Admission needs these CRDs; runtime dependencies converge independently.
             depends_on=flux_kustomization_depends_on_many(
-                forgejo_namespace,
-                forgejo_db,
-                # shared valkey for cache + queue (HA prerequisite)
-                forgejo_cache,
-                gateway,
-                cert_manager,
-                # SeaweedFS CRDs, operator, and backend
-                seaweedfs_cluster,
-                # Mirrors forgejo-oauth-client-secret into the namespace
-                reflector,
-                # Writes forgejo-oauth-client-secret to authentik namespace
-                sso_providers_tf,
-                # Authentik must be running for OIDC
-                authentik,
-                # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
-                # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.
-                # the ServiceMonitor/PodMonitor CRD
-                monitoring_crds,
+                cnpg, external_secrets_operator, seaweedfs_operator, monitoring_crds
             ),
         ),
     )
@@ -209,9 +187,7 @@ def budget_namespace(chart: Chart) -> Kustomization:
     )
 
 
-def forgejo_cache(
-    chart: Chart, forgejo_namespace: Kustomization, valkey: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
+def forgejo_cache(chart: Chart, valkey: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
     name = "forgejo-cache"
     return flux_kustomization(
         chart,
@@ -226,7 +202,9 @@ def forgejo_cache(
             path="./cluster/k8s/forgejo/cache",
             prune=True,
             wait=True,
-            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, valkey, local_path_provisioner),
+            # Retry until the forgejo aggregate creates the Namespace. Waiting for
+            # Forgejo readiness would deadlock its cache-dependent startup.
+            depends_on=flux_kustomization_depends_on_many(valkey, local_path_provisioner),
         ),
     )
 
@@ -318,33 +296,6 @@ def cpap_data(
     )
 
 
-def forgejo_db(chart: Chart, forgejo_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
-    name = "forgejo-db"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/forgejo/db",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            # Required to apply forgejo-db-ssd-creds.sops.yaml (Forgejo's DB app creds, which CNPG
-            # syncs onto the -ssd forgejo role); without it Flux applies the ciphertext.
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
-            depends_on=flux_kustomization_depends_on_many(forgejo_namespace, cnpg),
-        ),
-    )
-
-
 def haku_state(
     chart: Chart,
     forgejo: Kustomization,
@@ -391,23 +342,5 @@ def haku_state(
                 haku_console_namespace,
                 haku_egress_proxy_namespace,
             ),
-        ),
-    )
-
-
-def forgejo_namespace(chart: Chart) -> Kustomization:
-    name = "forgejo-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path="./cluster/k8s/forgejo/namespace",
-            prune=False,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="1m",
         ),
     )

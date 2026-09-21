@@ -166,7 +166,6 @@ def generate_manifests(root: Path) -> None:
         flux_image_automation_ghcr_flux_kustomizations.flux_image_automation_ghcr(flux_chart)
     )
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart)
-    forgejo_namespace_kustomization = forgejo_flux_kustomizations.forgejo_namespace(flux_chart)
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart)
     hubble_ui_flux_kustomizations.hubble_ui(flux_chart)
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart)
@@ -230,9 +229,7 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.public_coder_agent_sshpiper(
         flux_chart, public_coder_agent_namespace_kustomization, sshpiper_crds_kustomization
     )
-    forgejo_cache_kustomization = forgejo_flux_kustomizations.forgejo_cache(
-        flux_chart, forgejo_namespace_kustomization, valkey_kustomization, local_path_provisioner_kustomization
-    )
+    forgejo_flux_kustomizations.forgejo_cache(flux_chart, valkey_kustomization, local_path_provisioner_kustomization)
     haku_forgejo_tea_kustomization = haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_rbac_kustomization)
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(flux_chart, kyverno_policies_kustomization)
     vpa_kustomization = vpa_flux_kustomizations.vpa(flux_chart, kyverno_kustomization, metrics_server_kustomization)
@@ -274,9 +271,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_issuer_config_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
-    )
-    forgejo_db_kustomization = forgejo_flux_kustomizations.forgejo_db(
-        flux_chart, forgejo_namespace_kustomization, cnpg_kustomization
     )
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_namespace_kustomization, cnpg_kustomization
@@ -433,15 +427,9 @@ def generate_manifests(root: Path) -> None:
     )
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
-        forgejo_namespace_kustomization,
-        forgejo_db_kustomization,
-        forgejo_cache_kustomization,
-        gateway_kustomization,
-        cert_manager_kustomization,
-        seaweedfs_cluster_kustomization,
-        reflector_kustomization,
-        sso_providers_tf_kustomization,
-        authentik_kustomization,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
     headlamp_flux_kustomizations.headlamp(flux_chart, gateway_kustomization, sso_providers_tf_kustomization)

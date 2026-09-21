@@ -80,8 +80,8 @@ spec:
       name: external-secrets-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/forgejo/app/**"
-          to: "@artifact/cluster/k8s/forgejo/app/"
+        - from: "@repo/cluster/k8s/forgejo/**"
+          to: "@artifact/cluster/k8s/forgejo/"
       name: forgejo
       originRevision: "@repo"
     - copy:
@@ -218,11 +218,6 @@ spec:
         - from: "@repo/cluster/k8s/clickhouse/cluster/**"
           to: "@artifact/cluster/k8s/clickhouse/cluster/"
       name: clickhouse
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/forgejo/namespace/**"
-          to: "@artifact/cluster/k8s/forgejo/namespace/"
-      name: forgejo-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
@@ -584,11 +579,6 @@ spec:
         - from: "@repo/cluster/k8s/forgejo/cpap-data/**"
           to: "@artifact/cluster/k8s/forgejo/cpap-data/"
       name: cpap-data
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/forgejo/db/**"
-          to: "@artifact/cluster/k8s/forgejo/db/"
-      name: forgejo-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/gatus/**"
