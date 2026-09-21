@@ -44,22 +44,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-egress-proxy-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 1h
-  path: ./cluster/k8s/agents/haku-egress-proxy-namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-egress-proxy-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-openclaw-spike-namespace
   namespace: ducktape-flux
 spec:
@@ -4712,8 +4696,6 @@ spec:
       namespace: ducktape-flux
     - name: haku-namespace
       namespace: ducktape-flux
-    - name: haku-egress-proxy-namespace
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
@@ -5059,24 +5041,13 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: haku-egress-proxy-namespace
-      namespace: ducktape-flux
-    - name: haku-openclaw-spike-namespace
-      namespace: ducktape-flux
-    - name: haku-state
-      namespace: ducktape-flux
-    - name: cert-manager-environment
+    - name: cert-manager
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: forgejo-images
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/haku-egress-proxy

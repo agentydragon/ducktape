@@ -101,7 +101,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("grafana-operator", ("cluster/k8s/monitoring/grafana-operator",)),
     ("grocy-sf", ("cluster/k8s/grocy/sf/app", "cluster/k8s/grocy/app-base")),
     ("grocy-vallejo", ("cluster/k8s/grocy/vallejo/app", "cluster/k8s/grocy/app-base")),
-    ("haku-egress-proxy-namespace", ("cluster/k8s/agents/haku-egress-proxy-namespace",)),
     ("haku-openclaw-spike-namespace", ("cluster/k8s/agents/haku-openclaw-spike/namespace",)),
     ("home-assistant", ("cluster/k8s/home-assistant",)),
     ("litellm", ("cluster/k8s/litellm",)),
