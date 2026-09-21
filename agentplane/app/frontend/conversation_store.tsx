@@ -1,7 +1,7 @@
 import { snakeCamelMapper } from "@electric-sql/client";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import { createCollection, useLiveQuery } from "@tanstack/react-db";
-import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
 import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
@@ -190,11 +190,13 @@ function ActiveConversation({
   interest,
   onRows,
   onRotate,
+  onCaughtUp,
 }: {
   threadId: string;
   interest: EntityInterest;
   onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
+  onCaughtUp?: () => void;
 }): JSX.Element {
   const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
@@ -205,6 +207,9 @@ function ActiveConversation({
   useEffect(() => {
     if (segmentCount > 60) onRotate();
   }, [onRotate, segmentCount]);
+  useEffect(() => {
+    if (caughtUp) onCaughtUp?.();
+  }, [caughtUp, onCaughtUp]);
   useEffect(() => {
     if (!query.isError) return;
     const retry = window.setTimeout(onRotate, 1_000);
@@ -229,6 +234,8 @@ export function ConversationCollection({
   children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
 }): JSX.Element {
   const [interest, setInterest] = useState<EntityInterest | null>(null);
+  const interestRef = useRef<EntityInterest | null>(null);
+  const [pendingInterest, setPendingInterest] = useState<EntityInterest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const rotate = useCallback(() => setGeneration((value) => value + 1), []);
@@ -238,7 +245,12 @@ export function ConversationCollection({
     setError(null);
     void conversationInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
-        if (!controller.signal.aborted) setInterest(value);
+        if (!controller.signal.aborted) {
+          if (interestRef.current === null) {
+            interestRef.current = value;
+            setInterest(value);
+          } else setPendingInterest(value);
+        }
       },
       (reason: unknown) => {
         if (controller.signal.aborted) return;
@@ -254,7 +266,26 @@ export function ConversationCollection({
   }, [beforeCursor, generation, threadId]);
   if (error) return <p role="alert">Conversation sync failed: {error}</p>;
   if (!interest) return <p role="status">Loading conversation…</p>;
-  return <ActiveConversation threadId={threadId} interest={interest} onRows={children} onRotate={rotate} />;
+  return (
+    <>
+      <ActiveConversation threadId={threadId} interest={interest} onRows={children} onRotate={rotate} />
+      {pendingInterest && (
+        <div hidden>
+          <ActiveConversation
+            threadId={threadId}
+            interest={pendingInterest}
+            onRows={() => <></>}
+            onRotate={rotate}
+            onCaughtUp={() => {
+              interestRef.current = pendingInterest;
+              setInterest(pendingInterest);
+              setPendingInterest(null);
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
 }
 
 function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
