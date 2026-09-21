@@ -537,6 +537,10 @@ function VirtualizedHistory({
     getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
+    // ResizeObserver below preserves the first visible row explicitly. Letting the
+    // virtualizer also compensate size changes applies a second, estimate-based scroll
+    // adjustment before that measured anchor is restored.
+    shouldAdjustScrollPositionOnItemSizeChange: () => false,
   });
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
