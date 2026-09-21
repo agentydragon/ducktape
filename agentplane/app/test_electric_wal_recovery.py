@@ -106,6 +106,17 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                         await service.wait_ready()
                     except TimeoutError:
                         _write_artifact("automatic-recovery.log", await service.logs())
+                        _write_artifact(
+                            "automatic-recovery-state.json",
+                            json.dumps(
+                                {
+                                    "health": await _health_state(service),
+                                    "postgres": await _postgres_recovery_state(service),
+                                },
+                                indent=2,
+                                sort_keys=True,
+                            ),
+                        )
                         raise
                     stale = await client.get(
                         "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
@@ -150,6 +161,28 @@ async def _slot_state_after_restart(service: ElectricService) -> dict[str, objec
     connection = await _connect(service)
     try:
         return await _slot_state(connection)
+    finally:
+        await connection.close()
+
+
+async def _health_state(service: ElectricService) -> dict[str, object]:
+    async with httpx.AsyncClient(base_url=service.url, timeout=5) as client:
+        response = await client.get("/v1/health")
+    return {"status": response.status_code, "body": response.text, "headers": dict(response.headers)}
+
+
+async def _postgres_recovery_state(service: ElectricService) -> dict[str, object]:
+    connection = await _connect(service)
+    try:
+        slot = await _slot_state(connection)
+        replication = await connection.fetch(
+            """
+            SELECT application_name, state, sent_lsn::text, write_lsn::text, flush_lsn::text, replay_lsn::text,
+                   wait_event_type, wait_event
+            FROM pg_stat_replication
+            """
+        )
+        return {"slot": slot, "replication": [dict(row) for row in replication]}
     finally:
         await connection.close()
 
