@@ -32,11 +32,15 @@ from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import (
     ConversationEntity,
+    ConversationFeedErrorState,
+    ConversationOperationalState,
     ConversationPayloadChunk,
     ConversationPayloadManifest,
     ConversationProjectionCheckpoint,
     ConversationProjectionEvidence,
     ConversationProjectionNativeLink,
+    ConversationViewState,
+    FeedState,
     TrajectoryStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -1451,6 +1455,65 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+
+
+async def test_unknown_projection_failure_keeps_verified_history_and_stops_browser(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    draft = "Retained draft while projection failure is reported"
+    await composer.fill(draft)
+
+    # This models only the persisted result of a batch-wide projection failure. The real
+    # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
+    (thread,) = await store.list_threads(sandbox=SANDBOX)
+    async with store._sessions() as session, session.begin():
+        checkpoint = await session.get(ConversationProjectionCheckpoint, thread.id)
+        assert checkpoint is not None
+        view = await session.get(
+            ConversationEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
+        )
+        assert view is not None
+        feed = await session.get(FeedState, thread.id)
+        assert feed is not None
+        state = ConversationViewState.model_validate(view.state)
+        view.state = state.model_copy(
+            update={
+                "operational": ConversationOperationalState(
+                    operational_version=str(int(state.operational.operational_version) + 1),
+                    status="failed",
+                    last_verified_cursor=str(checkpoint.through_cursor),
+                    feed_error=ConversationFeedErrorState(
+                        cursor=None, message="batch-wide projection invariant failed"
+                    ),
+                )
+            }
+        ).model_dump(mode="json")
+        feed.end = {"message": "batch-wide projection invariant failed"}
+
+    failure = page.get_by_role("alert")
+    await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")
+    await expect(failure).to_contain_text("Showing verified history through event 4.")
+    await expect(failure).not_to_contain_text("Rejected event")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+    await expect(composer).to_have_value(draft)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(composer).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    await page.screenshot(path=undeclared_outputs_dir() / "unknown-projection-failure-retained.png")
+
+    await page.reload()
+    await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")
+    await expect(failure).to_contain_text("Showing verified history through event 4.")
+    await expect(failure).not_to_contain_text("Rejected event")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(composer).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    assert await store.events(thread.id, limit=100) == source.entries
 
 
 if __name__ == "__main__":
