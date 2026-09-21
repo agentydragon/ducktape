@@ -36,6 +36,7 @@
     "@tabler/icons-react": "^3.46.0",
     "@tanstack/electric-db-collection": "0.4.7",
     "@tanstack/react-db": "0.3.7",
+    "@tanstack/react-virtual": "3.13.12",
     "@uiw/react-codemirror": "^4.25.11",
     "@uiw/react-json-view": "2.0.0-alpha.43",
     "date-fns": "^4.4.0",

@@ -158,12 +158,7 @@ class ElectricProxy:
             "(entity_kind = 'command' AND pending = TRUE))"
         )
         return await self._forward(
-            request,
-            table="conversation_entity",
-            columns=_ENTITY_COLUMNS,
-            queryable_columns="entity_kind,pending,cursor,entity_id",
-            where=where,
-            params=params,
+            request, table="conversation_entity", columns=_ENTITY_COLUMNS, where=where, params=params
         )
 
     async def payload_chunks(
@@ -200,7 +195,6 @@ class ElectricProxy:
             request,
             table="conversation_payload_chunk",
             columns=_CHUNK_COLUMNS,
-            queryable_columns="owner_cursor,owner_id,field,generation,chunk_index",
             where=(
                 "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor = $4 AND "
                 f"owner_id = $5 AND field = $6 AND generation = $7{chunk_bound}"
@@ -209,22 +203,14 @@ class ElectricProxy:
         )
 
     async def _forward(
-        self, request: Request, *, table: str, columns: str, queryable_columns: str, where: str, params: dict[str, str]
+        self, request: Request, *, table: str, columns: str, where: str, params: dict[str, str]
     ) -> StreamingResponse:
         if rejected := set(request.query_params) - _PASSTHROUGH_QUERY - _INTEREST_QUERY:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported sync parameters: {sorted(rejected)}")
         query: list[tuple[str, str | int | float | bool | None]] = [
             (key, value) for key, value in request.query_params.multi_items() if key in _PASSTHROUGH_QUERY
         ]
-        query.extend(
-            [
-                ("table", table),
-                ("columns", columns),
-                ("queryable_columns", queryable_columns),
-                ("where", where),
-                ("replica", "full"),
-            ]
-        )
+        query.extend([("table", table), ("columns", columns), ("where", where), ("replica", "full")])
         query.extend((f"params[{index}]", value) for index, value in params.items())
         upstream = self._client.build_request(
             "GET",

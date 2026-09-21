@@ -32,6 +32,9 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
+export type EntityInterest = components["schemas"]["EntityInterestResponse"];
+export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
+export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -227,6 +230,18 @@ export async function command(threadId: string, message: Command): Promise<Event
 
 export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
+}
+
+export async function conversationInterest(
+  threadId: string,
+  beforeCursor?: string,
+  signal?: AbortSignal
+): Promise<EntityInterest> {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
+  if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Conversation interest failed with ${response.status}`);
+  return (await response.json()) as EntityInterest;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {
