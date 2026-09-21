@@ -216,7 +216,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     (undeclared_outputs_dir() / f"{request.node.name}-projection-profile.txt").write_text("\n".join(profile))
 
 
-def _history_event(cursor: int, materialized_item_count: int) -> event_pb2.Event:
+def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.EventEntry:
     index = cursor - 3
     if index < materialized_item_count * 2:
         item_id = f"history-{index // 2}"

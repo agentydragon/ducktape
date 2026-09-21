@@ -1,13 +1,13 @@
 # Thread view synchronization
 
-Status: **proposed design; no runtime changes.** The first implementation is a pure
-server-side fold at `agentplane/app/conversation_projection.py`. It produces typed
-domain-record and payload-write intents only. A later change will bind those intents to
-PostgreSQL transactions, physical chunks/manifests, retention, Electric, authorization,
-and the browser; this module introduces none of those runtime paths or a custom sync wire
-protocol. Its later worker supplies one committed batch plus only its touched indexed rows,
-commits the returned intents, then releases the batch and prior rows. It never retains a
-conversation-wide item map, evidence list, or payload operation list between batches.
+Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
+`agentplane/app/conversation_projection.py` is connected to PostgreSQL through the
+transactional writer. The integration uses Electric and its TanStack DB collection adapter;
+the browser consumes bounded metadata interests and explicitly selected payloads.
+See [app implementation notes](../app/README.md) for endpoints and storage details.
+The acceptance requirements below remain gates, including browser behavior and server
+memory; implementation presence is not evidence that they have passed.
+
 [Thread layering](thread_layering.md) owns command admission, runner identities and
 execution durability. This document owns the materialized conversation and partial
 browser state. Record names below describe domain concepts; concrete schemas and wire
@@ -36,8 +36,7 @@ representations remain implementation decisions to validate with the sync integr
 
 The [September 15 inspection](../debug/thread_load_20260915.md) measured 3,091 Events and
 approximately 1.79 MB of SSE for eight turns with 6,278 bytes of completed text/reasoning.
-It is a historical host HTTP measurement, not a current browser benchmark. The present
-browser still folds the full archive; these requirements describe its replacement.
+It is a historical host HTTP measurement, not a current browser benchmark. It motivated replacing browser archive replay with the materialized view described here.
 
 ## Conversation structure and projection
 
@@ -130,7 +129,7 @@ filter or a subscription token. Missed deadlines report lag rather than stale su
 
 ## Reuse the synchronization engine
 
-**Preferred integration to evaluate: Electric with its TanStack DB collection.** Agentplane
+**Selected integration: Electric with its TanStack DB collection.** Agentplane
 owns projection, domain records, command admission and authorization. The engine should
 own snapshot/live handoff, transaction reconciliation, resumable delivery and refetch.
 Do not implement an Agentplane `Changes` journal, suffix wire messages, client replay
@@ -144,7 +143,13 @@ and [shape definitions](https://electric-sql.com/docs/guides/shapes). The
 provides the existing client integration. These are capabilities to exercise against
 pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
-The evaluation must resolve:
+The implementation uses a fixed eager shape limited by indexed predicates to a tail and
+an optional reading window, rather than a whole-Thread shape with a limited initial subset.
+Payload shapes select one content field and generation. A pinned reference limits its
+chunk prefix; a following selection receives later chunks in that generation. A generation
+replacement selects a new shape. There is no persistent browser cache initially.
+
+Acceptance must still establish:
 
 1. **Limited bootstrap and recovery.** Establish changes-only/on-demand synchronization
    and fetch the selected tail. A full shape for the whole Thread must never load as an
@@ -273,9 +278,9 @@ app; app-committed content survives under the app database's storage guarantee. 
 runner never received is outside this guarantee. Measure commit latency on actual storage
 before relaxing publication durability.
 
-Runner restart also needs incremental recovery: its current journal loads all Events and
-session initialization folds them all. Persist recovery state, index pending commands and
-page replay. During execution, retain required active state and bounded journal buffers;
+Runner restart uses persisted recovery state, indexed pending commands and paged journal
+reads. Its independent runner PR must demonstrate that open and recovery work stay bounded
+as retained history grows. During execution, retain required active state and bounded journal buffers;
 page historical entries from disk rather than accumulating them in process memory. Native
 harness context and resume cost are separate measurements; bounding Agentplane's memory
 and work does not prove Claude/Codex's own execution or resume is bounded.
@@ -288,9 +293,11 @@ messages and snapshot reconciliation algorithm.
 ### Open at the tail
 
 Subscribe through the engine to metadata/current controls and request the latest 30 items
-with text selected, reasoning and tool bodies omitted. Install the subset using its snapshot
-metadata; follow concurrent changes using its sync token. Initial data already contains
-assembled selected text. No replay of old token Events and no hidden background history load.
+with text selected, reasoning and tool bodies omitted. The metadata collection catches up
+to the sampled projection position through the engine. Selected text loads from its exact
+payload reference; loading is explicit until its whole revision is available. Follow
+concurrent changes using engine sync tokens. No replay of old token Events and no hidden
+background history load.
 
 ### Scroll upward while an old item changes
 
@@ -382,7 +389,7 @@ content at a reported revision.
 
 ### Acceptance evidence
 
-Required evidence before production cutover:
+Required evidence before accepting the integrated implementation:
 
 - Projection parity over different batch boundaries, including parallel tools finishing in
   reverse order, authoritative replacement, independent content fields, unknown observations,

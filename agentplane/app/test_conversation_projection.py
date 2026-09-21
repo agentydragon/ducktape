@@ -246,6 +246,39 @@ def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
     assert store.commands["model-1"].outcome is CommandOutcome.EFFECTED
     assert store.state.controls.applied_model == "model-b"
     assert store.state.controls.active_turn_id is None
+    assert [(e.entity_cursor, e.observation_cursor) for e in store.evidence if e.entity_cursor in (1, 2, 15)] == [
+        (1, 1),
+        (2, 2),
+        (1, 3),
+        (2, 3),
+        (15, 15),
+        (15, 16),
+    ]
+
+
+def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
+    observed = [
+        admitted(1, "failed", command_pb2.SubmitInput(text="first")),
+        admitted(2, "noop", command_pb2.ChangeModel(model="same")),
+        entry(
+            3,
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="failed", reason="rejected")),
+            source_sequences=[9],
+        ),
+        entry(
+            4,
+            event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id="noop", reason="unchanged")),
+            source_sequences=[10],
+        ),
+    ]
+    store = replay(observed, [2, 1, 1])
+    assert [(e.entity_cursor, e.observation_cursor, e.source_sequences) for e in store.evidence] == [
+        (1, 1, ()),
+        (2, 2, ()),
+        (1, 3, (9,)),
+        (2, 4, (10,)),
+    ]
+    assert replay(observed, [4]) == store
 
 
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:

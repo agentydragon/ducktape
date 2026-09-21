@@ -30,10 +30,15 @@ class Attachment:
         self,
         call: grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage],
         attached: protocol_pb2.Attached,
+        *,
+        after_cursor: int = 0,
+        capture_history: bool = False,
     ) -> None:
         self._call = call
         self.attached = attached
         self.seen: list[event_log_pb2.EventEntry] = []
+        self._capture_history = capture_history
+        self._cursor = after_cursor
         self._detach_sent = False
 
     async def __aenter__(self) -> Self:
@@ -52,7 +57,7 @@ class Attachment:
     @property
     def cursor(self) -> int:
         """The last source-local cursor read; a reconnecting Open follows after it."""
-        return self.seen[-1].cursor if self.seen else 0
+        return self._cursor
 
     async def send(self, command_id: str, text: str) -> None:
         await self.command(command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text)))
@@ -90,13 +95,15 @@ class Attachment:
         if message.HasField("error"):
             raise RunnerError(message.error)
         assert message.HasField("event_entry"), "an Attached message after the first is a protocol violation"
-        self.seen.append(message.event_entry)
+        self._cursor = message.event_entry.cursor
+        if self._capture_history:
+            self.seen.append(message.event_entry)
         return message.event_entry
 
     async def until(
         self, accept: Callable[[event_log_pb2.EventEntry], bool], *, timeout_s: float = 60
     ) -> event_log_pb2.EventEntry:
-        """Read entries until one satisfies `accept`, and return it; earlier ones land in `seen`."""
+        """Read entries until one satisfies `accept`, and return it; history capture is opt-in."""
 
         async def read() -> event_log_pb2.EventEntry:
             while not accept(entry := await self.next_entry()):
@@ -119,7 +126,8 @@ class Attachment:
 
 
 class RunnerClient:
-    def __init__(self, target: str) -> None:
+    def __init__(self, target: str, *, capture_history: bool = False) -> None:
+        self._capture_history = capture_history
         self._channel = grpc.aio.insecure_channel(target)
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
 
@@ -141,7 +149,7 @@ class RunnerClient:
         if message.HasField("error"):
             raise RunnerError(message.error)
         assert message.HasField("attached"), "the first server message must be Attached"
-        return Attachment(call, message.attached)
+        return Attachment(call, message.attached, after_cursor=after_cursor, capture_history=self._capture_history)
 
     def initialize_events(
         self, script: str, *, after_sequence: int = 0

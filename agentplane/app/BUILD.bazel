@@ -246,6 +246,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":electric",
         ":identity",
         ":inventory",
         ":live",
@@ -299,6 +300,7 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":changes",
+        ":ingestion",
         ":inventory",
         ":live",
         ":presets",
@@ -915,10 +917,13 @@ py_test(
     ],
     env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
     requires_docker = True,
+    shard_count = 4,
     deps = [
         ":conftest",
         ":trajectory",
         "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:command_pb2",
@@ -983,6 +988,26 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_conversation_sync",
+    size = "medium",
+    srcs = ["test_conversation_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "conversation_debug",
     srcs = ["conversation_debug.py"],
@@ -1008,8 +1033,33 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ingestion",
+    srcs = ["ingestion.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_ingestion",
+    srcs = ["test_ingestion.py"],
+    deps = [
+        ":conftest",
+        ":ingestion",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],

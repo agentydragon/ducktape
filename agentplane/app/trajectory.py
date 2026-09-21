@@ -39,12 +39,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from agentplane.app import conversation_projection
 from agentplane.app.changes import Changes
 from agentplane.app.conversation_debug import (
+    ArchivedObservation,
     ConversationEvidenceNotFoundError,
     ConversationScopeChangedError,
     EvidenceObservation,
     EvidencePage,
     NativeFrame,
     NativeFramePage,
+    ObservationPage,
 )
 from agentplane.app.operator_sessions import Base, OperatorSessionStore
 from agentplane.app.presets import Harness
@@ -156,10 +158,18 @@ class ConversationEntity(Base):
             "thread_id",
             "source_id",
             "projection_epoch",
-            "pending",
             "cursor",
             "entity_kind",
             "entity_id",
+            postgresql_where=text("pending"),
+        ),
+        Index(
+            "ix_conversation_entity_scope_segment_cursor",
+            "thread_id",
+            "source_id",
+            "projection_epoch",
+            "cursor",
+            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
         Index(
             "ix_conversation_entity_scope_segment_cursor",
@@ -631,32 +641,6 @@ class TrajectoryStore:
                 manifest.content_bytes,
             )
 
-    async def command_outcomes(
-        self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, CommandOutcomeValue | None]:
-        """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
-        requested = tuple(dict.fromkeys(command_ids))
-        async with self._sessions() as session:
-            if await session.get(Thread, thread_id) is None:
-                raise ThreadNotFoundError(thread_id)
-            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
-            if checkpoint is None or (checkpoint.source_id, checkpoint.projection_epoch) != (
-                source_id,
-                projection_epoch,
-            ):
-                raise ConversationScopeResetError("conversation projection scope was reset")
-            rows = await session.scalars(
-                select(ConversationEntity).where(
-                    ConversationEntity.thread_id == thread_id,
-                    ConversationEntity.source_id == source_id,
-                    ConversationEntity.projection_epoch == projection_epoch,
-                    ConversationEntity.entity_kind == "command",
-                    ConversationEntity.entity_id.in_(requested),
-                )
-            )
-            outcomes = {row.entity_id: ConversationCommandState.model_validate(row.state).outcome for row in rows}
-            return {command_id: outcomes.get(command_id) for command_id in requested}
-
     async def conversation_evidence(
         self,
         thread_id: UUID,
@@ -770,6 +754,81 @@ class TrajectoryStore:
                 ],
                 next_after_sequence=str(rows[limit - 1][0]) if len(rows) > limit else None,
             )
+
+    async def conversation_observations(
+        self, thread_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
+    ) -> ObservationPage:
+        """Seek directly into the immutable archive; never fold or load intervening history."""
+        if (
+            not 1 <= limit <= 200
+            or (before_cursor is not None and before_cursor < 0)
+            or (after_cursor is not None and after_cursor < 0)
+            or (before_cursor is not None and after_cursor is not None)
+        ):
+            raise ValueError("invalid chronological observation page bounds")
+        async with self._sessions() as session:
+            query = select(Event).where(Event.thread_id == thread_id)
+            if after_cursor is not None:
+                query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
+            else:
+                if before_cursor is not None:
+                    query = query.where(Event.cursor < before_cursor)
+                query = query.order_by(Event.cursor.desc())
+            rows = list(await session.scalars(query.limit(limit)))
+            if after_cursor is None:
+                rows.reverse()
+            if not rows:
+                return ObservationPage(observations=[], next_before_cursor=None, next_after_cursor=None)
+            has_older = await session.scalar(
+                select(select(Event.cursor).where(Event.thread_id == thread_id, Event.cursor < rows[0].cursor).exists())
+            )
+            has_newer = await session.scalar(
+                select(
+                    select(Event.cursor).where(Event.thread_id == thread_id, Event.cursor > rows[-1].cursor).exists()
+                )
+            )
+            return ObservationPage(
+                observations=[
+                    ArchivedObservation.model_validate(
+                        {
+                            "cursor": str(row.cursor),
+                            "source_id": row.origin_source_id,
+                            "source_sequence": str(row.origin_sequence),
+                            "kind": row.kind,
+                            "entry": row.payload,
+                        }
+                    )
+                    for row in rows
+                ],
+                next_before_cursor=str(rows[0].cursor) if has_older else None,
+                next_after_cursor=str(rows[-1].cursor) if has_newer else None,
+            )
+
+    async def command_outcomes(
+        self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
+    ) -> dict[str, CommandOutcomeValue | None]:
+        """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
+        requested = tuple(dict.fromkeys(command_ids))
+        async with self._sessions() as session:
+            if await session.get(Thread, thread_id) is None:
+                raise ThreadNotFoundError(thread_id)
+            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            if checkpoint is None or (checkpoint.source_id, checkpoint.projection_epoch) != (
+                source_id,
+                projection_epoch,
+            ):
+                raise ConversationScopeResetError("conversation projection scope was reset")
+            rows = await session.scalars(
+                select(ConversationEntity).where(
+                    ConversationEntity.thread_id == thread_id,
+                    ConversationEntity.source_id == source_id,
+                    ConversationEntity.projection_epoch == projection_epoch,
+                    ConversationEntity.entity_kind == "command",
+                    ConversationEntity.entity_id.in_(requested),
+                )
+            )
+            outcomes = {row.entity_id: ConversationCommandState.model_validate(row.state).outcome for row in rows}
+            return {command_id: outcomes.get(command_id) for command_id in requested}
 
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease

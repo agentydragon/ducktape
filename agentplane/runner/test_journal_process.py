@@ -53,7 +53,7 @@ async def _publish_async(root: Path, connection: Connection) -> None:
         )
         await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"text":"output"}'))
         await journal.append(event_pb2.TextDelta(item_id="test-item", text="output"))
-        connection.send_bytes(b"\\n".join(entry.SerializeToString() for entry in journal.entries))
+        connection.send_bytes(b"\\n".join(entry.SerializeToString() for entry in (await journal.since(0, limit=128))))
         await asyncio.to_thread(connection.recv_bytes)  # Parent kills this process without cleanup.
 
 
@@ -70,10 +70,12 @@ async def _recover_async(root: Path, connection: Connection) -> None:
         assert stored.native_correlation == {"request_id": "test-native-request"}
         assert await journal.admit(command_pb2.Command.FromString(stored.payload)) is None
         assert await journal.pending_commands() == []
-        assert journal.entries[1].event.harness_user_message_confirmed == event_pb2.HarnessUserMessageConfirmed(
+        assert (await journal.since(0, limit=128))[
+            1
+        ].event.harness_user_message_confirmed == event_pb2.HarnessUserMessageConfirmed(
             harness_message_id="test-message", text="hello", origin_command_ids=[stored.command_id]
         )
-        replay = b"\\n".join(entry.SerializeToString() for entry in journal.entries)
+        replay = b"\\n".join(entry.SerializeToString() for entry in (await journal.since(0, limit=128)))
         next_entry = await journal.append(event_pb2.ItemCompleted(item_id="test-item", text="output"))
         assert next_entry.cursor == 5
         connection.send_bytes(replay)

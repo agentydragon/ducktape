@@ -420,7 +420,10 @@ class _Fold:
         self.commands[command_id] = summary
         self.state = replace(self.state, unresolved_count=self.state.unresolved_count + 1)
 
-    def _settle(self, cursor: int, command_id: str, outcome: CommandOutcome, reason: str | None = None) -> None:
+    def _settle(
+        self, entry: event_log_pb2.EventEntry, command_id: str, outcome: CommandOutcome, reason: str | None = None
+    ) -> None:
+        cursor = entry.cursor
         summary = self._command(command_id)
         if summary.outcome is not CommandOutcome.PENDING:
             raise ValueError(f"command already settled: {command_id}")
@@ -428,8 +431,10 @@ class _Fold:
             raise ValueError("unresolved command count underflow")
         self.commands[command_id] = replace(summary, outcome=outcome, outcome_cursor=cursor, outcome_reason=reason)
         self.state = replace(self.state, unresolved_count=self.state.unresolved_count - 1)
+        self._evidence(summary.admission_cursor, entry)
 
-    def _lifecycle(self, cursor: int, event: event_pb2.Event, observation: str) -> None:
+    def _lifecycle(self, entry: event_log_pb2.EventEntry, observation: str) -> None:
+        cursor, event = entry.cursor, entry.event
         self.lifecycle[cursor] = LifecycleSegment(
             self.state.position.source_id,
             self.state.position.projection_epoch,
@@ -448,18 +453,18 @@ class _Fold:
                 )
             case "turn_completed":
                 if event.turn_completed.interrupted_by_command_id:
-                    self._settle(cursor, event.turn_completed.interrupted_by_command_id, CommandOutcome.EFFECTED)
+                    self._settle(entry, event.turn_completed.interrupted_by_command_id, CommandOutcome.EFFECTED)
                 if controls.active_turn_id == event.turn_completed.turn_id:
                     controls = replace(controls, active_turn_id=None)
             case "model_changed":
                 if event.model_changed.command_id:
-                    self._settle(cursor, event.model_changed.command_id, CommandOutcome.EFFECTED)
+                    self._settle(entry, event.model_changed.command_id, CommandOutcome.EFFECTED)
                 controls = replace(controls, applied_model=event.model_changed.model)
             case "harness_started":
                 controls = replace(controls, harness_state="running")
             case "harness_exited":
                 if event.harness_exited.stopped_by_command_id:
-                    self._settle(cursor, event.harness_exited.stopped_by_command_id, CommandOutcome.EFFECTED)
+                    self._settle(entry, event.harness_exited.stopped_by_command_id, CommandOutcome.EFFECTED)
                 controls = replace(controls, harness_state="stopped", active_turn_id=None)
             case "harness_lost":
                 controls = replace(controls, harness_state="lost", active_turn_id=None)
@@ -562,21 +567,17 @@ class _Fold:
                     value,
                 )
                 for command_id in confirmed.origin_command_ids:
-                    self._settle(cursor, command_id, CommandOutcome.EFFECTED)
+                    self._settle(entry, command_id, CommandOutcome.EFFECTED)
                 self._evidence(cursor, entry)
             case "command_admitted":
                 self._admit(cursor, event.command_admitted.command)
                 self._evidence(cursor, entry)
             case "command_failed":
-                self._settle(
-                    cursor, event.command_failed.command_id, CommandOutcome.FAILED, event.command_failed.reason
-                )
-                self._evidence(cursor, entry)
+                self._settle(entry, event.command_failed.command_id, CommandOutcome.FAILED, event.command_failed.reason)
             case "command_noop":
-                self._settle(cursor, event.command_noop.command_id, CommandOutcome.NOOP, event.command_noop.reason)
-                self._evidence(cursor, entry)
+                self._settle(entry, event.command_noop.command_id, CommandOutcome.NOOP, event.command_noop.reason)
             case kind if kind in _LIFECYCLE:
-                self._lifecycle(cursor, event, kind)
+                self._lifecycle(entry, kind)
                 self._evidence(cursor, entry)
             case kind if kind in _SILENT:
                 pass

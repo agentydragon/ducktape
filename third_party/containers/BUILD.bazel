@@ -77,3 +77,19 @@ oci_image_py(
     tag = "debian-slim:test",
     visibility = ["//visibility:public"],
 )
+
+oci_image_py(
+    name = "electric_1_8_1",
+    testonly = True,
+    image = "@electric_1_8_1_linux_amd64",
+    tag = "electricsql/electric:1.8.1",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_py(
+    name = "nginx_unprivileged",
+    testonly = True,
+    image = "@nginx_unprivileged_linux_amd64",
+    tag = "nginx-unprivileged:test",
+    visibility = ["//visibility:public"],
+)
