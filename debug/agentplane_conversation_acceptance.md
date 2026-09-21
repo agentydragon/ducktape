@@ -25,8 +25,9 @@ live-data reset, or a final assembled-stack run.
 
 ## Open gates
 
-- Scroll anchoring is not accepted. The 21-case real-service browser suite had 19
-  passes and two reading-anchor failures at [2017cf5c](https://app.buildbuddy.io/invocation/2017cf5c-0af1-4d58-8d32-c3172f616945); later focused candidates also drifted. The failure is an anchor-geometry issue, not a settled success.
+- Scroll anchoring and resumed following are not accepted. At combined head
+  `09d00c1db4`, both window tests passed and 21 of 25 thread-browser cases passed,
+  but all four scroll variants failed at [4edb0cc2](https://app.buildbuddy.io/invocation/4edb0cc2-5b3d-471a-9759-b276a0d26fd3). Desktop and phone normal failed while returning to the bottom after append; phone raw failed its initial bottom assertion. The remaining scroll failure remains an implementation gate.
 - Large-history viewport behavior, disclosure eviction/revisit, and long-run browser cache
   retention remain open. Server query bounds and finite Electric resource evidence
   do not demonstrate those client properties.
