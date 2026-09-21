@@ -120,15 +120,7 @@ def agent_workspaces_app(
     )
 
 
-def airlock(
-    chart: Chart,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    authentik: Kustomization,
-    sso_providers_tf: Kustomization,
-    reflector: Kustomization,
-    external_secrets_config: Kustomization,
-) -> Kustomization:
+def airlock(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
     name = "airlock"
     return flux_kustomization(
         chart,
@@ -153,9 +145,7 @@ def airlock(
                     api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock"
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images, gateway, authentik, sso_providers_tf, reflector, external_secrets_config
-            ),
+            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
         ),
     )
 
@@ -436,9 +426,7 @@ def haku_openclaw_spike_backup(
     )
 
 
-def kubectl_passthrough_mcp(
-    chart: Chart, gateway: Kustomization, agent_machine_access_tf: Kustomization
-) -> Kustomization:
+def kubectl_passthrough_mcp(chart: Chart) -> Kustomization:
     name = "kubectl-passthrough-mcp"
     return flux_kustomization(
         chart,
@@ -462,18 +450,11 @@ def kubectl_passthrough_mcp(
                     namespace="kubectl-passthrough-mcp",
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(
-                gateway,
-                # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
-                agent_machine_access_tf,
-            ),
         ),
     )
 
 
-def loki_read_proxy(
-    chart: Chart, external_secrets_config: Kustomization, forgejo_images: Kustomization
-) -> Kustomization:
+def loki_read_proxy(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
     name = "loki-read-proxy"
     return flux_kustomization(
         chart,
@@ -485,7 +466,7 @@ def loki_read_proxy(
             path="./cluster/k8s/agents/loki-read-proxy",
             prune=True,
             wait=True,
-            depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
+            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
@@ -835,14 +816,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
 
 
 def tana_mcp(
-    chart: Chart,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, external_secrets_config: Kustomization, valkey: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     name = "tana-mcp"
     return flux_kustomization(
@@ -872,11 +846,7 @@ def tana_mcp(
             ],
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
-                forgejo_images,
-                gateway,
                 valkey,
-                agent_machine_access_tf,
-                reflector,
                 # ServiceMonitor + PrometheusRule
                 monitoring_crds,
             ),

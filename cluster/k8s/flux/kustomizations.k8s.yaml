@@ -2928,11 +2928,6 @@ metadata:
   name: kubectl-passthrough-mcp
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -3803,16 +3798,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
   healthChecks:
@@ -3872,8 +3857,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3957,15 +3940,7 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: valkey
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
