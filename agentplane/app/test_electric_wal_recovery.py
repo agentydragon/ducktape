@@ -167,7 +167,10 @@ async def _slot_state_after_restart(service: ElectricService) -> dict[str, objec
 
 async def _health_state(service: ElectricService) -> dict[str, object]:
     async with httpx.AsyncClient(base_url=service.url, timeout=5) as client:
-        response = await client.get("/v1/health")
+        try:
+            response = await client.get("/v1/health")
+        except httpx.HTTPError as error:
+            return {"transport_error": f"{type(error).__name__}: {error}"}
     return {"status": response.status_code, "body": response.text, "headers": dict(response.headers)}
 
 
