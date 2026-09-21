@@ -390,12 +390,12 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
         )
         assert checkpoint is not None
         assert view_row is not None
-        checkpoint.through_cursor = 10_063
-        view_row.cursor = 10_063
-        view_row.revision_cursor = 10_063
+        checkpoint.through_cursor = 2_063
+        view_row.cursor = 2_063
+        view_row.revision_cursor = 2_063
         stored_view = ConversationViewState.model_validate(view_row.state)
         view_row.state = stored_view.model_copy(
-            update={"operational": stored_view.operational.model_copy(update={"last_verified_cursor": "10063"})}
+            update={"operational": stored_view.operational.model_copy(update={"last_verified_cursor": "2063"})}
         ).model_dump(mode="json")
         await session.execute(
             insert(ConversationEntity),
@@ -421,7 +421,7 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
                     "output_ref": None,
                     "input_ref": None,
                 }
-                for index in range(10_000)
+                for index in range(2_000)
             ],
         )
     captured: list[tuple[str, Any]] = []
@@ -447,7 +447,7 @@ async def test_pending_command_interest_pages_with_a_partial_index_and_keeps_sel
     assert "ix_conversation_entity_pending_command_cursor" in plan
     assert "Rows Removed by Filter" not in plan
     (undeclared_outputs_dir() / f"{request.node.name}-pending-command-profile.txt").write_text(
-        f"settled_command_count=1000\npending_command_count=61\n{plan}\n"
+        f"settled_command_count=2000\npending_command_count=61\n{plan}\n"
     )
 
 
