@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     add_testing_fixtures,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
     ActionsProps,
@@ -146,6 +147,9 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
+    EgressCredentials(
+        chart, "egress-credentials", namespace=TESTING_NAMESPACE, proxy_namespace=ENV.namespace, include_forgejo=False
+    )
     return chart
 
 

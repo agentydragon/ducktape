@@ -101,6 +101,14 @@ CREDENTIALS = (
             ApprovedConsumer(
                 "agentplane-egress-credentials", "github-agentydragon-agent-agentplane-egress-credentials-reader"
             ),
+            ApprovedConsumer(
+                "agentplane-staging-egress-credentials",
+                "github-agentydragon-agent-agentplane-staging-egress-credentials-reader",
+            ),
+            ApprovedConsumer(
+                "agentplane-testing-egress-credentials",
+                "github-agentydragon-agent-agentplane-testing-egress-credentials-reader",
+            ),
         ),
     ),
     Credential(

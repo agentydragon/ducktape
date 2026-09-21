@@ -20,6 +20,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
     ActionsProps,
@@ -246,6 +247,9 @@ ENV = Environment(
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     add_staging_action_policies(chart)
+    EgressCredentials(
+        chart, "egress-credentials", namespace=STAGING_NAMESPACE, proxy_namespace=ENV.namespace, include_forgejo=True
+    )
     return chart
 
 
