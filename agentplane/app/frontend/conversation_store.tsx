@@ -105,6 +105,7 @@ function entityCollection(threadId: string, interest: EntityInterest) {
   return createCollection(
     electricCollectionOptions({
       id: `agentplane-conversation:${threadId}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
       syncMode: "eager",
@@ -128,7 +129,6 @@ function ActiveConversation({
   onRotate: () => void;
 }): JSX.Element {
   const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
-  useEffect(() => () => void collection.cleanup(), [collection]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
   const rows = query.data ?? [];
   const segmentCount = rows.filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind)).length;
@@ -201,6 +201,7 @@ function chunkCollection(threadId: string, reference: PayloadRef, follow: boolea
   return createCollection(
     electricCollectionOptions({
       id: `agentplane-payload:${threadId}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow}`,
+      gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
       syncMode: "eager",
@@ -298,7 +299,6 @@ function ActivePayloadBody({
       threadId,
     ]
   );
-  useEffect(() => () => void collection.cleanup(), [collection]);
   const query = useLiveQuery((q) => q.from({ chunk: collection }), [collection]);
   if (!extent) return children(null);
   const expected = BigInt(extent.chunkCount);
