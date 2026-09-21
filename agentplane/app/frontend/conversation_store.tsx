@@ -8,6 +8,11 @@ import { conversationInterest, displayableError, type ConversationStoredEntity, 
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 const RefreshConversation = createContext<() => void>(() => undefined);
+declare global {
+  interface Window {
+    __agentplaneConversationCollectionTrace?: unknown[];
+  }
+}
 type Decimal = z.output<typeof decimal>;
 export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
@@ -126,6 +131,26 @@ function entityCollection(threadId: string, interest: EntityInterest) {
   );
 }
 
+function traceEntityCollection(
+  kind: string,
+  role: "active" | "pending",
+  collection: ReturnType<typeof entityCollection>
+): boolean {
+  const trace = window.__agentplaneConversationCollectionTrace;
+  if (!trace) return false;
+  trace.push({
+    kind,
+    role,
+    id: collection.id,
+    size: collection.size,
+    subscriberCount: collection.subscriberCount,
+    status: collection.status,
+    ready: collection.isReady(),
+  });
+  if (trace.length > 256) trace.splice(0, trace.length - 256);
+  return true;
+}
+
 function commandUrl(
   threadId: string,
   sourceId: string,
@@ -192,6 +217,7 @@ function ActiveConversation({
   onRows,
   onRotate,
   onCaughtUp,
+  role,
 }: {
   threadId: string;
   interest: EntityInterest;
@@ -199,12 +225,23 @@ function ActiveConversation({
   onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
   onCaughtUp?: () => void;
+  role: "active" | "pending";
 }): JSX.Element {
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
   const rows = query.data ?? [];
   const view = rows.find((row) => row.entityKind === "view_state");
   const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
   const segmentCount = rows.filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind)).length;
+  useEffect(() => {
+    traceEntityCollection("subscribed", role, collection);
+    return () => {
+      if (traceEntityCollection("unsubscribed", role, collection))
+        window.setTimeout(() => traceEntityCollection("collected", role, collection), 1_100);
+    };
+  }, [collection, role]);
+  useEffect(() => {
+    traceEntityCollection("query", role, collection);
+  }, [collection, query.isError, rows, role]);
   useEffect(() => {
     if (segmentCount > 60) onRotate();
   }, [onRotate, segmentCount]);
@@ -280,6 +317,7 @@ export function ConversationCollection({
         collection={selection.collection}
         onRows={children}
         onRotate={rotate}
+        role="active"
       />
       {pendingSelection && (
         <div hidden>
@@ -289,6 +327,7 @@ export function ConversationCollection({
             collection={pendingSelection.collection}
             onRows={() => <></>}
             onRotate={rotate}
+            role="pending"
             onCaughtUp={() => {
               selectionRef.current = pendingSelection;
               setSelection(pendingSelection);

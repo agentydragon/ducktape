@@ -363,6 +363,15 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [errors, setErrors] = useState(new Map<string, string>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
+  useEffect(() => {
+    setErrors((previous) => {
+      if (Array.from(previous.keys()).every((id) => local.commands.some((command) => command.command.commandId === id)))
+        return previous;
+      return new Map(
+        Array.from(previous).filter(([id]) => local.commands.some((command) => command.command.commandId === id))
+      );
+    });
+  }, [local.commands]);
   const effectedCommandIds = useMemo(
     () =>
       new Set([...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))]),
@@ -376,8 +385,15 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
     active.current.add(id);
     try {
       store.acknowledge(value.command, await command(threadId, value.command));
+      setErrors((previous) => {
+        if (!previous.has(id)) return previous;
+        const next = new Map(previous);
+        next.delete(id);
+        return next;
+      });
     } catch (reason) {
-      setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+      if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+        setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
     } finally {
       active.current.delete(id);
     }
