@@ -9,8 +9,8 @@ on:
     paths:
       - "flake.nix"
       - "flake.lock"
-      - "nix/flake/packages.nix"
       - "nix/nixos/hosts/cpap-gateway/**"
+      - "cpap/gateway/container-disk.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/cpap-gateway-image.yml"

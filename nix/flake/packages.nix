@@ -141,39 +141,10 @@ ducktapePkgs
   # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,
   # OBJECT_PREFIX=agent-box. cloud-init still injects the persisted host key.
   agent-box-image = self.nixosConfigurations.agent-box.config.system.build.images.qemu-efi;
-  # Stateless KubeVirt containerDisk: the qcow2 lives at /disk/disk.qcow2
-  # in an OCI image, owned by KubeVirt's qemu UID (107). Flux publishes
-  # a new tag when this output changes and updates the VM manifest.
-  cpap-gateway-container-disk =
-    let
-      diskImage = self.nixosConfigurations.cpap-gateway.config.system.build.images.qemu-efi;
-      diskRoot = pkgs.runCommand "cpap-gateway-container-disk-root" { } ''
-        mkdir -p $out/disk
-        cp ${diskImage}/*.qcow2 $out/disk/disk.qcow2
-      '';
-    in
-    pkgs.dockerTools.buildLayeredImage {
-      name = "ghcr.io/agentydragon/cpap-gateway";
-      contents = [ diskRoot ];
-      includeStorePaths = false;
-      maxLayers = 2;
-      # streamLayeredImage assembles contents through symlinkJoin;
-      # dereference the build-time link before the layer is tarred.
-      extraCommands = ''
-        cp --dereference disk/disk.qcow2 disk/disk.qcow2.real
-        rm disk/disk.qcow2
-        mv disk/disk.qcow2.real disk/disk.qcow2
-      '';
-      fakeRootCommands = ''
-        chown 107:107 disk/disk.qcow2
-      '';
-      # KubeVirt's virt-launcher runs qemu as UID 107. dockerTools
-      # applies this ownership to the layer without chowning the Nix
-      # store output itself.
-      uid = 107;
-      gid = 107;
-      config = { };
-    };
+  # Stateless KubeVirt containerDisk for the CPAP gateway VM.
+  cpap-gateway-container-disk = import ../../cpap/gateway/container-disk.nix {
+    inherit pkgs self;
+  };
   # Ephemeral KubeVirt containerDisk for public-coder-devbox (same shape as
   # cpap-gateway-container-disk above): the VM boots straight into the real
   # build/test configuration and owns its first-boot disk setup through NixOS
