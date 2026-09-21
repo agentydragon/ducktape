@@ -5631,6 +5631,9 @@ spec:
     - apiVersion: v1
       kind: Namespace
       name: agentplane-testing
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-testing-egress-credentials
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: postgres
@@ -6043,6 +6046,9 @@ spec:
     - apiVersion: v1
       kind: Namespace
       name: agentplane-staging
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging-egress-credentials
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: postgres
