@@ -28,14 +28,14 @@
 }:
 {
   imports = [
-    ../../modules/neovim.nix
-    ../../modules/tmux.nix
-    ../../modules/sops-env.nix # ducktape.sopsEnv
-    ../../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
-    ../../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
-    ../../modules/forgejo-tea.nix # Forgejo API token -> ~/.config/tea/config.yml
-    ../../modules/attic.nix # attic ~/.config/attic/config.toml (push/pull client)
-    ../../modules/agent-kubeconfig.nix # agent-box-<user> k8s bearer kubeconfig
+    ../../../../../../nix/home/modules/neovim.nix
+    ../../../../../../nix/home/modules/tmux.nix
+    ../../../../../../nix/home/modules/sops-env.nix # ducktape.sopsEnv
+    ../../../../../../nix/home/modules/buildbuddy.nix # BuildBuddy creds -> bazelrc/API key
+    ../../../../../../nix/home/modules/forgejo-ssh.nix # Forgejo bot key + SSH config
+    ../../../../../../nix/home/modules/forgejo-tea.nix # Forgejo API -> tea config
+    ../../../../../../nix/home/modules/attic.nix # Attic push/pull client config
+    ../../../../../../nix/home/modules/agent-kubeconfig.nix # agent-box-<user> k8s bearer kubeconfig
   ];
 
   # home-manager sops-nix decrypts this user's secrets with its planted id.
@@ -43,7 +43,7 @@
 
   ducktape.attic = {
     enable = true;
-    sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
+    sopsFile = ../../../../../../secrets/hosts/agent-box-attic.yaml;
   };
   ducktape.forgejoSsh.sopsFile = forgejoKeySopsFile;
   # TODO: like the kubeconfig JWT path below, this relies on a home-manager

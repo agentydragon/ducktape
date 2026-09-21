@@ -524,6 +524,7 @@ function VirtualizedHistory({
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
   const touchY = useRef<number | null>(null);
+  const restorationFrame = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
@@ -574,26 +575,51 @@ function VirtualizedHistory({
       const previousBottom = previousScrollHeight.current - previousClientHeight.current;
       if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
       if (atBottom.current) element.scrollTop = element.scrollHeight;
+      else if (readingAnchor.current) {
+        const anchor = readingAnchor.current;
+        const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+        if (index >= 0) {
+          if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+          virtualizer.scrollToIndex(index, { align: "start" });
+          restorationFrame.current = requestAnimationFrame(() => {
+            if (viewport.current && readingAnchor.current?.key === anchor.key) {
+              const measured = virtualizer.getVirtualItems().find((item) => item.index === index);
+              if (measured) viewport.current.scrollTop = measured.start + anchor.offset;
+            }
+            restorationFrame.current = null;
+          });
+        }
+      }
       previousScrollHeight.current = element.scrollHeight;
       previousClientHeight.current = element.clientHeight;
     });
     observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      observer.disconnect();
+      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+      restorationFrame.current = null;
+    };
+  }, [segments, virtualizer]);
   return (
     <div
       ref={viewport}
       role="region"
       aria-label="Thread history"
       tabIndex={0}
-      style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
+      style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
+        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+        restorationFrame.current = null;
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
+        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+        restorationFrame.current = null;
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
+        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+        restorationFrame.current = null;
         pointerScrolling.current = true;
       }}
       onPointerUp={() => {
@@ -603,6 +629,8 @@ function VirtualizedHistory({
         pointerScrolling.current = false;
       }}
       onTouchStart={(event) => {
+        if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+        restorationFrame.current = null;
         touchY.current = event.touches[0]?.clientY ?? null;
       }}
       onTouchMove={(event) => {
@@ -618,7 +646,8 @@ function VirtualizedHistory({
         if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) atBottom.current = true;
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
-        const first = virtualizer.getVirtualItems()[0];
+        const items = virtualizer.getVirtualItems();
+        const first = items.find((item) => item.end > element.scrollTop) ?? items[0];
         const firstEntity = first ? segments[first.index] : undefined;
         if (first && firstEntity) {
           readingAnchor.current = {

@@ -433,7 +433,7 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;
-  revive the parked Kustomization and artifact generator when the evidence pipeline returns.
+  the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.
 - **docker-ci**: `cluster/k8s/parked/docker-ci/` — decommissioned despite backing
   `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
   operator request, accepting that an eval run needs reviving it first.

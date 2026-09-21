@@ -1,10 +1,10 @@
 """Behavioral coverage for the bounded conversation-projection fold."""
 
 from dataclasses import dataclass, field
-from typing import cast
 
 import pytest
 import pytest_bazel
+from google.protobuf import json_format
 
 from agentplane.app.conversation_projection import (
     AppendPayload,
@@ -215,8 +215,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     store.apply(
         [entry(1, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="streamed")))]
     )
-    assert store.items["tool"].output is not None
-    streamed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    streamed = output.reference
     store.apply(
         [
             entry(
@@ -229,8 +230,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
             )
         ]
     )
-    assert store.items["tool"].output is not None
-    completed = store.items["tool"].output.reference
+    output = store.items["tool"].output
+    assert output is not None
+    completed = output.reference
     assert store.payloads[completed] == ""
     assert completed.generation == completed.revision_cursor == 2
     assert completed.generation != streamed.generation
@@ -270,9 +272,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(ValueError, match="owner revision"):
         advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}))
-    unknown = entry(
-        2, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="other", kind=cast(event_pb2.ItemKind, 99)))
-    )
+    unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
     with pytest.raises(ObservationNotUnderstoodError):
         advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}))
