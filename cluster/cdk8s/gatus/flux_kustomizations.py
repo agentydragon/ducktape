@@ -30,6 +30,11 @@ def gatus(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization) -> 
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="gatus", namespace="gatus"
+                )
+            ],
             depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds),
         ),
     )

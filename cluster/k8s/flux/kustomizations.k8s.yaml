@@ -3997,6 +3997,11 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: gatus
+      namespace: gatus
   interval: 10m
   path: ./cluster/k8s/gatus
   prune: true
