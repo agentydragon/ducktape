@@ -569,11 +569,11 @@
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
-        # Not a real host — see nix/nixos/hosts/bazel-test/ for config.
+        # Not a real host — see devinfra/nixos_bazel_test/nixos.nix.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
-            ./nix/nixos/hosts/bazel-test
+            ./devinfra/nixos_bazel_test/nixos.nix
             home-manager.nixosModules.home-manager
           ];
         };
