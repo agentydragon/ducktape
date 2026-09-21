@@ -746,6 +746,41 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_store",
+    srcs = ["conversation_store.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@electric-sql/client",
+        "//:node_modules/@tanstack/electric-db-collection",
+        "//:node_modules/@tanstack/react-db",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "projected_session",
+    srcs = ["projected_session.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":conversation_store",
+        ":local_commands",
+        ":markdown",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@tanstack/react-virtual",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
     name = "session",
     srcs = [
         "session.tsx",
@@ -832,9 +867,9 @@ ts_library(
         ":actions",
         ":actions_history",
         ":consent",
+        ":projected_session",
         ":sandbox_page",
         ":sandboxes",
-        ":session",
         ":settings",
         ":shell_css",
         ":sidebar",
