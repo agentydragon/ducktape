@@ -21,23 +21,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: The namespace holding the credentials the Agentplane egress proxy substitutes.
-  name: agentplane-egress-credentials-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/agentplane-egress-credentials/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: agentplane-egress-credentials-namespace
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: kubernetes-sigs/agent-sandbox v0.5.5 combined release asset (Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs).
   name: agent-sandbox-controller
   namespace: ducktape-flux
@@ -2343,32 +2326,6 @@ spec:
     name: infra-drift
     namespace: ducktape-flux
   timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: The credentials the Agentplane egress proxy substitutes (the agentydragon-agent GitHub PAT via ESO) and the proxy ServiceAccount's read grant on them.
-  name: agentplane-egress-credentials
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: agentplane-egress-credentials-namespace
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agentplane-egress-credentials/secrets
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: agentplane-egress-credentials
-    namespace: ducktape-flux
-  timeout: 2m
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

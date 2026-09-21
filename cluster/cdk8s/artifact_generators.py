@@ -93,8 +93,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("haku-egress-proxy", ("cluster/k8s/agents/haku-egress-proxy",)),
     ("haku-rbac", ("cluster/k8s/haku/rbac",)),
     ("litellm-namespace", ("cluster/k8s/litellm/namespace",)),
-    ("agentplane-egress-credentials-namespace", ("cluster/k8s/agentplane-egress-credentials/namespace",)),
-    ("agentplane-egress-credentials", ("cluster/k8s/agentplane-egress-credentials/secrets",)),
     ("litellm-secrets", ("cluster/k8s/litellm/secrets",)),
     ("seaweedfs-csi", ("cluster/k8s/seaweedfs-csi",)),
     ("seaweedfs-public-s3", ("cluster/k8s/seaweedfs/public-s3",)),

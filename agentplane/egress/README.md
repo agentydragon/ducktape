@@ -156,13 +156,15 @@ In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egressp
 `egressbindings` and `egresscredentials`. **Nothing at all in an `allowed_service_account_namespaces` entry**: the
 TokenReview names the ServiceAccount a bearer's Pod runs as, and that is the subject, so naming a
 second workload namespace needs no Role there. In the credentials namespace
-(`--credentials-namespace`, `agentplane-egress-credentials` by default): `get`, `list`, `watch` on
+(required `--credentials-namespace`): `get`, `list`, `watch` on
 `secrets`, and nothing else. Cluster-wide: `create` on `tokenreviews.authentication.k8s.io`. There
 are no Kubernetes status writes or leader election.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read where the sandboxes run would hand the proxy the model key and the
-database credential along with the ones it is meant to substitute.
+database credential along with the ones it is meant to substitute. Staging uses
+`agentplane-staging-egress-credentials` for GitHub and Forgejo; testing uses
+`agentplane-testing-egress-credentials` for GitHub only.
 
 ## Decision history
 

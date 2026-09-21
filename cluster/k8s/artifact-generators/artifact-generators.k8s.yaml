@@ -252,16 +252,6 @@ spec:
       name: litellm-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/namespace/"
-      name: agentplane-egress-credentials-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
-      name: agentplane-egress-credentials
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/litellm/secrets/**"
           to: "@artifact/cluster/k8s/litellm/secrets/"
       name: litellm-secrets

@@ -27,9 +27,6 @@ from cluster.cdk8s import (
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
-from cluster.cdk8s.agentplane_egress_credentials import (
-    flux_kustomizations as agentplane_egress_credentials_flux_kustomizations,
-)
 from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import artifact_generators as artifact_generators_factory
@@ -154,9 +151,6 @@ def generate_manifests(root: Path) -> None:
     flux_app = App(outdir=str(flux_output))
     flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
-    agentplane_egress_credentials_namespace_kustomization = (
-        agentplane_egress_credentials_flux_kustomizations.agentplane_egress_credentials_namespace(flux_chart)
-    )
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
     haku_egress_proxy_namespace_kustomization = agents_flux_kustomizations.haku_egress_proxy_namespace(flux_chart)
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
@@ -330,14 +324,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     infra_drift_flux_kustomizations.infra_drift(flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization)
-    (
-        agentplane_egress_credentials_flux_kustomizations.agentplane_egress_credentials(
-            flux_chart,
-            agentplane_egress_credentials_namespace_kustomization,
-            external_creds_kustomization,
-            external_secrets_config_kustomization,
-        )
-    )
     agents_flux_kustomizations.alloy_otlp_bearer(
         flux_chart, external_secrets_config_kustomization, claude_rbac_kustomization, haku_rbac_kustomization
     )
