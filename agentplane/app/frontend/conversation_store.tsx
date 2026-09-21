@@ -58,7 +58,7 @@ const stateSchema = z.union([
       operational_version: z.string(),
       status: z.enum(["active", "ended", "failed"]),
       last_verified_cursor: z.string(),
-      feed_error: z.object({ cursor: z.string(), message: z.string() }).nullable(),
+      feed_error: z.object({ cursor: z.string().nullable(), message: z.string() }).nullable(),
     }),
   }),
   z.object({
