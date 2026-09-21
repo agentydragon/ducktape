@@ -53,6 +53,12 @@ it finished with 19 passed and two scroll failures (desktop-normal after expansi
 above the reader, phone-raw after new output). The failures persisted after a focused
 pass, so scroll acceptance remains open. A follow-up adds failure-only visible-row
 geometry artifacts and the frontend worker is correcting competing scroll anchoring.
+At `5e059313e8`, the follow-up four-variant scroll run
+[60123eec](https://app.buildbuddy.io/invocation/60123eec-ea8b-4ea2-aaee-391b49d1c839)
+failed all four variants after new output while reading. Geometry artifacts show the
+expected cursor 38 moved out of view in three cases, and by about 600 pixels in the
+fourth. The latest anchoring changes therefore do not establish a working solution.
+
 The larger history-window and scope-refresh probe remains separate. An empty initial snapshot in that probe was traced to fixture precedence:
 the app used conftest's database while Electric used another database. It does not
 establish a product cold-start defect.
