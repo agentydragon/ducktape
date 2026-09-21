@@ -91,8 +91,26 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
             return { cursor: row.dataset.conversationAnchor, top: row.getBoundingClientRect().top };
         }"""
     )
+    # Advance the live tail by another page while the reader remains in the older
+    # window. The current tail shape must rotate without replacing that reading
+    # window or moving its measured anchor.
+    for number in range(70, 105):
+        item_id = f"window-item-{number:03d}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        latest = source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id=item_id, text=f"Window message {number:03d}: " + "later live text " * (number % 3 + 1)
+                )
+            )
+        )
     async with asyncio.timeout(10):
         await interest_seen.wait()
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     restored = page.locator(f'[data-conversation-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
