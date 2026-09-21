@@ -35,6 +35,7 @@ export type ThreadView = components["schemas"]["ThreadView"];
 export type EntityInterest = components["schemas"]["EntityInterestResponse"];
 export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
 export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
+export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -53,6 +54,20 @@ export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+
+export async function reconcileCommands(
+  threadId: string,
+  sourceId: string,
+  projectionEpoch: string,
+  commandIds: string[]
+): Promise<CommandReconciliationResponse> {
+  const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
+    params: { path: { thread_id: threadId } },
+    body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
 
 /** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
 export function serviceAccountKey(account: CallerServiceAccount): string {
