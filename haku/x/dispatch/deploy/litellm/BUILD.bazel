@@ -27,7 +27,7 @@ py_test(
     name = "test_generate_workers_litellm",
     srcs = ["test_generate_workers_litellm.py"],
     data = [
-        "workers-litellm-config.yaml",
+        "//haku/x/dispatch/deploy:workers-litellm-config.yaml",
         "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
@@ -37,17 +37,4 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
-)
-
-# Deployment manifests for cluster/validation's focused dispatch render test.
-filegroup(
-    name = "manifests",
-    srcs = glob(
-        ["**"],
-        exclude = [
-            "BUILD.bazel",
-            "*.py",
-        ],
-    ),
-    visibility = ["//cluster/validation:__pkg__"],
 )

@@ -1,0 +1,62 @@
+auto_migrate = true
+auto_sync_specimens = true
+backend_url = "http://props:8000"
+# Agents reach the LLM proxy (split out of the backend) here, not the dashboard,
+# so the API server can roll without disrupting in-flight agents. See
+# props/deploy/llm-proxy-deployment.yaml.
+llm_proxy_url = "http://props-llm-proxy:8000"
+# Default evaluator: the grader supervisor auto-grades critic runs with this
+# model. GPT-5.6 Terra via LiteLLM keeps grading off the home GPU host.
+grader_model = "codex-gpt-5.6-terra"
+
+[executor]
+type = "kubernetes"
+namespace = "props"
+image_pull_secret = "props-registry-pull"
+
+[agent_env]
+# Agents connect to the CNPG primary (read-write) service. Must match the
+# backend's PGHOST (deployment.yaml). The old Bitnami "props-postgresql"
+# service no longer exists since the CNPG migration, so a stale value here
+# makes every critic/grader crash at Database.from_env() before any work.
+PGHOST = "props-db-rw"
+PGPORT = "5432"
+PGDATABASE = "eval_results"
+
+[upstreams.ollama]
+url = "http://ollama.ollama.svc.cluster.local:11434/v1"
+api_key_env = "OLLAMA_API_KEY"
+
+# In-cluster LiteLLM. Chat-shaped models use props' /v1/chat/completions
+# endpoint directly so LiteLLM stays on its native chat path.
+[upstreams.litellm]
+url = "http://litellm.litellm.svc.cluster.local:4000/v1"
+api_key_env = "LITELLM_API_KEY"
+
+[[models]]
+name = "gpt-oss-20b-128k"
+upstream = "ollama"
+upstream_model = "gpt-oss:20b"
+input_usd_per_1m_tokens = 0
+cached_input_usd_per_1m_tokens = 0
+output_usd_per_1m_tokens = 0
+context_window_tokens = 131072
+max_output_tokens = 131072
+max_parallel_agents = 3
+
+# GPT-5.6 Terra via the Codex subscription route in LiteLLM. The subscription
+# route is flat-rate, so Props records no per-token charge for grading.
+# `name` is props' own exposed model name (recorded in eval results and named by
+# grader_model above) and deliberately keeps its pre-#4823 spelling; only the
+# LiteLLM-facing upstream_model moves to the scheme name.
+[[models]]
+name = "codex-gpt-5.6-terra"
+upstream = "litellm"
+upstream_model = "chatgpt/ant-messages/gpt-5.6-terra"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0
+cached_input_usd_per_1m_tokens = 0
+output_usd_per_1m_tokens = 0
+context_window_tokens = 372000
+max_output_tokens = 128000
+max_parallel_agents = 8

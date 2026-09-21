@@ -71,10 +71,7 @@ CREDENTIALS = (
     Credential(
         secret_file="coinbase-api-credentials.sops.yaml",
         secret_name="coinbase-api-credentials",
-        consumers=(
-            ApprovedConsumer("coinbase-read", "coinbase-api-credentials-coinbase-read-reader"),
-            ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),
-        ),
+        consumers=(ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),),
     ),
     Credential(
         secret_file="buildbuddy-api-key.sops.yaml",

@@ -10,7 +10,7 @@ mailbox account for it.
 ## Root cause (fixed, #2771): the shared `haku` Authentik service account had no `email` attribute
 
 Stalwart's OIDC directory for the `stalwart-haku` provider
-(`cluster/k8s/haku/mailbox/app/mailbox-plan.ndjson`) sets
+(`cluster/k8s/haku/mailbox/mailbox-plan.ndjson`) sets
 `requireScopes: {openid: true, email: true}` and derives the mailbox login
 from the `email`/`preferred_username` claims. The JWT was minted from the
 `haku` Authentik service account (`tf/gitops/agent-machine-access/main.tf`,

@@ -72,51 +72,6 @@ def agent_box(
     )
 
 
-def augur_evidence(
-    chart: Chart,
-    forgejo: Kustomization,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    budget_namespace: Kustomization,
-) -> Kustomization:
-    name = "augur-evidence"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path="./cluster/k8s/parked/augur-evidence",
-            prune=True,
-            wait=True,
-            # Wait for the Terraform apply (creates the Forgejo repo + service users + the
-            # augur-evidence-git-{write,read} Secrets) so the scraper/git-sync can depend on it.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="augur-evidence",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                # Forgejo API must be up (provider target)
-                forgejo,
-                tofu_controller,
-                tofu_state_db,
-                # the git-creds Secrets land in the budget namespace
-                budget_namespace,
-            ),
-        ),
-    )
-
-
 def buildbuddy_executor(chart: Chart) -> Kustomization:
     name = "buildbuddy-executor"
     return flux_kustomization(

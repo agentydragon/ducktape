@@ -205,11 +205,6 @@ spec:
       name: kubevirt
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
-      name: public-coder-agent-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agentplane-index/**"
           to: "@artifact/cluster/k8s/agentplane-index/"
       name: agentplane-index
@@ -227,8 +222,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
           to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
-        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
       name: grafana-instance
       originRevision: "@repo"
     - copy:
@@ -296,11 +289,6 @@ spec:
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
-      name: haku-openclaw-spike-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/home-assistant/**"
           to: "@artifact/cluster/k8s/home-assistant/"
       name: home-assistant
@@ -331,11 +319,6 @@ spec:
       name: claude-sandbox-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
-          to: "@artifact/cluster/k8s/agents/coinbase-read/"
-      name: coinbase-read
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
           to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
       name: forgejo-token-rotation
@@ -348,6 +331,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-app
       originRevision: "@repo"
     - copy:
@@ -371,11 +356,6 @@ spec:
       name: loki-read-proxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
-      name: agents-mitmproxy-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
       name: plaid-mcp
@@ -383,6 +363,12 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
       name: public-coder-agent-app
       originRevision: "@repo"
     - copy:
@@ -414,16 +400,6 @@ spec:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/devbox/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/devbox/"
       name: public-coder-agent-devbox
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
-      name: public-coder-agent-proxy
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
-      name: public-coder-agent-sshpiper
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/shared-rbac/**"
@@ -501,11 +477,6 @@ spec:
         - from: "@repo/cluster/k8s/dns-automation/**"
           to: "@artifact/cluster/k8s/dns-automation/"
       name: dns-automation
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/evidence/**"
-          to: "@artifact/cluster/k8s/evidence/"
-      name: evidence-market-roster
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/flux-grafana-secrets/**"
@@ -644,8 +615,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/haku/mailbox/**"
           to: "@artifact/cluster/k8s/haku/mailbox/"
-        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
-          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
       name: haku-mailbox
       originRevision: "@repo"
     - copy:
@@ -712,11 +681,6 @@ spec:
         - from: "@repo/cluster/k8s/kubevirt/operator/**"
           to: "@artifact/cluster/k8s/kubevirt/operator/"
       name: kubevirt-operator
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
-          to: "@artifact/cluster/k8s/kvm-device-plugin/"
-      name: kvm-device-plugin
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/langfuse/**"

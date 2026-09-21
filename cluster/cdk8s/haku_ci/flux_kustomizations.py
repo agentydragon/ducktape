@@ -12,9 +12,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def haku_ci(
-    chart: Chart, forgejo: Kustomization, keda: Kustomization, reflector: Kustomization, haku_forgejo_tea: Kustomization
-) -> Kustomization:
+def haku_ci(chart: Chart, keda: Kustomization) -> Kustomization:
     name = "haku-ci"
     return flux_kustomization(
         chart,
@@ -31,15 +29,7 @@ def haku_ci(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=flux_kustomization_depends_on_many(
-                # Forgejo (with Actions enabled, #2556) must be up first
-                forgejo,
-                # supplies the ScaledObject and TriggerAuthentication CRDs
-                keda,
-                # Reflector mirrors haku-forgejo-tea from the completed haku-forgejo-tea
-                # Kustomization into haku-ci for the native Forgejo KEDA scaler.
-                reflector,
-                haku_forgejo_tea,
-            ),
+            # Supplies the ScaledJob and TriggerAuthentication CRDs.
+            depends_on=flux_kustomization_depends_on_many(keda),
         ),
     )

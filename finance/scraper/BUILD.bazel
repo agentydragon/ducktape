@@ -5,6 +5,8 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["market-roster.yaml"])
+
 py_library(
     name = "http_fetch",
     srcs = ["http_fetch.py"],

@@ -1,8 +1,29 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 resources:
-  - namespace
-  - db
-  - litellm
-  - dispatcher
+  - namespace.yaml
+  # Role passwordSecrets before the Cluster that references them.
+  - db-role-secrets.yaml
+  - postgres-cluster.yaml
+  - dispatcher-database.yaml
+  - litellm-deployment.yaml
+  - litellm-service.yaml
+  - cnp-workers-litellm.yaml
+  - serviceaccount.yaml
+  - rbac-zone-zai.yaml
+  - credentials.yaml
+  - dispatcher-deployment.yaml
+  - dispatcher-service.yaml
+  - cnp-dispatcher.yaml
+configMapGenerator:
+  - name: workers-litellm-config
+    namespace: haku-dispatch
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.yaml=workers-litellm-config.yaml
+  - name: dispatcher-config
+    namespace: haku-dispatch
+    files:
+      - job-template.yaml
+      - zones.yaml

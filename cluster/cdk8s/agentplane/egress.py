@@ -73,6 +73,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_PUBLIC_POLICY,
+    GOOGLE_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
@@ -205,6 +206,32 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
             ),
             source=EgressCredentialSpecSource(
                 projected_workload_token=EgressCredentialSpecSourceProjectedWorkloadToken(audience=KUBERNETES_AUDIENCE)
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-google-readonly",
+        metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "A Google OAuth access token minted and refreshed by Airlock "
+                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same "
+                "token Airlock's `google` provider mints for every consumer -- currently granted "
+                "`gmail.readonly` and `calendar.readonly` (Airlock's own config additionally "
+                "requests several other `.readonly` scopes not yet granted; check "
+                "cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before "
+                "assuming more than Gmail and Calendar work). The proxy does not narrow what the "
+                "token itself may do -- `google-readonly`'s own rules are what restrict this "
+                "credential to Gmail and Calendar hosts/paths."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
             ),
             targets=[
                 EgressCredentialSpecTargets(
@@ -354,6 +381,31 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
                 )
+            ]
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-google-readonly",
+        metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # Gmail has its own dedicated API host, so no path restriction is needed beyond
+                # read-only methods -- unlike Calendar below, nothing else is reachable here.
+                EgressPolicySpecRules(
+                    hosts=["gmail.googleapis.com"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
+                # Calendar shares this host with many other Google APIs the underlying token could
+                # also authenticate (Drive, Docs, Sheets, ...); the path restricts this rule to
+                # Calendar's own surface regardless of what else the token is scoped for.
+                EgressPolicySpecRules(
+                    hosts=["www.googleapis.com"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/calendar/v3/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
             ]
         ),
     )

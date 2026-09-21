@@ -1,4 +1,4 @@
-"""augur-evidence CronJob entrypoint: the generic scraper + augur catalog rosters.
+"""Augur evidence scraper entrypoint: the generic scraper + Augur catalog rosters.
 
 Extends the generic CLI (`fetch.build_parser`) with `--catalog`: every market a
 calibration catalog references is mirrored (snapshot depth per platform defaults), so

@@ -34,6 +34,18 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Grafana's candidate verifier reads the dashboard JSON from Bazel runfiles.
+filegroup(
+    name = "grafana_dashboard_json_files",
+    srcs = [
+        "monitoring/grafana-instance/cluster-storage-io.json",
+        "monitoring/grafana-instance/flux-cluster.json",
+        "monitoring/grafana-instance/interface-flap-frequency.json",
+        "monitoring/grafana-instance/rugged-power.json",
+    ],
+    visibility = ["//cluster/skills/grafana:__pkg__"],
+)
+
 # cdk8s-generated (cluster/cdk8s/generate_manifests.py) -- the test_generate_manifests
 # pinning test reads the committed files directly, and cluster/k8s/litellm/app's tests
 # import the underlying config() functions directly rather than reading these rendered
@@ -128,8 +140,7 @@ exports_files(
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "github-api-proxy/app/prometheus-rule.yaml",
         "kustomization.yaml",
-        "agentplane-testing/litellm-credentials/litellm-credentials.k8s.yaml",
-        "agentplane-testing/litellm-credentials/kustomization.yaml",
+        "agentplane-testing/litellm-credentials.k8s.yaml",
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
@@ -241,12 +252,4 @@ filegroup(
         "kustomization.yaml",
     ] + glob(["authentik/app/blueprints/*.yaml"]),
     visibility = ["//cluster/validation:__pkg__"],
-)
-
-# The production mirror roster, consumed by loom/gym's panel-coverage test (the gym
-# panel and the deployed roster must not drift).
-filegroup(
-    name = "market_roster_yaml",
-    srcs = ["evidence/market-roster/market-roster.yaml"],
-    visibility = ["//loom/gym:__pkg__"],
 )

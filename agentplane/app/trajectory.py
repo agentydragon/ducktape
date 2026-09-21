@@ -156,10 +156,10 @@ class ConversationEntity(Base):
             "thread_id",
             "source_id",
             "projection_epoch",
-            "pending",
             "cursor",
             "entity_kind",
             "entity_id",
+            postgresql_where=text("pending"),
         ),
     )
 
@@ -262,6 +262,9 @@ class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
 
 
+CommandOutcomeValue = Literal["pending", "effected", "failed", "noop"]
+
+
 class ConversationScopeResetError(ValueError):
     """A browser's retained projection source or epoch is no longer current."""
 
@@ -313,11 +316,30 @@ class ConversationControlsState(BaseModel):
     harness_state: str | None
 
 
+class ConversationFeedErrorState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str
+    message: str
+
+
+class ConversationOperationalState(BaseModel):
+    """Feed lifecycle state with an independent version, never a fabricated runner cursor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operational_version: str
+    status: Literal["active", "ended", "failed"]
+    last_verified_cursor: str
+    feed_error: ConversationFeedErrorState | None
+
+
 class ConversationViewState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     controls: ConversationControlsState
     unresolved_count: int
+    operational: ConversationOperationalState
 
 
 class ConversationItemState(BaseModel):
@@ -347,7 +369,7 @@ class ConversationCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
-    outcome: Literal["pending", "effected", "failed", "noop"]
+    outcome: CommandOutcomeValue
     outcome_cursor: str | None
     outcome_reason: str | None
 
@@ -599,7 +621,7 @@ class TrajectoryStore:
 
     async def command_outcomes(
         self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, str | None]:
+    ) -> dict[str, CommandOutcomeValue | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:
@@ -620,7 +642,7 @@ class TrajectoryStore:
                     ConversationEntity.entity_id.in_(requested),
                 )
             )
-            outcomes = {row.entity_id: _json_str(row.state, "outcome") for row in rows}
+            outcomes = {row.entity_id: ConversationCommandState.model_validate(row.state).outcome for row in rows}
             return {command_id: outcomes.get(command_id) for command_id in requested}
 
     async def record(
@@ -770,15 +792,25 @@ class TrajectoryStore:
                 .on_conflict_do_update(index_elements=[FeedState.thread_id], set_=values)
             )
             await session.execute(update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model))
+            await _set_conversation_operational(session, thread_id, status="active", error=None)
             await _notify(session)
 
-    async def end_feed(self, thread_id: UUID, *, lease: IngestionLease, error: str | None) -> None:
+    async def end_feed(
+        self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
+    ) -> None:
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
             state = await session.get(FeedState, thread_id)
             if state is None:
                 raise ValueError("cannot end a feed before persisting its attachment")
             state.end = {} if error is None else {"message": error}
+            await _set_conversation_operational(
+                session,
+                thread_id,
+                status="ended" if error is None else "failed",
+                error=error,
+                error_cursor=error_cursor,
+            )
             await session.flush()
             await _notify(session)
 
@@ -916,6 +948,7 @@ async def _record_conversation_projection(
     )
     if checkpoint is None:
         state = conversation_projection.initial(source_id, CONVERSATION_PROJECTION_EPOCH)
+        operational = None
     else:
         if checkpoint.source_id != source_id:
             raise EventReplicationError(f"conversation source changed at cursor {entries[0].cursor}")
@@ -924,13 +957,13 @@ async def _record_conversation_projection(
                 f"conversation projection epoch {checkpoint.projection_epoch!r} must be reset for "
                 f"{CONVERSATION_PROJECTION_EPOCH!r}"
             )
-        state = await _conversation_state(session, checkpoint)
+        state, operational = await _conversation_state(session, checkpoint)
     batch = conversation_projection.EventBatch(source_id, state.position.through_cursor, tuple(entries))
     result = conversation_projection.advance(
         state, batch, await _prior_conversation_entities(session, thread_id, batch)
     )
     await _write_conversation_payloads(session, thread_id, result.payload_writes)
-    for values in _conversation_entities(thread_id, result):
+    for values in _conversation_entities(thread_id, result, operational):
         await session.execute(
             insert(ConversationEntity)
             .values(**values)
@@ -974,7 +1007,7 @@ async def _record_conversation_projection(
 
 async def _conversation_state(
     session: AsyncSession, checkpoint: ConversationProjectionCheckpoint
-) -> conversation_projection.ViewState:
+) -> tuple[conversation_projection.ViewState, ConversationOperationalState]:
     row = await session.scalar(
         select(ConversationEntity).where(
             ConversationEntity.thread_id == checkpoint.thread_id,
@@ -986,18 +1019,52 @@ async def _conversation_state(
     )
     if row is None:
         raise ValueError("conversation checkpoint has no current controls")
-    controls = row.state["controls"]
-    if not isinstance(controls, dict):
-        raise ValueError("conversation controls are invalid")
+    view = ConversationViewState.model_validate(row.state)
     return conversation_projection.ViewState(
         conversation_projection.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
         conversation_projection.Controls(
-            applied_model=_optional_str(controls, "applied_model"),
-            active_turn_id=_optional_str(controls, "active_turn_id"),
-            harness_state=_optional_str(controls, "harness_state"),
+            applied_model=view.controls.applied_model,
+            active_turn_id=view.controls.active_turn_id,
+            harness_state=view.controls.harness_state,
         ),
-        _json_int(row.state, "unresolved_count"),
+        view.unresolved_count,
+    ), view.operational
+
+
+async def _set_conversation_operational(
+    session: AsyncSession,
+    thread_id: UUID,
+    *,
+    status: Literal["active", "ended", "failed"],
+    error: str | None,
+    error_cursor: int | None = None,
+) -> None:
+    checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+    if checkpoint is None:
+        return
+    row = await session.get(
+        ConversationEntity, (thread_id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
     )
+    if row is None:
+        raise ValueError("conversation checkpoint has no current controls")
+    view = ConversationViewState.model_validate(row.state)
+    row.state = view.model_copy(
+        update={
+            "operational": ConversationOperationalState(
+                operational_version=str(int(view.operational.operational_version) + 1),
+                status=status,
+                last_verified_cursor=str(checkpoint.through_cursor),
+                feed_error=(
+                    None
+                    if error is None
+                    else ConversationFeedErrorState(
+                        cursor=str(error_cursor if error_cursor is not None else checkpoint.through_cursor),
+                        message=error,
+                    )
+                ),
+            )
+        }
+    ).model_dump(mode="json")
 
 
 async def _prior_conversation_entities(
@@ -1208,8 +1275,12 @@ def _payload_manifest_key(
     )
 
 
-def _conversation_entities(thread_id: UUID, result: conversation_projection.ProjectionBatch) -> list[dict[str, object]]:
-    entities = [_view_state_entity(thread_id, result.state)]
+def _conversation_entities(
+    thread_id: UUID,
+    result: conversation_projection.ProjectionBatch,
+    operational: ConversationOperationalState | None = None,
+) -> list[dict[str, object]]:
+    entities = [_view_state_entity(thread_id, result.state, operational)]
     entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
     entities.extend(_confirmed_input_entity(thread_id, value) for value in result.confirmed_input_upserts)
     entities.extend(_lifecycle_entity(thread_id, value) for value in result.lifecycle_upserts)
@@ -1252,7 +1323,9 @@ def _entity_values(
     ).model_dump(mode="json")
 
 
-def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState) -> dict[str, object]:
+def _view_state_entity(
+    thread_id: UUID, state: conversation_projection.ViewState, operational: ConversationOperationalState | None = None
+) -> dict[str, object]:
     return _entity_values(
         thread_id,
         state.position.source_id,
@@ -1268,6 +1341,13 @@ def _view_state_entity(thread_id: UUID, state: conversation_projection.ViewState
                 "harness_state": state.controls.harness_state,
             },
             "unresolved_count": state.unresolved_count,
+            "operational": operational
+            or ConversationOperationalState(
+                operational_version="0",
+                status="active",
+                last_verified_cursor=str(state.position.through_cursor),
+                feed_error=None,
+            ),
         },
     )
 

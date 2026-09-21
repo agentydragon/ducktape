@@ -1,11 +1,26 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant MCP action groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana MCP action
+groups.
 """
 
 from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecDataFrom,
+    ExternalSecretSpecDataFromSourceRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+    ExternalSecretSpecTargetTemplate,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -22,7 +37,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
-    DEPENDS_ON,
     ActionsProps,
     AppProps,
     BearerMcpMount,
@@ -34,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
@@ -46,13 +61,16 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
-# The same reflected Secret haku-console's own home_assistant server reads
+_TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
+# The same reflected Secrets haku-console's own home_assistant/tana servers read
 # (cluster/cdk8s/haku/console_config.py), widened to reflect into this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
+_TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
+_OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
@@ -178,6 +196,20 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
+        "tana": {
+            "title": "Tana MCP",
+            "description": "Tana read/write tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _TANA_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/tana-mcp/bearer-token",
+                },
+            },
+        },
     },
 }
 
@@ -190,7 +222,6 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    depends_on=(*DEPENDS_ON, "sso-providers-tf", "ssh-mcp", "haku-console", "ha-mcp"),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
     include_action_policy_rule=False,
     replicas=ReplicaProfile(
@@ -212,11 +243,18 @@ ENV = Environment(
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
         reach_incluster_authentik=True,
         runner_zone="hil-ovh",
+        oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
         hostname="agentplane-actions-staging.allegedly.works",
         settings=_ACTIONS_SETTINGS,
-        extra_reload_secrets=(_GITHUB_MCP_CLIENT_SECRET, _WEB_PUSH_SECRET, BEARER_SECRET_NAME, _HA_MCP_BEARER_SECRET),
+        extra_reload_secrets=(
+            _GITHUB_MCP_CLIENT_SECRET,
+            _WEB_PUSH_SECRET,
+            BEARER_SECRET_NAME,
+            _HA_MCP_BEARER_SECRET,
+            _TANA_MCP_BEARER_SECRET,
+        ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
         web_push_secret_name=_WEB_PUSH_SECRET,
@@ -224,11 +262,16 @@ ENV = Environment(
         bearer_mcp_mounts=[
             BearerMcpMount(name="ssh-mcp", secret_name=BEARER_SECRET_NAME, secret_key=BEARER_SECRET_KEY),
             BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
+            # The Secret's own key is `token` (it's a Tana personal access token, not a
+            # bearer minted for this purpose); renamed at mount time to the same
+            # `bearer-token` file name every other static-bearer group uses.
+            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token"),
         ],
         extra_egress=[
             cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
             cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
+            cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
@@ -248,6 +291,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
         chart,
@@ -259,6 +303,50 @@ def chart(app: App) -> Chart:
     return chart
 
 
+def _add_session_secret(scope: Chart) -> None:
+    """Generate the staging app's local session-signing key with ESO.
+
+    Rotating this value invalidates existing browser sessions, but does not touch the
+    Authentik OAuth client credentials or the Agentplane testing environment.
+    """
+    Password(
+        scope,
+        "session-password-generator",
+        metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
+        spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
+    )
+    ExternalSecret(
+        scope,
+        "session-external-secret",
+        metadata=metadata(
+            _OIDC_SESSION_SECRET,
+            _NAMESPACE,
+            annotations={"description": "ESO-generated Agentplane staging session-signing key."},
+        ),
+        spec=ExternalSecretSpec(
+            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+            target=ExternalSecretSpecTarget(
+                name=_OIDC_SESSION_SECRET,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+                immutable=True,
+                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
+            ),
+            data_from=[
+                ExternalSecretSpecDataFrom(
+                    source_ref=ExternalSecretSpecDataFromSourceRef(
+                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                            api_version="generators.external-secrets.io/v1alpha1",
+                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                            name=_OIDC_SESSION_SECRET,
+                        )
+                    )
+                )
+            ],
+        ),
+    )
+
+
 def agentplane_staging(
     flux_chart: Chart,
     health_checks: list[KustomizationSpecHealthChecks],
@@ -268,17 +356,7 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    litellm_keys_tf: Kustomization,
-    local_path_provisioner: Kustomization,
-    reflector: Kustomization,
-    sso_providers_tf: Kustomization,
-    ssh_mcp: Kustomization,
-    haku_console: Kustomization,
-    ha_mcp: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -293,7 +371,15 @@ def agentplane_staging(
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            health_checks=health_checks,
+            health_checks=[
+                *health_checks,
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name=_OIDC_SESSION_SECRET,
+                    namespace=_NAMESPACE,
+                ),
+            ],
             health_check_exprs=[
                 KustomizationSpecHealthCheckExprs(
                     api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
@@ -310,17 +396,7 @@ def agentplane_staging(
                 cert_manager_trust,
                 claude_rbac,
                 cnpg,
-                external_creds,
                 external_secrets_config,
-                forgejo_images,
-                gateway,
-                litellm_keys_tf,
-                local_path_provisioner,
-                reflector,
-                sso_providers_tf,
-                ssh_mcp,
-                haku_console,
-                ha_mcp,
             ),
         ),
     )

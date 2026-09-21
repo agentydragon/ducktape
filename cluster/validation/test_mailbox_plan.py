@@ -5,9 +5,9 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_mailbox_initialization_is_serialized_and_init_only() -> None:
-    deployment_path = get_required_path("_main/cluster/k8s/haku/mailbox/app/deployment.yaml")
+    deployment_path = get_required_path("_main/cluster/k8s/haku/mailbox/deployment.yaml")
     deployment = yaml.safe_load(deployment_path.read_text())
-    kustomization_path = get_required_path("_main/cluster/k8s/haku/mailbox/app/kustomization.yaml")
+    kustomization_path = get_required_path("_main/cluster/k8s/haku/mailbox/kustomization.yaml")
     kustomization = yaml.safe_load(kustomization_path.read_text())
 
     assert deployment["spec"]["strategy"]["type"] == "Recreate"

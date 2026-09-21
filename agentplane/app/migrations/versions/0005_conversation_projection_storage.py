@@ -56,7 +56,8 @@ def upgrade() -> None:
     op.create_index(
         "ix_conversation_entity_scope_pending_cursor",
         "conversation_entity",
-        ["thread_id", "source_id", "projection_epoch", "pending", "cursor", "entity_kind", "entity_id"],
+        ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
+        postgresql_where=sa.text("pending"),
     )
     op.create_table(
         "conversation_payload_manifest",

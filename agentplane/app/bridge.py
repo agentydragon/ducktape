@@ -96,6 +96,7 @@ class Feed:
 
     async def run(self) -> None:
         attachment: Attachment | None = None
+        entry: event_log_pb2.EventEntry | None = None
         try:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
@@ -136,7 +137,12 @@ class Feed:
                 )
             except EventReplicationError as error:
                 logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-                await self.store.end_feed(thread_id, lease=self.lease, error=str(error))
+                await self.store.end_feed(
+                    thread_id,
+                    lease=self.lease,
+                    error=str(error),
+                    error_cursor=entry.cursor if entry is not None else None,
+                )
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
         except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:

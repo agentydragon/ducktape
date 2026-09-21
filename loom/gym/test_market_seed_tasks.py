@@ -22,14 +22,12 @@ def test_market_ids_unique() -> None:
     assert len(set(market_ids)) == len(market_ids)
 
 
-def test_panel_markets_are_in_the_deployed_mirror_roster() -> None:
-    """Every panel market must be deep-rostered in the deployed mirror ConfigMap
-    (cluster/k8s/evidence/market-roster/), so panel data stays reproducible from the
-    mirror instead of trusted from one-off fetches."""
-    roster = load_roster(get_required_path("_main/cluster/k8s/evidence/market-roster/market-roster.yaml"))
+def test_panel_markets_are_in_the_retained_mirror_roster() -> None:
+    """Every panel market stays deep-rostered in the retained Augur scraper config."""
+    roster = load_roster(get_required_path("_main/finance/scraper/market-roster.yaml"))
     rostered = {entry.market_id for entry in roster if entry.platform is Platform.MANIFOLD and entry.deep}
     missing = {record.market_id for record in MARKET_SEED_RECORDS} - rostered
-    assert not missing, f"panel markets missing from the mirror roster ConfigMap: {sorted(missing)}"
+    assert not missing, f"panel markets missing from the retained Augur scraper roster: {sorted(missing)}"
 
 
 def test_market_baseline_probs_cover_exactly_the_market_tasks() -> None:

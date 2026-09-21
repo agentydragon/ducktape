@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -19,6 +20,34 @@ py_library(
     srcs = ["usage.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
+)
+
+# Canonical wheel for the shared Claude Code API models. The AIQuota and
+# statusline wheels depend on this distribution instead of bundling overlapping
+# copies of devinfra.claude.claude_api.
+py_package(
+    name = "claude_api_pkg",
+    packages = [
+        "devinfra.claude",
+        "devinfra.claude.claude_api",
+    ],
+    deps = [
+        ":credentials",
+        ":statusline",
+        ":usage",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//devinfra/claude/claude_api/hooks:output",
+    ],
+)
+
+py_wheel(
+    name = "claude_api_wheel",
+    distribution = "ducktape_claude_api",
+    python_requires = ">=3.14",
+    requires = ["pydantic>=2.0"],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":claude_api_pkg"],
 )
 
 py_test(

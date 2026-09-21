@@ -25,9 +25,10 @@ authorization timeout after a grant is released or revoked.
 The standing group has no login credential or ServiceAccount token; only Console may evaluate it
 through SubjectAccessReview.
 
-Flux's ordinary dependencies keep the standing subject, complete execution ceiling, Console SAR
-configuration, and authorization proxy Ready before credential-mediation changes roll out. The
-proxy Kustomization additionally health-checks the iron-proxy Deployment and its root certificate.
+The `public-coder-agent-app` Flux Kustomization owns the namespace, application, proxy and
+SSH bastion. It gates admission on the Certificate, Bundle, ExternalSecret and Pipe providers;
+runtime credentials and services reconcile independently. It health-checks all three Deployments,
+the proxy root certificate and the Brave Search ExternalSecret. Devbox and backup remain separate.
 Rollback stays inside the Haku-mediated architecture by reverting the proxy/configuration change in
 Git; there is no direct reader-token path to restore.
 
@@ -193,3 +194,6 @@ proxy environment handling.
   `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
   image automation — no manual republish step, but also no persistent local
   state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.
+  Its NixOS, Home Manager, and image recipes live in
+  `openclaw/public_coder_agent/devbox/`; this directory keeps the deployment
+  manifests.

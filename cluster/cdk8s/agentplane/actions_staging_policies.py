@@ -29,7 +29,13 @@ from constructs import Construct
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    FORGEJO_HAKU_POLICY,
+    GOOGLE_READONLY_POLICY,
+    KUBERNETES_POLICY,
+    PACKAGES_POLICY,
+)
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -308,6 +314,10 @@ def add_staging_action_policies(scope: Construct) -> None:
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
+    # `google-readonly` substitutes the same read-only Google token Airlock already mints for other
+    # consumers -- currently granted `gmail.readonly` and `calendar.readonly` (see egress.py's
+    # `google-readonly` EgressCredential for the caveat about scopes Airlock's config requests but
+    # hasn't been granted yet).
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
@@ -327,7 +337,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY],
+            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY, GOOGLE_READONLY_POLICY],
         ),
     )
 

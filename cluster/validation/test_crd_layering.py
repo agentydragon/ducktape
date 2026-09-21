@@ -21,6 +21,12 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("ExternalSecret", "external-secrets.io/v1", "external-secrets-operator"),
         ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
+        ("Bundle", "trust.cert-manager.io/v1alpha1", "cert-manager-trust"),
+        ("CleanupPolicy", "kyverno.io/v2", "kyverno"),
+        ("SandboxTemplate", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
+        ("SandboxWarmPool", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
+        ("ScaledJob", "keda.sh/v1alpha1", "keda"),
+        ("TriggerAuthentication", "keda.sh/v1alpha1", "keda"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(
