@@ -154,14 +154,13 @@ class ConversationEntity(Base):
             "entity_id",
         ),
         Index(
-            "ix_conversation_entity_scope_pending_cursor",
+            "ix_conversation_entity_pending_command_cursor",
             "thread_id",
             "source_id",
             "projection_epoch",
             "cursor",
-            "entity_kind",
             "entity_id",
-            postgresql_where=text("pending"),
+            postgresql_where=text("pending AND entity_kind = 'command'"),
         ),
         Index(
             "ix_conversation_entity_scope_segment_cursor",
@@ -324,6 +323,17 @@ class ConversationEntityInterest:
 
 
 @dataclass(frozen=True)
+class ConversationPendingInterest:
+    """One server-selected command page and the view-state revision that selected it."""
+
+    scope: ConversationScope
+    command_revision_cursor: int
+    unresolved_count: int
+    command_ids: tuple[str, ...]
+    next_before_cursor: int | None
+
+
+@dataclass(frozen=True)
 class ConversationPayloadSelection:
     scope: ConversationScope
     owner_cursor: int
@@ -379,6 +389,7 @@ class ConversationViewState(BaseModel):
 
     controls: ConversationControlsState
     unresolved_count: int
+    command_revision_cursor: str
     operational: ConversationOperationalState
 
 
@@ -601,6 +612,54 @@ class TrajectoryStore:
             if before_cursor < 0:
                 raise ValueError("before cursor cannot be negative")
             return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
+
+    async def pending_command_interest(
+        self, thread_id: UUID, *, before_cursor: int | None = None, page_size: int = 30
+    ) -> ConversationPendingInterest | None:
+        """Return a cursor-keyset page of unresolved commands from one read-only snapshot."""
+        if not 1 <= page_size <= 100:
+            raise ValueError("pending command page size must be between 1 and 100")
+        if before_cursor is not None and before_cursor < 0:
+            raise ValueError("before cursor cannot be negative")
+        async with self._sessions.begin() as session:
+            # PostgreSQL otherwise gives every statement in this method its own READ COMMITTED
+            # snapshot, which could pair an old command page with a newer view-state revision.
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            if checkpoint is None:
+                return None
+            scope = ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            view_row = await session.get(
+                ConversationEntity, (thread_id, scope.source_id, scope.projection_epoch, "view_state", "current")
+            )
+            if view_row is None:
+                raise ValueError("conversation checkpoint has no current controls")
+            view = ConversationViewState.model_validate(view_row.state)
+            before = scope.through_cursor + 1 if before_cursor is None else before_cursor
+            rows = list(
+                await session.execute(
+                    select(ConversationEntity.cursor, ConversationEntity.entity_id)
+                    .where(
+                        ConversationEntity.thread_id == thread_id,
+                        ConversationEntity.source_id == scope.source_id,
+                        ConversationEntity.projection_epoch == scope.projection_epoch,
+                        ConversationEntity.entity_kind == "command",
+                        ConversationEntity.pending,
+                        ConversationEntity.cursor < before,
+                    )
+                    .order_by(ConversationEntity.cursor.desc())
+                    .limit(page_size + 1)
+                )
+            )
+            has_older = len(rows) > page_size
+            page = rows[:page_size]
+            return ConversationPendingInterest(
+                scope,
+                int(view.command_revision_cursor),
+                view.unresolved_count,
+                tuple(row.entity_id for row in page),
+                page[-1].cursor if has_older and page else None,
+            )
 
     async def conversation_payload_selection(
         self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
@@ -1217,6 +1276,7 @@ async def _conversation_state(
             harness_state=view.controls.harness_state,
         ),
         view.unresolved_count,
+        int(view.command_revision_cursor),
     ), view.operational
 
 
@@ -1529,6 +1589,7 @@ def _view_state_entity(
                 "harness_state": state.controls.harness_state,
             },
             "unresolved_count": state.unresolved_count,
+            "command_revision_cursor": str(state.command_revision_cursor),
             "operational": operational
             or ConversationOperationalState(
                 operational_version="0",

@@ -19,6 +19,7 @@ import type {
   BindingView,
   Decision,
   PolicyView,
+  PendingCommandInterest,
   SandboxView,
   ThreadView,
 } from "../client";
@@ -699,6 +700,7 @@ function viewState(
         harness_state: activeTurn === null ? "stopped" : "running",
       },
       unresolved_count: 0,
+      command_revision_cursor: String(throughCursor),
       operational: {
         operational_version: String(throughCursor),
         status: "active",
@@ -933,14 +935,14 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       "queued-model",
       "change_model",
       scenario.pendingCommands === "outcomes" ? "failed" : "pending",
-      "Model unavailable"
+      scenario.pendingCommands === "outcomes" ? "Model unavailable" : null
     ),
     command(
       25,
       "queued-interrupt",
       "interrupt_turn",
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
-      "Target turn already ended"
+      scenario.pendingCommands === "outcomes" ? "Target turn already ended" : null
     ),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
@@ -966,17 +968,50 @@ function conversationInterest(threadId: string): Record<string, string | null> {
   };
 }
 
-if (scenario.pendingCommands === "mixed") {
+function pendingCommandInterest(threadId: string, beforeCursor: string | null): PendingCommandInterest {
+  const commands = conversationRows(threadId)
+    .filter((row) => row.entity_kind === "command" && row.pending === true)
+    .sort((left, right) => (BigInt(left.cursor as string) > BigInt(right.cursor as string) ? -1 : 1));
+  const pending = commands.filter((row) => beforeCursor === null || BigInt(String(row.cursor)) < BigInt(beforeCursor));
+  const page = pending.slice(0, 30);
+  const through = conversationRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
+  return {
+    source_id: CONVERSATION_SOURCE,
+    projection_epoch: CONVERSATION_EPOCH,
+    through_cursor: String(through),
+    command_revision_cursor: String(through),
+    unresolved_count: commands.length,
+    command_ids: page.map((row) => String(row.entity_id)),
+    next_before_cursor: pending.length > page.length ? String(page.at(-1)?.cursor) : null,
+  };
+}
+
+if (scenario.pendingCommands === "mixed" || scenario.pendingCommands === "outcomes") {
   const local = new LocalCommands(THREADS[2].id);
-  local.remember(
-    create(CommandSchema, {
-      commandId: "locally-retained",
-      operation: {
-        case: "submitInput",
-        value: { text: "Continue when ready. This message has no saved confirmation yet." },
-      },
-    })
-  );
+  if (scenario.pendingCommands === "mixed") {
+    local.remember(
+      create(CommandSchema, {
+        commandId: "locally-retained",
+        operation: {
+          case: "submitInput",
+          value: { text: "Continue when ready. This message has no saved confirmation yet." },
+        },
+      })
+    );
+  } else {
+    local.remember(
+      create(CommandSchema, {
+        commandId: "queued-model",
+        operation: { case: "changeModel", value: { model: "next-model" } },
+      })
+    );
+    local.remember(
+      create(CommandSchema, {
+        commandId: "queued-interrupt",
+        operation: { case: "interruptTurn", value: { turnId: "turn-visual" } },
+      })
+    );
+  }
 }
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
@@ -1190,6 +1225,11 @@ routes.push(
   ],
   [
     "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/pending-interest$/,
+    (match, query) => pendingCommandInterest(match[1], query.get("before_cursor")),
+  ],
+  [
+    "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, signal) => {
       const subset = currentSubset(query);
@@ -1198,10 +1238,12 @@ routes.push(
         return electricShape([], `visual-entities-${match[1]}`);
       }
       if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
-      const rows = threadRows(match[1]).map((row) => {
-        if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
-        return { ...row, revision_cursor: "8" };
-      });
+      const rows = threadRows(match[1])
+        .filter((row) => row.entity_kind !== "command")
+        .map((row) => {
+          if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
+          return { ...row, revision_cursor: "8" };
+        });
       return electricSubset(
         rows.map((row) => shapeRow("conversation_entity", row)),
         `visual-entities-${match[1]}`

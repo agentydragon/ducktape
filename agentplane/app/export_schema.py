@@ -17,7 +17,7 @@ from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
-from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse
+from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse, PendingCommandInterestResponse
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
@@ -46,7 +46,12 @@ def openapi_document() -> dict[str, Any]:
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):
         raise ValueError("OpenAPI document has no schema components")
-    for model in (ConversationStoredEntity, EntityInterestResponse, PayloadInterestResponse):
+    for model in (
+        ConversationStoredEntity,
+        EntityInterestResponse,
+        PayloadInterestResponse,
+        PendingCommandInterestResponse,
+    ):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
         components["schemas"].update(schema.pop("$defs", {}))
         components["schemas"][model.__name__] = schema

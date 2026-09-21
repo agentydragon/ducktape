@@ -1362,13 +1362,17 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Command retained across terminal shape error")
-    async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
-        await composer.press("Enter")
+    await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.commands.get()
     pending = page.get_by_role("region", name="Pending commands")
     await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    reason = "Command selection stream must retain this terminal row"
+    terminal_summary = f"Input failed: {reason}"
+    source.append(event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command.command_id, reason=reason)))
+    await expect(pending.get_by_text(terminal_summary, exact=True)).to_be_visible()
+    await expect(page.get_by_role("region", name="Command updates")).to_contain_text("Command updates · 0 pending")
 
     async def terminal_shape_error(route: Route) -> None:
         await route.fulfill(status=410, content_type="text/plain", body="command scope expired")
@@ -1380,24 +1384,13 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
             await page.context.set_offline(False)
         stopped = page.get_by_role("alert").filter(has_text="Command synchronization stopped:")
         await expect(stopped).to_be_visible()
-        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+        await expect(pending.get_by_text(terminal_summary, exact=True)).to_be_visible()
 
         async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
             await stopped.get_by_role("button", name="Retry command synchronization", exact=True).click()
         await expect(page.get_by_text("Command synchronization stopped:", exact=False)).to_have_count(0)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-command-after-terminal-shape-retry",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
-        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
-            command.submit_input.text
-        )
+        await expect(pending.get_by_text(terminal_summary, exact=True)).to_be_visible()
+        await pending.get_by_role("button", name="Dismiss", exact=True).click()
         await expect(pending).to_have_count(0)
     finally:
         await page.context.set_offline(False)

@@ -18,13 +18,19 @@ vi.mock("@tanstack/electric-db-collection", () => ({
 }));
 
 vi.mock("@tanstack/react-db", () => ({
-  createCollection: <T,>(options: T) => options,
+  createCollection: <T,>(options: T) => ({ ...options, isReady: () => true }),
   useLiveQuery: () => ({ data: [], isError: false }),
 }));
 
 import { FetchError } from "@electric-sql/client";
 
-import { CommandSelection, ConversationCollection, PayloadBody, type PayloadRef } from "./conversation_store";
+import {
+  CommandSelection,
+  ConversationCollection,
+  PayloadBody,
+  PendingCommandPages,
+  type PayloadRef,
+} from "./conversation_store";
 
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -186,4 +192,154 @@ it("keeps native Electric stream errors visible instead of rotating the active c
   expect(container.textContent).toContain("Conversation synchronization stopped: must refetch");
   expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1);
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("opens at most one current and one older fixed-ID pending page", async () => {
+  const current = Array.from({ length: 30 }, (_, index) => `current-${index}`);
+  const older = Array.from({ length: 30 }, (_, index) => `older-${index}`);
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 61,
+        command_ids: current,
+        next_before_cursor: "500",
+      })
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 61,
+        command_ids: older,
+        next_before_cursor: "400",
+      })
+    );
+  vi.stubGlobal("fetch", fetch);
+  const container = await render(
+    <PendingCommandPages
+      threadId="thread"
+      sourceId="source"
+      projectionEpoch="epoch"
+      viewRevisionCursor="12"
+      commandRevisionCursor="12"
+    >
+      {(page) => (
+        <>
+          <p>{page.unresolvedCount} pending</p>
+          <p>
+            {page.current.length} current and {page.older.length} older
+          </p>
+          <button onClick={page.loadOlder} disabled={!page.canLoadOlder}>
+            Load older
+          </button>
+        </>
+      )}
+    </PendingCommandPages>
+  );
+
+  await vi.waitFor(() => expect(container.textContent).toContain("61 pending"));
+  expect(captured.options.filter((value) => value.id.startsWith("agentplane-commands:"))).toHaveLength(1);
+  expect(new URL(fetch.mock.calls[0]![0] as string).pathname).toBe("/threads/thread/sync/pending-interest");
+
+  await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
+  await vi.waitFor(() =>
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-commands:"))).toHaveLength(2)
+  );
+  expect(new URL(fetch.mock.calls[1]![0] as string).searchParams.get("before_cursor")).toBe("500");
+  expect(container.textContent).toContain("0 current and 0 older");
+});
+
+it("retries an initial pending interest failure", async () => {
+  const fetch = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("pending interest unavailable"))
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 0,
+        command_ids: [],
+        next_before_cursor: null,
+      })
+    );
+  vi.stubGlobal("fetch", fetch);
+  const container = await render(
+    <PendingCommandPages
+      threadId="thread"
+      sourceId="source"
+      projectionEpoch="epoch"
+      viewRevisionCursor="12"
+      commandRevisionCursor="12"
+    >
+      {(page) => <p>{page.unresolvedCount} pending</p>}
+    </PendingCommandPages>
+  );
+
+  await vi.waitFor(() => expect(container.textContent).toContain("pending interest unavailable"));
+  await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
+  await vi.waitFor(() => expect(container.textContent).toContain("0 pending"));
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("releases an errored older command page for an explicit retry", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 2,
+        command_ids: ["current"],
+        next_before_cursor: "500",
+      })
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        source_id: "source",
+        projection_epoch: "epoch",
+        through_cursor: "12",
+        command_revision_cursor: "12",
+        unresolved_count: 2,
+        command_ids: ["older"],
+        next_before_cursor: null,
+      })
+    );
+  vi.stubGlobal("fetch", fetch);
+  const container = await render(
+    <PendingCommandPages
+      threadId="thread"
+      sourceId="source"
+      projectionEpoch="epoch"
+      viewRevisionCursor="12"
+      commandRevisionCursor="12"
+    >
+      {(page) => (
+        <>
+          <p>{page.hasOlder ? "older retained" : "current only"}</p>
+          <button onClick={page.loadOlder} disabled={!page.canLoadOlder}>
+            Load older
+          </button>
+        </>
+      )}
+    </PendingCommandPages>
+  );
+
+  await vi.waitFor(() => expect(container.textContent).toContain("current only"));
+  await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
+  await vi.waitFor(() => expect(container.textContent).toContain("older retained"));
+  const options = captured.options.filter((value) => value.id.startsWith("agentplane-commands:"));
+  await act(async () => options[1]!.shapeOptions.onError?.(new Error("older stream ended")));
+  await vi.waitFor(() => expect(container.textContent).toContain("Older command synchronization stopped"));
+  expect(container.textContent).toContain("current only");
 });
