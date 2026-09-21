@@ -144,10 +144,11 @@ async def electric_service(
 
                 async def logs() -> str:
                     raw = await asyncio.to_thread(electric.get_wrapped_container().logs)
+                    assert isinstance(raw, bytes)
                     return raw.decode(errors="replace")
 
                 async def wait_ready(timeout_s: float) -> None:
-                    await _ready(url, timeout_s=timeout_s)
+                    await _ready(url(), timeout_s=timeout_s)
 
                 async def state() -> dict[str, object]:
                     container = electric.get_wrapped_container()
