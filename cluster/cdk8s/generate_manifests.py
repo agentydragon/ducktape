@@ -153,7 +153,6 @@ def generate_manifests(root: Path) -> None:
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(flux_chart)
     agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(flux_chart)
     haku_openclaw_spike_namespace_kustomization = agents_flux_kustomizations.haku_openclaw_spike_namespace(flux_chart)
-    agents_mitmproxy_namespace_kustomization = agents_flux_kustomizations.agents_mitmproxy_namespace(flux_chart)
     public_coder_agent_namespace_kustomization = agents_flux_kustomizations.public_coder_agent_namespace(flux_chart)
     artifact_generators_factory(flux_chart, root)
     cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(flux_chart)
@@ -280,13 +279,7 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy_flux_kustomizations.proxmox_proxy(flux_chart, gateway_kustomization)
     website_flux_kustomizations.website(flux_chart, gateway_kustomization)
     kube_system_flux_kustomizations.kube_system(flux_chart, goldilocks_kustomization)
-    agents_flux_kustomizations.agents_mitmproxy(
-        flux_chart,
-        agents_mitmproxy_namespace_kustomization,
-        cert_manager_environment_kustomization,
-        cert_manager_trust_kustomization,
-        reflector_kustomization,
-    )
+    agents_flux_kustomizations.agents_mitmproxy(flux_chart, cert_manager_trust_kustomization)
     parked_flux_kustomizations.docker_ci(flux_chart, cert_manager_environment_kustomization, claude_rbac_kustomization)
     atuin_kustomization = atuin_flux_kustomizations.atuin(
         flux_chart, cert_manager_issuer_config_kustomization, cnpg_kustomization

@@ -116,7 +116,6 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("haku-managed-agent", ("haku/runtime/managed_agent/self_hosted/deploy",)),
     ("kubectl-passthrough-mcp", ("cluster/k8s/agents/kubectl-passthrough-mcp/app",)),
     ("loki-read-proxy", ("cluster/k8s/agents/loki-read-proxy",)),
-    ("agents-mitmproxy-namespace", ("cluster/k8s/agents/mitmproxy-namespace",)),
     ("plaid-mcp", ("cluster/k8s/agents/plaid-mcp",)),
     ("public-coder-agent-app", ("cluster/k8s/agents/public-coder-agent/app",)),
     ("public-coder-agent-backup", ("cluster/k8s/agents/public-coder-agent/backup",)),
