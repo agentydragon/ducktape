@@ -2,9 +2,8 @@
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 
 import asyncpg
@@ -17,40 +16,46 @@ from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 
-@dataclass(frozen=True)
 class ElectricService:
-    database_url: str
-    _url: Callable[[], str]
-    _stop: Callable[[], Awaitable[None]]
-    _start: Callable[[float], Awaitable[None]]
-    _wait_ready: Callable[[float], Awaitable[None]]
-    _logs: Callable[[], Awaitable[str]]
-    _state: Callable[[], Awaitable[dict[str, object]]]
-
-    async def stop(self) -> None:
-        """Stop Electric while preserving its configured persistent state."""
-        await self._stop()
+    def __init__(self, database_url: str, container: LoggedContainer) -> None:
+        self.database_url = database_url
+        self._container = container
 
     @property
     def url(self) -> str:
         """Current host URL; Docker may choose a new published port after restart."""
-        return self._url()
+        return f"http://{self._container.get_container_host_ip()}:{self._container.get_exposed_port(3000)}"
+
+    async def stop(self) -> None:
+        """Stop Electric while preserving its configured persistent state."""
+        await asyncio.to_thread(self._container.get_wrapped_container().stop)
 
     async def start(self, *, timeout_s: float = 60) -> None:
         """Start a previously stopped Electric container and wait for its health endpoint."""
-        await self._start(timeout_s)
-
-    async def logs(self) -> str:
-        """Return logs from every run of the Electric container."""
-        return await self._logs()
+        await asyncio.to_thread(self._container.get_wrapped_container().start)
+        await self.wait_ready(timeout_s=timeout_s)
 
     async def wait_ready(self, *, timeout_s: float = 60) -> None:
         """Wait for a running Electric process to pass its health check."""
-        await self._wait_ready(timeout_s)
+        await _ready(self.url, timeout_s=timeout_s)
+
+    async def logs(self) -> str:
+        """Return logs from every run of the Electric container."""
+        raw = await asyncio.to_thread(self._container.get_wrapped_container().logs)
+        assert isinstance(raw, bytes)
+        return raw.decode(errors="replace")
 
     async def state(self) -> dict[str, object]:
         """Return Docker's current process and published-port state for diagnostics."""
-        return await self._state()
+        container = self._container.get_wrapped_container()
+        await asyncio.to_thread(container.reload)
+        network = container.attrs.get("NetworkSettings", {})
+        return {
+            "status": container.status,
+            "state": container.attrs.get("State"),
+            "ports": network.get("Ports"),
+            "url": self.url,
+        }
 
 
 async def _connect(dsn: str) -> asyncpg.Connection:
@@ -129,36 +134,6 @@ async def electric_service(
                 await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
                 electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric", mode="rw")
             with electric:
-
-                def url() -> str:
-                    return f"http://{electric.get_container_host_ip()}:{electric.get_exposed_port(3000)}"
-
-                await _ready(url())
-
-                async def stop() -> None:
-                    await asyncio.to_thread(electric.get_wrapped_container().stop)
-
-                async def start(timeout_s: float) -> None:
-                    await asyncio.to_thread(electric.get_wrapped_container().start)
-                    await _ready(url(), timeout_s=timeout_s)
-
-                async def logs() -> str:
-                    raw = await asyncio.to_thread(electric.get_wrapped_container().logs)
-                    assert isinstance(raw, bytes)
-                    return raw.decode(errors="replace")
-
-                async def wait_ready(timeout_s: float) -> None:
-                    await _ready(url(), timeout_s=timeout_s)
-
-                async def state() -> dict[str, object]:
-                    container = electric.get_wrapped_container()
-                    await asyncio.to_thread(container.reload)
-                    network = container.attrs.get("NetworkSettings", {})
-                    return {
-                        "status": container.status,
-                        "state": container.attrs.get("State"),
-                        "ports": network.get("Ports"),
-                        "url": url(),
-                    }
-
-                yield ElectricService(database_url, url, stop, start, wait_ready, logs, state)
+                service = ElectricService(database_url, electric)
+                await service.wait_ready()
+                yield service

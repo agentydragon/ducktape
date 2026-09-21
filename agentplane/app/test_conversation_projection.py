@@ -84,6 +84,7 @@ class Store:
         return result
 
 
+@pytest.fixture
 def script() -> list[event_log_pb2.EventEntry]:
     return [
         admitted(1, "input-1", command_pb2.SubmitInput(text="first")),
@@ -186,15 +187,15 @@ def replay(entries: list[event_log_pb2.EventEntry], sizes: list[int]) -> Store:
     return store
 
 
-def test_batch_partitions_have_identical_materialization() -> None:
-    entries = script()
+def test_batch_partitions_have_identical_materialization(script: list[event_log_pb2.EventEntry]) -> None:
+    entries = script
     whole = replay(entries, [len(entries)])
     for split in range(1, len(entries)):
         assert replay(entries, [split, len(entries) - split]) == whole
 
 
-def test_parallel_old_item_updates_keep_positions_fields_and_evidence() -> None:
-    store = replay(script(), [17])
+def test_parallel_old_item_updates_keep_positions_fields_and_evidence(script: list[event_log_pb2.EventEntry]) -> None:
+    store = replay(script, [17])
     answer, first, second = store.items["answer"], store.items["tool-a"], store.items["tool-b"]
     assert (answer.cursor, first.cursor, second.cursor) == (5, 6, 8)
     assert (first.revision_cursor, second.revision_cursor) == (12, 9)
@@ -238,8 +239,8 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     assert completed.generation != streamed.generation
 
 
-def test_commands_settle_coalesced_input_and_observed_model_effect() -> None:
-    store = replay(script(), [17])
+def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[event_log_pb2.EventEntry]) -> None:
+    store = replay(script, [17])
     assert store.state.unresolved_count == 0
     assert store.state.command_revision_cursor == 16
     assert store.commands["input-1"].outcome is CommandOutcome.EFFECTED
