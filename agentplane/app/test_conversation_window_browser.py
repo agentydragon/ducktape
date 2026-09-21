@@ -2,13 +2,21 @@
 
 import asyncio
 
+import pytest
 import pytest_bazel
 from playwright.async_api import Request, expect
 
 from agentplane.app.test_thread_browser import ThreadBrowser
+from agentplane.app.testing.electric_service import ElectricService
 from agentplane.protocol import event_pb2
 
 pytest_plugins = ("agentplane.app.test_thread_browser",)
+
+
+@pytest.fixture
+async def db_url(electric: ElectricService) -> str:
+    """Keep the imported browser fixtures on Electric's PostgreSQL instance."""
+    return electric.database_url
 
 
 async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser: ThreadBrowser) -> None:
