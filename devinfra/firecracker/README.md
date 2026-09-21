@@ -12,15 +12,15 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 
 ## Components
 
-| Component          | Path                             | Purpose                            |
-| ------------------ | -------------------------------- | ---------------------------------- |
-| Design doc         | `DESIGN.md`                      | Architecture, goals, prior art     |
-| VM pod             | `vm_pod/`                        | Entrypoint for Firecracker VM pods |
-| Manager service    | `manager/`                       | FastAPI VMM, creates VM pods       |
-| NixOS rootfs       | `nix/nixos/hosts/fc_dev/`        | NixOS config for guest rootfs      |
-| Rootfs provisioner | `provision-rootfs.sh`            | Build rootfs via Nix, dd to LV     |
-| K8s manifests      | `deploy/`                        | Archived — unwired from Flux       |
-| KVM plugin         | `deploy/kvm-device-plugin/`      | Device plugin for `/dev/kvm`       |
+| Component          | Path                        | Purpose                            |
+| ------------------ | --------------------------- | ---------------------------------- |
+| Design doc         | `DESIGN.md`                 | Architecture, goals, prior art     |
+| VM pod             | `vm_pod/`                   | Entrypoint for Firecracker VM pods |
+| Manager service    | `manager/`                  | FastAPI VMM, creates VM pods       |
+| NixOS rootfs       | `nix/nixos/hosts/fc_dev/`   | NixOS config for guest rootfs      |
+| Rootfs provisioner | `provision-rootfs.sh`       | Build rootfs via Nix, dd to LV     |
+| K8s manifests      | `deploy/`                   | Archived — unwired from Flux       |
+| KVM plugin         | `deploy/kvm-device-plugin/` | Device plugin for `/dev/kvm`       |
 
 ## Quick Start
 
