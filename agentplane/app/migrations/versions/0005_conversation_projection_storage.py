@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.Column("entity_id", sa.Text(), primary_key=True),
         sa.Column("cursor", sa.BigInteger(), nullable=False),
         sa.Column("revision_cursor", sa.BigInteger(), nullable=False),
+        sa.Column("pending", sa.Boolean(), nullable=False),
         sa.Column("turn_id", sa.Text()),
         sa.Column("state", postgresql.JSONB(), nullable=False),
         sa.Column("text_ref", postgresql.JSONB(none_as_null=True)),
@@ -47,6 +48,11 @@ def upgrade() -> None:
         "ix_conversation_entity_scope_cursor",
         "conversation_entity",
         ["thread_id", "source_id", "projection_epoch", "cursor", "entity_kind", "entity_id"],
+    )
+    op.create_index(
+        "ix_conversation_entity_scope_pending_cursor",
+        "conversation_entity",
+        ["thread_id", "source_id", "projection_epoch", "pending", "cursor", "entity_kind", "entity_id"],
     )
     op.create_table(
         "conversation_payload_manifest",
@@ -109,6 +115,7 @@ def downgrade() -> None:
     op.drop_table("conversation_projection_evidence")
     op.drop_table("conversation_payload_chunk")
     op.drop_table("conversation_payload_manifest")
+    op.drop_index("ix_conversation_entity_scope_pending_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_cursor", table_name="conversation_entity")
     op.drop_index("ix_conversation_entity_scope_revision", table_name="conversation_entity")
     op.drop_table("conversation_entity")

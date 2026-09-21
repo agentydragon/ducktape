@@ -136,6 +136,16 @@ class ConversationEntity(Base):
             "entity_kind",
             "entity_id",
         ),
+        Index(
+            "ix_conversation_entity_scope_pending_cursor",
+            "thread_id",
+            "source_id",
+            "projection_epoch",
+            "pending",
+            "cursor",
+            "entity_kind",
+            "entity_id",
+        ),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
@@ -147,6 +157,7 @@ class ConversationEntity(Base):
     entity_id: Mapped[str] = mapped_column(Text, primary_key=True)
     cursor: Mapped[int] = mapped_column(BigInteger)
     revision_cursor: Mapped[int] = mapped_column(BigInteger)
+    pending: Mapped[bool] = mapped_column(Boolean)
     turn_id: Mapped[str | None] = mapped_column(Text)
     state: Mapped[dict[str, object]] = mapped_column(JSONB)
     text_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
@@ -218,6 +229,10 @@ class IngestionLeaseLostError(Exception):
 
 class EventReplicationError(ValueError):
     """The runner stream conflicts with the archived prefix or skips an entry."""
+
+
+class ConversationProjectionError(EventReplicationError):
+    """A semantic observation could not advance the durable conversation projection."""
 
 
 class CommandIdConflictError(ValueError):
@@ -393,7 +408,19 @@ class TrajectoryStore:
                 source_id = entry.origin.source_id
             if not inserted:
                 return
-            await _record_conversation_projection(session, thread_id, inserted[0].origin.source_id, inserted)
+            try:
+                await _record_conversation_projection(session, thread_id, inserted[0].origin.source_id, inserted)
+            except ConversationProjectionError:
+                raise
+            except ValueError as error:
+                cursor = (
+                    error.cursor
+                    if isinstance(error, conversation_projection.ObservationNotUnderstoodError)
+                    else inserted[-1].cursor
+                )
+                raise ConversationProjectionError(
+                    f"conversation projection failed at cursor {cursor}: {error}"
+                ) from error
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
@@ -610,6 +637,11 @@ async def _record_conversation_projection(
     else:
         if checkpoint.source_id != source_id:
             raise EventReplicationError(f"conversation source changed at cursor {entries[0].cursor}")
+        if checkpoint.projection_epoch != CONVERSATION_PROJECTION_EPOCH:
+            raise ConversationProjectionError(
+                f"conversation projection epoch {checkpoint.projection_epoch!r} must be reset for "
+                f"{CONVERSATION_PROJECTION_EPOCH!r}"
+            )
         state = await _conversation_state(session, checkpoint)
     batch = conversation_projection.EventBatch(source_id, state.position.through_cursor, tuple(entries))
     result = conversation_projection.advance(
@@ -809,7 +841,7 @@ class _PayloadPlan:
     reference: conversation_projection.PayloadRef
     prefix_chunks: int
     prefix_bytes: int
-    text: str
+    fragments: list[str]
     replaced: bool
 
 
@@ -820,7 +852,7 @@ async def _write_conversation_payloads(
     final_plans: dict[tuple[int, str, conversation_projection.PayloadField], _PayloadPlan] = {}
     for write in writes:
         if isinstance(write, conversation_projection.ReplacePayload):
-            plan = _PayloadPlan(write.reference, 0, 0, write.text, True)
+            plan = _PayloadPlan(write.reference, 0, 0, [write.text], True)
         else:
             prior = plans_by_reference.get(write.base) if write.base is not None else None
             if prior is None:
@@ -835,16 +867,18 @@ async def _write_conversation_payloads(
                         raise ValueError("append references a missing payload manifest")
                     prior_chunks = manifest.chunk_count
                     prior_bytes = manifest.content_bytes
-                plan = _PayloadPlan(write.reference, prior_chunks, prior_bytes, write.text, False)
+                plan = _PayloadPlan(write.reference, prior_chunks, prior_bytes, [write.text], False)
             else:
+                prior.fragments.append(write.text)
                 plan = _PayloadPlan(
-                    write.reference, prior.prefix_chunks, prior.prefix_bytes, prior.text + write.text, prior.replaced
+                    write.reference, prior.prefix_chunks, prior.prefix_bytes, prior.fragments, prior.replaced
                 )
         plans_by_reference[plan.reference] = plan
         final_plans[(plan.reference.owner_cursor, plan.reference.owner_item_id, plan.reference.field)] = plan
     for plan in final_plans.values():
-        text_bytes = len(plan.text.encode())
-        chunk_count = 0 if plan.replaced and not plan.text else plan.prefix_chunks + 1
+        text = "".join(plan.fragments)
+        text_bytes = len(text.encode())
+        chunk_count = plan.prefix_chunks if not text else plan.prefix_chunks + 1
         await session.execute(
             insert(ConversationPayloadManifest).values(
                 thread_id=thread_id,
@@ -871,7 +905,7 @@ async def _write_conversation_payloads(
                     field=plan.reference.field,
                     generation=plan.reference.generation,
                     chunk_index=plan.prefix_chunks,
-                    text=plan.text,
+                    text=text,
                 )
             )
 
@@ -910,6 +944,7 @@ def _entity_values(
     revision_cursor: int,
     state: dict[str, object],
     *,
+    pending: bool = False,
     turn_id: str | None = None,
     text_ref: conversation_projection.FieldValue | None = None,
     arguments_ref: conversation_projection.FieldValue | None = None,
@@ -924,6 +959,7 @@ def _entity_values(
         "entity_id": entity_id,
         "cursor": cursor,
         "revision_cursor": revision_cursor,
+        "pending": pending,
         "turn_id": turn_id,
         "state": state,
         "text_ref": _payload_ref_json(text_ref),
@@ -1018,6 +1054,7 @@ def _command_entity(thread_id: UUID, value: conversation_projection.CommandSumma
             "outcome_cursor": str(value.outcome_cursor) if value.outcome_cursor is not None else None,
             "outcome_reason": value.outcome_reason,
         },
+        pending=value.outcome is conversation_projection.CommandOutcome.PENDING,
         input_ref=value.input,
     )
 
