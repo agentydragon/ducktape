@@ -402,7 +402,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]'],
+    openDebug: "latest",
+    readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
   session_pending_controls: {
