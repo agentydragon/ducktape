@@ -709,8 +709,16 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
-        expectUserScroll();
-        if (event.deltaY < 0) atBottom.current = false;
+        const element = event.currentTarget;
+        const canScroll =
+          (event.deltaY < 0 && element.scrollTop > 0) ||
+          (event.deltaY > 0 && element.scrollTop < element.scrollHeight - element.clientHeight);
+        if (canScroll) {
+          expectUserScroll();
+          if (event.deltaY < 0) atBottom.current = false;
+        } else if (!scrolledSinceInput.current) {
+          captureNextScroll.current = false;
+        }
       }}
       onKeyDown={(event) => {
         cancelRestoration();
