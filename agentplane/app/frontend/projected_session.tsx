@@ -1,4 +1,16 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Group,
+  Paper,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -471,45 +483,49 @@ function SelectedCommandRows({
   const byId = new Map(rows.map((row) => [row.entityId, row]));
   return (
     <Stack role="region" aria-label="Pending commands" gap="xs">
-      {commands.map((value) => {
-        const row = byId.get(value.command.commandId);
-        const admitted = row !== undefined || value.admission !== null;
-        const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
-        return (
-          <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-            {terminal && row && "outcome" in row.state ? (
-              <>
-                <Text c={row.state.outcome === "failed" ? "red" : undefined}>
-                  {commandOutcomeLabel(row.state.operation, row.state.outcome)}
-                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-                </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-                <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
-                  Dismiss
-                </Button>
-              </>
-            ) : (
-              <>
-                <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
-                {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
+      <ScrollArea.Autosize type="auto" mah={160}>
+        <Stack gap="xs">
+          {commands.map((value) => {
+            const row = byId.get(value.command.commandId);
+            const admitted = row !== undefined || value.admission !== null;
+            const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+            return (
+              <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+                {terminal && row && "outcome" in row.state ? (
+                  <>
+                    <Text c={row.state.outcome === "failed" ? "red" : undefined}>
+                      {commandOutcomeLabel(row.state.operation, row.state.outcome)}
+                      {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                    </Text>
+                    {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                    <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
+                      Dismiss
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
+                    {value.command.operation.case === "submitInput" && (
+                      <Markdown source={value.command.operation.value.text} />
+                    )}
+                    {value.command.operation.case === "changeModel" && (
+                      <Text>Change model to {value.command.operation.value.model}</Text>
+                    )}
+                    {value.command.operation.case === "interruptTurn" && (
+                      <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+                    )}
+                    {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+                    {!admitted && errors.get(value.command.commandId) && (
+                      <Text c="red">{errors.get(value.command.commandId)}</Text>
+                    )}
+                    {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
+                  </>
                 )}
-                {value.command.operation.case === "changeModel" && (
-                  <Text>Change model to {value.command.operation.value.model}</Text>
-                )}
-                {value.command.operation.case === "interruptTurn" && (
-                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-                )}
-                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {!admitted && errors.get(value.command.commandId) && (
-                  <Text c="red">{errors.get(value.command.commandId)}</Text>
-                )}
-                {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
-              </>
-            )}
-          </Paper>
-        );
-      })}
+              </Paper>
+            );
+          })}
+        </Stack>
+      </ScrollArea.Autosize>
     </Stack>
   );
 }
@@ -563,27 +579,31 @@ function PendingCommandRows({
   return (
     <Stack role="region" aria-label="Command updates" gap="xs">
       <Text size="sm">Command updates · {unresolvedCount} pending</Text>
-      {orderedRows.map((row) => {
-        if (!("outcome" in row.state)) return null;
-        return (
-          <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
-            <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-              {row.state.outcome === "pending"
-                ? "Saved · awaiting effect"
-                : commandOutcomeLabel(row.state.operation, row.state.outcome)}
-              {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-            </Text>
-            {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-            <Evidence threadId={threadId} entity={row} />
-          </Paper>
-        );
-      })}
-      {canLoadOlder && <Button onClick={loadOlder}>Load 30 older pending commands</Button>}
-      {hasOlder && (
-        <Button variant="subtle" onClick={clearOlder}>
-          Show current pending commands
-        </Button>
-      )}
+      <ScrollArea.Autosize type="auto" mah={240}>
+        <Stack gap="xs">
+          {orderedRows.map((row) => {
+            if (!("outcome" in row.state)) return null;
+            return (
+              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+                <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+                  {row.state.outcome === "pending"
+                    ? "Saved · awaiting effect"
+                    : commandOutcomeLabel(row.state.operation, row.state.outcome)}
+                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                </Text>
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                <Evidence threadId={threadId} entity={row} />
+              </Paper>
+            );
+          })}
+          {canLoadOlder && <Button onClick={loadOlder}>Load 30 older pending commands</Button>}
+          {hasOlder && (
+            <Button variant="subtle" onClick={clearOlder}>
+              Show current pending commands
+            </Button>
+          )}
+        </Stack>
+      </ScrollArea.Autosize>
     </Stack>
   );
 }

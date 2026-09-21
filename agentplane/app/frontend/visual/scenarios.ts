@@ -428,7 +428,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[aria-label="Command updates"]', '[data-conversation-anchor="19"]'],
     captureViewport: true,
   },
   session_catching_up: {
