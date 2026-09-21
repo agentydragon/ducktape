@@ -762,7 +762,10 @@ ts_library(
 
 ts_library(
     name = "projected_session",
-    srcs = ["projected_session.tsx"],
+    srcs = [
+        "projected_session.tsx",
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",

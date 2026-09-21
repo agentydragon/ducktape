@@ -1,7 +1,7 @@
 import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { IconPlayerStop } from "@tabler/icons-react";
+import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
