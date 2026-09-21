@@ -27,6 +27,7 @@ from x.agentplane_sync.shape_test_support import (
     BOUNDED_HISTORY_TAIL_ROWS,
     SHAPE_LIMIT,
     _connect_postgres,
+    _messages,
     _read_live_page,
     _read_snapshot,
     _sample_memory,
@@ -40,6 +41,7 @@ MODEL_BYTES = 64 * 1024
 WRITE_BATCHES = 48
 SAMPLE_EVERY = 8
 MAX_STALLED_RSS_GROWTH_KIB = 16 * 1024
+MAX_FRESH_SUBSET_RESPONSE_BYTES = 3 * 1024 * 1024
 SHAPE_COLUMNS = f"{ACTIVE_SHAPE_COLUMNS},model"
 
 
@@ -107,7 +109,7 @@ async def _wait_for_wal_processed(pool: asyncpg.Pool, target_lsn: str) -> dict[s
     raise AssertionError({"targetLsn": target_lsn, "slots": latest_slots})
 
 
-async def _update_tail(pool: asyncpg.Pool, batch: int) -> tuple[str, str]:
+async def _update_tail(pool: asyncpg.Pool | asyncpg.Connection, batch: int) -> tuple[str, str]:
     model = f"batch-{batch:03d}:" + (chr(65 + batch % 26) * (MODEL_BYTES - 10))
     await pool.execute(
         """UPDATE sync_view_row SET revision = revision + 1, model=$1
@@ -130,6 +132,71 @@ def _latest_models(operations: list[dict[str, Any]]) -> dict[str, str]:
         if isinstance(row_key, str) and isinstance(model, str):
             latest[row_key] = model
     return latest
+
+
+async def _open_changes_only_at_now(
+    client: httpx.AsyncClient,
+    shape_url: str,
+    where_clause: str,
+    where_params: tuple[str, ...],
+) -> dict[str, Any]:
+    params = {
+        **_shape_params(
+            BOUNDED_HISTORY_CONVERSATION,
+            where_clause=where_clause,
+            where_params=where_params,
+            columns=SHAPE_COLUMNS,
+        ),
+        "log": "changes_only",
+        "queryable_columns": SHAPE_COLUMNS,
+        "offset": "now",
+    }
+    response = await client.get(shape_url, params=params)
+    assert response.status_code == 200, {"status": response.status_code, "body": response.text[:2000]}
+    handle = response.headers.get("electric-handle")
+    offset = response.headers.get("electric-offset")
+    assert handle and offset, {"headers": dict(response.headers), "body": response.text[:2000]}
+    messages = _messages(response.content)
+    return {
+        "conversationId": BOUNDED_HISTORY_CONVERSATION,
+        "handle": handle,
+        "offset": offset,
+        "responseBytes": len(response.content),
+        "operationCount": sum(1 for message in messages if message.get("headers", {}).get("operation")),
+    }
+
+
+async def _read_current_subset(
+    client: httpx.AsyncClient,
+    shape_url: str,
+    changes_only: dict[str, Any],
+    where_clause: str,
+    where_params: tuple[str, ...],
+) -> dict[str, Any]:
+    params = {
+        **_shape_params(
+            BOUNDED_HISTORY_CONVERSATION,
+            where_clause=where_clause,
+            where_params=where_params,
+            columns=SHAPE_COLUMNS,
+        ),
+        "log": "changes_only",
+        "queryable_columns": SHAPE_COLUMNS,
+        "handle": changes_only["handle"],
+        "offset": changes_only["offset"],
+    }
+    response = await client.post(
+        shape_url,
+        params=params,
+        json={"where": "true = true", "order_by": "anchor ASC", "limit": BOUNDED_HISTORY_TAIL_ROWS},
+    )
+    assert response.status_code == 200, {"status": response.status_code, "body": response.text[:2000]}
+    body = response.json()
+    data = body.get("data")
+    metadata = body.get("metadata")
+    assert isinstance(data, list) and isinstance(metadata, dict), body
+    rows = [message["value"] for message in data if message.get("headers", {}).get("operation")]
+    return {"rows": rows, "metadata": metadata, "responseBytes": len(response.content)}
 
 
 async def _consume_latest_tail(
@@ -164,6 +231,54 @@ async def _consume_latest_tail(
         if len(latest_models) == BOUNDED_HISTORY_TAIL_ROWS and set(latest_models.values()) == {expected_model}:
             return offset, pages
     raise AssertionError({"expectedModel": expected_model, "latestModels": latest_models, "pages": pages})
+
+
+async def _prove_changes_only_subset_recovery(
+    client: httpx.AsyncClient,
+    shape_url: str,
+    pool: asyncpg.Pool,
+    where_clause: str,
+    where_params: tuple[str, ...],
+    expected_model: str,
+) -> dict[str, Any]:
+    changes_only = await _open_changes_only_at_now(client, shape_url, where_clause, where_params)
+    assert changes_only["operationCount"] == 0, changes_only
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            race_model, _ = await _update_tail(connection, WRITE_BATCHES + 1)
+            race_xid = await connection.fetchval("SELECT pg_current_xact_id()::text")
+            assert isinstance(race_xid, str)
+            pre_commit_subset = await _read_current_subset(client, shape_url, changes_only, where_clause, where_params)
+            pre_commit_models = {row["row_key"]: row["model"] for row in pre_commit_subset["rows"]}
+            assert len(pre_commit_models) == BOUNDED_HISTORY_TAIL_ROWS
+            assert set(pre_commit_models.values()) == {expected_model}
+            assert pre_commit_subset["responseBytes"] <= MAX_FRESH_SUBSET_RESPONSE_BYTES
+            assert race_xid in pre_commit_subset["metadata"].get("xip_list", [])
+        race_lsn = await connection.fetchval("SELECT pg_current_wal_lsn()::text")
+    assert isinstance(race_lsn, str)
+    race_checkpoint = await _wait_for_wal_processed(pool, race_lsn)
+    changes_only_offset, race_pages = await _consume_latest_tail(
+        client,
+        shape_url,
+        changes_only,
+        offset=changes_only["offset"],
+        where_clause=where_clause,
+        where_params=where_params,
+        expected_model=race_model,
+    )
+    return {
+        "start": changes_only,
+        "preCommitSubset": {
+            "rowCount": len(pre_commit_models),
+            "responseBytes": pre_commit_subset["responseBytes"],
+            "xipContainsHeldWrite": True,
+        },
+        "committedWrite": {
+            "walCheckpoint": race_checkpoint,
+            "pages": len(race_pages),
+            "offset": changes_only_offset,
+        },
+    }
 
 
 async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None:
@@ -343,19 +458,27 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                                 where_params=where_params,
                                 columns=SHAPE_COLUMNS,
                             )
-                        restarted_models = {row["row_key"]: row["model"] for row in restarted["rows"]}
-                        assert len(restarted_models) == BOUNDED_HISTORY_TAIL_ROWS
-                        assert set(restarted_models.values()) == {expected_model}
-                        evidence["restart"] = {
-                            "handleBefore": snapshot["handle"],
-                            "handleAfter": restarted["handle"],
-                            "reusedPersistedHandle": restarted["handle"] == snapshot["handle"],
-                            "operationCount": restarted["rowCount"],
-                            "latestRows": len(restarted_models),
-                            "responseBytes": restarted["responseBytes"],
-                            "hostPortBefore": host_port_before_restart,
-                            "hostPortAfter": host_port_after_restart,
-                        }
+                            restarted_models = {row["row_key"]: row["model"] for row in restarted["rows"]}
+                            assert len(restarted_models) == BOUNDED_HISTORY_TAIL_ROWS
+                            assert set(restarted_models.values()) == {expected_model}
+                            evidence["restart"] = {
+                                "handleBefore": snapshot["handle"],
+                                "handleAfter": restarted["handle"],
+                                "reusedPersistedHandle": restarted["handle"] == snapshot["handle"],
+                                "operationCount": restarted["rowCount"],
+                                "latestRows": len(restarted_models),
+                                "responseBytes": restarted["responseBytes"],
+                                "hostPortBefore": host_port_before_restart,
+                                "hostPortAfter": host_port_after_restart,
+                            }
+                            evidence["changesOnlySubsetRecovery"] = await _prove_changes_only_subset_recovery(
+                                restarted_client,
+                                shape_url,
+                                pool,
+                                where_clause,
+                                where_params,
+                                expected_model,
+                            )
 
                         rss = [
                             sample["pid1VmRSSKiB"]
@@ -375,7 +498,8 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                             "Finite sample: a real socket stopped after HTTP headers while its receive buffers filled; "
                             "each write was observed through Electric's logical-replication checkpoint, and independent "
                             "and resumed readers reached the latest 30 rows. PID RSS stayed within this sample's budget; "
-                            "container cgroup growth is recorded but not bounded by this test."
+                            "container cgroup growth is recorded but not bounded by this test. The spike's changes-only "
+                            "shape started at now and its bounded subset snapshot reconciled a held write through the live stream."
                         )
             finally:
                 if stalled_writer is not None:

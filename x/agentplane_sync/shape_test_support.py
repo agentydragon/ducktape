@@ -101,6 +101,7 @@ def _sample_memory(electric: LoggedContainer) -> dict[str, Any]:
             for key in ("kernel_stack", "sock", "slab", "slab_reclaimable", "slab_unreclaimable")
             if key in memory_stats
         },
+        "cgroupMemoryBytes": _cgroup_memory_bytes(container),
     }
     proc_status = container.exec_run(["cat", "/proc/1/status"])
     sample["pid1StatusExitCode"] = proc_status.exit_code
@@ -113,6 +114,18 @@ def _sample_memory(electric: LoggedContainer) -> dict[str, Any]:
         executable = container.exec_run(["readlink", "/proc/1/exe"])
         sample["pid1Executable"] = executable.output.decode(errors="replace").strip()
     return sample
+
+
+def _cgroup_memory_bytes(container: Any) -> dict[str, int | None]:
+    result = container.exec_run(["cat", "/sys/fs/cgroup/memory.stat"])
+    values = {
+        key: int(value)
+        for line in result.output.decode(errors="replace").splitlines()
+        if len(parts := line.split(maxsplit=1)) == 2
+        for key, value in [parts]
+        if value.isdecimal()
+    }
+    return {key: values.get(key) for key in ("anon", "file", "active_file", "inactive_file", "file_dirty", "shmem")}
 
 
 def _proc_status_value(status: str, key: str) -> int | None:
