@@ -27,7 +27,7 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import Feed, RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -41,6 +41,7 @@ from agentplane.runner.client import Attachment, RunnerClient, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -48,6 +49,22 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 SANDBOX = "bridge-test-sandbox"
 SESSION = "bridge-1"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
+
+
+@pytest.fixture
+async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
+    """Preserve native stderr when an app-level bridge case fails during harness launch."""
+    yield
+    report = request.node.stash.get(_CALL_REPORT, None)
+    if report is None or not report.failed:
+        return
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for session_id, session in runner.runner.sessions.items():
+        entries = await session.journal.since(0, limit=512)
+        sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
+    (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
+        json.dumps(sessions, indent=2, sort_keys=True)
+    )
 
 
 async def _thread_id(http: httpx.AsyncClient, session_id: str = SESSION) -> str:
@@ -315,7 +332,11 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str, runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
+    app_url: str,
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    spec: protocol_pb2.SessionSpec,
+    failed_native_journal: None,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     thread = await store.thread(SANDBOX, SESSION, spec)
@@ -351,7 +372,11 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
 
 
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
-    app_url: str, runner: RunnerHandle, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+    app_url: str,
+    runner: RunnerHandle,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_native_journal: None,
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
