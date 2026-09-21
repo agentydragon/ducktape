@@ -548,6 +548,7 @@ function VirtualizedHistory({
   const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
+  const resizeFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
   const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(segments.length);
@@ -570,6 +571,10 @@ function VirtualizedHistory({
     estimateSize: () => 180,
     getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
     measureElement: (element) => element.getBoundingClientRect().height,
+    // Virtualizer measurement and the history's scroll correction both respond to card-size
+    // changes. Let virtual-core batch its observer work into a frame too, so neither mutates
+    // layout while ResizeObserver is delivering notifications.
+    useAnimationFrameWithResizeObserver: true,
     overscan: 5,
     onChange: (instance, sync) => {
       // A card can resize before virtual-core applies its measured transform. Wait for
@@ -675,22 +680,31 @@ function VirtualizedHistory({
     previousScrollHeight.current = element.scrollHeight;
     previousClientHeight.current = element.clientHeight;
     const observer = new ResizeObserver(() => {
-      // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
-      // that grows the last card, before the browser dispatches its scroll event. Preserve that
-      // user choice across the resize without interpreting arbitrary layout movement as intent.
-      const previousBottom = previousScrollHeight.current - previousClientHeight.current;
-      if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
-      if (atBottom.current) element.scrollTop = element.scrollHeight;
-      // Content can resize while a wheel, touch, or key scroll is still settling. Its
-      // measured rows do not describe the reader's final position yet; scrollend will
-      // capture that position before a later resize restoration is eligible.
-      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
-      previousScrollHeight.current = element.scrollHeight;
-      previousClientHeight.current = element.clientHeight;
+      // Changing scrollTop while ResizeObserver is delivering notifications can change the
+      // virtualizer's measured layout and re-enter the same delivery loop. Coalesce all
+      // resize work into the next frame, after the browser has completed this delivery.
+      if (resizeFrame.current !== null) return;
+      resizeFrame.current = requestAnimationFrame(() => {
+        resizeFrame.current = null;
+        // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
+        // that grows the last card, before the browser dispatches its scroll event. Preserve that
+        // user choice across the resize without interpreting arbitrary layout movement as intent.
+        const previousBottom = previousScrollHeight.current - previousClientHeight.current;
+        if (Math.abs(element.scrollTop - previousBottom) <= 2) atBottom.current = true;
+        if (atBottom.current) element.scrollTop = element.scrollHeight;
+        // Content can resize while a wheel, touch, or key scroll is still settling. Its
+        // measured rows do not describe the reader's final position yet; scrollend will
+        // capture that position before a later resize restoration is eligible.
+        else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
+        previousScrollHeight.current = element.scrollHeight;
+        previousClientHeight.current = element.clientHeight;
+      });
     });
     observer.observe(content);
     return () => {
       observer.disconnect();
+      if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
+      resizeFrame.current = null;
       cancelRestoration();
     };
   }, [segments, virtualizer]);
