@@ -240,6 +240,60 @@ async def _history_windows(
         ):
             break
 
+    hidden_text = "A whole selected tool-sized body.\n" * 65536
+    hidden = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-040", text=hidden_text)))
+    visible = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-094", text=" visible")))
+    await store.record(thread, [hidden, visible], lease=lease)
+    while True:
+        update = await client_two.get(
+            f"{path}/entities",
+            params=window_params | {"offset": offset, "handle": page.headers["electric-handle"], "live": "true"},
+        )
+        update.raise_for_status()
+        offset = update.headers["electric-offset"]
+        values = [message["value"] for message in update.json() if "value" in message]
+        assert all(row.get("entity_id") != "history-040" for row in values)
+        assert "A whole selected tool-sized body" not in update.text
+        if any(row.get("entity_id") == "history-094" for row in values):
+            break
+
+    # Revisit an evicted window; its latest metadata selects the complete large body on demand.
+    revisit = await client_two.get(f"{path}/interest", params={"before_cursor": tail_interest["tail_from"]})
+    revisit.raise_for_status()
+    revisit_interest = revisit.json()
+    revisit_page = await client_one.get(
+        f"{path}/entities",
+        params={key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
+        | {"offset": "-1"},
+    )
+    revisit_page.raise_for_status()
+    item = next(
+        message["value"]
+        for message in revisit_page.json()
+        if message.get("value", {}).get("entity_id") == "history-040"
+    )
+    assert str(item["revision_cursor"]) == str(hidden.cursor)
+    raw_ref = item["text_ref"]
+    reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
+    selected = await client_one.get(
+        f"{path}/payload-chunks",
+        params={
+            "source_id": reference["source_id"],
+            "projection_epoch": reference["projection_epoch"],
+            "owner_cursor": reference["owner_cursor"],
+            "owner_id": reference["owner_item_id"],
+            "field": reference["field"],
+            "generation": reference["generation"],
+            "revision_cursor": reference["revision_cursor"],
+            "offset": "-1",
+        },
+    )
+    selected.raise_for_status()
+    selected_chunks = [message["value"] for message in selected.json() if "value" in message]
+    assert "".join(row["text"] for row in sorted(selected_chunks, key=lambda row: int(row["chunk_index"]))) == (
+        "Body 40" + hidden_text
+    )
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
