@@ -272,6 +272,10 @@ class ConversationProjectionError(EventReplicationError):
     """A semantic observation could not advance the durable conversation projection."""
 
 
+class ConversationInterestExpiredError(ValueError):
+    """A bounded browser interest must be resolved again at the current projection position."""
+
+
 CommandOutcomeValue = Literal["pending", "effected", "failed", "noop"]
 
 
@@ -304,6 +308,28 @@ class ConversationScope:
     source_id: str
     projection_epoch: str
     through_cursor: int
+
+
+@dataclass(frozen=True)
+class ConversationEntityInterest:
+    scope: ConversationScope
+    anchor_cursor: int
+    tail_from: int
+    window_from: int | None = None
+    window_before: int | None = None
+
+
+@dataclass(frozen=True)
+class ConversationPayloadSelection:
+    scope: ConversationScope
+    owner_cursor: int
+    owner_id: str
+    field: str
+    generation: int
+    revision_cursor: int
+    present: bool
+    chunk_count: int
+    content_bytes: int
 
 
 class ConversationPayloadReference(BaseModel):
@@ -514,6 +540,98 @@ class TrajectoryStore:
             if checkpoint is None:
                 return None
             return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+
+    async def conversation_entity_interest(
+        self,
+        thread_id: UUID,
+        *,
+        anchor_cursor: int | None = None,
+        before_cursor: int | None = None,
+        page_size: int = 30,
+    ) -> ConversationEntityInterest | None:
+        if not 1 <= page_size <= 100:
+            raise ValueError("conversation page size must be between 1 and 100")
+        segment_kinds = ("item", "confirmed_input", "lifecycle")
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            scope = ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
+            if anchor < 0 or anchor > scope.through_cursor:
+                raise ValueError("conversation anchor is outside the projected prefix")
+            common = (
+                ConversationEntity.thread_id == thread_id,
+                ConversationEntity.source_id == scope.source_id,
+                ConversationEntity.projection_epoch == scope.projection_epoch,
+                ConversationEntity.entity_kind.in_(segment_kinds),
+            )
+            if anchor_cursor is not None:
+                newer = list(
+                    await session.scalars(
+                        select(ConversationEntity.cursor)
+                        .where(*common, ConversationEntity.cursor > anchor)
+                        .order_by(ConversationEntity.cursor)
+                        .limit(page_size * 2 + 1)
+                    )
+                )
+                if len(newer) > page_size * 2:
+                    raise ConversationInterestExpiredError("conversation interest must rotate")
+
+            async def lower(before: int) -> int:
+                cursors = list(
+                    await session.scalars(
+                        select(ConversationEntity.cursor)
+                        .where(*common, ConversationEntity.cursor < before)
+                        .order_by(ConversationEntity.cursor.desc())
+                        .limit(page_size)
+                    )
+                )
+                return cursors[-1] if cursors else before
+
+            tail_from = await lower(anchor + 1)
+            if before_cursor is None:
+                return ConversationEntityInterest(scope, anchor, tail_from)
+            if before_cursor < 0:
+                raise ValueError("before cursor cannot be negative")
+            return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
+
+    async def conversation_payload_selection(
+        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
+    ) -> ConversationPayloadSelection | None:
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            manifest = await session.scalar(
+                select(ConversationPayloadManifest).where(
+                    ConversationPayloadManifest.thread_id == thread_id,
+                    ConversationPayloadManifest.source_id == checkpoint.source_id,
+                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                    ConversationPayloadManifest.owner_cursor == owner_cursor,
+                    ConversationPayloadManifest.owner_id == owner_id,
+                    ConversationPayloadManifest.field == field,
+                    ConversationPayloadManifest.generation == generation,
+                    ConversationPayloadManifest.revision_cursor == revision_cursor,
+                )
+            )
+            if manifest is None:
+                return None
+            return ConversationPayloadSelection(
+                ConversationScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
+                owner_cursor,
+                owner_id,
+                field,
+                generation,
+                revision_cursor,
+                manifest.present,
+                manifest.chunk_count,
+                manifest.content_bytes,
+            )
 
     async def conversation_evidence(
         self,

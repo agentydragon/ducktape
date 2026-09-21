@@ -1763,6 +1763,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1860,6 +1862,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -2060,6 +2064,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-electric
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "3000"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
