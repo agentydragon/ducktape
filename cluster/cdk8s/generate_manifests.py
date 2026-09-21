@@ -399,9 +399,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, seaweedfs_cluster_kustomization
     )
-    agents_flux_kustomizations.kubectl_passthrough_mcp(
-        flux_chart, gateway_kustomization, agent_machine_access_tf_kustomization
-    )
+    agents_flux_kustomizations.kubectl_passthrough_mcp(flux_chart)
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
         cnpg_kustomization,
@@ -514,15 +512,7 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    airlock_kustomization = agents_flux_kustomizations.airlock(
-        flux_chart,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
-        sso_providers_tf_kustomization,
-        reflector_kustomization,
-        external_secrets_config_kustomization,
-    )
+    airlock_kustomization = agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart,
         forgejo_images_kustomization,
@@ -530,9 +520,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         agent_machine_access_tf_kustomization,
     )
-    agents_flux_kustomizations.loki_read_proxy(
-        flux_chart, external_secrets_config_kustomization, forgejo_images_kustomization
-    )
+    agents_flux_kustomizations.loki_read_proxy(flux_chart, external_secrets_config_kustomization)
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,
         forgejo_images_kustomization,
@@ -546,14 +534,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     agents_flux_kustomizations.tana_mcp(
-        flux_chart,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        gateway_kustomization,
-        valkey_kustomization,
-        agent_machine_access_tf_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, external_secrets_config_kustomization, valkey_kustomization, monitoring_crds_kustomization
     )
     cli_proxy_api_kustomization = cli_proxy_api_flux_kustomizations.cli_proxy_api(
         flux_chart,
