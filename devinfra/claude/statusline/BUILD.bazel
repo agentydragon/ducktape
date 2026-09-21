@@ -26,12 +26,7 @@ py_binary(
 
 py_package(
     name = "claude_statusline_pkg",
-    packages = [
-        "devinfra.claude",
-        "devinfra.claude.claude_api",
-        "devinfra.claude.claude_api.hooks",
-        "devinfra.claude.statusline",
-    ],
+    packages = ["devinfra.claude.statusline"],
     deps = [":statusline"],
 )
 
@@ -48,11 +43,11 @@ py_wheel(
     # (claude-statusline). Nix provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
     #
-    # `aiquota` is the local artifact-pinned wheel (not on PyPI); the statusline
-    # imports it for quota data. Nix provides it via the aiquota derivation in
-    # propagatedBuildInputs (which also brings typer/atomicwrites transitively).
+    # `aiquota` and `ducktape-claude-api` are local artifact-pinned wheels. Nix
+    # provides both through propagatedBuildInputs.
     requires = [
         "aiquota",
+        "ducktape-claude-api",
         "httpx",
         "platformdirs",
         "pydantic>=2.0",
@@ -60,7 +55,12 @@ py_wheel(
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],
-    deps = [":claude_statusline_pkg"],
+    deps = [
+        ":claude_statusline_pkg",
+        # Pack only this parent-package module; selecting `devinfra.claude` in
+        # py_package would also include the nested claude_api package.
+        "//devinfra/claude:session_paths",
+    ],
 )
 
 py_test(

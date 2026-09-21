@@ -217,12 +217,28 @@ let
       ++ [ ducktape-util ];
   };
 
+  ducktape-claude-api = mkWheel {
+    pname = "ducktape-claude-api";
+    description = "Shared Claude Code API models and hook types";
+    importsCheck = [
+      "devinfra.claude.claude_api.credentials"
+      "devinfra.claude.claude_api.hooks.dispatch_input"
+      "devinfra.claude.claude_api.hooks.output"
+      "devinfra.claude.claude_api.statusline"
+      "devinfra.claude.claude_api.usage"
+    ];
+    # SYNC: This list must match `requires` in
+    # //devinfra/claude/claude_api:claude_api_wheel.
+    propagatedBuildInputs = with python314Packages; [ pydantic ];
+  };
+
   # aiquota and the Python statusline share this overridden Python package set
   # (not stock pkgs.python3Packages). Nix's duplicate-package check fails if
   # their dependencies resolve to different derivations of the same version;
   # see idna.nix for an example of how packageOverrides can cause that ripple.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
     inherit artifacts lib python314Packages;
+    claudeApi = ducktape-claude-api;
   };
 
   mkBinaryArtifact =
@@ -270,6 +286,7 @@ in
 rec {
   inherit ducktape-util;
   inherit ducktape-git-hooks;
+  inherit ducktape-claude-api;
   inherit aiquota;
 
   bbr = mkWheel {
@@ -341,10 +358,11 @@ rec {
     # The wheel declares pip-level deps; this provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `aiquota` provides the module the statusline imports for quota data; it
-    # propagates its own deps (typer, atomicwrites, ...) transitively.
+    # `aiquota` provides quota data and its CLI dependencies; the shared API
+    # wheel provides the Claude Code model classes imported by both packages.
     propagatedBuildInputs = [
       aiquota
+      ducktape-claude-api
     ]
     ++ (with python314Packages; [
       httpx

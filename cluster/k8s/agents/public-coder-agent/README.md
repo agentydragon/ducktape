@@ -194,3 +194,6 @@ proxy environment handling.
   `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
   image automation — no manual republish step, but also no persistent local
   state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.
+  Its NixOS, Home Manager, and image recipes live in
+  `openclaw/public_coder_agent/devbox/`; this directory keeps the deployment
+  manifests.

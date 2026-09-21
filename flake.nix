@@ -531,10 +531,11 @@
           hostname = "public-coder-devbox";
           username = "coder";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./openclaw/public_coder_agent/devbox/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/public-coder-devbox.nix;
+            module = ./openclaw/public_coder_agent/devbox/home.nix;
           };
         };
 

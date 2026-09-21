@@ -15,6 +15,11 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/statusline/claude_statusline-0.1.0-py3-none-any.whl",
       "release": "claude-statusline"
     },
+    "ducktape-claude-api": {
+      "target": "//devinfra/claude/claude_api:claude_api_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_api/ducktape_claude_api-0.1.0-py3-none-any.whl",
+      "release": "ducktape-claude-api"
+    },
     "ducktape-git-hooks": {
       "target": "//:ducktape_git_hooks_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -77,6 +82,10 @@
     },
     "claude-statusline": {
       "tests": "//devinfra/claude/...",
+      "nixPackage": true
+    },
+    "ducktape-claude-api": {
+      "tests": "//devinfra/claude/claude_api/...",
       "nixPackage": true
     },
     "ducktape-git-hooks": {
