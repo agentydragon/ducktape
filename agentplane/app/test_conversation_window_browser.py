@@ -6,7 +6,7 @@ import json
 import pytest_bazel
 from playwright.async_api import Request, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser
+from agentplane.app.test_thread_browser import ThreadBrowser, db_url  # noqa: F401
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
