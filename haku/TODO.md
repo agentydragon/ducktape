@@ -120,8 +120,9 @@ as a pass in its `procedures/`).
 A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
 facade: wire the full server behind haku-console (`cluster/cdk8s/haku/console_config.py`) and
 let the console's approval gate filter it — reads auto-approve, every mutating/paid/destructive
-call queues for operator approval (`haku/console/auto_approval.py`). The Authentik OAuth facades
-are auth, not tool filtering, but the approval gate is. PostScanMail is wired this way.
+call queues for operator approval (`haku/console/auto_approval.py`). Authentik OAuth facades
+handle authentication separately from tool filtering; the console approval gate applies the
+tool policy.
 
 **Grocy is wired** — routed through haku-console's `grocy-sf`
 MCP entry (the `grocy_reads` policy in `cluster/cdk8s/haku/console_config.py` auto-approves the

@@ -33,6 +33,7 @@ configMapGenerator:
       - blueprints/adsb-sso.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/fava-sso-retire.yaml
+      - blueprints/postscanmail-mcp-sso-retire.yaml
       - blueprints/activitywatch-sso.yaml
       - blueprints/haku-ui-sso.yaml
     namespace: authentik

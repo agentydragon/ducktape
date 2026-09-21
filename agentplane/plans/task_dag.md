@@ -62,7 +62,7 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     MCP_BEARER_GROUPS["Deferred migration<br/>ActionGroups for tana and home-assistant<br/>static-bearer remotes, the shape ssh already uses"]:::future
-    MCP_OAUTH_GROUPS["Deferred migration<br/>ActionGroups for grocy-sf and postscanmail-mcp<br/>OAuth remotes; grocy registers dynamically"]:::future
+    MCP_OAUTH_GROUPS["Deferred migration<br/>ActionGroup for grocy-sf<br/>OAuth remote; registers dynamically"]:::future
     MCP_GOOGLE_GROUPS["Deferred migration<br/>ActionGroups for gmail and google_calendar<br/>execute as the acting operator's Google account"]:::future
     MCP_CONSOLE_INTERNAL["Deferred design<br/>counterparts for the sandbox and grants servers<br/>console-internal; no Action Service surface yet"]:::future
     MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
@@ -463,8 +463,8 @@ replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`
 remains, each with what it needs; an entry leaves when its set can be written.
 
 - **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
-  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana`), `postscanmail_reads`
-  (`postscanmail-mcp`), `home_assistant_reads` (`home-assistant`), and the console's own
+  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana`),
+  `home_assistant_reads` (`home-assistant`), and the console's own
   in-process `sandbox` (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`,
   `grants_whoami`, `grants_own_revoke`). Each is a plain `exact_actions` set once the backend is an
   ActionGroup in the Action Service settings, with its executor credential (operator OAuth
@@ -524,7 +524,7 @@ per-agent progress:
     is left is the `grants` trio, which the list above puts behind the Action Service having its own
     grant surface. That trio is the whole remaining distance for this agent, and it is the same
     blocker `PC_EGRESS` meets from the other side.
-- **`haku_v1`** = fourteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, PostScanMail, Home
+- **`haku_v1`** = thirteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, Home
   Assistant, the console's `sandbox` server and the `grants` trio. Only its GitHub leaves are
   ported, so it is the long pole and every unported item above is on it.
 
@@ -945,12 +945,11 @@ one that proves the migration shape end to end on a real backend.
 
 ### `MCP_OAUTH_GROUPS` — ActionGroups for the OAuth remotes
 
-**Deferred migration:** `grocy-sf` (`grocy-mcp-sf.allegedly.works`) and `postscanmail-mcp`
-(`postscanmail-mcp.allegedly.works`), both `remote_server_oauth`. The executor already does
-`auth: oauth` for `github` and `kubernetes`, so the mechanism exists; what differs is that
-`grocy-sf` registers its client **dynamically** where both ported groups are preregistered, so
-whether the Action Service's linkage supports dynamic registration is the open question here rather
-than the group definition.
+**Deferred migration:** `grocy-sf` (`grocy-mcp-sf.allegedly.works`), a
+`remote_server_oauth`. The executor already does `auth: oauth` for `github` and `kubernetes`,
+so the mechanism exists; what differs is that `grocy-sf` registers its client **dynamically**
+where the ported groups are preregistered, so whether the Action Service's linkage supports
+dynamic registration is the open question here rather than the group definition.
 
 ### `MCP_GOOGLE_GROUPS` — ActionGroups for the operator's Google surfaces
 

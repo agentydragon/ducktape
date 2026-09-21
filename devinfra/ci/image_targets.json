@@ -87,11 +87,6 @@
       "target": "//third_party/osmmcp:image",
       "registry": "forgejo"
     },
-    "postscanmail-mcp-server": {
-      "target": "//x/postscanmail_mcp_server:image",
-      "test": "//x/postscanmail_mcp_server/...",
-      "registry": "forgejo"
-    },
     "authentik-mcp-poc-server": {
       "target": "//x/authentik_mcp_poc:server_image",
       "test": "//x/authentik_mcp_poc/..."

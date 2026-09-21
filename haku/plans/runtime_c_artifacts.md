@@ -98,7 +98,7 @@ async def run_command(ctx: RunContext[Deps], command: str) -> str:
 ```
 
 `bash` + the Tana MCP toolset cover Haku's surface today; add more MCP toolsets
-(grocy, postscanmail, google) the same way, or keep reaching them via `bash`/curl
+(grocy, google) the same way, or keep reaching them via `bash`/curl
 as now. Note this is the C advantage over B: no vault and no public-facade
 requirement — an in-cluster loop can call an in-cluster MCP Service directly.
 

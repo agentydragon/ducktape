@@ -349,7 +349,11 @@ noted below. The manifests stay under `cluster/k8s/parked/<name>/` (see
 - **postscanmail-mcp**: `cluster/k8s/parked/postscanmail-mcp/` — decommissioned; its
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
   the k8s manifests moved. Its Flux Kustomization is removed from the active bundle;
-  the manifests remain for manual revival.
+  the manifests remain for manual revival. Its Authentik OAuth Terraform resources
+  and CI image publishing are removed, while the source and tests remain available.
+  Keep the active Authentik `state: absent` blueprint until tofu has reconciled the
+  Terraform deletion and a later Authentik blueprint reconciliation confirms the
+  application and provider are absent; remove that tombstone in a follow-up PR.
 - **kubectl-machine-mcp**: `cluster/k8s/parked/kubectl-machine-mcp/` — decommissioned
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
