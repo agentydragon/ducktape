@@ -130,6 +130,7 @@ function ActiveConversation({
 }): JSX.Element {
   const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
+  if (query.isError) return <p role="alert">Conversation synchronization stopped.</p>;
   const rows = query.data ?? [];
   const view = rows.find((row) => row.entityKind === "view_state");
   const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
@@ -155,7 +156,6 @@ export function ConversationCollection({
   useEffect(() => {
     const controller = new AbortController();
     let retry: number | undefined;
-    setInterest(null);
     setError(null);
     void conversationInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
@@ -177,7 +177,6 @@ export function ConversationCollection({
   if (!interest) return <p role="status">Loading conversation…</p>;
   return (
     <ActiveConversation
-      key={`${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`}
       threadId={threadId}
       interest={interest}
       onRows={children}
@@ -210,6 +209,7 @@ function chunkCollection(threadId: string, reference: PayloadRef, follow: boolea
       shapeOptions: {
         url: chunkUrl(threadId, reference, follow),
         columnMapper: snakeCamelMapper(),
+        subscribe: follow,
       },
     })
   );
@@ -302,6 +302,7 @@ function ActivePayloadBody({
     ]
   );
   const query = useLiveQuery((q) => q.from({ chunk: collection }), [collection]);
+  if (query.isError) return <p role="alert">Payload synchronization stopped.</p>;
   if (!extent) return children(null);
   const expected = BigInt(extent.chunkCount);
   const chunks = (query.data ?? [])

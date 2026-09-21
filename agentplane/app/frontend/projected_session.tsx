@@ -6,7 +6,15 @@ import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyn
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { ItemKind } from "../../protocol/event_pb";
-import { command, displayableError, getThread, models, renameThread, type ThreadView } from "./client";
+import {
+  command,
+  displayableError,
+  getThread,
+  models,
+  reconcileCommands,
+  renameThread,
+  type ThreadView,
+} from "./client";
 import {
   ConversationCollection,
   decimalBigInt,
@@ -98,23 +106,24 @@ function EntityCard({
   const tool = entity.state.tool_name;
   const completion = entity.state.completion;
   const reasoning = kind === ItemKind.REASONING;
+  const streaming = live && completion === null;
   return (
     <Paper p="sm" withBorder data-conversation-anchor={entity.cursor.toString()}>
       <Group justify="space-between" mb="xs">
         <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
-        {(completion === null || live) && <Text size="xs">Streaming</Text>}
+        {streaming && <Text size="xs">Streaming</Text>}
       </Group>
       {entity.textRef &&
         (reasoning ? (
-          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} follow={live} />
+          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} follow={streaming} />
         ) : (
-          <Body threadId={threadId} reference={entity.textRef} follow={live} />
+          <Body threadId={threadId} reference={entity.textRef} follow={streaming} />
         ))}
       {entity.argumentsRef && (
-        <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} follow={live} plain />
+        <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} follow={streaming} plain />
       )}
       {entity.outputRef && (
-        <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={live} plain />
+        <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={streaming} plain />
       )}
     </Paper>
   );
@@ -130,6 +139,30 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
     [entities]
   );
   useEffect(() => store.observeCommandIds(commandIds), [commandIds, store]);
+  const scope = entities.find((row) => row.entityKind === "view_state");
+  useEffect(() => {
+    if (!scope || local.commands.length === 0) return;
+    const controller = new AbortController();
+    void reconcileCommands(
+      threadId,
+      scope.sourceId,
+      scope.projectionEpoch,
+      local.commands.slice(0, 128).map((value) => value.command.commandId)
+    ).then(
+      (result) => {
+        if (!controller.signal.aborted) {
+          store.observeCommandIds(
+            new Set(result.commands.filter((value) => value.outcome !== null).map((value) => value.command_id))
+          );
+        }
+      },
+      (reason: unknown) => {
+        if (!controller.signal.aborted)
+          setErrors((previous) => new Map(previous).set("reconciliation", displayableError(reason)));
+      }
+    );
+    return () => controller.abort();
+  }, [entities, local.commands, scope, store, threadId]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -415,7 +448,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
         </Text>
       )}
       {thread && (
-        <ConversationCollection threadId={threadId} beforeCursor={before}>
+        <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
           {(rows) => (
             <ProjectedSessionBody threadId={threadId} entities={rows} thread={thread} onLoadOlder={setBefore} />
           )}

@@ -24,7 +24,7 @@ _ENTITY_COLUMNS = (
     "text_ref,arguments_ref,output_ref,input_ref"
 )
 _CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
-_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor"})
+_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log"})
 _INTEREST_QUERY = frozenset(
     {
         "anchor_cursor",
@@ -207,6 +207,8 @@ class ElectricProxy:
     ) -> StreamingResponse:
         if rejected := set(request.query_params) - _PASSTHROUGH_QUERY - _INTEREST_QUERY:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported sync parameters: {sorted(rejected)}")
+        if (log := request.query_params.get("log")) is not None and log != "full":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "the conversation sync log must be full")
         query: list[tuple[str, str | int | float | bool | None]] = [
             (key, value) for key, value in request.query_params.multi_items() if key in _PASSTHROUGH_QUERY
         ]
