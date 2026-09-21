@@ -196,8 +196,6 @@ def generate_manifests(root: Path) -> None:
     firecrawl_namespace_kustomization = parked_flux_kustomizations.firecrawl_namespace(flux_chart)
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart)
     inventree_namespace_kustomization = parked_flux_kustomizations.inventree_namespace(flux_chart)
-    openhands_namespace_kustomization = parked_flux_kustomizations.openhands_namespace(flux_chart)
-    openhands_sandboxes_kustomization = parked_flux_kustomizations.openhands_sandboxes(flux_chart)
     paperless_namespace_kustomization = parked_flux_kustomizations.paperless_namespace(flux_chart)
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart)
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(flux_chart)
@@ -429,14 +427,6 @@ def generate_manifests(root: Path) -> None:
     )
     gatus_flux_kustomizations.gatus_sso_tf(
         flux_chart, tofu_controller_kustomization, tofu_state_db_kustomization, authentik_kustomization
-    )
-    parked_flux_kustomizations.openhands(
-        flux_chart,
-        openhands_namespace_kustomization,
-        openhands_sandboxes_kustomization,
-        gateway_kustomization,
-        authentik_kustomization,
-        external_secrets_operator_kustomization,
     )
     flux_webhook_token_kustomization = flux_webhook_token_flux_kustomizations.flux_webhook_token(
         flux_chart,
