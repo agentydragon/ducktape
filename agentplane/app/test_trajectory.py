@@ -119,11 +119,19 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
         await store.admitted_command(UUID(int=0), command)
 
 
-@pytest.mark.parametrize("history_size", [100, 10_000], ids=["one-hundred", "ten-thousand"])
+@pytest.mark.parametrize(
+    ("history_size", "materialized_item_count"),
+    [(100, 0), (10_000, 0), (10_000, 2_000)],
+    ids=["one-hundred-native", "ten-thousand-native", "ten-thousand-with-two-thousand-items"],
+)
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
-    store: TrajectoryStore, lease: IngestionLease, history_size: int, request: pytest.FixtureRequest
+    store: TrajectoryStore,
+    lease: IngestionLease,
+    history_size: int,
+    materialized_item_count: int,
+    request: pytest.FixtureRequest,
 ) -> None:
-    """A real old-item update only preloads its touched rows after two orders of valid history."""
+    """A real old-item update only preloads its touched rows after large frame and entity histories."""
     thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
@@ -135,14 +143,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     for start in range(3, history_size + 3, 100):
         stop = min(start + 100, history_size + 3)
         await store.record(
-            thread,
-            [
-                _event(
-                    cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}')
-                )
-                for cursor in range(start, stop)
-            ],
-            lease=lease,
+            thread, [_history_event(cursor, materialized_item_count) for cursor in range(start, stop)], lease=lease
         )
 
     scope = await store.current_conversation_scope(thread)
@@ -197,6 +198,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     assert captured
     profile = [
         f"history_size={history_size}",
+        f"materialized_item_count={materialized_item_count}",
         f"tracemalloc_current={current}",
         f"tracemalloc_peak={peak}",
         "retained_allocations:",
@@ -205,6 +207,18 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         *plans,
     ]
     (undeclared_outputs_dir() / f"{request.node.name}-projection-profile.txt").write_text("\n".join(profile))
+
+
+def _history_event(cursor: int, materialized_item_count: int) -> event_pb2.Event:
+    index = cursor - 3
+    if index < materialized_item_count * 2:
+        item_id = f"history-{index // 2}"
+        if index % 2 == 0:
+            return _event(
+                cursor, item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        return _event(cursor, text_delta=event_pb2.TextDelta(item_id=item_id, text="materialized"))
+    return _event(cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}'))
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
