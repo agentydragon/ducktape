@@ -130,7 +130,6 @@ function ActiveConversation({
 }): JSX.Element {
   const collection = useMemo(() => entityCollection(threadId, interest), [threadId, interest]);
   const query = useLiveQuery((q) => q.from({ entity: collection }), [collection]);
-  if (query.isError) return <p role="alert">Conversation synchronization stopped.</p>;
   const rows = query.data ?? [];
   const view = rows.find((row) => row.entityKind === "view_state");
   const caughtUp = view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(interest.through_cursor);
@@ -138,7 +137,13 @@ function ActiveConversation({
   useEffect(() => {
     if (segmentCount > 60) onRotate();
   }, [onRotate, segmentCount]);
-  return caughtUp ? onRows(rows, interest) : <p role="status">Catching up conversation…</p>;
+  return (
+    <>
+      {query.isError && <p role="alert">Conversation synchronization stopped.</p>}
+      {!query.isError && !caughtUp && <p role="status">Catching up conversation…</p>}
+      {onRows(caughtUp ? rows : [], interest)}
+    </>
+  );
 }
 
 export function ConversationCollection({

@@ -36,6 +36,8 @@ export type EntityInterest = components["schemas"]["EntityInterestResponse"];
 export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
 export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
+export type EvidencePage = components["schemas"]["EvidencePage"];
+export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -64,6 +66,51 @@ export async function reconcileCommands(
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
     body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationEvidence(
+  threadId: string,
+  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  afterCursor = "0"
+): Promise<EvidencePage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence", {
+    params: {
+      path: { thread_id: threadId },
+      query: {
+        source_id: scope.sourceId,
+        projection_epoch: scope.projectionEpoch,
+        entity_kind: scope.entityKind,
+        entity_id: scope.entityId,
+        after_cursor: afterCursor as unknown as number,
+        limit: 30,
+      },
+    },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationFrames(
+  threadId: string,
+  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  observationCursor: string,
+  afterSequence = "0"
+): Promise<NativeFramePage> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
+    params: {
+      path: { thread_id: threadId, observation_cursor: observationCursor as unknown as number },
+      query: {
+        source_id: scope.sourceId,
+        projection_epoch: scope.projectionEpoch,
+        entity_kind: scope.entityKind,
+        entity_id: scope.entityId,
+        after_sequence: afterSequence as unknown as number,
+        limit: 30,
+      },
+    },
   });
   if (error) throw new Error(displayableError(error));
   return data;

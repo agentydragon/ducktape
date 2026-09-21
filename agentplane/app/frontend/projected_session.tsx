@@ -8,11 +8,15 @@ import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { ItemKind } from "../../protocol/event_pb";
 import {
   command,
+  conversationEvidence,
+  conversationFrames,
   displayableError,
   getThread,
   models,
   reconcileCommands,
   renameThread,
+  type EvidencePage,
+  type NativeFramePage,
   type ThreadView,
 } from "./client";
 import {
@@ -75,6 +79,104 @@ function LazyBody({
   );
 }
 
+function EvidenceFrames({
+  threadId,
+  entity,
+  observationCursor,
+}: {
+  threadId: string;
+  entity: ConversationEntity;
+  observationCursor: string;
+}): JSX.Element {
+  const [pages, setPages] = useState<NativeFramePage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const scope = {
+    sourceId: entity.sourceId,
+    projectionEpoch: entity.projectionEpoch,
+    entityKind: entity.entityKind,
+    entityId: entity.entityId,
+  };
+  const load = (): void => {
+    if (error) return;
+    const after = pages.at(-1)?.next_after_sequence ?? "0";
+    void conversationFrames(threadId, scope, observationCursor, after).then(
+      (page) => setPages((previous) => [...previous, page]),
+      (reason: unknown) => setError(displayableError(reason))
+    );
+  };
+  return (
+    <details onToggle={(event) => event.currentTarget.open && pages.length === 0 && load()}>
+      <summary>Observation {observationCursor} raw frames</summary>
+      {error && <Text c="red">{error}</Text>}
+      {pages
+        .flatMap((page) => page.frames)
+        .map((frame) => (
+          <Text
+            component="pre"
+            size="xs"
+            key={frame.source_sequence}
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
+            {frame.availability === "present"
+              ? JSON.stringify(frame.entry, null, 2)
+              : `Raw frame ${frame.source_sequence} unavailable`}
+          </Text>
+        ))}
+      {pages.at(-1)?.next_after_sequence && (
+        <Button variant="subtle" onClick={load}>
+          Load more frames
+        </Button>
+      )}
+    </details>
+  );
+}
+
+function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
+  const [pages, setPages] = useState<EvidencePage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const scope = {
+    sourceId: entity.sourceId,
+    projectionEpoch: entity.projectionEpoch,
+    entityKind: entity.entityKind,
+    entityId: entity.entityId,
+  };
+  const load = (): void => {
+    if (error) return;
+    const after = pages.at(-1)?.next_after_cursor ?? "0";
+    void conversationEvidence(threadId, scope, after).then(
+      (page) => setPages((previous) => [...previous, page]),
+      (reason: unknown) => setError(displayableError(reason))
+    );
+  };
+  return (
+    <details onToggle={(event) => event.currentTarget.open && pages.length === 0 && load()}>
+      <summary>Evidence</summary>
+      {error && <Text c="red">{error}</Text>}
+      {pages
+        .flatMap((page) => page.observations)
+        .map((observation) =>
+          observation.has_native ? (
+            <EvidenceFrames
+              key={observation.observation_cursor}
+              threadId={threadId}
+              entity={entity}
+              observationCursor={observation.observation_cursor}
+            />
+          ) : (
+            <Text size="xs" key={observation.observation_cursor}>
+              Observation {observation.observation_cursor} has no native frame
+            </Text>
+          )
+        )}
+      {pages.at(-1)?.next_after_cursor && (
+        <Button variant="subtle" onClick={load}>
+          Load more evidence
+        </Button>
+      )}
+    </details>
+  );
+}
+
 function EntityCard({
   threadId,
   entity,
@@ -125,6 +227,7 @@ function EntityCard({
       {entity.outputRef && (
         <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={streaming} plain />
       )}
+      <Evidence threadId={threadId} entity={entity} />
     </Paper>
   );
 }
@@ -138,17 +241,18 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
     () => new Set(entities.filter((row) => row.entityKind === "command").map((row) => row.entityId)),
     [entities]
   );
+  const localCommandKey = local.commands
+    .slice(0, 128)
+    .map((value) => value.command.commandId)
+    .join("\u0000");
   useEffect(() => store.observeCommandIds(commandIds), [commandIds, store]);
   const scope = entities.find((row) => row.entityKind === "view_state");
+  const sourceId = scope?.sourceId;
+  const projectionEpoch = scope?.projectionEpoch;
   useEffect(() => {
-    if (!scope || local.commands.length === 0) return;
+    if (!sourceId || !projectionEpoch || !localCommandKey) return;
     const controller = new AbortController();
-    void reconcileCommands(
-      threadId,
-      scope.sourceId,
-      scope.projectionEpoch,
-      local.commands.slice(0, 128).map((value) => value.command.commandId)
-    ).then(
+    void reconcileCommands(threadId, sourceId, projectionEpoch, localCommandKey.split("\u0000")).then(
       (result) => {
         if (!controller.signal.aborted) {
           store.observeCommandIds(
@@ -162,7 +266,7 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
       }
     );
     return () => controller.abort();
-  }, [entities, local.commands, scope, store, threadId]);
+  }, [localCommandKey, projectionEpoch, sourceId, store, threadId]);
 
   async function deliver(value: LocalCommand): Promise<void> {
     const id = value.command.commandId;
@@ -276,7 +380,7 @@ function ProjectedSessionBody({
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
-  const running = controls?.harness_state === "running";
+  const running = !thread.archived && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   useEffect(() => {
@@ -445,6 +549,11 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
       {thread && (
         <Text size="xs" c="dimmed">
           {thread.sandbox}
+        </Text>
+      )}
+      {thread?.archived && (
+        <Text role="status" c="dimmed">
+          Thread archived. Showing retained conversation history; controls are disabled.
         </Text>
       )}
       {thread && (
