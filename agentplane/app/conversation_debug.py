@@ -40,3 +40,23 @@ class NativeFramePage(BaseModel):
 
     frames: list[NativeFrame]
     next_after_sequence: str | None
+
+
+class ArchivedObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str
+    source_id: str
+    source_sequence: str
+    kind: str
+    entry: dict[str, JsonValue]
+
+
+class ObservationPage(BaseModel):
+    """One chronological archive window, including observations without projected items."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    observations: list[ArchivedObservation]
+    next_before_cursor: str | None
+    next_after_cursor: str | None
