@@ -7,7 +7,7 @@ import fcntl
 import socket
 import struct
 import termios
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlencode, urlsplit
 
 import asyncpg
@@ -43,6 +43,12 @@ SAMPLE_EVERY = 8
 MAX_STALLED_RSS_GROWTH_KIB = 16 * 1024
 MAX_FRESH_SUBSET_RESPONSE_BYTES = 3 * 1024 * 1024
 SHAPE_COLUMNS = f"{ACTIVE_SHAPE_COLUMNS},model"
+
+
+class _TailWriter(Protocol):
+    async def execute(self, query: str, *args: object) -> str: ...
+
+    async def fetchval(self, query: str, *args: object) -> Any: ...
 
 
 async def _open_stalled_shape_request(
@@ -109,7 +115,7 @@ async def _wait_for_wal_processed(pool: asyncpg.Pool, target_lsn: str) -> dict[s
     raise AssertionError({"targetLsn": target_lsn, "slots": latest_slots})
 
 
-async def _update_tail(pool: asyncpg.Pool | asyncpg.Connection, batch: int) -> tuple[str, str]:
+async def _update_tail(pool: _TailWriter, batch: int) -> tuple[str, str]:
     model = f"batch-{batch:03d}:" + (chr(65 + batch % 26) * (MODEL_BYTES - 10))
     await pool.execute(
         """UPDATE sync_view_row SET revision = revision + 1, model=$1
