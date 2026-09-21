@@ -2,8 +2,9 @@
 
 The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
 Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
-streams retained Thread events to the browser over SSE, keeps a watch over the objects its views read so a change
-is pushed rather than polled for, and copies every event into the trajectory store as it arrives.
+projects runner events into PostgreSQL conversation rows, synchronizes selected rows and content
+to the browser through authenticated Electric endpoints, and watches Kubernetes inventory.
+Raw runner events remain archived for debug access.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 The current bridge's session-scoped runner attachment is implementation state, not
@@ -40,8 +41,8 @@ bbr test //agentplane/app/...
   `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
-- `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
-  SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
+- `bridge.py`: runner-first commands, leased batched ingestion per sandbox, and retained-event
+  replay; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
@@ -52,8 +53,14 @@ bbr test //agentplane/app/...
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `trajectory.py`: the PostgreSQL store of threads, events, feed state, and ingestion leases.
+- `trajectory.py`: the PostgreSQL store of threads, events, feed state, leases, materialized
+  conversation entities, and immutable content chunks/manifests. Each ingestion transaction
+  folds only the batch and its touched entities, then commits all projection writes and checkpoint.
   `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
+- `conversation_projection.py`: typed deterministic event fold with independent item revisions.
+- `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
+  The private Electric service reads PostgreSQL logical replication; app replicas do not retain
+  per-listener conversation copies.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
@@ -98,18 +105,23 @@ via runner `ListSessions`, which currently has no watch RPC. Merely observing a 
 does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
 before returning, so a resumed browser does not read the previous harness's terminal state.
 
-Browser SSE reads committed PostgreSQL events on whichever replica receives the request, never an
-ingester's in-process queue. Transactional `NOTIFY` wakes readers for event, thread, and rename
-changes. Notifications carry no data and are not a durable queue: the database sequence cursor is
-authoritative, and listener reconnects and keepalives trigger catch-up reads. Stored history remains
-readable while the runner is unreachable.
+The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
+its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
+are hints and the database cursor remains authoritative.
 
-`/#/threads/{id}` loads Thread metadata and `/threads/{id}/events/stream` independently of runner
-discovery. Sidebar entries remain navigable after Sandbox deletion, and reload reads the same retained
-history. Sandbox availability comes from the separate live inventory snapshot, not an invented runner
-Event. Suspended/deleted Sandboxes disable runner controls; incomplete retained items are labelled as
-incomplete history, not actively streaming. The app's ingestion coordinator, not opening a browser
-stream, owns runner discovery and attachment.
+`/#/threads/{id}` loads metadata and a bounded latest-30 conversation interest independently
+of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
+live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
+arguments follow their referenced revisions, while reasoning, tool output and associated debug
+frames are selected on demand. A command-ID subscription retains outcomes after the command
+leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
+remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
+for query, revision and memory contracts and the remaining acceptance gates.
+
+Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
+live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
+retained items are labelled incomplete rather than actively streaming. The ingestion coordinator
+owns runner attachment; loading a conversation never rebuilds its history.
 
 `test_replication_process.py` kills real app processes before and after an ingestion commit,
 then verifies replacement lease ownership, the exact PostgreSQL prefix, and HTTP/SSE replay/live
@@ -117,27 +129,26 @@ handoff from the browser's last observed cursor. The test advances the dead owne
 expiry explicitly and uses a controlled protocol source; it does not test elapsed lease timing,
 native harness recovery, or PostgreSQL host/storage loss.
 
-`test_thread_browser.py` loads the built SPA in hermetic Chromium against that real app process,
-PostgreSQL archive, and controlled protocol source. It covers retained replay, live streaming,
-terminal turn state, and document reload without duplicated conversation text. Unlike the visual
-fixture, it does not replace browser fetch or EventSource. Playwright traces are test artifacts.
-It also holds replay behind an ahead-of-prefix snapshot and injects a runner gap/source change:
-the browser must show catch-up or a stopped-stream error, preserve only verified conversation
-content, and disable controls until it has the required evidence.
-An additional case opens and reloads an archived Thread after Sandbox deletion with no reachable
-runner, preserving exact retained events and visibly incomplete historical output.
-Transport-fault cases cover an explicit same-ID retry after a pre-forward abort, loss of both
-admission reply and SSE delivery followed by reload/reconciliation, and an HTTP admission arriving
-ahead of the browser prefix without skipping earlier deltas. A separate test cuts the SSE response
-without reloading the document: native EventSource reconnects with `Last-Event-ID`, replays the
-unobserved suffix once, and reconciles pending input without another command send. Raw rows and
-normal conversation assertions use the same prefix. These browser cases complement the API/runner
-tests for idempotent retry of already-admitted commands; reload catch-up still disables Retry.
-Conversation scrolling follows new messages, streaming growth, and viewport resizing only while
-at the bottom. Scrolling into earlier history preserves the reading position; returning to the
-bottom resumes following, even if content grows before the queued scroll event arrives.
-Chromium tests exercise that ordering, actual wheel scrolling, and layout changes in normal
-and Raw modes on desktop and phone.
+`test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
+processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
+Kubernetes and authentication boundaries are controlled. Its 21 cases are split across four
+Bazel shards. Traces and screenshots are test artifacts; inspect the images as well as results.
+
+Coverage includes older-item streaming, selective bodies/debug, archived conversations,
+reload/offline/reconnect, admission responses ahead of projection, lost HTTP replies, exact
+same-ID retries, and failed/noop outcomes after history eviction and explicit dismissal.
+Fault injection holds actual Electric responses while ingestion continues. Rejected runner
+suffixes preserve verified history, report rejected versus verified cursors, and disable controls.
+Scrolling checks cover live growth, reader anchors, desktop/phone layouts, and returning to the
+bottom before a queued scroll event. Larger history-window, collection-retention and resource
+proofs are tracked in [the acceptance matrix](../../debug/agentplane_conversation_acceptance.md).
+
+The new projection schema is incompatible with populated pre-projection staging/testing
+archives: reset the disposable trajectory data before applying it. There is no implicit
+backfill, tolerant old-row reader, or on-open replay. Migration `0005_conversation_projection`
+creates the materialized tables, grants and publication; the managed `electric` database role
+must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
+mixing incompatible state. No instance reset is performed by this implementation work.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
@@ -226,7 +237,7 @@ the rest of the Deployments' 60-second grace period is for. No preStop delay con
 
 ```text
 browser (OIDC session)  /  agent (Kubernetes token)
-   |  REST + SSE, straight from the cluster gateway
+   |  REST + Electric sync + inventory SSE, through the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
    |  Kubernetes API              |  runner protocol (gRPC, in-cluster)
 Sandbox -> Pod, PVC               |
@@ -238,7 +249,7 @@ Sandbox -> Pod, PVC               |
 
 Kubernetes is the sandbox inventory, including a compact annotation holding its live preset
 association plus explicit thread-default edits; the runner holds the live session;
-PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
+PostgreSQL holds the raw event archive and materialized conversation that outlive the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 
 ## External-client consent
