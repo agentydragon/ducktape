@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,18 @@ _ROW_FIELDS = (
     "arguments_bytes",
     "output_bytes",
     "reasoning_bytes",
+    "text_payload_ref",
+    "arguments_payload_ref",
+    "output_payload_ref",
+    "reasoning_payload_ref",
+    "text_generation_id",
+    "arguments_generation_id",
+    "output_generation_id",
+    "reasoning_generation_id",
+    "text_chunk_count",
+    "arguments_chunk_count",
+    "output_chunk_count",
+    "reasoning_chunk_count",
     "status",
     "model",
     "command_id",
@@ -38,9 +52,14 @@ _UPSERT_ROW = """
 INSERT INTO sync_view_row (
   conversation_id, row_key, entity_kind, anchor, revision, item_id, item_kind, tool_name,
   text_revision, arguments_revision, output_revision, reasoning_revision,
-  text_bytes, arguments_bytes, output_bytes, reasoning_bytes, status, model, command_id
+  text_bytes, arguments_bytes, output_bytes, reasoning_bytes,
+  text_payload_ref, arguments_payload_ref, output_payload_ref, reasoning_payload_ref,
+  text_generation_id, arguments_generation_id, output_generation_id, reasoning_generation_id,
+  text_chunk_count, arguments_chunk_count, output_chunk_count, reasoning_chunk_count,
+  status, model, command_id
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+  $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
 )
 ON CONFLICT (conversation_id, row_key) DO UPDATE SET
   entity_kind = EXCLUDED.entity_kind,
@@ -57,6 +76,18 @@ ON CONFLICT (conversation_id, row_key) DO UPDATE SET
   arguments_bytes = EXCLUDED.arguments_bytes,
   output_bytes = EXCLUDED.output_bytes,
   reasoning_bytes = EXCLUDED.reasoning_bytes,
+  text_payload_ref = EXCLUDED.text_payload_ref,
+  arguments_payload_ref = EXCLUDED.arguments_payload_ref,
+  output_payload_ref = EXCLUDED.output_payload_ref,
+  reasoning_payload_ref = EXCLUDED.reasoning_payload_ref,
+  text_generation_id = EXCLUDED.text_generation_id,
+  arguments_generation_id = EXCLUDED.arguments_generation_id,
+  output_generation_id = EXCLUDED.output_generation_id,
+  reasoning_generation_id = EXCLUDED.reasoning_generation_id,
+  text_chunk_count = EXCLUDED.text_chunk_count,
+  arguments_chunk_count = EXCLUDED.arguments_chunk_count,
+  output_chunk_count = EXCLUDED.output_chunk_count,
+  reasoning_chunk_count = EXCLUDED.reasoning_chunk_count,
   status = EXCLUDED.status,
   model = EXCLUDED.model,
   command_id = EXCLUDED.command_id
@@ -81,6 +112,31 @@ class ApplyResult:
     duplicate_events: int
     row_writes: int
     payload_parts: int
+
+
+@dataclass(frozen=True)
+class PayloadState:
+    source_id: str
+    generation_id: str
+    revision: int
+    chunk_count: int
+    content_bytes: int
+
+
+def payload_reference(
+    conversation_id: str,
+    item_id: str,
+    field_name: str,
+    source_id: str,
+    generation_id: str,
+    revision: int,
+) -> str:
+    identity = json.dumps(
+        [conversation_id, item_id, field_name, source_id, generation_id, revision],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return f"pr1_{base64.urlsafe_b64encode(identity).decode().rstrip('=')}"
 
 
 async def initialize_database(pool: asyncpg.Pool) -> None:
@@ -132,16 +188,22 @@ def _new_row(conversation_id: str, row_key: str, entity_kind: str, cursor: int) 
         "arguments_bytes": 0,
         "output_bytes": 0,
         "reasoning_bytes": 0,
+        "text_payload_ref": None,
+        "arguments_payload_ref": None,
+        "output_payload_ref": None,
+        "reasoning_payload_ref": None,
+        "text_generation_id": None,
+        "arguments_generation_id": None,
+        "output_generation_id": None,
+        "reasoning_generation_id": None,
+        "text_chunk_count": 0,
+        "arguments_chunk_count": 0,
+        "output_chunk_count": 0,
+        "reasoning_chunk_count": 0,
         "status": None,
         "model": None,
         "command_id": None,
     }
-
-
-def _payload(
-    conversation_id: str, item_id: str, field_name: str, cursor: int, operation: str, content: str
-) -> tuple[str, str, str, int, str, str]:
-    return conversation_id, item_id, field_name, cursor, operation, content
 
 
 def _digest(entry: event_log_pb2.EventEntry) -> bytes:
@@ -150,24 +212,83 @@ def _digest(entry: event_log_pb2.EventEntry) -> bytes:
 
 def _append_payload(
     row: dict[str, Any],
-    payload_parts: list[tuple[str, str, str, int, str, str]],
+    payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]],
+    payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]],
+    payload_states: dict[tuple[str, str], PayloadState],
+    source_id: str,
     field_name: str,
     cursor: int,
     content: str,
     operation: str = "append",
 ) -> None:
-    payload_parts.append(_payload(row["conversation_id"], row["item_id"], field_name, cursor, operation, content))
+    if operation not in {"append", "replace"}:
+        raise ValueError(f"Unknown payload operation {operation}")
+    conversation_id = row["conversation_id"]
+    item_id = row["item_id"]
+    owner = (item_id, field_name)
+    previous = payload_states.get(owner)
+    if operation == "replace" or previous is None:
+        generation_id = f"generation-{cursor}"
+        chunk_count = 0
+        content_bytes = 0
+    else:
+        if previous.source_id != source_id:
+            raise ProjectionConflictError(f"{owner} payload source changed from {previous.source_id} to {source_id}")
+        if cursor <= previous.revision:
+            raise ProjectionConflictError(f"{owner} payload cursor did not advance")
+        generation_id = previous.generation_id
+        chunk_count = previous.chunk_count
+        content_bytes = previous.content_bytes
+    encoded = content.encode("utf-8")
+    if encoded:
+        payload_chunks.append(
+            (
+                conversation_id,
+                item_id,
+                field_name,
+                source_id,
+                generation_id,
+                chunk_count,
+                cursor,
+                content,
+                len(encoded),
+            )
+        )
+        chunk_count += 1
+    content_bytes = content_bytes + len(encoded) if operation == "append" and previous is not None else len(encoded)
+    payload_ref = payload_reference(conversation_id, item_id, field_name, source_id, generation_id, cursor)
+    payload_manifests.append(
+        (
+            payload_ref,
+            conversation_id,
+            item_id,
+            field_name,
+            source_id,
+            generation_id,
+            cursor,
+            True,
+            chunk_count,
+            content_bytes,
+            cursor,
+        )
+    )
+    payload_states[owner] = PayloadState(source_id, generation_id, cursor, chunk_count, content_bytes)
     version_column = f"{field_name}_revision"
     bytes_column = f"{field_name}_bytes"
+    row[f"{field_name}_payload_ref"] = payload_ref
+    row[f"{field_name}_generation_id"] = generation_id
+    row[f"{field_name}_chunk_count"] = chunk_count
     row[version_column] = cursor
-    byte_count = len(content.encode("utf-8"))
-    row[bytes_column] = row[bytes_column] + byte_count if operation == "append" else byte_count
+    row[bytes_column] = content_bytes
 
 
 def _apply_event(
     conversation_id: str,
+    source_id: str,
     rows: dict[str, dict[str, Any]],
-    payload_parts: list[tuple[str, str, str, int, str, str]],
+    payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]],
+    payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]],
+    payload_states: dict[tuple[str, str], PayloadState],
     entry: event_log_pb2.EventEntry,
 ) -> None:
     event = entry.event
@@ -200,23 +321,62 @@ def _apply_event(
         row["item_id"] = delta.item_id
         if case == "text_delta":
             field_name = "reasoning" if row["item_kind"] == event_pb2.ITEM_KIND_REASONING else "text"
-            _append_payload(row, payload_parts, field_name, cursor, delta.text)
+            _append_payload(row, payload_manifests, payload_chunks, payload_states, source_id, field_name, cursor, delta.text)
         elif case == "tool_arguments_delta":
-            _append_payload(row, payload_parts, "arguments", cursor, delta.partial_json)
+            _append_payload(
+                row,
+                payload_manifests,
+                payload_chunks,
+                payload_states,
+                source_id,
+                "arguments",
+                cursor,
+                delta.partial_json,
+            )
         elif case == "tool_arguments":
-            _append_payload(row, payload_parts, "arguments", cursor, delta.arguments_json, "replace")
+            _append_payload(
+                row,
+                payload_manifests,
+                payload_chunks,
+                payload_states,
+                source_id,
+                "arguments",
+                cursor,
+                delta.arguments_json,
+                "replace",
+            )
         else:
-            _append_payload(row, payload_parts, "output", cursor, delta.text)
+            _append_payload(row, payload_manifests, payload_chunks, payload_states, source_id, "output", cursor, delta.text)
     elif case == "item_completed":
         completed = event.item_completed
         row = row_for(f"item:{completed.item_id}", "item")
         outcome = completed.WhichOneof("outcome")
         if outcome == "text":
             field_name = "reasoning" if row["item_kind"] == event_pb2.ITEM_KIND_REASONING else "text"
-            _append_payload(row, payload_parts, field_name, cursor, completed.text, "replace")
+            _append_payload(
+                row,
+                payload_manifests,
+                payload_chunks,
+                payload_states,
+                source_id,
+                field_name,
+                cursor,
+                completed.text,
+                "replace",
+            )
             row["status"] = "complete"
         elif outcome == "tool":
-            _append_payload(row, payload_parts, "output", cursor, completed.tool.output, "replace")
+            _append_payload(
+                row,
+                payload_manifests,
+                payload_chunks,
+                payload_states,
+                source_id,
+                "output",
+                cursor,
+                completed.tool.output,
+                "replace",
+            )
             row["status"] = "tool_succeeded" if completed.tool.succeeded else "tool_failed"
         else:
             row["status"] = "complete"
@@ -328,16 +488,67 @@ async def apply_batch(
             sorted(keys),
         )
         rows = {record["row_key"]: dict(record) for record in existing_rows}
-        payload_parts: list[tuple[str, str, str, int, str, str]] = []
+        payload_refs = {
+            row[f"{field_name}_payload_ref"]
+            for row in rows.values()
+            for field_name in ("text", "arguments", "output", "reasoning")
+            if row[f"{field_name}_payload_ref"] is not None
+        }
+        payload_states: dict[tuple[str, str], PayloadState] = {}
+        if payload_refs:
+            manifests = await connection.fetch(
+                """SELECT payload_ref, item_id, field_name, source_id, generation_id, revision,
+                          chunk_count, content_bytes
+                   FROM projected_payload_manifest WHERE payload_ref = ANY($1::text[])""",
+                list(payload_refs),
+            )
+            by_ref = {
+                record["payload_ref"]: PayloadState(
+                    record["source_id"],
+                    record["generation_id"],
+                    int(record["revision"]),
+                    record["chunk_count"],
+                    int(record["content_bytes"]),
+                )
+                for record in manifests
+            }
+            if set(by_ref) != payload_refs:
+                raise ProjectionConflictError("A current payload reference has no immutable manifest")
+            for row in rows.values():
+                if row["item_id"] is None:
+                    continue
+                for field_name in ("text", "arguments", "output", "reasoning"):
+                    payload_ref = row[f"{field_name}_payload_ref"]
+                    if payload_ref is not None:
+                        payload_states[(row["item_id"], field_name)] = by_ref[payload_ref]
+        payload_manifests: list[tuple[str, str, str, str, str, str, int, bool, int, int, int]] = []
+        payload_chunks: list[tuple[str, str, str, str, str, int, int, str, int]] = []
         for entry in new_entries:
-            _apply_event(conversation_id, rows, payload_parts, entry)
+            _apply_event(
+                conversation_id,
+                source_id,
+                rows,
+                payload_manifests,
+                payload_chunks,
+                payload_states,
+                entry,
+            )
 
-        if payload_parts:
+        if payload_chunks:
             await connection.executemany(
-                """INSERT INTO projected_payload_part
-                   (conversation_id, item_id, field_name, source_cursor, operation, content)
-                   VALUES ($1, $2, $3, $4, $5, $6)""",
-                payload_parts,
+                """INSERT INTO projected_payload_chunk
+                   (conversation_id, item_id, field_name, source_id, generation_id, chunk_index,
+                    source_cursor, content, content_bytes)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                payload_chunks,
+            )
+        if payload_manifests:
+            await connection.executemany(
+                """INSERT INTO projected_payload_manifest
+                   (payload_ref, conversation_id, item_id, field_name, source_id, generation_id,
+                    revision, present, chunk_count, content_bytes, source_cursor)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)""",
+                payload_manifests,
             )
         if rows:
             await connection.executemany(
@@ -346,4 +557,4 @@ async def apply_batch(
         await connection.execute(
             "UPDATE projection_checkpoint SET through_cursor = $2 WHERE conversation_id = $1", conversation_id, through
         )
-        return ApplyResult(through, duplicate_events, len(rows), len(payload_parts))
+        return ApplyResult(through, duplicate_events, len(rows), len(payload_manifests))

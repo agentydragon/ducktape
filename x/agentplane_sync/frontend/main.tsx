@@ -22,6 +22,18 @@ const viewRowSchema = z.object({
   argumentsBytes: z.coerce.bigint(),
   outputBytes: z.coerce.bigint(),
   reasoningBytes: z.coerce.bigint(),
+  textPayloadRef: z.string().nullable(),
+  argumentsPayloadRef: z.string().nullable(),
+  outputPayloadRef: z.string().nullable(),
+  reasoningPayloadRef: z.string().nullable(),
+  textGenerationId: z.string().nullable(),
+  argumentsGenerationId: z.string().nullable(),
+  outputGenerationId: z.string().nullable(),
+  reasoningGenerationId: z.string().nullable(),
+  textChunkCount: z.number().int().nonnegative(),
+  argumentsChunkCount: z.number().int().nonnegative(),
+  outputChunkCount: z.number().int().nonnegative(),
+  reasoningChunkCount: z.number().int().nonnegative(),
   status: z.string().nullable(),
   model: z.string().nullable(),
   commandId: z.string().nullable(),
@@ -29,8 +41,52 @@ const viewRowSchema = z.object({
 
 type ViewRow = z.output<typeof viewRowSchema>;
 type PayloadField = "text" | "arguments" | "output" | "reasoning";
-type PayloadInterest = { itemId: string; field: PayloadField } | null;
-type PayloadPart = { sourceCursor: string; operation: "append" | "replace"; content: string };
+type PayloadInterest = {
+  itemId: string;
+  field: PayloadField;
+  payloadRef: string | null;
+  generationId: string | null;
+  shapeRef: string | null;
+  epoch: number;
+};
+type ActivePayloadInterest = PayloadInterest & { payloadRef: string; generationId: string; shapeRef: string };
+
+function isActivePayloadInterest(selection: PayloadInterest): selection is ActivePayloadInterest {
+  return selection.payloadRef !== null && selection.generationId !== null && selection.shapeRef !== null;
+}
+
+async function sha256Text(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+const payloadManifestSchema = z.object({
+  payloadRef: z.string(),
+  conversationId: z.string(),
+  itemId: z.string(),
+  fieldName: z.enum(["text", "arguments", "output", "reasoning"]),
+  sourceId: z.string(),
+  generationId: z.string(),
+  revision: z.coerce.bigint(),
+  present: z.boolean(),
+  chunkCount: z.number().int().nonnegative(),
+  contentBytes: z.coerce.bigint(),
+  sourceCursor: z.coerce.bigint(),
+});
+
+const payloadChunkSchema = z.object({
+  conversationId: z.string(),
+  itemId: z.string(),
+  fieldName: z.enum(["text", "arguments", "output", "reasoning"]),
+  sourceId: z.string(),
+  generationId: z.string(),
+  chunkIndex: z.number().int().nonnegative(),
+  sourceCursor: z.coerce.bigint(),
+  content: z.string(),
+  contentBytes: z.coerce.bigint(),
+});
+
+type PayloadManifest = z.output<typeof payloadManifestSchema>;
 
 declare global {
   interface Window {
@@ -39,6 +95,24 @@ declare global {
       revisions: Record<string, string[]>;
       rowKeys: string[];
       exactBigint: boolean;
+      payloadStates: Array<{
+        itemId: string;
+        field: PayloadField;
+        epoch: number;
+        payloadRef: string;
+        revision: string;
+        latestRef: string;
+        contentSha256: string;
+        chunkCount: number;
+        contentBytes: string;
+      }>;
+      retiredPayloadCollections: Array<{
+        shapeRef: string;
+        collectionId: string;
+        subscribersAfterCleanup: number;
+        sizeAfterCleanup: number;
+        statusAfterCleanup: string;
+      }>;
       scroll: Array<{
         key: string;
         beforeTop: number;
@@ -57,6 +131,8 @@ window.__syncEvidence = {
   revisions: {},
   rowKeys: [],
   exactBigint: false,
+  payloadStates: [],
+  retiredPayloadCollections: [],
   scroll: [],
   pageErrors: [],
 };
@@ -78,17 +154,214 @@ function makeRows(conversationId: string) {
   );
 }
 
-function rowVersion(row: ViewRow, field: PayloadField): bigint {
+function makePayloadChunks(conversationId: string, payloadRef: string, epoch: number) {
+  return createCollection(
+    electricCollectionOptions({
+      id: `agentplane-payload-chunks:${conversationId}:${payloadRef}:${epoch}`,
+      schema: payloadChunkSchema,
+      getKey: (row) => `${row.sourceId}:${row.generationId}:${row.chunkIndex}`,
+      syncMode: "eager",
+      shapeOptions: {
+        url: new URL(
+          `/api/electric/${encodeURIComponent(conversationId)}/payload/${encodeURIComponent(payloadRef)}/chunks`,
+          window.location.href
+        ).toString(),
+        params: { replica: "full" },
+        headers: { Authorization: `Bearer ${localStorage.getItem("spike-token") ?? ""}` },
+        columnMapper: snakeCamelMapper(),
+      },
+    })
+  );
+}
+
+function payloadRef(row: ViewRow | undefined, field: PayloadField): string | null {
+  if (!row) return null;
   switch (field) {
     case "text":
-      return row.textRevision;
+      return row.textPayloadRef;
     case "arguments":
-      return row.argumentsRevision;
+      return row.argumentsPayloadRef;
     case "output":
-      return row.outputRevision;
+      return row.outputPayloadRef;
     case "reasoning":
-      return row.reasoningRevision;
+      return row.reasoningPayloadRef;
   }
+}
+
+function payloadGeneration(row: ViewRow | undefined, field: PayloadField): string | null {
+  if (!row) return null;
+  switch (field) {
+    case "text":
+      return row.textGenerationId;
+    case "arguments":
+      return row.argumentsGenerationId;
+    case "output":
+      return row.outputGenerationId;
+    case "reasoning":
+      return row.reasoningGenerationId;
+  }
+}
+
+function PayloadPanel({
+  conversationId,
+  selection,
+  latestRef,
+  onReady,
+}: {
+  conversationId: string;
+  selection: ActivePayloadInterest;
+  latestRef: string | null;
+  onReady: (epoch: number, payloadRef: string) => void;
+}) {
+  const selectedRef = selection.payloadRef;
+  const chunksCollection = useMemo(
+    () => makePayloadChunks(conversationId, selection.shapeRef, selection.epoch),
+    [conversationId, selection.epoch, selection.shapeRef]
+  );
+  useEffect(() => {
+    const collection = chunksCollection;
+    const shapeRef = selection.shapeRef;
+    return () => {
+      void collection.cleanup().then(() => {
+        window.__syncEvidence.retiredPayloadCollections.push({
+          shapeRef,
+          collectionId: collection.id,
+          subscribersAfterCleanup: collection.subscriberCount,
+          sizeAfterCleanup: collection.size,
+          statusAfterCleanup: collection.status,
+        });
+      });
+    };
+  }, [chunksCollection, selection.shapeRef]);
+  const chunksQuery = useLiveQuery((q) => q.from({ chunk: chunksCollection }), [chunksCollection]);
+  const chunks = chunksQuery.data ?? [];
+  const [manifest, setManifest] = useState<PayloadManifest | null>(null);
+  const [manifestState, setManifestState] = useState<"loading" | "ready" | "error">("loading");
+  const [manifestError, setManifestError] = useState("");
+  const reported = useRef(new Set<string>());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    setManifest(null);
+    setManifestState("loading");
+    setManifestError("");
+    const token = localStorage.getItem("spike-token") ?? "";
+    void fetch(
+      `/api/payloads/${encodeURIComponent(conversationId)}/${encodeURIComponent(selectedRef)}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }
+    )
+      .then(async (response) => {
+        if (response.status === 410) throw new Error("Payload revision is unavailable or expired");
+        if (!response.ok) throw new Error(`Payload manifest request failed with ${response.status}`);
+        return payloadManifestSchema.parse(await response.json());
+      })
+      .then((value) => {
+        if (!current) return;
+        if (
+          value.payloadRef !== selectedRef ||
+          value.conversationId !== conversationId ||
+          value.itemId !== selection.itemId ||
+          value.fieldName !== selection.field ||
+          value.generationId !== selection.generationId
+        ) {
+          throw new Error("Payload manifest identity does not match the selected reference");
+        }
+        setManifest(value);
+        setManifestState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!current || (error instanceof DOMException && error.name === "AbortError")) return;
+        setManifestError(String(error));
+        setManifestState("error");
+      });
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [conversationId, selectedRef, selection.epoch, selection.field, selection.generationId, selection.itemId]);
+
+  const selectedChunks = manifest
+    ? chunks
+        .filter(
+          (chunk) =>
+            chunk.conversationId === conversationId &&
+            chunk.itemId === selection.itemId &&
+            chunk.fieldName === selection.field &&
+            chunk.sourceId === manifest.sourceId &&
+            chunk.generationId === manifest.generationId &&
+            chunk.chunkIndex < manifest.chunkCount
+        )
+        .sort((left, right) => left.chunkIndex - right.chunkIndex)
+    : [];
+  const complete =
+    manifest !== null &&
+    manifest.payloadRef === selectedRef &&
+    manifest.generationId === selection.generationId &&
+    manifest.present &&
+    selectedChunks.length === manifest.chunkCount &&
+    selectedChunks.every((chunk, index) => chunk.chunkIndex === index) &&
+    selectedChunks.reduce((total, chunk) => total + chunk.contentBytes, 0n) === manifest.contentBytes;
+  const status =
+    manifestState === "error" || chunksQuery.isError
+      ? "error"
+      : complete
+        ? "ready"
+        : manifestState === "ready"
+          ? "hydrating"
+          : "loading";
+
+  useLayoutEffect(() => {
+    if (!complete || manifest === null) return;
+    const key = `${selection.epoch}:${manifest.payloadRef}:${manifest.revision}`;
+    if (reported.current.has(key)) return;
+    reported.current.add(key);
+    const element = document.querySelector<HTMLOutputElement>("[data-testid=payload-body]");
+    if (!element) return;
+    const content = element.textContent ?? "";
+    let active = true;
+    void sha256Text(content).then((contentSha256) => {
+      if (!active) return;
+      window.__syncEvidence.payloadStates.push({
+        itemId: element.dataset.itemId ?? "",
+        field: element.dataset.field as PayloadField,
+        epoch: Number(element.dataset.epoch),
+        payloadRef: element.dataset.payloadRef ?? "",
+        revision: element.dataset.revision ?? "",
+        latestRef: element.dataset.latestRef ?? "",
+        contentSha256,
+        chunkCount: Number(element.dataset.chunkCount),
+        contentBytes: element.dataset.contentBytes ?? "",
+      });
+      onReady(selection.epoch, manifest.payloadRef);
+    });
+    return () => {
+      active = false;
+    };
+  }, [complete, manifest, onReady, selection.epoch]);
+
+  return (
+    <output
+      data-testid="payload-body"
+      data-state={status}
+      data-item-id={selection.itemId}
+      data-field={selection.field}
+      data-epoch={selection.epoch}
+      data-payload-ref={manifest?.payloadRef ?? selectedRef}
+      data-revision={manifest?.revision.toString() ?? ""}
+      data-latest-ref={latestRef ?? ""}
+      data-chunk-count={manifest?.chunkCount ?? ""}
+      data-content-bytes={manifest?.contentBytes.toString() ?? ""}
+      data-shape-ref={selection.shapeRef}
+      title={status === "error" ? manifestError || String(chunksQuery.status) : undefined}
+    >
+      {status === "error"
+        ? manifestError || "Payload chunks could not be synchronized"
+        : complete
+          ? selectedChunks.map((chunk) => <span key={chunk.chunkIndex}>{chunk.content}</span>)
+          : null}
+    </output>
+  );
 }
 
 function HistoryPage({
@@ -127,6 +400,7 @@ function HistoryPage({
 function App() {
   const query = new URLSearchParams(location.search);
   const conversationId = query.get("conversation") ?? "alpha-large";
+  const payloadItem = query.get("payloadItem") ?? "live-item";
   const collection = useMemo(() => makeRows(conversationId), [conversationId]);
   const tail = useLiveQuery(
     (q) =>
@@ -139,9 +413,9 @@ function App() {
   const tailRows = tail.data ?? [];
   const [historyCursors, setHistoryCursors] = useState<bigint[]>([]);
   const [historyByPage, setHistoryByPage] = useState<Record<string, ViewRow[]>>({});
-  const [interest, setInterest] = useState<PayloadInterest>(null);
-  const [payloadCursor, setPayloadCursor] = useState("0");
-  const [payloadText, setPayloadText] = useState("");
+  const [interest, setInterest] = useState<PayloadInterest | null>(null);
+  const [payloadReady, setPayloadReady] = useState<{ epoch: number; payloadRef: string } | null>(null);
+  const nextPayloadEpoch = useRef(0);
   const viewport = useRef<HTMLDivElement>(null);
   const pendingScroll = useRef<{ key: string; top: number; rowCount: number } | null>(null);
   const receiveHistory = useCallback((pageId: string, rows: ViewRow[]) => {
@@ -160,7 +434,8 @@ function App() {
   const controlRow = allRows.find((row) => row.rowKey === "control:model");
   const commandRow = allRows.find((row) => row.rowKey === "command:sync-command");
   const interestedRow = interest ? allRows.find((row) => row.itemId === interest.itemId) : undefined;
-  const interestedVersion = interest && interestedRow ? rowVersion(interestedRow, interest.field) : 0n;
+  const latestPayloadRef = interest ? payloadRef(interestedRow, interest.field) : null;
+  const latestGenerationId = interest ? payloadGeneration(interestedRow, interest.field) : null;
   const oldestAnchor = allRows.reduce<bigint | null>(
     (oldest, row) => (oldest === null || row.anchor < oldest ? row.anchor : oldest),
     null
@@ -208,33 +483,28 @@ function App() {
     pendingScroll.current = null;
   }, [allRows]);
 
+  const onPayloadReady = useCallback((epoch: number, ref: string) => {
+    setPayloadReady((current) => (current?.epoch === epoch && current.payloadRef === ref ? current : { epoch, payloadRef: ref }));
+  }, []);
+
   useEffect(() => {
-    if (!interest || !interestedRow || payloadCursor === interestedVersion.toString()) return;
-    const controller = new AbortController();
-    const token = localStorage.getItem("spike-token") ?? "";
-    const url = `/api/payloads/${encodeURIComponent(conversationId)}/${encodeURIComponent(interest.itemId)}/${interest.field}?after=${encodeURIComponent(payloadCursor)}`;
-    void fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Payload request failed with ${response.status}`);
-        return (await response.json()) as { rows: PayloadPart[] };
-      })
-      .then(({ rows }) => {
-        let content = payloadText;
-        let through = payloadCursor;
-        for (const part of rows) {
-          content = part.operation === "replace" ? part.content : content + part.content;
-          through = part.sourceCursor;
-        }
-        setPayloadText(content);
-        setPayloadCursor(through);
-      })
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          window.__syncEvidence.pageErrors.push(String(error));
-        }
-      });
-    return () => controller.abort();
-  }, [conversationId, interest, interestedRow, interestedVersion, payloadCursor, payloadText]);
+    if (!interest || !interestedRow || latestPayloadRef === null || latestPayloadRef === interest.payloadRef) return;
+    const previousValueReady =
+      interest.payloadRef === null ||
+      (payloadReady?.epoch === interest.epoch && payloadReady.payloadRef === interest.payloadRef);
+    if (!previousValueReady) return;
+    setInterest((current) => {
+      if (!current || current.epoch !== interest.epoch) return current;
+      const generationId = latestGenerationId;
+      return {
+        ...current,
+        payloadRef: latestPayloadRef,
+        generationId,
+        shapeRef: generationId === current.generationId ? current.shapeRef : latestPayloadRef,
+      };
+    });
+    setPayloadReady(null);
+  }, [interest, interestedRow, latestGenerationId, latestPayloadRef, payloadReady]);
 
   function loadOlder() {
     if (oldestAnchor === null || !viewport.current) return;
@@ -255,15 +525,23 @@ function App() {
   }
 
   function openPayload(itemId: string, field: PayloadField) {
-    setPayloadText("");
-    setPayloadCursor("0");
-    setInterest({ itemId, field });
+    const row = allRows.find((candidate) => candidate.itemId === itemId);
+    const ref = payloadRef(row, field);
+    setPayloadReady(null);
+    setInterest({
+      itemId,
+      field,
+      payloadRef: ref,
+      generationId: payloadGeneration(row, field),
+      shapeRef: ref,
+      epoch: ++nextPayloadEpoch.current,
+    });
   }
 
   function closePayload() {
+    nextPayloadEpoch.current += 1;
     setInterest(null);
-    setPayloadText("");
-    setPayloadCursor("0");
+    setPayloadReady(null);
   }
 
   return (
@@ -281,7 +559,7 @@ function App() {
         <button type="button" onClick={loadOlder} aria-label="Load older">
           Load older
         </button>
-        <button type="button" onClick={() => openPayload("live-item", "text")} aria-label="Open text">
+        <button type="button" onClick={() => openPayload(payloadItem, "text")} aria-label="Open text">
           Open text
         </button>
         <button type="button" onClick={() => openPayload("tool-row", "arguments")} aria-label="Open arguments">
@@ -289,6 +567,9 @@ function App() {
         </button>
         <button type="button" onClick={() => openPayload("tool-row", "output")} aria-label="Open output">
           Open output
+        </button>
+        <button type="button" onClick={() => openPayload("older-tool-row", "output")} aria-label="Open older output">
+          Open older output
         </button>
         <button type="button" onClick={() => openPayload("reasoning-row", "reasoning")} aria-label="Open reasoning">
           Open reasoning
@@ -301,7 +582,27 @@ function App() {
         {toolRow?.argumentsRevision.toString() ?? "missing"}|{controlRow?.model ?? "missing"}|
         {commandRow?.status ?? "missing"}
       </div>
-      <output data-testid="payload-body">{payloadText}</output>
+      {interest === null ? (
+        <output data-testid="payload-body" data-state="closed" />
+      ) : isActivePayloadInterest(interest) ? (
+        <PayloadPanel
+          conversationId={conversationId}
+          selection={interest}
+          latestRef={latestPayloadRef}
+          onReady={onPayloadReady}
+          key={interest.epoch}
+        />
+      ) : (
+        <output
+          data-testid="payload-body"
+          data-state={interest.payloadRef === null ? "absent" : "error"}
+          data-item-id={interest.itemId}
+          data-field={interest.field}
+          data-epoch={interest.epoch}
+        >
+          {interest.payloadRef === null ? "Body absent" : "Payload reference is incomplete"}
+        </output>
+      )}
       <div className="viewport" ref={viewport} data-testid="viewport">
         {allRows.map((row) => (
           <div
@@ -315,6 +616,15 @@ function App() {
             data-model={row.model ?? ""}
             data-text-revision={row.textRevision.toString()}
             data-arguments-revision={row.argumentsRevision.toString()}
+            data-output-revision={row.outputRevision.toString()}
+            data-reasoning-revision={row.reasoningRevision.toString()}
+            data-text-payload-ref={row.textPayloadRef ?? ""}
+            data-text-generation-id={row.textGenerationId ?? ""}
+            data-text-chunk-count={row.textChunkCount.toString()}
+            data-arguments-payload-ref={row.argumentsPayloadRef ?? ""}
+            data-arguments-generation-id={row.argumentsGenerationId ?? ""}
+            data-output-payload-ref={row.outputPayloadRef ?? ""}
+            data-output-generation-id={row.outputGenerationId ?? ""}
             key={row.rowKey}
           >
             {row.rowKey} · {row.status ?? row.model ?? row.entityKind}
