@@ -57,10 +57,20 @@ For direct `TanaProxyClient` use, refresh token lookup order:
 2. `TANA_FIREBASE_REFRESH_TOKEN_FILE`
 3. Kubernetes secret via local `kubectl`
 
-The LiteLLM model entries set `api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN`.
-LiteLLM resolves that reference and passes the value to the custom provider as
-`api_key`; the adapter uses it as the Firebase refresh token and caches only the
-short-lived Firebase ID token. The resigner owns and refreshes the Secret; this
+The LiteLLM model entries configure Tana through normal `litellm_params`:
+
+- `api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN` supplies the Firebase
+  refresh token. LiteLLM resolves that reference and passes it to the custom
+  provider as `api_key`.
+- `api_base` selects the Tana Functions base URL and `timeout` sets the request
+  timeout.
+- Provider-specific values such as `tana_firebase_api_key`,
+  `tana_user_context`, and `tana_tool_user_context` are custom model params.
+  LiteLLM passes them to the handler in `optional_params`; the adapter consumes
+  and removes them before forwarding generation options to Tana.
+
+The adapter exchanges the refresh token for a Firebase ID token and caches
+only that short-lived ID token. The resigner owns and refreshes the Secret; this
 adapter deliberately does not adopt or persist rotated Firebase refresh tokens
 from the Secure Token response. Direct `TanaProxyClient` use retains the lookup
 order above for local tools such as `probe_models.py`.

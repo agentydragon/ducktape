@@ -6,8 +6,9 @@ import json
 import os
 import subprocess
 import time
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -438,7 +439,31 @@ class TanaProxyClient:
 class TanaLiteLLM(CustomLLM):
     def __init__(self, client: _ChatClient | None = None) -> None:
         super().__init__()
-        self._client = client or TanaProxyClient(TanaProxyConfig.from_env(include_refresh_token=False))
+        self._base_config = TanaProxyConfig.from_env(include_refresh_token=False)
+        self._client = client or TanaProxyClient(self._base_config)
+        self._injected_client = client is not None
+        self._clients_by_config: OrderedDict[TanaProxyConfig, _CredentialAwareChatClient] = OrderedDict()
+        if not self._injected_client:
+            self._clients_by_config[self._base_config] = cast(_CredentialAwareChatClient, self._client)
+
+    def _client_for_request(
+        self, optional_params: Mapping[str, Any], *, api_base: Any = None, timeout: Any = None
+    ) -> tuple[_CredentialAwareChatClient, dict[str, Any]]:
+        config, provider_options = _litellm_request_config(
+            self._base_config, optional_params, api_base=api_base, timeout=timeout
+        )
+        if self._injected_client:
+            return cast(_CredentialAwareChatClient, self._client), provider_options
+
+        client = self._clients_by_config.get(config)
+        if client is None:
+            client = TanaProxyClient(config)
+            self._clients_by_config[config] = client
+            if len(self._clients_by_config) > 16:
+                self._clients_by_config.popitem(last=False)
+        else:
+            self._clients_by_config.move_to_end(config)
+        return client, provider_options
 
     def completion(self, *args: Any, **kwargs: Any) -> ModelResponse:
         try:
@@ -451,8 +476,9 @@ class TanaLiteLLM(CustomLLM):
         model = _required_kwarg("model", kwargs)
         messages = _required_kwarg("messages", kwargs)
         refresh_token = _refresh_token_from_api_key(kwargs.get("api_key"))
-        optional_params = kwargs.get("optional_params") or {}
-        client = cast(_CredentialAwareChatClient, self._client)
+        client, optional_params = self._client_for_request(
+            kwargs.get("optional_params") or {}, api_base=kwargs.get("api_base"), timeout=kwargs.get("timeout")
+        )
         result = await client.chat_completion(model, messages, optional_params, refresh_token=refresh_token)
         return _model_response(model, result)
 
@@ -460,8 +486,9 @@ class TanaLiteLLM(CustomLLM):
         model = _required_kwarg("model", kwargs)
         messages = _required_kwarg("messages", kwargs)
         refresh_token = _refresh_token_from_api_key(kwargs.get("api_key"))
-        optional_params = kwargs.get("optional_params") or {}
-        client = cast(_CredentialAwareChatClient, self._client)
+        client, optional_params = self._client_for_request(
+            kwargs.get("optional_params") or {}, api_base=kwargs.get("api_base"), timeout=kwargs.get("timeout")
+        )
         yield from _filter_stream_chunks(
             client.stream_completion(model, messages, optional_params, refresh_token=refresh_token)
         )
@@ -487,12 +514,12 @@ class TanaLiteLLM(CustomLLM):
         timeout: Any = None,  # noqa: ASYNC109 - LiteLLM's override signature includes timeout.
         client: Any = None,
     ) -> AsyncIterator[GenericStreamingChunk]:
-        del api_base, custom_prompt_dict, model_response, print_verbose, encoding
-        del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
+        del custom_prompt_dict, model_response, print_verbose, encoding
+        del logging_obj, acompletion, litellm_params, logger_fn, headers, client
         refresh_token = _refresh_token_from_api_key(api_key)
-        client = cast(_CredentialAwareChatClient, self._client)
-        async for chunk in client.astream_completion(
-            model, cast(Sequence[Mapping[str, Any]], messages), optional_params, refresh_token=refresh_token
+        tana_client, provider_options = self._client_for_request(optional_params, api_base=api_base, timeout=timeout)
+        async for chunk in tana_client.astream_completion(
+            model, cast(Sequence[Mapping[str, Any]], messages), provider_options, refresh_token=refresh_token
         ):
             if _is_empty_nonterminal_stream_chunk(chunk):
                 continue
@@ -533,6 +560,43 @@ def _refresh_token_from_api_key(api_key: Any) -> str:
     if refresh_token.startswith("os.environ/"):
         raise TanaProxyError("LiteLLM did not resolve Tana Firebase refresh token from the environment")
     return refresh_token
+
+
+def _litellm_request_config(
+    base_config: TanaProxyConfig, optional_params: Mapping[str, Any], *, api_base: Any, timeout: Any
+) -> tuple[TanaProxyConfig, dict[str, Any]]:
+    config_fields = {
+        "tana_firebase_api_key": ("firebase_api_key", str),
+        "tana_user_context": ("user_context", str),
+        "tana_tool_user_context": ("tool_user_context", str),
+        "tana_ignore_large_context_warning": ("ignore_large_context_warning", bool),
+        "tana_ignore_out_of_credits_warning": ("ignore_out_of_credits_warning", bool),
+    }
+    overrides: dict[str, Any] = {}
+    provider_options = dict(optional_params)
+    for option_name, (field_name, expected_type) in config_fields.items():
+        if option_name not in provider_options:
+            continue
+        value = provider_options.pop(option_name)
+        if not isinstance(value, expected_type):
+            raise TanaProxyError(f"LiteLLM model parameter {option_name!r} must be {expected_type.__name__}")
+        if isinstance(value, str) and not value.strip():
+            raise TanaProxyError(f"LiteLLM model parameter {option_name!r} must not be empty")
+        if isinstance(value, str) and value.startswith("os.environ/"):
+            raise TanaProxyError(f"LiteLLM did not resolve model parameter {option_name!r} from the environment")
+        overrides[field_name] = value
+
+    if api_base is not None:
+        if not isinstance(api_base, str) or not api_base.strip():
+            raise TanaProxyError("LiteLLM api_base for Tana must be a non-empty string")
+        overrides["functions_base_url"] = api_base
+
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+        if timeout <= 0:
+            raise TanaProxyError("LiteLLM timeout for Tana must be greater than zero")
+        overrides["request_timeout_seconds"] = float(timeout)
+
+    return replace(base_config, **overrides), provider_options
 
 
 def _strip_tana_prefix(model: str) -> str:

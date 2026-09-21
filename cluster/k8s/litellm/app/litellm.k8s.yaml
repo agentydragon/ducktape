@@ -129,7 +129,14 @@ data:
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
+          api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
+          tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -137,7 +144,14 @@ data:
       - model_name: tana/ant-messages/claude-opus-4-6
         litellm_params:
           model: tana/tana/claude-opus-4-6/high
+          api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
+          tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -145,7 +159,14 @@ data:
       - model_name: tana/ant-messages/claude-haiku-4-5
         litellm_params:
           model: tana/tana/claude-haiku-4-5-20251001
+          api_base: https://app.tana.inc/functions
           api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN
+          timeout: 60
+          tana_firebase_api_key: os.environ/TANA_FIREBASE_API_KEY
+          tana_user_context: Generic AI Query
+          tana_tool_user_context: Ask Tana
+          tana_ignore_large_context_warning: true
+          tana_ignore_out_of_credits_warning: false
           custom_llm_provider: tana
         model_info:
           mode: chat
@@ -710,6 +731,8 @@ spec:
                 secretKeyRef:
                   key: CLIPROXY_CLIENT_KEY
                   name: litellm-cliproxy-key
+            - name: TANA_FIREBASE_API_KEY
+              value: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
             - name: TANA_FIREBASE_REFRESH_TOKEN
               valueFrom:
                 secretKeyRef:

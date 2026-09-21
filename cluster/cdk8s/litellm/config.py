@@ -48,9 +48,11 @@ def _model_entry(
     *,
     api_base: str | None = None,
     api_key: str | None = None,
+    timeout: int | float | None = None,
     supports_function_calling: bool = False,
     model_info: dict[str, int] | None = None,
     extra_body: dict | None = None,
+    extra_litellm_params: dict[str, object] | None = None,
     custom_llm_provider: str | None = None,
 ) -> dict:
     """Build one LiteLLM model entry while omitting unset optional fields."""
@@ -59,10 +61,17 @@ def _model_entry(
         litellm_params["api_base"] = api_base
     if api_key is not None:
         litellm_params["api_key"] = api_key
+    if timeout is not None:
+        litellm_params["timeout"] = timeout
     if extra_body is not None:
         litellm_params["extra_body"] = extra_body
     if custom_llm_provider is not None:
         litellm_params["custom_llm_provider"] = custom_llm_provider
+    if extra_litellm_params is not None:
+        overlap = litellm_params.keys() & extra_litellm_params.keys()
+        if overlap:
+            raise ValueError(f"extra LiteLLM params overwrite standard params: {sorted(overlap)}")
+        litellm_params.update(extra_litellm_params)
 
     info: dict = {"mode": mode}
     if supports_function_calling:
@@ -237,8 +246,17 @@ def _tana_entries() -> list[dict]:
             exposed_name(Provider.TANA, shape, exposed),
             f"{Provider.TANA}/{Provider.TANA}/{downstream}",
             shape_mode(shape),
+            api_base="https://app.tana.inc/functions",
             api_key="os.environ/TANA_FIREBASE_REFRESH_TOKEN",
+            timeout=60,
             supports_function_calling=True,
+            extra_litellm_params={
+                "tana_firebase_api_key": "os.environ/TANA_FIREBASE_API_KEY",
+                "tana_user_context": "Generic AI Query",
+                "tana_tool_user_context": "Ask Tana",
+                "tana_ignore_large_context_warning": True,
+                "tana_ignore_out_of_credits_warning": False,
+            },
             custom_llm_provider=Provider.TANA,
         )
         for exposed, downstream in TANA_MODELS
