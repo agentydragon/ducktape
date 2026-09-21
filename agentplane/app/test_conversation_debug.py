@@ -14,6 +14,7 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.protocol import event_pb2
@@ -61,7 +62,17 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     await store.record(thread, source.entries, lease=lease)
     scope = await store.current_conversation_scope(thread)
     assert scope is not None
-    app = create_app(inventory, bridge, store, {}, egress, decisions, live_index, action_policy, reviewer=reviewer)
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        {harness: ["test-model"] for harness in Harness},
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+    )
     path = f"/threads/{thread}/conversation/evidence"
     params = {
         "source_id": scope.source_id,

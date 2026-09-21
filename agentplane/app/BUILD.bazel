@@ -967,6 +967,7 @@ py_test(
         ":identity",
         ":inventory",
         ":live",
+        ":presets",
         ":trajectory",
         "//:conftest",
         "//agentplane/app/testing:replication_source",
