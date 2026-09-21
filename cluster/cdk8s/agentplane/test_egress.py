@@ -50,5 +50,27 @@ def test_testing_github_policy_has_its_credential_without_forgejo_access(
     )
 
 
+def test_upstream_bundles_have_independent_environment_ownership(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    names = set()
+    for namespace, manifests in agentplane_manifests.items():
+        bundle = one(
+            doc
+            for doc in manifests
+            if doc["kind"] == "Bundle" and doc["metadata"]["name"] == f"{namespace}-egress-upstream-ca"
+        )
+        name = bundle["metadata"]["name"]
+        assert name not in names, "cluster-scoped upstream Bundles must have separate owners"
+        names.add(name)
+        assert bundle["spec"]["target"]["namespaceSelector"] == {
+            "matchExpressions": [{"key": "kubernetes.io/metadata.name", "operator": "In", "values": [namespace]}]
+        }
+        assert bundle["spec"]["sources"] == [
+            {"useDefaultCAs": True},
+            {"configMap": {"name": "kube-root-ca.crt", "key": "ca.crt"}},
+        ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
