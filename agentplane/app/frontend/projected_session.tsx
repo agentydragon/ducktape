@@ -183,12 +183,12 @@ function EvidenceFrames(props: {
   entity: ConversationEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const { entity } = props;
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Observation {props.observationCursor} raw frames</summary>
-      {open && <EvidenceFramesPage {...props} />}
-    </details>
+    <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
+      <EvidenceFramesPage key={id} {...props} />
+    </RetainedDisclosure>
   );
 }
 
@@ -265,12 +265,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
 }
 
 function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Evidence</summary>
-      {open && <EvidencePageView threadId={threadId} entity={entity} />}
-    </details>
+    <RetainedDisclosure id={id} summary="Evidence">
+      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+    </RetainedDisclosure>
   );
 }
 
@@ -364,6 +363,15 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
   const [errors, setErrors] = useState(new Map<string, string>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
+  useEffect(() => {
+    setErrors((previous) => {
+      if (Array.from(previous.keys()).every((id) => local.commands.some((command) => command.command.commandId === id)))
+        return previous;
+      return new Map(
+        Array.from(previous).filter(([id]) => local.commands.some((command) => command.command.commandId === id))
+      );
+    });
+  }, [local.commands]);
   const effectedCommandIds = useMemo(
     () =>
       new Set([...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))]),
@@ -377,8 +385,15 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
     active.current.add(id);
     try {
       store.acknowledge(value.command, await command(threadId, value.command));
+      setErrors((previous) => {
+        if (!previous.has(id)) return previous;
+        const next = new Map(previous);
+        next.delete(id);
+        return next;
+      });
     } catch (reason) {
-      setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+      if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+        setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
     } finally {
       active.current.delete(id);
     }
@@ -527,6 +542,8 @@ function VirtualizedHistory({
   const previousScrollHeight = useRef(0);
   const previousClientHeight = useRef(0);
   const pointerScrolling = useRef(false);
+  const captureNextScroll = useRef(false);
+  const captureExpiry = useRef<number | null>(null);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -549,6 +566,14 @@ function VirtualizedHistory({
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
     restoringAnchor.current = null;
+  };
+  const expectUserScroll = () => {
+    captureNextScroll.current = true;
+    if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
+    captureExpiry.current = window.setTimeout(() => {
+      captureNextScroll.current = false;
+      captureExpiry.current = null;
+    }, 100);
   };
   const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }) => {
     const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
@@ -612,6 +637,7 @@ function VirtualizedHistory({
     observer.observe(content);
     return () => {
       observer.disconnect();
+      if (captureExpiry.current !== null) window.clearTimeout(captureExpiry.current);
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -624,10 +650,12 @@ function VirtualizedHistory({
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
         cancelRestoration();
+        expectUserScroll();
         if (event.deltaY < 0) atBottom.current = false;
       }}
       onKeyDown={(event) => {
         cancelRestoration();
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
       onPointerDown={() => {
@@ -646,6 +674,7 @@ function VirtualizedHistory({
       }}
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
+        expectUserScroll();
         if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
         touchY.current = next ?? null;
       }}
@@ -658,6 +687,8 @@ function VirtualizedHistory({
         else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
+        if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
+        captureNextScroll.current = false;
         const viewportTop = element.getBoundingClientRect().top;
         const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
           (candidate) => candidate.getBoundingClientRect().bottom > viewportTop

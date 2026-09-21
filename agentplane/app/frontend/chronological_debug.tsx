@@ -26,8 +26,15 @@ function Observation({ observation }: { observation: ObservationPage["observatio
   );
 }
 
-function ObservationHistory({ threadId, initial }: { threadId: string; initial: PageRequest }): JSX.Element {
-  const [request, setRequest] = useState(initial);
+function ObservationHistory({
+  threadId,
+  request,
+  setRequest,
+}: {
+  threadId: string;
+  request: PageRequest;
+  setRequest: (request: PageRequest) => void;
+}): JSX.Element {
   const [page, setPage] = useState<ObservationPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -110,9 +117,7 @@ export function ChronologicalDebugProvider({
         position="right"
         size="lg"
       >
-        {selection !== null && (
-          <ObservationHistory key={selection.before ?? "latest"} threadId={threadId} initial={selection} />
-        )}
+        {selection !== null && <ObservationHistory threadId={threadId} request={selection} setRequest={setSelection} />}
       </Drawer>
     </OpenDebug.Provider>
   );
