@@ -47,6 +47,7 @@ metadata:
   name: haku-openclaw-spike-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 1h
   path: ./cluster/k8s/agents/haku-openclaw-spike/namespace
   prune: false
