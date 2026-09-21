@@ -1,4 +1,4 @@
-"""The built SPA consumes actual PostgreSQL-backed HTTP/SSE in a real Chromium page.
+"""The built SPA consumes PostgreSQL/Electric through real HTTP/2 in Chromium.
 
 Only the upstream runner protocol source and Kubernetes/auth boundaries are controlled. Browser
 fetch, EventSource, rendering, and page reload are not replaced by the visual harness's mocks.
@@ -17,7 +17,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
 
-from agentplane.app.testing.electric_service import electric_service
+from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
@@ -65,6 +65,18 @@ class ThreadBrowser:
     store: TrajectoryStore
     opened: Opened
     app: AppProcess
+    browser_url: str
+
+
+@pytest.fixture
+async def electric() -> AsyncIterator[ElectricService]:
+    async with electric_service() as service:
+        yield service
+
+
+@pytest.fixture
+async def db_url(electric: ElectricService) -> str:
+    return electric.database_url
 
 
 @pytest.fixture
@@ -95,23 +107,37 @@ def thread_source() -> ReplicationSource:
 
 @pytest.fixture
 async def thread_browser(
-    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource, replay_after: int | None
+    page: Page,
+    db_url: str,
+    store: TrajectoryStore,
+    thread_source: ReplicationSource,
+    replay_after: int | None,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         source.serve() as target,
-        app_process(db_url, target, frontend_directory=directory, replay_after=replay_after) as app,
+        app_process(
+            db_url, target, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
-            await page.goto(f"{app.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, opened, app)
+            await page.goto(f"{ingress}/#/threads/{thread_id}")
+        yield ThreadBrowser(page, source, store, opened, app, ingress)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
-    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource
+    page: Page,
+    db_url: str,
+    store: TrajectoryStore,
+    thread_source: ReplicationSource,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
 ) -> None:
     thread_id = await store.thread(SANDBOX, SESSION, thread_source.attached.spec)
     lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
@@ -121,8 +147,13 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     await store.rename(thread_id, "Test archived conversation")
     await store.release_ingestion(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    async with app_process(db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None) as app:
-        url = f"{app.url}/#/threads/{thread_id}"
+    async with (
+        app_process(
+            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        url = f"{ingress}/#/threads/{thread_id}"
         await page.goto(url)
         await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
             "Test archived conversation"
@@ -280,7 +311,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await archived_switch.press("Space")
     await expect(archived_switch).to_be_checked()
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
-    await expect(page).to_have_url(f"{thread_browser.app.url}/#/threads/{thread.id}")
+    await expect(page).to_have_url(f"{thread_browser.browser_url}/#/threads/{thread.id}")
     await page.screenshot(path=undeclared_outputs_dir() / "sidebar-replica-updates.png")
 
 
