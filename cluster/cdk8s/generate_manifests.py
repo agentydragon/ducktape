@@ -249,9 +249,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, claude_rbac_kustomization
     )
     external_creds_kustomization = external_creds.external_creds(flux_chart, root, claude_rbac_kustomization)
-    agents_flux_kustomizations.coinbase_read(
-        flux_chart, external_creds_kustomization, external_secrets_config_kustomization
-    )
+    agents_flux_kustomizations.coinbase_read(flux_chart, external_secrets_config_kustomization)
     goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(flux_chart, vpa_kustomization)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(flux_chart, root, clickhouse_kustomization)
     cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
@@ -351,12 +349,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
     )
     agents_flux_kustomizations.claude_sandbox_secrets(
-        flux_chart,
-        claude_rbac_kustomization,
-        external_creds_kustomization,
-        external_secrets_config_kustomization,
-        agent_shared_secrets_kustomization,
-        ollama_kustomization,
+        flux_chart, claude_rbac_kustomization, external_secrets_config_kustomization
     )
     agents_flux_kustomizations.haku_openclaw_spike_backup(
         flux_chart, external_secrets_operator_kustomization, volsync_kustomization
@@ -512,11 +505,7 @@ def generate_manifests(root: Path) -> None:
     )
     agents_flux_kustomizations.airlock(flux_chart, external_secrets_config_kustomization)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
-        flux_chart,
-        forgejo_images_kustomization,
-        external_creds_kustomization,
-        external_secrets_config_kustomization,
-        agent_machine_access_tf_kustomization,
+        flux_chart, external_secrets_config_kustomization
     )
     agents_flux_kustomizations.loki_read_proxy(flux_chart, external_secrets_config_kustomization)
     agents_flux_kustomizations.plaid_mcp(

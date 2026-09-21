@@ -181,13 +181,7 @@ def alloy_otlp_bearer(
     )
 
 
-def authentik_jwt_rotation(
-    chart: Chart,
-    forgejo_images: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_machine_access_tf: Kustomization,
-) -> Kustomization:
+def authentik_jwt_rotation(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
     name = "authentik-jwt-rotation"
     return flux_kustomization(
         chart,
@@ -200,9 +194,7 @@ def authentik_jwt_rotation(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images, external_creds, external_secrets_config, agent_machine_access_tf
-            ),
+            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="external-secrets.io/v1",
@@ -217,12 +209,7 @@ def authentik_jwt_rotation(
 
 
 def claude_sandbox_secrets(
-    chart: Chart,
-    claude_rbac: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_shared_secrets: Kustomization,
-    ollama: Kustomization,
+    chart: Chart, claude_rbac: Kustomization, external_secrets_config: Kustomization
 ) -> Kustomization:
     name = "claude-sandbox-secrets"
     return flux_kustomization(
@@ -241,9 +228,7 @@ def claude_sandbox_secrets(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
                 secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
             ),
-            depends_on=flux_kustomization_depends_on_many(
-                claude_rbac, external_creds, external_secrets_config, agent_shared_secrets, ollama
-            ),
+            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_config),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -263,7 +248,7 @@ def claude_sandbox_secrets(
     )
 
 
-def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_config: Kustomization) -> Kustomization:
+def coinbase_read(chart: Chart, external_secrets_config: Kustomization) -> Kustomization:
     name = "coinbase-read"
     return flux_kustomization(
         chart,
@@ -276,7 +261,7 @@ def coinbase_read(chart: Chart, external_creds: Kustomization, external_secrets_
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
             timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
+            depends_on=[flux_kustomization_depends_on(external_secrets_config)],
         ),
     )
 

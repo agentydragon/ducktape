@@ -1591,8 +1591,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
@@ -2434,13 +2432,7 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: agent-shared-secrets
-      namespace: ducktape-flux
-    - name: ollama
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3824,13 +3816,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
