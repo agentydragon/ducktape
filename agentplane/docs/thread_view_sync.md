@@ -1,6 +1,11 @@
 # Thread view synchronization
 
-Status: **proposed design; no runtime changes.**
+Status: **proposed design; no runtime changes.** The first implementation is a pure
+server-side fold at `agentplane/app/conversation_projection.py`. It produces typed
+domain-record and payload-write intents only. A later change will bind those intents to
+PostgreSQL transactions, physical chunks/manifests, retention, Electric, authorization,
+and the browser; this module introduces none of those runtime paths or a custom sync wire
+protocol.
 [Thread layering](thread_layering.md) owns command admission, runner identities and
 execution durability. This document owns the materialized conversation and partial
 browser state. Record names below describe domain concepts; concrete schemas and wire
