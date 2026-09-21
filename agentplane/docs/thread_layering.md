@@ -489,12 +489,12 @@ presentation, not server delivery orchestration.
 ## Planned conversation-view synchronization
 
 The [Thread view synchronization design](thread_view_sync.md) owns the proposed
-app-to-browser RPC contract, materialization, snapshot/live handoff, long-gap
+conversation records, sync-engine integration, materialization, snapshot/live handoff, long-gap
 catch-up, history/payload hydration, on-demand Raw, frontend ownership and validation.
 It is an explicitly derived read API, not a filtered version of the runner Event
 stream. The HTTP/SSE sequence diagrams above describe the current implementation.
 
-The normal view will load bounded assembled state and follow projection changes.
+The normal view will load selected assembled state and follow it through the chosen sync engine.
 Commands keep their runner-first admission semantics. Operational snapshots keep
 their own provenance. No second command queue or authoritative Event sequence is
 introduced. The initial implementation retains the complete exact runner archive;
