@@ -349,7 +349,9 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         evidence["restart"] = {
                             "handleBefore": snapshot["handle"],
                             "handleAfter": restarted["handle"],
-                            "rowCount": restarted["rowCount"],
+                            "reusedPersistedHandle": restarted["handle"] == snapshot["handle"],
+                            "operationCount": restarted["rowCount"],
+                            "latestRows": len(restarted_models),
                             "responseBytes": restarted["responseBytes"],
                             "hostPortBefore": host_port_before_restart,
                             "hostPortAfter": host_port_after_restart,
@@ -372,7 +374,8 @@ async def test_stalled_downstream_reader_disconnect_resume_and_restart() -> None
                         evidence["conclusion"] = (
                             "Finite sample: a real socket stopped after HTTP headers while its receive buffers filled; "
                             "each write was observed through Electric's logical-replication checkpoint, and independent "
-                            "and resumed readers reached the latest 30 rows."
+                            "and resumed readers reached the latest 30 rows. PID RSS stayed within this sample's budget; "
+                            "container cgroup growth is recorded but not bounded by this test."
                         )
             finally:
                 if stalled_writer is not None:
