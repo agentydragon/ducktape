@@ -664,6 +664,7 @@ metadata:
   name: ssh-mcp-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   healthChecks:
     - apiVersion: v1
       kind: Namespace

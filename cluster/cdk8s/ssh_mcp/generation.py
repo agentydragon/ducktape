@@ -9,6 +9,7 @@ from cdk8s_plus_34 import Service
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
@@ -42,6 +43,7 @@ def ssh_mcp_namespace(flux_chart: Chart) -> Kustomization:
             timeout="2m",
             path="./cluster/k8s/ssh-mcp/namespace",
             prune=False,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
