@@ -436,8 +436,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     sessionReplay: "catching-up",
-    // The intentionally stale view state keeps its controls but withholds segments while it catches up.
-    readySelectors: ['[role="status"]', '[data-projection-cursor="8"]'],
+    // The intentionally stale view state withholds segments while it catches up.
+    readySelectors: ['[data-conversation-catchup="true"]'],
   },
   session_sync_unavailable: {
     element: "#app",
