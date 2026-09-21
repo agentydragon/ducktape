@@ -173,7 +173,7 @@ async def _open_changes_only_at_now(
     }
 
 
-async def _read_current_subset(
+async def _read_fixed_shape_subset(
     client: httpx.AsyncClient,
     shape_url: str,
     changes_only: dict[str, Any],
@@ -192,10 +192,9 @@ async def _read_current_subset(
         "handle": changes_only["handle"],
         "offset": changes_only["offset"],
     }
-    response = await client.post(
+    response = await client.get(
         shape_url,
-        params=params,
-        json={"where": "true = true", "order_by": "anchor ASC", "limit": BOUNDED_HISTORY_TAIL_ROWS},
+        params={**params, "subset__where": "true = true"},
     )
     assert response.status_code == 200, {"status": response.status_code, "body": response.text[:2000]}
     body = response.json()
@@ -256,7 +255,7 @@ async def _prove_changes_only_subset_recovery(
             race_model, _ = await _update_tail(connection, WRITE_BATCHES + 1)
             race_xid = await connection.fetchval("SELECT pg_current_xact_id()::text")
             assert isinstance(race_xid, str)
-            pre_commit_subset = await _read_current_subset(client, shape_url, changes_only, where_clause, where_params)
+            pre_commit_subset = await _read_fixed_shape_subset(client, shape_url, changes_only, where_clause, where_params)
             pre_commit_models = {row["row_key"]: row["model"] for row in pre_commit_subset["rows"]}
             assert len(pre_commit_models) == BOUNDED_HISTORY_TAIL_ROWS
             assert set(pre_commit_models.values()) == {expected_model}
