@@ -519,7 +519,7 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    agents_flux_kustomizations.airlock(
+    airlock_kustomization = agents_flux_kustomizations.airlock(
         flux_chart,
         forgejo_images_kustomization,
         gateway_kustomization,
