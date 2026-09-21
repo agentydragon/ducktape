@@ -152,35 +152,6 @@ def augur_evidence(
     )
 
 
-def budget(
-    chart: Chart, budget_ledger: Kustomization, gateway: Kustomization, authentik: Kustomization
-) -> Kustomization:
-    name = "budget"
-    return flux_kustomization(
-        chart,
-        name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path="./cluster/k8s/parked/budget",
-            prune=True,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                # provisions budget-ledger-git-creds in the budget ns
-                budget_ledger,
-                gateway,
-                authentik,
-            ),
-        ),
-    )
-
-
 def buildbuddy_executor(chart: Chart) -> Kustomization:
     name = "buildbuddy-executor"
     return flux_kustomization(
