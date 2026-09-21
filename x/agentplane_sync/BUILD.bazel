@@ -1,0 +1,69 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py third_party.containers.electric_1_8 //third_party/containers:electric_1_8
+# gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
+# gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
+
+py_library(
+    name = "projector",
+    srcs = ["projector.py"],
+    data = ["schema.sql"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",  # keep: generated protobuf stubs import google.protobuf
+        "@pypi//types_protobuf",  # keep: mypy needs stubs for generated protobuf imports
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "e2e_test",
+    size = "large",
+    srcs = ["e2e_test.py"],
+    data = [
+        "//x/agentplane_sync/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    requires_docker = True,
+    deps = [
+        ":projector",
+        ":service",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//third_party/containers:electric_1_8",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:net",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+        "@pypi//types_protobuf",  # keep: mypy needs stubs for generated protobuf imports
+        "@pypi//uvicorn",
+    ],
+)
