@@ -22,6 +22,9 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
         ("Bundle", "trust.cert-manager.io/v1alpha1", "cert-manager-trust"),
+        ("CleanupPolicy", "kyverno.io/v2", "kyverno"),
+        ("SandboxTemplate", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
+        ("SandboxWarmPool", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(

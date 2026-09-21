@@ -82,9 +82,7 @@ def agent_sandbox_controller(chart: Chart) -> Kustomization:
 def agent_workspaces_app(
     chart: Chart,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
     agent_sandbox_controller: Kustomization,
-    litellm_keys_tf: Kustomization,
     kyverno_policies: Kustomization,
 ) -> Kustomization:
     name = "agent-workspaces-app"
@@ -104,12 +102,9 @@ def agent_workspaces_app(
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
-                forgejo_images,
                 # CRDs + controller
                 agent_sandbox_controller,
-                # mints + reflects the Codex workspace key
-                litellm_keys_tf,
-                # cleanup-controller ClusterRole the janitor needs
+                # CleanupPolicy CRD and cleanup-controller permissions
                 kyverno_policies,
             ),
         ),
