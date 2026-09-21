@@ -316,12 +316,14 @@ The agent-box VM and its `codex` user are live (see
 <parked/agent-box/README.md>). Remaining work:
 
 - [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
-      in `nix/nixos/hosts/agent-box/default.nix` + `nix/home/hosts/agent-box/common.nix`.
+      in `cluster/k8s/parked/agent-box/nix/nixos.nix` +
+      `cluster/k8s/parked/agent-box/nix/home/common.nix`.
       Flip it on once `attic-jwt-rotation` has minted+committed
       `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
       otherwise fail flake eval).
 - [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`
-      (the `agentUsers` list + a per-user HM module under `nix/home/hosts/agent-box/`),
+      (the `agentUsers` list + a per-user HM module under
+      `cluster/k8s/parked/agent-box/nix/home/`),
       but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
 - [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
       today the ChatGPT login is done manually via the device-code flow and is lost
