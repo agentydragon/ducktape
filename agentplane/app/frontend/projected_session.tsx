@@ -483,49 +483,45 @@ function SelectedCommandRows({
   const byId = new Map(rows.map((row) => [row.entityId, row]));
   return (
     <Stack role="region" aria-label="Pending commands" gap="xs">
-      <ScrollArea.Autosize type="auto" mah={160}>
-        <Stack gap="xs">
-          {commands.map((value) => {
-            const row = byId.get(value.command.commandId);
-            const admitted = row !== undefined || value.admission !== null;
-            const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
-            return (
-              <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-                {terminal && row && "outcome" in row.state ? (
-                  <>
-                    <Text c={row.state.outcome === "failed" ? "red" : undefined}>
-                      {commandOutcomeLabel(row.state.operation, row.state.outcome)}
-                      {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-                    </Text>
-                    {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-                    <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
-                      Dismiss
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
-                    {value.command.operation.case === "submitInput" && (
-                      <Markdown source={value.command.operation.value.text} />
-                    )}
-                    {value.command.operation.case === "changeModel" && (
-                      <Text>Change model to {value.command.operation.value.model}</Text>
-                    )}
-                    {value.command.operation.case === "interruptTurn" && (
-                      <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-                    )}
-                    {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                    {!admitted && errors.get(value.command.commandId) && (
-                      <Text c="red">{errors.get(value.command.commandId)}</Text>
-                    )}
-                    {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
-                  </>
+      {commands.map((value) => {
+        const row = byId.get(value.command.commandId);
+        const admitted = row !== undefined || value.admission !== null;
+        const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+        return (
+          <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+            {terminal && row && "outcome" in row.state ? (
+              <>
+                <Text c={row.state.outcome === "failed" ? "red" : undefined}>
+                  {commandOutcomeLabel(row.state.operation, row.state.outcome)}
+                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+                </Text>
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
+                  Dismiss
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
+                {value.command.operation.case === "submitInput" && (
+                  <Markdown source={value.command.operation.value.text} />
                 )}
-              </Paper>
-            );
-          })}
-        </Stack>
-      </ScrollArea.Autosize>
+                {value.command.operation.case === "changeModel" && (
+                  <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "interruptTurn" && (
+                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
+                )}
+                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
+                {!admitted && errors.get(value.command.commandId) && (
+                  <Text c="red">{errors.get(value.command.commandId)}</Text>
+                )}
+                {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
+              </>
+            )}
+          </Paper>
+        );
+      })}
     </Stack>
   );
 }
@@ -579,31 +575,27 @@ function PendingCommandRows({
   return (
     <Stack role="region" aria-label="Command updates" gap="xs">
       <Text size="sm">Command updates · {unresolvedCount} pending</Text>
-      <ScrollArea.Autosize type="auto" mah={240}>
-        <Stack gap="xs">
-          {orderedRows.map((row) => {
-            if (!("outcome" in row.state)) return null;
-            return (
-              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
-                <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-                  {row.state.outcome === "pending"
-                    ? "Saved · awaiting effect"
-                    : commandOutcomeLabel(row.state.operation, row.state.outcome)}
-                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-                </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-                <Evidence threadId={threadId} entity={row} />
-              </Paper>
-            );
-          })}
-          {canLoadOlder && <Button onClick={loadOlder}>Load 30 older pending commands</Button>}
-          {hasOlder && (
-            <Button variant="subtle" onClick={clearOlder}>
-              Show current pending commands
-            </Button>
-          )}
-        </Stack>
-      </ScrollArea.Autosize>
+      {orderedRows.map((row) => {
+        if (!("outcome" in row.state)) return null;
+        return (
+          <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+            <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+              {row.state.outcome === "pending"
+                ? "Saved · awaiting effect"
+                : commandOutcomeLabel(row.state.operation, row.state.outcome)}
+              {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+            </Text>
+            {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+            <Evidence threadId={threadId} entity={row} />
+          </Paper>
+        );
+      })}
+      {canLoadOlder && <Button onClick={loadOlder}>Load 30 older pending commands</Button>}
+      {hasOlder && (
+        <Button variant="subtle" onClick={clearOlder}>
+          Show current pending commands
+        </Button>
+      )}
     </Stack>
   );
 }
@@ -985,44 +977,50 @@ function ProjectedSessionBody({
           activeTurn={activeTurn}
           onLoadOlder={onLoadOlder}
         />
-        {view && "controls" in view.state && (
-          <PendingCommandPages
-            key={`${view.sourceId}:${view.projectionEpoch}`}
-            threadId={threadId}
-            sourceId={view.sourceId}
-            projectionEpoch={view.projectionEpoch}
-            viewRevisionCursor={view.revisionCursor}
-            commandRevisionCursor={view.state.command_revision_cursor}
-          >
-            {(page) => (
-              <PendingCommandRows
-                threadId={threadId}
-                excludedIds={new Set(selectedCommandIds.map((value) => value.command.commandId))}
-                {...page}
-              />
-            )}
-          </PendingCommandPages>
-        )}
-        {view && selectedCommandIds.length > 0 && (
-          <SelectedCommandOutcomes
-            threadId={threadId}
-            sourceId={view.sourceId}
-            projectionEpoch={view.projectionEpoch}
-            commands={selectedCommandIds}
-            store={commands.store}
-            errors={commands.errors}
-            deliver={commands.deliver}
-          />
-        )}
-        {!view && selectedCommandIds.length > 0 && (
-          <SelectedCommandRows
-            threadId={threadId}
-            rows={[]}
-            commands={selectedCommandIds}
-            store={commands.store}
-            errors={commands.errors}
-            deliver={commands.deliver}
-          />
+        {((view && "controls" in view.state) || selectedCommandIds.length > 0) && (
+          <ScrollArea.Autosize type="auto" mah="30vh">
+            <Stack gap="md">
+              {view && "controls" in view.state && (
+                <PendingCommandPages
+                  key={`${view.sourceId}:${view.projectionEpoch}`}
+                  threadId={threadId}
+                  sourceId={view.sourceId}
+                  projectionEpoch={view.projectionEpoch}
+                  viewRevisionCursor={view.revisionCursor}
+                  commandRevisionCursor={view.state.command_revision_cursor}
+                >
+                  {(page) => (
+                    <PendingCommandRows
+                      threadId={threadId}
+                      excludedIds={new Set(selectedCommandIds.map((value) => value.command.commandId))}
+                      {...page}
+                    />
+                  )}
+                </PendingCommandPages>
+              )}
+              {view && selectedCommandIds.length > 0 && (
+                <SelectedCommandOutcomes
+                  threadId={threadId}
+                  sourceId={view.sourceId}
+                  projectionEpoch={view.projectionEpoch}
+                  commands={selectedCommandIds}
+                  store={commands.store}
+                  errors={commands.errors}
+                  deliver={commands.deliver}
+                />
+              )}
+              {!view && selectedCommandIds.length > 0 && (
+                <SelectedCommandRows
+                  threadId={threadId}
+                  rows={[]}
+                  commands={selectedCommandIds}
+                  store={commands.store}
+                  errors={commands.errors}
+                  deliver={commands.deliver}
+                />
+              )}
+            </Stack>
+          </ScrollArea.Autosize>
         )}
         {operational?.feed_error && (
           <Text role="alert" c="red">

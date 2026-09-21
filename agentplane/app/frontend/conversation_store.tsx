@@ -518,29 +518,47 @@ export function PendingCommandPages({
   );
   useEffect(() => {
     const controller = new AbortController();
+    let retry: number | undefined;
+    let attempt = 0;
     setError(null);
-    void pendingCommandInterest(threadId, undefined, controller.signal).then(
-      (interest) => {
-        if (controller.signal.aborted) return;
-        if (interest.source_id !== sourceId || interest.projection_epoch !== projectionEpoch) {
-          refreshConversation();
-          return;
+    const load = (): void => {
+      if (retry !== undefined) window.clearTimeout(retry);
+      void pendingCommandInterest(threadId, undefined, controller.signal).then(
+        (interest) => {
+          if (controller.signal.aborted) return;
+          if (interest.source_id !== sourceId || interest.projection_epoch !== projectionEpoch) {
+            refreshConversation();
+            return;
+          }
+          let next: PendingPageSelection;
+          next = pendingPageSelection(threadId, interest, generation, (reason) => streamError(next, reason));
+          if (currentRef.current === null) {
+            currentRef.current = next;
+            setCurrent(next);
+          } else {
+            candidateRef.current = next;
+            setCandidate(next);
+          }
+          setError(null);
+        },
+        (reason: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(displayableError(reason));
+          retry = window.setTimeout(load, Math.min(5_000, 250 * 2 ** attempt++));
         }
-        let next: PendingPageSelection;
-        next = pendingPageSelection(threadId, interest, generation, (reason) => streamError(next, reason));
-        if (currentRef.current === null) {
-          currentRef.current = next;
-          setCurrent(next);
-        } else {
-          candidateRef.current = next;
-          setCandidate(next);
-        }
-      },
-      (reason: unknown) => {
-        if (!controller.signal.aborted) setError(displayableError(reason));
-      }
-    );
-    return () => controller.abort();
+      );
+    };
+    const online = (): void => {
+      attempt = 0;
+      load();
+    };
+    window.addEventListener("online", online);
+    load();
+    return () => {
+      controller.abort();
+      if (retry !== undefined) window.clearTimeout(retry);
+      window.removeEventListener("online", online);
+    };
   }, [generation, projectionEpoch, refreshConversation, sourceId, streamError, threadId]);
   useEffect(() => {
     if (
