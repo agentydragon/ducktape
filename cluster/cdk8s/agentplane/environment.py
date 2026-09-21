@@ -75,6 +75,9 @@ class AppProps:
     reach_incluster_authentik: bool
     # Pin runner Pods to a zone (near the database/LiteLLM), or None for no pin.
     runner_zone: str | None
+    # The OIDC client secret and the session signing key can have separate owners.
+    # Testing leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
+    oidc_session_secret_name: str = "agentplane-oidc"
 
 
 @dataclass(frozen=True)

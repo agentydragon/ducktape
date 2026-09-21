@@ -5696,6 +5696,10 @@ spec:
       kind: ConfigMap
       name: agentplane-staging-egress-upstream-ca
       namespace: agentplane-staging
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: agentplane-staging-session-secret
+      namespace: agentplane-staging
   interval: 10m
   path: ./cluster/k8s/agentplane-staging
   prune: true

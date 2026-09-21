@@ -1406,7 +1406,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-app-config
-    secret.reloader.stakater.com/reload: agentplane-oidc
+    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret
   labels:
     app.kubernetes.io/name: agentplane-app
   name: agentplane-app
@@ -1495,7 +1495,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: session-secret
-                  name: agentplane-oidc
+                  name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset
@@ -1592,7 +1592,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: session-secret
-                  name: agentplane-oidc
+                  name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
@@ -2668,6 +2668,43 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 16
+  length: 64
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO-generated Agentplane staging session-signing key.
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: agentplane-staging-session-secret
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    immutable: true
+    name: agentplane-staging-session-secret
+    template:
+      data:
+        session-secret: "{{ .password }}"
+      type: Opaque
 ---
 apiVersion: v1
 kind: ServiceAccount
