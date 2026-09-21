@@ -107,9 +107,9 @@ rotations:
     sops_file: secrets/haku-mail-jwt.yaml
     token_field: jwt
     # Publish as an in-cluster Secret; the haku-mail-token ClusterExternalSecret
-    # (cluster/k8s/haku/mailbox/app) mirrors it into haku-sandbox for Haku.
+    # (cluster/k8s/haku/mailbox) mirrors it into haku-sandbox for Haku.
     k8s_secret:
-      path: cluster/k8s/haku/mailbox/app/haku-mail-token.sops.yaml
+      path: cluster/k8s/haku/mailbox/haku-mail-token.sops.yaml
       name: haku-mail-token
       namespace: flux-system
     # Stalwart 401s a bad bearer and 403s a token whose email claim can't be

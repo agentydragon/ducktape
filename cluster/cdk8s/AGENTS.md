@@ -324,9 +324,9 @@ typed, including `resourceNames`:
 
 ## `image-pins/kustomization.yaml`: the `:tag` Setters marker, not the bare form
 
-Every converted directory's hand-written (never generated) `image-pins/` Component pins
-the real tag via a placeholder `newTag:` plus a Flux image-automation Setters marker
-comment, one entry per image:
+Where a converted directory uses a hand-written (never generated) `image-pins/`
+Component, it pins the real tag via a placeholder `newTag:` plus a Flux image-automation
+Setters marker comment, one entry per image:
 
 ```yaml
 images:
@@ -341,6 +341,11 @@ _whole_ marked field to the full `repository:tag` reference — which corrupted 
 took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one. See
 <https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
 update markers". Don't repeat this explanation per directory; point back here instead.
+
+Agentplane testing keeps its image pins inline in the hand-maintained root
+`kustomization.yaml`, since the Kustomization itself is part of the flat resource
+directory. Flux updates those `newTag:` markers in place; cdk8s generates only the
+separate `agentplane.k8s.yaml` resource file.
 
 The `images:` transformer matches by image `name:` across **every resource in the
 Kustomization's rendered output**, not just one Deployment — relevant when a directory's

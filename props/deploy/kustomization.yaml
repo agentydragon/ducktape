@@ -1,9 +1,29 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
+namespace: props
 resources:
-  - namespace
-  - agent_rbac
-  - db
-  - secrets
-  - app
+  - namespace.yaml
+  - role-props-reader.yaml
+  - rolebinding-props-reader.yaml
+  - postgres-cluster.yaml
+  - agent-password-salt.sops.yaml
+  - evaluator-credentials.sops.yaml
+  - forgejo-images-creds-eso.yaml
+  - rbac-executor.yaml
+  - deployment.yaml
+  - service.yaml
+  - llm-proxy-deployment.yaml
+  - llm-proxy-service.yaml
+  - registry-proxy-deployment.yaml
+  - registry-proxy-service.yaml
+  - registry-pull-secret.yaml
+  - httproute.yaml
+  - registry-httproute.yaml
+  - rolebinding-ollama-consumer.yaml
+  - cleanuppolicy-finished-pods.yaml
+configMapGenerator:
+  - name: props-config
+    files:
+      - config.toml
+    options:
+      disableNameSuffixHash: true
