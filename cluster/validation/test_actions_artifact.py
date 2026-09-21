@@ -2,8 +2,9 @@
 
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -12,11 +13,54 @@ from cluster.validation.tool_resolve import resolve_tool
 from util.bazel.runfiles import get_required_path
 
 
+def _assert_copy_source_in_checkout(path: str, source: dict, artifact_name: str) -> None:
+    if directories := source["spec"].get("sparseCheckout"):
+        assert any(PurePosixPath(path).is_relative_to(directory) for directory in directories), (
+            f"{artifact_name}: copy source {path} is outside GitRepository "
+            f"{source['metadata']['namespace']}/{source['metadata']['name']}'s sparse checkout"
+        )
+
+
+@pytest.mark.parametrize(
+    ("directories", "path", "included"),
+    [
+        (None, "haku/runtime/managed_agent/self_hosted/deploy", True),
+        ([], "haku/runtime/managed_agent/self_hosted/deploy", True),
+        (["cluster/k8s/"], "cluster/k8s", True),
+        (["cluster/k8s/"], "cluster/k8s/haku/console", True),
+        (["cluster/k8s/"], "cluster/k8s-extra", False),
+        (["cluster/k8s/"], "haku/runtime/managed_agent/self_hosted/deploy", False),
+        (
+            ["cluster/k8s/", "haku/runtime/managed_agent/self_hosted/deploy/"],
+            "haku/runtime/managed_agent/self_hosted/deploy",
+            True,
+        ),
+    ],
+)
+def test_copy_source_sparse_checkout(directories: list[str] | None, path: str, included: bool) -> None:
+    source: dict = {"metadata": {"namespace": "ducktape-flux", "name": "ducktape"}, "spec": {}}
+    if directories is not None:
+        source["spec"]["sparseCheckout"] = directories
+    if included:
+        _assert_copy_source_in_checkout(path, source, "example-artifact")
+    else:
+        with pytest.raises(AssertionError, match=r"example-artifact: copy source .* is outside GitRepository"):
+            _assert_copy_source_in_checkout(path, source, "example-artifact")
+
+
 def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
     """Every generated artifact has one declared consumer and preserves its Kustomize output."""
     root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent.resolve()
     repository_root = root.parent.parent
     kustomize = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
+    git_sources = {
+        (document["metadata"]["namespace"], document["metadata"]["name"]): document
+        for path in root.rglob("*.yaml")
+        # Authentik blueprints use custom YAML tags and are not Kubernetes resources.
+        if "blueprints" not in path.parts
+        for document in yaml.safe_load_all(path.read_text())
+        if isinstance(document, dict) and document.get("kind") == "GitRepository"
+    }
 
     generators = [
         document
@@ -68,7 +112,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         packaged_root = tmp_path / artifact_name
         packaged = packaged_root / relative
         for operation in artifact["copy"]:
-            operation_source_relative = operation["from"].removeprefix(f"@{alias}/").removesuffix("/**")
+            copy_alias, _, copy_path = operation["from"].removeprefix("@").partition("/")
+            assert copy_alias in aliases, f"{artifact_name}: unknown copy source alias {copy_alias}"
+            operation_source_relative = copy_path.removesuffix("/**")
+            source_ref = one(source for source in generator["spec"]["sources"] if source["alias"] == copy_alias)
+            assert source_ref["kind"] == "GitRepository"
+            source_key = (source_ref.get("namespace", generator["metadata"]["namespace"]), source_ref["name"])
+            assert source_key in git_sources, f"{artifact_name}: missing GitRepository {source_key}"
+            # The local checkout is broader than the source-controller artifact. Reject unavailable
+            # inputs before copying them, otherwise a successful local build hides a live failure.
+            _assert_copy_source_in_checkout(operation_source_relative, git_sources[source_key], artifact_name)
             operation_source = repository_root / operation_source_relative
             operation_target = packaged_root / operation["to"].removeprefix("@artifact/")
             shutil.copytree(
