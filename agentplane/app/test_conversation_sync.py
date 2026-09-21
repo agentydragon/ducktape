@@ -261,18 +261,30 @@ async def _history_windows(
     revisit = await client_two.get(f"{path}/interest", params={"before_cursor": tail_interest["tail_from"]})
     revisit.raise_for_status()
     revisit_interest = revisit.json()
-    revisit_page = await client_one.get(
-        f"{path}/entities",
-        params={key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")}
-        | {"offset": "-1"},
-    )
-    revisit_page.raise_for_status()
-    item = next(
-        message["value"]
-        for message in revisit_page.json()
-        if message.get("value", {}).get("entity_id") == "history-040"
-    )
-    assert str(item["revision_cursor"]) == str(hidden.cursor)
+    revisit_params = {
+        key: revisit_interest[key] for key in ("anchor_cursor", "tail_from", "window_from", "window_before")
+    }
+    revisit_page = await client_one.get(f"{path}/entities", params=revisit_params | {"offset": "-1"})
+    # Existing shape logs can contain the old snapshot followed by newer row versions.
+    while True:
+        revisit_page.raise_for_status()
+        versions = [
+            message["value"]
+            for message in revisit_page.json()
+            if message.get("value", {}).get("entity_id") == "history-040"
+        ]
+        if versions and str(versions[-1]["revision_cursor"]) == str(hidden.cursor):
+            item = versions[-1]
+            break
+        revisit_page = await client_one.get(
+            f"{path}/entities",
+            params=revisit_params
+            | {
+                "offset": revisit_page.headers["electric-offset"],
+                "handle": revisit_page.headers["electric-handle"],
+                "live": "true",
+            },
+        )
     raw_ref = item["text_ref"]
     reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
     selected = await client_one.get(

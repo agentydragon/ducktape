@@ -9,12 +9,14 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
 
+from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import TrajectoryStore
@@ -132,6 +134,90 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
             page.get_by_text("Sandbox no longer exists. Showing archived Thread history.", exact=True)
         ).to_be_visible()
         assert await store.events(thread_id, limit=100) == thread_source.entries
+
+
+async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(page: Page) -> None:
+    source = ReplicationSource()
+    source.attached.active_turn_id = "test-projected-turn"
+    source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+    source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-projected-turn")))
+    source.append(
+        event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Projected browser prefix")))
+    source.append(
+        event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="second", text="A newer browser item")))
+    reasoning = source.append(
+        event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="reasoning", kind=event_pb2.ITEM_KIND_REASONING))
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="reasoning", text="On-demand reasoning")))
+    tool = source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(
+                item_id="tool", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="test-tool"
+            )
+        )
+    )
+    source.append(event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json="{")))
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(
+                item_id="tool", tool=event_pb2.ToolResult(output="On-demand tool output", succeeded=True)
+            )
+        )
+    )
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with electric_service() as service:
+        store = TrajectoryStore.connect(service.database_url)
+        try:
+            thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+            async with (
+                source.serve() as target,
+                app_process(
+                    service.database_url, target, frontend_directory=directory, electric_url=service.url
+                ) as app,
+                asyncio.timeout(60),
+            ):
+                opened = await source.opened.get()
+                opened.replay.set()
+                await page.goto(f"{app.url}/#/threads/{thread}")
+                await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
+                await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
+                await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
+                await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
+                assert not any(
+                    parse_qs(urlsplit(url).query).get("owner_id", [None])[0] in {"reasoning", "tool"}
+                    for url in requests
+                )
+
+                source.append(
+                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" and streamed suffix"))
+                )
+                await expect(
+                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
+                ).to_be_visible()
+                tool_card = page.locator(f'[data-conversation-anchor="{tool.cursor}"]')
+                await tool_card.locator("summary", has_text="Arguments").click()
+                await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
+                await tool_card.locator("summary", has_text="Output").click()
+                await expect(tool_card.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+                reasoning_card = page.locator(f'[data-conversation-anchor="{reasoning.cursor}"]')
+                await reasoning_card.locator("summary", has_text="Reasoning").click()
+                await expect(page.get_by_text("On-demand reasoning", exact=True)).to_be_visible()
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-expanded.png")
+
+                await page.reload()
+                await expect(
+                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
+                ).to_have_count(1)
+                assert not any(urlsplit(url).path == f"/threads/{thread}/events" for url in requests)
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reloaded.png")
+        finally:
+            await store.close()
 
 
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
