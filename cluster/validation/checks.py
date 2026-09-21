@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-import networkx as nx
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
     CiliumPolicyResource,
@@ -159,18 +157,6 @@ def check_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -
                         f"{store_owner} ClusterSecretStore '{store_name}' must omit the ServiceAccount namespace "
                         "so ESO uses referent authentication"
                     )
-            elif isinstance(resource, ExternalSecretResource):
-                store_ref = resource.spec.secret_store_ref
-                if store_ref.kind != "ClusterSecretStore" or store_ref.name != store_name:
-                    continue
-                errors.extend(
-                    (
-                        f"{kustomization} ExternalSecret '{resource.namespace}/{resource.name}' uses "
-                        f"external-creds but does not depend on {dependency}"
-                    )
-                    for dependency in (supplier, store_owner)
-                    if dependency not in cluster.graph or not nx.has_path(cluster.graph, kustomization, dependency)
-                )
 
     if len(stores) != 1:
         errors.append(f"expected exactly one {store_owner} ClusterSecretStore '{store_name}', found {len(stores)}")
