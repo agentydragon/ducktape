@@ -74,7 +74,8 @@ export async function reconcileCommands(
 export async function conversationEvidence(
   threadId: string,
   scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
-  afterCursor = "0"
+  afterCursor = "0",
+  signal?: AbortSignal
 ): Promise<EvidencePage> {
   const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence", {
     params: {
@@ -88,6 +89,7 @@ export async function conversationEvidence(
         limit: 30,
       },
     },
+    signal,
   });
   if (error) throw new Error(displayableError(error));
   return data;
@@ -97,7 +99,8 @@ export async function conversationFrames(
   threadId: string,
   scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
   observationCursor: string,
-  afterSequence = "0"
+  afterSequence = "0",
+  signal?: AbortSignal
 ): Promise<NativeFramePage> {
   const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
     params: {
@@ -111,6 +114,7 @@ export async function conversationFrames(
         limit: 30,
       },
     },
+    signal,
   });
   if (error) throw new Error(displayableError(error));
   return data;
