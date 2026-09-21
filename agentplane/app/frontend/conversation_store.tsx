@@ -299,7 +299,11 @@ function ActiveConversation({
   return (
     <RefreshConversation.Provider value={onRotate}>
       {query.isError && <p role="alert">Conversation synchronization stopped.</p>}
-      {!query.isError && !caughtUp && <p role="status">Catching up conversation…</p>}
+      {!query.isError && !caughtUp && (
+        <p role="status" data-conversation-catchup="true">
+          Catching up conversation…
+        </p>
+      )}
       {onRows(caughtUp ? rows : [], interest)}
     </RefreshConversation.Provider>
   );

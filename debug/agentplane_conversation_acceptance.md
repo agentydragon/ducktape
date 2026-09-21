@@ -1,244 +1,41 @@
 # Agentplane conversation acceptance
 
-This tracks the combined draft implementation against
-<../agentplane/docs/thread_view_sync.md>. A passing focused invocation applies to its
-recorded commit, not automatically to every later stack head. No merge, deployment,
-instance reset, or disabling of raw capture is part of this work.
+This is the current acceptance matrix for the stacked conversation work. Evidence
+applies to the recorded revision and invocation. It does not imply a deployment,
+live-data reset, or a final assembled-stack run.
 
-## Evidence and remaining work
+| Requirement                                                          | Latest evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Status and remaining gate                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fold preserves one ordered conversation while old items change       | Pure fold coverage includes parallel tools and batch boundaries at `1c5a00d57c`, [950208b4](https://app.buildbuddy.io/invocation/950208b4-f9e1-4ca4-a30c-feafd1271dd5).                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Covered; rerun after the final assembly.                                                                                                                                                                                                                                                                                                                                                                                             |
+| Transactional entity, immutable revision, and checkpoint publication | Real PostgreSQL trajectory and bridge coverage at `7933a15d0`, [68847e7c](https://app.buildbuddy.io/invocation/68847e7c-3465-4aee-8b72-d66181c10b90); SIGKILL-before/after-commit and overlap replay at `055660af80`, [e2acd3ce](https://app.buildbuddy.io/invocation/e2acd3ce-bd11-41a7-96fe-39d0ec85de2d).                                                                                                                                                                                                                                                                                                              | Covered for archive publication; final assembly remains.                                                                                                                                                                                                                                                                                                                                                                             |
+| Bounded writer, admission, and interest queries                      | 100/2k/20k item profiles at `2d9ef51197`, [99f4ad93](https://app.buildbuddy.io/invocation/99f4ad93-dba9-45d8-94db-50bd6b6ee848): touched primary-key lookup used 3–6 buffer hits and Python peak was 476,370/475,979 bytes. A 10k-settled-command tail used one partial-index search and three hits at `75f92056bc`, [dfc9c92b](https://app.buildbuddy.io/invocation/dfc9c92b-521e-4cf3-8536-f47d2a8f7c94).                                                                                                                                                                                                               | Covered for captured server work; client cache retention is separate.                                                                                                                                                                                                                                                                                                                                                                |
+| Current conversation window and exact lazy revisions                 | Two-replica PostgreSQL/Electric history, old-item update, selected command, exact-revision body, and evicted-window revisit passed at `ee74c3451a`, [6bda034f](https://app.buildbuddy.io/invocation/6bda034f-0ee9-4150-a7c9-7855a04af815).                                                                                                                                                                                                                                                                                                                                                                                | Functional path covered; browser window/viewport behavior remains open.                                                                                                                                                                                                                                                                                                                                                              |
+| On-demand Electric bootstrap                                         | Mutable entity and command collections use changes-only subset snapshots; immutable chunks retain their full log. The real streaming/lazy body scenario passed at `b94ecf4dd9`, [51c5308f](https://app.buildbuddy.io/invocation/51c5308f-de9d-44bf-aa92-5e6d5b140201).                                                                                                                                                                                                                                                                                                                                                    | Functional path covered. Update-heavy resource behavior is recorded below.                                                                                                                                                                                                                                                                                                                                                           |
+| Scope/epoch replacement                                              | A real browser atomically replaces the database projection epoch while old evidence is held: new text appears, draft remains, old evidence stays collapsed, and a stale entity request is 410. Passed at `1e73a28164`, [63c15421](https://app.buildbuddy.io/invocation/63c15421-25d9-444a-86db-db4eb21bfe0c); the PNG was inspected. Post-ready interest-bound mismatch is translated to the same 410 before Electric consumes it; proxy, real PostgreSQL/Electric/two-replica sync, and changed libraries passed at `73a06871a5`, [5f868c77](https://app.buildbuddy.io/invocation/5f868c77-d0e2-4056-8187-60024ff801d5). | Focused epoch gate covered. Final assembly remains.                                                                                                                                                                                                                                                                                                                                                                                  |
+| Long-offline browser recovery                                        | The real browser went offline while 70 items were committed. On reconnect, the old entity request received 410, a fresh latest tail replaced it, the old initial body was evicted, and the unsent draft survived in the same JavaScript document. Passed at `9e389a1e5d`, [26099844](https://app.buildbuddy.io/invocation/26099844-8283-4db9-b11b-41cb356733ea); the PNG was inspected.                                                                                                                                                                                                                                   | Focused recovery gate covered. Final assembled run remains.                                                                                                                                                                                                                                                                                                                                                                          |
+| Conversation collection rotation and disposal                        | A real browser retained an older reading anchor and draft while 105 items rotated collection scopes. Every one of five retired collection IDs reached `cleaned-up` with zero rows and zero subscribers; the final active collection had 61 rows. Passed at `f06abfdee1`, [56cedb86](https://app.buildbuddy.io/invocation/56cedb86-16af-4e09-9fbb-48645e7dab4f); the reader PNG and lifecycle JSON were inspected.                                                                                                                                                                                                         | Focused rotation/disposal gate covered. Heap used 9,384,512→13,722,504 bytes from an initial four rows to the final 60 segments plus view, a finite sample rather than a long-run cache bound.                                                                                                                                                                                                                                       |
+| Command recovery and terminal outcomes                               | Four lost-response/reconnect cases passed at `bd433217cd`, [ca970cb1](https://app.buildbuddy.io/invocation/ca970cb1-fb6b-45ca-a987-db9658622389). Terminal failure/noop after later items, reload, dismissal, and reload passed at `1a18727404`, [a6027c77](https://app.buildbuddy.io/invocation/a6027c77-2f1d-4336-a97b-227e555b4386).                                                                                                                                                                                                                                                                                   | Covered; final assembly remains.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Lazy native/debug inspection                                         | Archive API and projector coverage at `7b77cad72a`, [2ec6ca31](https://app.buildbuddy.io/invocation/2ec6ca31-962e-4616-93a5-5f4b40b06818); real desktop/phone drawer behavior at `647d5ed476`, [5163ace0](https://app.buildbuddy.io/invocation/5163ace0-52d0-4115-9be7-055f00b2c347). The focused browser close/reopen proof at `478f3352f0`, [e900bca3](https://app.buildbuddy.io/invocation/e900bca3-5f9a-4a7b-b13a-45ae79f2d6ce), and two 80-conversation navigation cycles at [cf04b70e](https://app.buildbuddy.io/invocation/cf04b70e-2a0f-41c3-ad26-fca4ae6b8fa7) preserve the drawer content and draft.            | Focused eviction/revisit is covered. Long-run disclosure/cache retention remains unproven.                                                                                                                                                                                                                                                                                                                                           |
+| Feed failure retains the verified prefix                             | Malformed-source browser cases retained the verified prefix, reported rejected versus verified cursors, and disabled controls at `72431f8916`, [66aa8fa2](https://app.buildbuddy.io/invocation/66aa8fa2-c442-4740-9995-ea1993bedd2d).                                                                                                                                                                                                                                                                                                                                                                                     | Focused gate covered.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Electric shape expiry                                                | With two shapes and three full shapes, stale handles returned 409/must-refetch and a fresh snapshot succeeded at [d5f734b8](https://app.buildbuddy.io/invocation/d5f734b8-ceff-4dfb-854b-4de05c9498be). Fixed-interest 100→10k→100k shape cycles passed at [111334db](https://app.buildbuddy.io/invocation/111334db-bc7c-46a8-82b8-ff91a7b9ffde).                                                                                                                                                                                                                                                                         | Fixed-shape evidence only; browser cache retention remains open.                                                                                                                                                                                                                                                                                                                                                                     |
+| Electric outage and lost-slot recovery                               | Real PostgreSQL 18/Electric 1.8.1 forced a lost slot then automatically recovered with a healthy new slot, old-handle 409/must-refetch, and outage rows in a fresh snapshot at `b6bf06600d`, [b4be438c](https://app.buildbuddy.io/invocation/b4be438c-5bf4-4a74-af06-95a1c92404f8).                                                                                                                                                                                                                                                                                                                                       | Covered for the service/protocol fixture; browser subscription recovery is separate.                                                                                                                                                                                                                                                                                                                                                 |
+| Update-heavy Electric resource behavior                              | Final probe `0c309b5081`, [51f6033b](https://app.buildbuddy.io/invocation/51f6033b-b25a-41ad-a2c6-1c7281b0d2e2), used two warm shapes, a persisted restart, 30 rows, and 65×30×64 KiB writes (127,795,200 bytes). The changes-only handle resumed with 0 operations/72 bytes then a 30-row 1,976,227-byte subset; a full-log shape transferred 1,980 operations/254,436,421 bytes. A snapshot-invisible transaction arrived as one live page after commit and a healthy reader progressed while a 4 KiB-buffered socket stalled.                                                                                          | PID RSS was 315,904→332,232 KiB, but cgroup use grew 536,506,368 bytes and file cache 56,303,616→561,627,136 bytes. This is finite PID evidence only: it does not prove bounded container memory, post-compaction behavior, or multi-month retention. The runner applied source patch `01a3321d343ba2f8dde23aa8fada8186847f7b2012150071428bd6479ddc68c6` to devel `70ac`; invocation base metadata alone is insufficient provenance. |
+| Visual fixture cutover                                               | Draft #7561 head `df6abd575b` passed full visual CI [35609898381](https://github.com/agentydragon/ducktape/actions/runs/35609898381), with [ec5a929e](https://app.buildbuddy.io/invocation/ec5a929e-d3a9-5976-a4f3-2ec791909db9) passing `//agentplane/app/frontend:visual` in two minutes. All 26 `session_*-actual.png` artifacts were downloaded and inspected: desktop/phone, failed turn, interleaved input/tool, raw drawer, pending/outcome, catch-up, scope rejection, deleted, and suspended states mounted their intended content.                                                                              | The current head has protocol and source/epoch updates; its rerun remains open.                                                                                                                                                                                                                                                                                                                                                      |
+| Runner journal recovery                                              | Independent #7535 has bounded journal paging/checkpoint recovery and serialized SQLite cancellation cleanup. Runner tests passed at [b39a03b3](https://app.buildbuddy.io/invocation/b39a03b3-ba4e-575f-96d9-795a8dcde3f1).                                                                                                                                                                                                                                                                                                                                                                                                | Independent PR; final assembly remains.                                                                                                                                                                                                                                                                                                                                                                                              |
 
-| Requirement                                                        | Evidence                                                                                                                                                                                                                                                                                                 | Remaining work                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One ordered conversation; old items may change independently       | `test_conversation_projection`, including parallel tools and batch boundaries; pure fold and test passed at `1c5a00d57c`, [950208b4](https://app.buildbuddy.io/invocation/950208b4-f9e1-4ca4-a30c-feafd1271dd5).                                                                                         | Recheck the assembled head after final changes.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Transactional entities, immutable content revisions and checkpoint | Real PostgreSQL trajectory suite and bridge suite passed at storage `7933a15d0`, [68847e7c](https://app.buildbuddy.io/invocation/68847e7c-3465-4aee-8b72-d66181c10b90).                                                                                                                                  | SIGKILL before/after commit and overlap replay passed at `055660af80`, [e2acd3ce](https://app.buildbuddy.io/invocation/e2acd3ce-bd11-41a7-96fe-39d0ec85de2d); final assembled rerun remains. This subprocess test uses the archive SSE consumer, not Electric.                                                                                                                                                                                                 |
-| Tail and history queries avoid full replay                         | Real Electric/app test: 95 items, tail 30 and keyset history windows, updates inside/outside selected windows, evicted-window revisit and explicit stale-interest refresh. Latest full sync pass at `030d7214a6`, [142ceaae](https://app.buildbuddy.io/invocation/142ceaae-9a9b-4f05-b1e7-ac9821fadf3b). | Actual large-window browser retention and viewport behavior.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Exact pinned revisions and independent selective bodies            | Same real sync test checks immutable old text after later updates and complete explicit selection exceeding 2 MiB; browser scenario checks omitted reasoning/tool bodies and whole selected output.                                                                                                      | Final assembled browser rerun and cache-retention measurements.                                                                                                                                                                                                                                                                                                                                                                                                |
-| Streaming message text and tool input, including older items       | Built SPA/HTTP2 browser scenario passed at `745bcf34dd`, [a06221c1](https://app.buildbuddy.io/invocation/a06221c1-0b99-4de1-98fe-28d1df0ae7ec). This invocation also contains a separate failing certificate-fixture case.                                                                               | Final assembled rerun.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Reconnect and multiple app replicas                                | Real sync test resumes replica-one handles/offsets through replica two. Browser offline/reconnect scenario passed at `9090999396`, [9deb01cd](https://app.buildbuddy.io/invocation/9deb01cd-e621-4c70-98ad-330351730650).                                                                                | Window/draft/disclosure state through reconnect and scope refresh.                                                                                                                                                                                                                                                                                                                                                                                             |
-| Command recovery without duplicate submission                      | Four built-SPA lost-response/reconnect cases passed at `bd433217cd`, [ca970cb1](https://app.buildbuddy.io/invocation/ca970cb1-fb6b-45ca-a987-db9658622389).                                                                                                                                              | Rerun after replacing outcome reconciliation with a bounded command subscription.                                                                                                                                                                                                                                                                                                                                                                              |
-| Settled command failures remain visible                            | Backend selected-command shape passed real two-replica sync at `030d7214a6`, [142ceaae](https://app.buildbuddy.io/invocation/142ceaae-9a9b-4f05-b1e7-ac9821fadf3b), including admission/failure in one transaction and excluded command IDs.                                                             | Failed/noop after 40 later items, reload, explicit dismissal and another reload pass at `1a18727404`, [a6027c77](https://app.buildbuddy.io/invocation/a6027c77-2f1d-4336-a97b-227e555b4386). Final assembled rerun remains.                                                                                                                                                                                                                                    |
-| Fluent lazy debug access                                           | Exact associated native envelope displayed only after expansion; built-SPA case passed [242e8d66](https://app.buildbuddy.io/invocation/242e8d66-606c-4135-9c95-1717eb06a1a0). Authenticated debug API tests and PR #7555 checks passed at `808ec7b558`.                                                  | Final assembled rerun; verify disclosure eviction/revisit.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Explicit rejected source/epoch handling                            | Both malformed-source browser cases passed at `72431f8916`, [66aa8fa2](https://app.buildbuddy.io/invocation/66aa8fa2-c442-4740-9995-ea1993bedd2d): retain verified prefix, show rejected versus verified cursor, disable controls. Other cases in that invocation failed on scrolling.                   | Final assembled rerun and stale-scope browser coverage.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Bounded server fold working set                                    | Real record path after 100/10,000 raw-frame entries, captured actual query plans and Python allocations; storage `7933a15d0`.                                                                                                                                                                            | After the partial pending index, 100/2k/20k-item profiles passed at `2d9ef51197`, [99f4ad93](https://app.buildbuddy.io/invocation/99f4ad93-dba9-45d8-94db-50bd6b6ee848). At 2k/20k, touched-row lookups use the primary key with 3–6 buffer hits; Python peaks are 476,370/475,979 bytes. The command-heavy tail query passed at `75f92056bc`: one partial-index search and three buffer hits after 10,000 settled commands; see the query-plan section below. |
-| Slow readers do not accumulate proxy buffers                       | ASGI backpressure and cancellation/receive/send disconnect tests pass at `b37065c305`, [f7531114](https://app.buildbuddy.io/invocation/f7531114-946a-46ff-ada5-ebc63842eabe); reads stop at the current chunk and upstream closes on disconnect.                                                         | Total process resource measurements are separate from this deterministic unit proof.                                                                                                                                                                                                                                                                                                                                                                           |
-| Electric shape expiry and recovery                                 | Electric 1.8.1, max two shapes, three full shapes: stale handle returns 409/must-refetch and exact fresh snapshot succeeds; redacted probe [d5f734b8](https://app.buildbuddy.io/invocation/d5f734b8-ceff-4dfb-854b-4de05c9498be).                                                                        | Fixed 30-row shape through 100→10k→100k rows and two expiry/reopen cycles passed [111334db](https://app.buildbuddy.io/invocation/111334db-bc7c-46a8-82b8-ff91a7b9ffde). Selected updates transferred 471 bytes and no excluded rows; sampled RSS was 313,424→318,604 KiB. Descriptive single-run evidence; browser cache retention remains separate.                                                                                                           |
-| Bounded WAL retention during Electric outage                       | Dedicated real PostgreSQL 18/Electric 1.8.1 test in draft #7560.                                                                                                                                                                                                                                         | Forced invalidation and automatic recovery passed at `b6bf06600d`, [b4be438c](https://app.buildbuddy.io/invocation/b4be438c-5bf4-4a74-af06-95a1c92404f8): healthy new slot, old handle 409/must-refetch, fresh snapshot includes outage data. The unsupported startup-probe extension was removed in `60d0cef936`; recheck the final stack.                                                                                                                    |
-| Bounded runner journal/recovery                                    | Independent #7535 at `efe5195565` has green CI, bounded journal paging/checkpoint recovery and serialized SQLite access/cancellation cleanup.                                                                                                                                                            | Runner CI [b39a03b3](https://app.buildbuddy.io/invocation/b39a03b3-ba4e-575f-96d9-795a8dcde3f1) passed 43 tests. Reopen + 128-row page Python allocation peaks were 356,198/343,817 bytes for 512/32,768 stored events. This excludes native SQLite/harness memory. Separate native-process measurements are recorded in draft #7562.                                                                                                                          |
-| Actual frontend cutover and single server-state owner              | Application routes use the projected TanStack DB view.                                                                                                                                                                                                                                                   | Obsolete full-history session/reducer removed in `f0a968286e`; final replacement browser/visual coverage remains.                                                                                                                                                                                                                                                                                                                                              |
-| Reviewable complete PR stack                                       | Independent runner #7535 and batching #7546; pure fold #7523; storage #7540; lazy debug #7555; Electric/frontend #7537; assembled acceptance #7551; WAL #7560.                                                                                                                                           | Refresh stack bases to remove unrelated ancestry from review diffs; final current-head CI, rendered-artifact review and requirement audit.                                                                                                                                                                                                                                                                                                                     |
+## Open gates
 
-## Chronological debug and command evidence
+- The focused scroll gate passed at `3fd4c22ef5`, invocation `409ec8c8`: all four desktop/phone and normal/raw variants preserve the reader anchor, old-bottom following, and resumed following after append. The phone resumed-following PNG was inspected. Final assembly including the history ResizeObserver repair remains open.
+- Large-history viewport behavior and long-run browser cache retention remain open. Focused
+  drawer eviction/revisit and finite collection disposal are covered, while the server query
+  bounds and finite Electric resource evidence do not demonstrate months of client retention.
+- The focused epoch replacement pass does not substitute for a final assembled-stack
+  regression run.
 
-At `7b77cad72a`, the debug API and projector tests plus changed library checks passed
-[2ec6ca31](https://app.buildbuddy.io/invocation/2ec6ca31-962e-4616-93a5-5f4b40b06818).
-The archive endpoint returns whole original observations in count-bounded,
-exclusive-keyset pages, including unlinked native packets, stderr and checkpoints.
-Every settled command associates its outcome with the stable admission entity;
-effects may also associate with a lifecycle/input entity. The tests cover failed,
-noop and effect settlements, batch partitions, authentication, cursor precision,
-forward/backward paging and an untruncated stderr body over 2 MiB.
+## Stack review
 
-The on-demand frontend drawer is implemented at `ee46509b9d`; it keeps one raw page,
-mounts JSON only for expanded observations, aborts page requests on disposal, and
-links from semantic evidence to its original chronological context. Real desktop
-and phone browser cases passed at `647d5ed476`
-[5163ace0](https://app.buildbuddy.io/invocation/5163ace0-52d0-4115-9be7-055f00b2c347):
-no archive request before opening, exact original records, bounded replacement
-pages, backward/forward/latest/context navigation, draft and evidence-disclosure
-preservation, and cancellation when closing during an in-flight real response.
-Desktop and phone PNGs from the preceding successful paging run at `1265c9a818`
-[2271c3b1](https://app.buildbuddy.io/invocation/2271c3b1-cafb-444d-afba-9d8eef986b93)
-were downloaded and inspected; the drawer and its close control fit both viewports.
-After consolidating debug request ownership, the same browser cases and all 115
-frontend unit tests passed at `3aa75798db`
-[382c516a](https://app.buildbuddy.io/invocation/382c516a-2442-47db-8d3b-4128d206b0ac).
-The latter include exact before/after query serialization above JavaScript's integer
-precision limit.
-
-At `478f3352f0`, evidence and nested raw-frame disclosures use the shared bounded
-disclosure store. Their loaded pages are keyed by source, projection epoch, entity
-and observation so a replacement scope cannot reuse a mounted page from the old
-scope. The real browser streaming/lazy-content scenario and all 116 frontend unit
-tests passed [e900bca3](https://app.buildbuddy.io/invocation/e900bca3-8dde-46b0-80b2-6b632f895274).
-The browser verifies closing evidence removes its raw body and reopening restores
-the selected original frame; its PNG was downloaded and inspected. The unit test
-checks eviction after 129 disclosure choices and isolation of a replacement source.
-Actual history eviction/revisit and source-reset browser coverage remain separate.
-
-## Navigation between threads
-
-At `406735fec3`, the real browser navigated between two stored 80-item conversations
-after selecting older history in the first:
-[cf04b70e](https://app.buildbuddy.io/invocation/cf04b70e-ae88-470f-8f85-c19498aec244).
-Both route transitions requested a fresh tail without the previous thread's
-`before_cursor`, displayed the correct name and rendered its newest item. The view
-is keyed by thread ID; older-page selection and asynchronous header state cannot
-carry into another thread. The resulting PNG was downloaded and inspected.
-
-The first run's five-second body assertion expired during initial shape creation;
-its trace shows successful payload responses and the expected rendered tail just
-afterward. The test now waits for the selected metadata row before awaiting its
-lazy body. This test verifies navigation state isolation, not a cold-load latency
-target.
-
-## Native harness measurements
-
-Independent draft #7562 adds a controlled-upstream experiment above runner #7535.
-All six real Claude/Codex cases (1/10/100 prior turns, followed by native restart)
-passed at `813573b1c0`
-[4edd2d8a](https://app.buildbuddy.io/invocation/4edd2d8a-306c-41f6-919c-11889949e058).
-Exact prior context reached the model again. Conversation text in the resumed request
-grew from 6194 to 415345 bytes for both harnesses. At 100 turns, sampled native RSS
-was 263340 KiB for Claude and 127752 KiB for Codex before restart; these finite samples
-do not establish constant native memory or long-run latency.
-
-The native persistence measurements exclude symlink targets. At 100 turns, Claude's
-native directory held 876141 logical bytes and Codex's held 97415342 bytes, including
-78972792 bytes across 5416 `.tmp` files. Codex's eventual cleanup policy was not
-established. These are native execution/retention limits separate from Agentplane's
-bounded journal and conversation projection. Full artifacts and scope limitations
-are documented in #7562's `debug/agentplane_native_resources.md`.
-
-## Tail queries after settled commands
-
-At `75f92056bc`, the production tail-bound query was exercised after 10,000 settled
-commands through actual ingestion:
-[dfc9c92b](https://app.buildbuddy.io/invocation/dfc9c92b-521e-4cf3-8536-f47d2a8f7c94).
-The downloaded EXPLAIN artifact shows a backward scan of the partial segment cursor
-index: one index search, three shared-buffer hits, and no row filtering. This closes
-the specific risk of scanning command rows to find the last conversation segment.
-The full 33-test trajectory suite subsequently passed at `1f259b30c2`
-[c897a7ca](https://app.buildbuddy.io/invocation/c897a7ca-fe1c-4909-a23c-3b8b82cfdfc8).
-
-## Authenticated proxy boundary
-
-At `85db5c8798`, all five production sync routes passed missing, incorrect, and
-forged-header credential checks before any Electric request:
-[aafbcdf0](https://app.buildbuddy.io/invocation/aafbcdf0-ce16-4b49-933f-03c0c280ed96).
-The test creates the actual application with an Electric proxy whose upstream
-transport fails if invoked.
-
-## Latest browser regression results
-
-At `78336e3879`, all five focused cases passed
-[3e7e5fb7](https://app.buildbuddy.io/invocation/3e7e5fb7-3ddd-48f3-b502-59f6d431a62f):
-
-- Desktop follow-bottom, preserving the visible reading anchor, and returning to
-  the bottom while content expands before a queued scroll event.
-- Failed-turn phone layout with exact lazy native-frame disclosure.
-- Streamed admission after a lost HTTP reply, including reload.
-- Admission hidden from synchronization while reloading.
-- Same-document Electric reconnect with an unconfirmed command.
-
-The full 21-case real-service browser suite runs across four shards at `ab52b83f84`,
-[2017cf5c](https://app.buildbuddy.io/invocation/2017cf5c-0af1-4d58-8d32-c3172f616945);
-it finished with 19 passed and two scroll failures (desktop-normal after expansion
-above the reader, phone-raw after new output). The failures persisted after a focused
-pass, so scroll acceptance remains open. A follow-up adds failure-only visible-row
-geometry artifacts and the frontend worker is correcting competing scroll anchoring.
-At `5e059313e8`, the follow-up four-variant scroll run
-[60123eec](https://app.buildbuddy.io/invocation/60123eec-ea8b-4ea2-aaee-391b49d1c839)
-failed all four variants after new output while reading. Geometry artifacts show the
-expected cursor 38 moved out of view in three cases, and by about 600 pixels in the
-fourth. The latest anchoring changes therefore do not establish a working solution.
-
-The larger history-window and scope-refresh probe remains separate. An empty initial snapshot in that probe was traced to fixture precedence:
-the app used conftest's database while Electric used another database. It does not
-establish a product cold-start defect.
-
-At `ad25ece551`, scroll run
-[dec9e254](https://app.buildbuddy.io/invocation/dec9e254-2862-4e65-b352-77b849f1a292)
-passed desktop-normal but failed desktop-raw and both phone variants at the first
-reading-anchor check. Disabling competing virtualizer size adjustments alone does not
-resolve the drift. The worker is tracing saved anchors against actual DOM geometry.
-
-At `ba15d83115`, the input-intent capture candidate (`a1556e1f7b` plus `d1dc7ce03b`)
-failed all four variants at that same first reading-anchor boundary:
-[564517b4](https://app.buildbuddy.io/invocation/564517b4-45d0-492e-b2df-53424e01f1b9).
-All expected rows remained mounted. Desktop cursor 36 moved from offsets -116.59/-42
-to about -303; phone cursor 38 moved from -56.47/-292.875 to -341.875. This is anchor
-drift rather than eviction and requires an instrumented trace of capture/restoration;
-the input-intent heuristic is not accepted as a working solution.
-
-Screenshots of expanded/reloaded/reconnected content, exact native-frame disclosure,
-terminal failed/noop cards, failed-turn desktop/phone layouts, and resumed scrolling
-have been downloaded and inspected. The intentionally expanded message in the scroll
-fixture retains its synthetic height. Additional visual changes require fresh evidence.
-
-## WAL recovery fixture correction
-
-At `4fafc4b429`, the fixture's changed library checks and the real WAL-recovery test
-passed [a4c53347](https://app.buildbuddy.io/invocation/a4c53347-b6a7-4cee-a28b-c8a5ede30de9).
-This also corrects the readiness URL callable and validates Docker's bytes log result,
-both caught by full PR CI. The WAL PR still needs the final frontend acceptance parent.
-
-Earlier recovery runs continued probing the host port assigned before Docker restarted
-the Electric container. Captured Docker state at `519c665e6b` showed a healthy service
-and active PostgreSQL replication on port 32771, while the fixture still used 32770.
-The corrected fixture resolves the published port again and reopens its HTTP client.
-At `b6bf06600d`, recovery passed with persisted Electric storage, a forced lost slot,
-and data committed during the outage. The old stream handle returned
-`409` with `must-refetch`; a new snapshot included that data. No manual storage reset
-was needed. This establishes the service/protocol recovery path; browser subscription
-recovery and final deployment configuration are verified separately.
-
-## Electric update-heavy reload gate
-
-The real stalled-socket probe passed
-[918c554f](https://app.buildbuddy.io/invocation/918c554f-4203-444c-a208-d7f3ee77518d).
-It updated the same 30 selected rows 49 times, writing 96,337,920 bytes. Logical-slot
-checkpoints and an independent reader confirmed progress while the stalled reader's
-kernel receive queue reached 13,568 bytes. Sampled Electric PID RSS grew 10,420 KiB
-against a 16,384 KiB experiment budget. Resume reached the current values across 19
-response pages; persisted restart succeeded after the mapped host port changed.
-
-This does **not** close the reload/resource gate. Fresh `offset=-1` loading after
-restart transferred 191,324,303 bytes and 1,500 operations for only 30 current rows.
-The artifact's `restart.rowCount` counts operations, not distinct current entities.
-Container cgroup usage grew 205,303,808 bytes; additional anonymous/file-cache
-measurements are needed to attribute that growth. Stable PID RSS alone does not
-establish bounded total container memory.
-
-Pinned Electric 1.8.1's [file storage implementation](https://github.com/electric-sql/electric/blob/%40core%2Fsync-service%401.8.1/packages/sync-service/lib/electric/shape_cache/pure_file_storage.ex)
-defaults to ten-minute compaction with 50% scheduling jitter and retains two complete
-log chunks. The short experiment therefore does not establish post-compaction size.
-More importantly, a fixed row predicate alone does not guarantee inexpensive reloads
-while those rows receive many revisions. Evaluate the existing standard
-changes-only/on-demand snapshot path against the same update-heavy workload,
-combined with the bounded interest predicate, before accepting production bootstrap
-and reconnect costs. Do not delete shared shapes to force snapshots.
-
-BuildBuddy records the base commit `7ac50fd7` for this probe; its runner log shows
-the worktree patch applied before execution. The built probe source artifact's
-SHA-256 `7792dbc7d23f302de5fe7afb9e6acb2bd84e68fa13c0121079407c31258577b7`
-matches the file in spike commit `830fb2cfcc`. The downloaded measurement artifact
-was independently inspected; it is finite evidence, not a months-long guarantee.
-
-## Current-snapshot bootstrap
-
-At `b94ecf4dd9`, mutable entity and command shapes use the standard TanStack
-on-demand integration with Electric changes-only logs. The app keeps the indexed
-fixed-interest predicate and accepts only a whole-shape GET subset snapshot.
-Immutable payload chunks retain their existing log. Proxy validation rejects
-caller filters, pagination, shape definitions and duplicate protocol parameters.
-
-Proxy tests and the changed Python/TypeScript libraries passed
-[32a5b159](https://app.buildbuddy.io/invocation/32a5b159-5885-4282-9d66-d7bb04b73b06).
-That invocation exposed an integration assertion still treating subset envelopes
-as stream arrays. Corrected assertions at `ee74c3451a` passed the real
-PostgreSQL/Electric/two-replica history, old-item updates, selected commands,
-exact-revision bodies and evicted-window revisit test:
-[6bda034f](https://app.buildbuddy.io/invocation/6bda034f-0ee9-4150-a7c9-7855a04af815).
-Revisit now requires one current version instead of replaying obsolete versions.
-
-The built browser streaming/lazy-body/evidence scenario passed at `b94ecf4dd9`:
-[51c5308f](https://app.buildbuddy.io/invocation/51c5308f-de9d-44bf-aa92-5e6d5b140201).
-Its actual trace confirms native GET subset requests, snapshot transaction metadata
-and the library's subsequent live stream. The evidence PNG was inspected. These
-functional checks do not replace the separate update-heavy reload/resource probe.
-
-The clean scroll repeat at `a0b5654ab6` failed four of twelve shard runs:
-[54e444d7](https://app.buildbuddy.io/invocation/54e444d7-ae0c-4010-b118-e535a60f3bd5).
-Individual logs locate the failures at the first anchor assertion after new source
-updates, with expected rows still mounted. A prior tracing-enabled pass did not
-hold without instrumentation; scroll correctness remains open.
+Runner #7535, fold #7523, batching #7546, storage #7540, debug #7555, backend
+#7563, and frontend #7537 remain independently reviewable where their content permits.
+The current assembled follow-up is #7564. WAL #7560 and visual #7561 are peers above
+#7564. Until predecessors land, ancestry makes their complete diffs visible; retargeting
+cannot honestly hide prerequisite commits.
