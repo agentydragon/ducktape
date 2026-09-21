@@ -526,9 +526,11 @@ spec:
       hostNetwork: false
       restartPolicy: Always
       securityContext:
-        fsGroup: 1000
+        fsGroup: 65534
         fsGroupChangePolicy: Always
+        runAsGroup: 65534
         runAsNonRoot: true
+        runAsUser: 65534
         seccompProfile:
           type: RuntimeDefault
       setHostnameAsFQDN: false

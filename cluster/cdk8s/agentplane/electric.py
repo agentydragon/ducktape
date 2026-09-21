@@ -37,6 +37,7 @@ PORT = 3000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
 _STORAGE_DIR = "/var/lib/electric"
+_RUN_AS = 65534  # The pinned image owns /app as nobody but leaves Config.User empty.
 
 
 class Electric(Construct):
@@ -60,7 +61,9 @@ class Electric(Construct):
             strategy=DeploymentStrategy.recreate(),
             termination_grace_period=Duration.seconds(60),
             automount_service_account_token=False,
-            security_context=PodSecurityContextProps(ensure_non_root=True, fs_group=1000),
+            security_context=PodSecurityContextProps(
+                ensure_non_root=True, user=_RUN_AS, group=_RUN_AS, fs_group=_RUN_AS
+            ),
         )
         container = deployment.add_container(
             name="electric",
