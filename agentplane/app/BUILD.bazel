@@ -365,6 +365,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":electric",
         ":inventory",
         ":live",
         ":presets",
