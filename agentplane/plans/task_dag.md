@@ -25,7 +25,7 @@ Proposed execution order for the Thread correctness/UI track:
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`) and the
   conversation-view sync design gate (`THREAD_VIEW_SYNC`). Design reduced-state
-  bootstrap/live updates, on-demand Raw, and bounded payloads together before
+  bootstrap/live updates, on-demand Raw, and selected whole payloads together before
   implementing `THREAD_TAIL_FIRST`, `THREAD_VIEW_CATCHUP`, `THREAD_LAZY_HISTORY`, and
   `THREAD_PAYLOAD_LAZY`.
   Select frontend state libraries after defining ownership and synchronization contracts.
@@ -105,12 +105,14 @@ flowchart TB
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
-    THREAD_VIEW_PROJECTION["Planned backend<br/>pure projection and transactional read model<br/>bounded update journal and rebuild"]:::future
-    THREAD_VIEW_RPC["Planned API<br/>snapshot, changes, history, payload and evidence<br/>cross-replica synchronization"]:::future
+    THREAD_VIEW_PROJECTION["Planned backend<br/>incremental projection and transactional read model"]:::future
+    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric + TanStack DB<br/>limited subsets and recovery"]:::decision
+    THREAD_VIEW_READ["Planned integration<br/>engine-backed queries and synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
     THREAD_VIEW_CATCHUP["Planned reconnect correctness<br/>bounded catch-up after long gaps<br/>refresh state without losing reading position"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     THREAD_PAYLOAD_LAZY["Planned bounded delivery<br/>Raw evidence and tool details on demand<br/>explicit partial-data contract"]:::future
+    THREAD_RUNNER_RECOVERY["Planned runner storage<br/>checkpoint recovery and paged replay"]:::future
     THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
@@ -149,11 +151,15 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_VIEW_SYNC --> THREAD_VIEW_PROJECTION
-    THREAD_VIEW_PROJECTION --> THREAD_VIEW_RPC
-    THREAD_VIEW_RPC --> THREAD_TAIL_FIRST
-    THREAD_VIEW_RPC --> THREAD_PAYLOAD_LAZY
+    THREAD_VIEW_SYNC --> THREAD_VIEW_ENGINE
+    THREAD_VIEW_PROJECTION --> THREAD_VIEW_READ
+    THREAD_VIEW_ENGINE --> THREAD_VIEW_READ
+    THREAD_VIEW_READ --> THREAD_TAIL_FIRST
+    THREAD_VIEW_READ --> THREAD_PAYLOAD_LAZY
     THREAD_TAIL_FIRST --> THREAD_VIEW_CATCHUP
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
+    THREAD_RUNNER_RECOVERY --> THREAD_EVIDENCE_RETENTION
+    THREAD_VIEW_PROJECTION --> THREAD_EVIDENCE_RETENTION
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -1324,130 +1330,78 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_VIEW_SYNC` — design the derived conversation read contract
+### `THREAD_VIEW_SYNC` — shared conversation contract
 
-**Current design gate:** review the concrete
-[Thread view synchronization contract](../docs/thread_view_sync.md), owned separately
-from the cross-layer identity/durability contract. The staging inspection linked there demonstrates that a short
-conversation already downloads thousands of generation Events. Normal mode should
-sync reduced item state, not merely a shorter slice of that raw stream.
+Review the [domain schemas and synchronization requirements](../docs/thread_view_sync.md):
+one ordered history with updates to any item; independently versioned selectable bodies;
+tail, before/after and by-ID queries; no `around` or response byte budget. Source projection
+positions and sync-engine tokens have distinct ownership. The first-screen cost depends on
+the requested items/content, not the complete Event history.
 
-Validate the proposed projection/checkpoint transaction, bounded replay-buffer page
-hydration, RPC shapes, pending-command pagination/reconciliation, exact evidence and
-single-owner frontend store. Preserve the runner-only queue. No production cutover
-is implied by approving the design; the concrete transport/build gate follows.
+### `THREAD_VIEW_PROJECTION` — incremental materialization
 
-**Evaluation under review:** [test-only TanStack DB spike](https://github.com/agentydragon/ducktape/pull/7069), using the
-real library under Bazel. Collection-level tests cover snapshot/update visibility together with coverage,
-64-bit protobuf cursors, older-page/live races, long-gap replacement and stale
-responses, lazy Raw evidence, selective subscriptions, and bounded loaded state.
-Use a minimal typed transport sketch without declaring it the production wire API.
-Keep the runner/app/UI production path unchanged. Report fit and gaps, then select
-the integration; Redux Toolkit with RTK Query is the fallback, not a simultaneous
-second implementation. Library behavior alone is not deployed loading acceptance;
-React rendering, page-buffer reconciliation and transport remain separate tests.
+Implement the server fold as a separate PR from schemas, followed by PostgreSQL persistence.
+Load only affected prior entities, write content growth and touched records, and commit the
+checkpoint atomically. Preserve command admission/effect distinctions and incomplete output.
+Exercise semantic parity, reverse-order tool completion, authoritative replacement, invalid
+batch atomicity and source fencing. No all-history map reconstruction per batch.
 
-### `THREAD_VIEW_PROJECTION` — materialize the derived read model
+### `THREAD_VIEW_ENGINE` — evaluate existing synchronization
 
-After contract review, implement pure projection/parity tests and then transactional
-segments, command indexes, controls, original-cursor checkpoints and a bounded derived
-update journal. Separate PRs are appropriate for the pure fold and PostgreSQL worker.
-Test receipt/lifecycle grouping, empty failed turns, authoritative completed text,
-batch atomicity, replica fencing, lost notifications and epoch rebuild. Retain raw
-Events losslessly; opening a page cannot trigger a whole-Thread fold.
+Evaluate Electric with TanStack DB before implementing a custom change journal or browser
+replay protocol. The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
+cover on-demand tail/history, snapshot/live races, reconnect expiry without full-shape
+fallback, content selection, transaction visibility, auth and replica failure. Pin versions
+and exercise the actual engine/client. The merged [collection spike](https://github.com/agentydragon/ducktape/pull/7069)
+is useful library evidence, not proof of this integration.
 
-### `THREAD_VIEW_RPC` — expose the concrete read/follow contract
+### `THREAD_VIEW_READ` — integrate the selected engine
 
-Build on the transport probe and materialization. Implement the methods and bounded
-hydration/error semantics in the [API design](../docs/thread_view_sync.md), preserving
-shared exact Commands/EventEntries. Unary submit remains archived runner admission,
-not app queuing or effect completion. Short replay and explicit long-gap rebootstrap
-must work before frontend cutover. Include cross-replica and auth-boundary tests;
-history, payload and evidence RPCs can be independent slices on the same contract.
+Expose the materialized records through the selected sync engine and existing app authorization.
+Use its client for snapshot reconciliation and reconnect. Commands keep runner-first admission.
+Resolve storage row mapping, independently selected bodies, exact 64-bit positions and atomic
+controls/item visibility. A custom REST/SSE sync protocol needs a demonstrated engine gap.
 
-### `THREAD_TAIL_FIRST` — bounded reduced-state loading for short and long Threads
+### `THREAD_TAIL_FIRST` — initial browser cutover
 
-**After `THREAD_VIEW_RPC`:** cut the frontend over to the bounded recent-item
-bootstrap and live-update handoff defined in the view-sync design. Completed text
-loads assembled; active items load their accumulated state plus subsequent changes.
-Neither browser nor server should replay a Thread's full history on each page open.
+Replace raw replay with a limited tail, assembled selected text and current controls. Exercise
+short high-delta and month-long histories, old pending/settled local commands and active items
+outside the window. Initial load must not trigger eventual background history download.
+Production cutover requires history, selective content and reconnect acceptance as well.
 
-Acceptance includes a short, high-delta conversation like the staging report and a
-month-long synthetic history. Cover old pending commands, old settled commands still
-retained locally after a lost response, applied controls, and pre-window streaming
-items. Compare snapshot-plus-updates with full projection and bound initial transfer
-and processing work. Raw remains accessible on demand; no hidden full-history fetch.
-This is distinct from all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+### `THREAD_VIEW_CATCHUP` — reconnect through the selected engine
 
-### `THREAD_VIEW_CATCHUP` — bounded catch-up after a long gap
+Use engine tokens for short resume and fresh limited subsets after expiry or excessive backlog.
+Preserve drafts, local commands and reading position; restore old positions with by-ID and
+before/after queries. Test stale callbacks, lost submit responses and library recovery paths
+that might accidentally synchronize an entire shape.
 
-**Build on the cursor-bound view bootstrap:** implement the short-replay versus
-explicit rebootstrap contract in
-[long-gap catch-up](../docs/thread_view_sync.md#snapshot-live-stream-and-command-recovery).
-A sleeping/reloaded tab must reach current state without replaying every missed text
-delta. Preserve locally retained commands, refresh outcomes/controls, and prevent
-old in-flight responses from replacing the new snapshot. Catch-up while scrolled up
-must preserve the reading anchor rather than force navigation to the tail.
+### `THREAD_PAYLOAD_LAZY` — select content and evidence
 
-Acceptance includes long gaps with completed messages, old commands settling, model
-changes, a streaming item completing, expired update history, and reconnect racing an
-older-page/detail fetch. Bound catch-up work and retain explicit source/loss checks.
+Reasoning, tool arguments/output and raw evidence load only on demand. Selected bodies are whole
+at their revision; omitted, empty, unavailable and incomplete are distinct. Use immutable
+content references and supported engine synchronization for live growth and replacement.
+Test late hydration, expansion during streaming and independent field revisions.
 
-### `THREAD_PAYLOAD_LAZY` — load native evidence and tool details on demand
+### `THREAD_LAZY_HISTORY` — history windows and eviction
 
-**Designed in `THREAD_VIEW_SYNC`, implement as reviewable slices:** extend selective synchronization beyond native protocol frames
-to detailed tool-call arguments and outputs, including large streamed payloads. Initial
-Thread sync should transfer the metadata and summaries needed to display the conversation
-and its current state, not every detail behind a collapsed tool card. Fetch those details
-when a user expands the item or follows a Raw/evidence link. Raw remains an additive
-view of the same conversation, with exact retained frames available on demand.
+Keyset-page before/after stable item cursors while live updates continue. Verify snapshot/live
+reconciliation, overlap, exhaustion, preserved viewport, eviction/refetch and no hidden fetch
+between a distant reading window and the tail. Virtualize DOM separately from bounding caches.
 
-Retain full-fidelity payloads at their authority. Preserve item identity, ordering,
-status, command outcomes, and causal references in the lightweight representation;
-do not omit facts needed for pending commands or applied control state. Make unloaded
-details explicit and distinguish them from empty content, still-streaming content,
-and unavailable evidence. A partial browser representation must not masquerade as a
-complete, untransformed Event prefix. Hydrating an older payload must not advance the
-live cursor, reorder items, or regress newer state.
+### `THREAD_RUNNER_RECOVERY` — recover without folding lifetime history
 
-Follow the catch-up/reconnect and hydration guarantees in the view-sync design; do not
-create a competing raw/normal contract here. Omitting payloads from initial transfer
-does not change retention. Optional retention is `THREAD_EVIDENCE_RETENTION`, not a
-dependency of lossless on-demand delivery.
-Acceptance covers large tool inputs/outputs omitted from initial transfer, expansion
-during streaming, reconnect during a detail fetch, references outside the loaded history
-window, and unavailable payloads. Prove bounded initial transfer/projection work and
-exact hydrated contents without gaps, duplicates, or loss of the live suffix.
+Replace journal-wide in-memory loading and startup folding with indexed reads, durable recovery
+state and a bounded suffix. Preserve exact replay/source checks and pending command recovery.
+Measure native harness resume separately. This can proceed independently of browser integration.
 
-### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
+### `THREAD_EVIDENCE_RETENTION` — optional raw capture
 
-**Future work:** build on `THREAD_TAIL_FIRST`'s bounded history contract. Fetch older
-pages on upward navigation or explicit loading; opening a Thread must not eventually
-download everything back to its start without user demand. Preserve the visible scroll
-anchor while prepending history, follow new Events concurrently, and support loading
-the context/native evidence around a referenced item.
-
-Acceptance covers page overlaps and boundaries, tool/streaming items spanning pages,
-reconnect during a history fetch, exhausted history, and Raw/normal presentation.
-Use stable item boundaries rather than offsets that move with live arrivals; test
-repeated upward scrolling, visible-anchor preservation, request failure/retry,
-page eviction/refetch, and independent long-gap catch-up while viewing old history.
-Loading older projected items or raw evidence must neither regress live
-model/harness/pending-command state nor advance live coverage. Merge by the projection
-revision contract; deduplicate only agreeing raw entries and surface gaps/conflicts.
-Virtualized rendering can bound DOM cost but does not replace lazy network and
-projection loading.
-
-### `THREAD_EVIDENCE_RETENTION` — optional raw-frame retention controls
-
-**Low-priority follow-up, not part of initial view sync:** consider an app-wide
-default and per-Thread overrides for underlying native-frame retention. Preserve
-the [retention design boundary](../docs/thread_view_sync.md#raw-and-debug-surface):
-delivery filtering, capture/retention, and normalized-delta compaction are separate.
-Settle storage authority, policy precedence/change timing, evidence availability,
-rebuild, and recovery guarantees before removing anything. Test Raw with retained,
-not-loaded, capture-disabled, expired, and unavailable evidence. No plan checkbox or
-hidden Raw panel authorizes dropping data; current lossless retention is unchanged.
+After durable semantic storage is sufficient for recovery, separate raw capture from content
+and sync-log retention. Define the semantic replication checkpoint before omitting Native rows
+from the current dense log. Preserve item/turn evidence links and explicit not-captured/expired
+availability; evaluate compressed raw batches with indexed manifests. Compaction cannot delete
+unreplicated content or native resume artifacts. No capture deletion is authorized by this plan.
 
 ### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
 
@@ -1518,28 +1472,12 @@ own text instead, so bringing one back means restoring an edge rather than inven
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
 - **`FORK`** — per-task identity fork (depends on `ELEVATE`, which stays on the board)
 
-### `THREAD_VIEW_TRANSPORT` — reconsider an RPC transport, gated on authorization
+### `THREAD_VIEW_TRANSPORT` — optional RPC transport
 
-Deferred, and no longer blocking: the read API's transport is settled as REST and SSE
-carrying proto-JSON, per the [transport decision](../docs/thread_view_sync.md#transport-rest-and-sse-with-protobuf-payloads).
-Both candidates were built and measured rather than estimated — gRPC-Web through an Envoy
-translation hop, then Connect — and both records, with the constraints that decided them,
-are in that document.
-
-**The gate is authorization, not transport ergonomics.** What made both attempts expensive
-was the surrounding work, and most of that was credential plumbing: an ASGI mount inherits
-no FastAPI route dependency, so the caller check had to be re-reached, and a separate
-server would have needed its own. The browser credential and what an RPC surface would
-need from it are settled in
-[operator federation](../docs/operator_federation.md#why-the-browser-holds-a-handle-and-not-a-token),
-including the short-lived RPC token that is available but unbuilt. Reopen this node
-against that model — not because generated service stubs are appealing again.
-
-Cheap to reopen, because the durable half already exists: the shapes are protobuf and the
-generated types land on both ends regardless, so what a transport adds is `service` blocks
-over messages that are already there. Also unresolved and worth settling first: connecpy's
-generated async client delivered nothing from an open stream, so a Python consumer of such
-an RPC currently has no working client.
+Deferred behind sync-engine selection. Reusing an engine's protocol does not require migrating
+ordinary app REST/SSE or runner protobuf RPC. The prior [transport experiments](../docs/thread_view_sync.md#transport-experiments)
+record concrete Python-streaming and ingress/test costs. Revisit against the existing browser
+session authorization boundary if a remaining use case benefits from RPC.
 
 ### `SSHDURABLE` — durable SSH-backed processes
 

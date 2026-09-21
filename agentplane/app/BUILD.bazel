@@ -27,8 +27,8 @@ proto_library(
     srcs = ["thread_view.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "//x/agentplane/protocol:command_proto",
-        "//x/agentplane/protocol:event_proto",
+        "//agentplane/protocol:command_proto",
+        "//agentplane/protocol:event_proto",
     ],
 )
 
@@ -45,8 +45,8 @@ ts_proto_library(
     proto = ":thread_view_proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//x/agentplane/protocol:command_pb",
-        "//x/agentplane/protocol:event_pb",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_pb",
     ],
 )
 
@@ -56,8 +56,8 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":thread_view_proto",
-        "//x/agentplane/protocol:command_proto",
-        "//x/agentplane/protocol:event_log_proto",
+        "//agentplane/protocol:command_proto",
+        "//agentplane/protocol:event_log_proto",
     ],
 )
 
@@ -75,8 +75,8 @@ ts_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":thread_view_pb",
-        "//x/agentplane/protocol:command_pb",
-        "//x/agentplane/protocol:event_log_pb",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
     ],
 )
 
@@ -975,34 +975,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
-    ],
-)
-
-py_library(
-    name = "projection",
-    srcs = ["projection.py"],
-    deps = [
-        "//x/agentplane/app:thread_view_pb2",
-        "//x/agentplane/protocol:command_pb2",
-        "//x/agentplane/protocol:event_log_pb2",
-        "//x/agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_test(
-    name = "test_projection",
-    srcs = ["test_projection.py"],
-    deps = [
-        ":conftest",
-        ":projection",
-        "//:conftest",
-        "//x/agentplane/app:thread_view_pb2",
-        "//x/agentplane/protocol:command_pb2",
-        "//x/agentplane/protocol:event_log_pb2",
-        "//x/agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

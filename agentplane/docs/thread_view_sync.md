@@ -1,588 +1,338 @@
 # Thread view synchronization
 
-Status: **proposed contract, not deployed.** This document owns the derived
-app-to-browser read API. [Thread layering](thread_layering.md) owns identities,
-runner durability, command semantics, and the distinction between conversation,
-pending commands, and operational state. The schemas below select API shapes;
-they are not checked-in executable protobuf definitions yet.
+Status: **proposed contract; schemas only, no production cutover.**
+[Thread layering](thread_layering.md) owns command admission, runner identities and
+execution durability. This document owns the materialized conversation and partial
+browser state. Message definitions live in <../app/thread_view.proto>; logical query
+inputs live in <../app/thread_api.proto>. Neither schema declares RPC services.
 
 ## Requirements
 
-What the protocol must do, independent of how. Each is falsifiable, and the
-[acceptance matrix](#failure-and-acceptance-matrix) says how each is observed. The
-decisions below are answers to these; where a decision stops serving one, the decision
-is what changes.
+- A Thread has one ordered history. Existing items can change anywhere in it, including
+  parallel tools completing out of order. Editing earlier user input, forks and branches
+  are outside this contract.
+- Opening a Thread reads its tail and current controls without replaying its history.
+  Earlier items load only on demand. A tab left open for months retains a limited tail
+  and reading window, with eviction and virtualization.
+- Text and tool arguments stream when the harness exposes deltas. Completion may replace
+  the accumulated value. Tool results update the invocation they identify.
+- Reads cost the requested items and selected content, independent of total conversation
+  length apart from indexed lookup. A count limit does not promise a response byte bound.
+- The runner persists semantic batches before forwarding them; the app commits projected
+  state before publication to browsers. Multiple replicas and listeners share committed
+  state. Disconnecting a reader does not interrupt execution.
+- Raw capture is independently optional in the target storage model. Retained evidence is
+  accessible at the item or turn that produced it, as well as in original chronology.
 
-1. **Opening is bounded.** What opening a Thread transfers and processes does not grow
-   with the Thread's length. A month-old Thread opens like a new one.
-2. **A screenful is enough to work.** What arrives first is the part of the conversation
-   the reader is looking at, the current controls, and the pending queue — enough to read
-   it and to submit a command. Older history and exact evidence load on demand, and never
-   load in the background merely because a tab stayed open.
-3. **Values stream as they grow.** An assistant message, a reasoning step, and a tool
-   call's arguments and output appear while they are being produced, not only once they
-   complete. Following a growing value costs what was added to it, not its size on every
-   update — otherwise the view costs more than the raw Events it replaces.
-4. **Following never reloads.** A reader holding a view receives what changed and never
-   re-reads the Thread to stay current. After a gap it resumes from the position it
-   holds, or is told explicitly that it must bootstrap again.
-5. **A command's fate is observable.** A command can be submitted and what became of it —
-   admitted, taken effect, failed, or not yet observed — read afterwards, including across
-   a lost response or a reload, without downloading history to find it.
-6. **Every step is consistent.** A bootstrap plus every update that follows equals what a
-   rebuild at the same position produces. No update leaves a reader holding a state the
-   log never passed through.
-7. **Nothing is lost underneath.** Everything the view omits stays exactly retrievable.
-   The derived view is a convenience over the archive, never a replacement for it.
+The [September 15 inspection](../debug/thread_load_20260915.md) measured 3,091 Events and
+approximately 1.79 MB of SSE for eight turns with 6,278 bytes of completed text/reasoning.
+It is a historical host HTTP measurement, not a current browser benchmark. The present
+browser still folds the full archive; these requirements describe its replacement.
 
-## Decisions
+## Conversation structure and projection
 
-- Keep the runner's sole command queue and the app's lossless copy of its Events.
-  Materialize a rebuildable conversation read model in PostgreSQL. Opening a page
-  must not replay the entire Thread on either server or browser.
-- Normal mode reads recent assembled segments, current controls, and pending-command
-  summaries, then follows compact changes. Raw Events and large payloads are demand
-  reads. Neither initial loading nor idle background work downloads full history.
-- Carry it over REST and SSE with Pydantic models, keeping protobuf for the messages
-  the runner journal already defines. No client or bidirectional stream is needed:
-  commands are independent unary calls; subscriptions resume with an explicit cursor.
-  A dropped connection does not cancel admitted work.
-- Use one original runner cursor space. A projection checkpoint is a position in
-  that space, not a new app Event number. Derived changes are explicitly not Events.
-- Evaluate TanStack DB as the read-only normalized frontend store. The actual
-  library spike supports same-collection atomicity; transport and React integration
-  still need their own tests. Do not add a second mutable server-state cache.
+`Segment` is the readable unit. Its first-observed runner cursor identifies and orders it
+within the source. Later changes preserve that position. Its `revision_cursor` identifies
+its latest modification; each content field has its own immutable `PayloadRef` revision.
+Source and projection epoch scope all of these identities.
 
-The [measured short Thread](../debug/thread_load_20260915.md) had eight turns but
-3,091 Events and approximately 1.79 MB of SSE. Completed text/reasoning contained
-6,278 bytes. This motivates materialization, not just compression or virtualization.
+An `Item` accumulates assistant text, reasoning, or a tool invocation. Its text, arguments
+and output have independent references. Its observed completion is separate from whether
+its bodies are loaded. A known turn association stays attached across later updates.
+Confirmed input separates its selectable body from harness identity, turn and origin command IDs.
+Turn boundaries, model effects and harness lifecycle observations retain their existing Event types. Command admission/outcome observations
+produce separate command summaries. Display grouping is a rule over the loaded items;
+it does not require an entire turn or an ever-growing group object.
 
-## Transport: REST and SSE, with protobuf payloads
+| Observation                             | Projection                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Confirmed user input                    | Preserve confirmed text and all origin command IDs at confirmation position.                      |
+| Item start or first mention             | Establish identity, order and available turn context.                                             |
+| Text / argument / output delta          | Append content to that item's named field; preserve other fields' references.                     |
+| Complete arguments or item completion   | Replace the corresponding field with its authoritative value; preserve the invocation's position. |
+| Command admitted                        | Record pending summary and exact admission provenance.                                            |
+| Command effect, failure or noop         | Settle that same command, including one outside loaded history.                                   |
+| Turn interrupted / failed, harness lost | Preserve explicit outcome; unfinished items do not become successful completions.                 |
+| Native, stderr, test checkpoint         | Advance projection coverage without inventing a conversation item. Keep evidence separately.      |
 
-**Protobuf defines the shapes; REST and SSE carry them.** These are separate decisions and
-this document had them fused. The derived types -- `Segment`, `Changes`, `ViewSnapshot`,
-`Controls` and the rest of § Positions, segments, and payloads -- are defined in `.proto`
-alongside the runner journal's own messages, generated to `_pb2` for Python and
-Protobuf-ES for TypeScript, and carried as **proto-JSON** over ordinary FastAPI routes and
-SSE. No service definitions, no RPC stubs, no Connect: protobuf here is the schema
-language, not the transport.
+Updates address item identities, never "the last message". For example, tools A then B
+start at cursors 100 and 110; B completes at 120 and A at 130. Their final order remains
+A, B, with revisions 130, 120. Partial tool arguments are text until an authoritative
+complete JSON value arrives. Do not invent argument streaming for a harness that exposes
+only the complete arguments.
 
-One schema is the point. TypeScript and Python read the same field names, the same
-`oneof` alternatives and the same enum values because they are generated from one file,
-so the two ends cannot drift. Defining these types a second time as Pydantic models is
-what that buys out of: `Event`'s observation union alone has nineteen variants, and a
-second representation of one concept is what <../../STYLE.md> § General forbids.
-`frontend/client.ts` already reads `EventEntry` through Protobuf-ES `fromJson` on a plain
-REST response, so this is the existing path applied to more of the surface.
+Unknown semantic observations halt the affected projection with an explicit diagnostic.
+Unknown native traffic remains available when captured. New harness-native kinds need an
+adapter decision; treating every unknown item as a tool call is not a domain definition.
 
-`uint64` cursors are the concrete payoff. Proto-JSON encodes 64-bit integers as
-**strings**, which `fromJson` reads back into `bigint`, so a cursor above `2^53`
-round-trips exactly with nothing to remember. A hand-declared JSON model does not get
-that: a JSON number silently loses precision in the browser above `2^53`, and nothing
-reports it.
+## Positions and partial state
 
-Pydantic keeps what protobuf is not for: request validation, query and path parameters,
-and envelopes that are not domain types. FastAPI needs it there regardless.
+Three positions have distinct meanings:
 
-**Two costs, so nobody rediscovers them as bugs.** First, a protobuf message is not a
-Pydantic model, so it cannot be a FastAPI `response_model` and its shape does not reach
-OpenAPI -- those payloads are opaque in `schema.d.ts`, and the browser's types for them
-come from `ts_proto_library` instead. That is a real loss for the `responses=` pattern
-`live.py` uses to type its SSE frames, and it is accepted here because generated types
-from one schema beat generated types from two. An SSE route whose frames are protobuf
-declares its frame union as a proto `oneof`; one whose frames are not still declares a
-Pydantic model in `responses=`. What is not acceptable either way is today's
-`/threads/{id}/events/stream`, whose frame names live in a hand-rolled parser in
-`client.py` and a matching `switch` in TypeScript with nothing checking them against each
-other.
+- **Segment cursor:** stable identity/order in the source's history.
+- **Revision cursor:** the observation that last changed an entity or content field.
+- **Sync token:** the sync engine's opaque continuation state for a particular shape.
 
-Second, protobuf `oneof` in Python is `WhichOneof(...)` string comparison, which
-<../../STYLE.md> § General discourages in favour of `isinstance` narrowing. Dispatch
-stays close to the boundary rather than spreading string compares through the app.
+`Position` is the projector's processed source prefix and epoch, **not** the third token.
+Electric offsets, shape handles and transaction snapshot metadata are engine-owned. They
+must not be compared with runner cursors or replaced by a maximum observed item revision.
 
-### Backed out: protobuf RPC over Connect
+`ViewState` carries the committed projection position, controls and unresolved command
+count. That count covers all commands, not merely the loaded page. A runner `Attached`
+snapshot can be ahead of the archive and must not seed event-derived controls.
+An HTTP admission receipt likewise does not advance projection or subscription progress.
 
-An earlier revision of this document chose Connect -- `@connectrpc/connect-web` against
-a `connecpy` ASGI mount -- and it was built as far as a served `ThreadEvents.FollowEvents`
-with the browser following it. It is backed out, not because it failed, but because the
-generated typed stubs did not pay for what surrounded them:
+A body is either included whole at its reference or explicitly omitted. Included empty
+content, content not yet observed, omitted content, and unavailable content are different
+states. An actively streaming value is complete **at its current revision**; it is not
+truncated to satisfy a query budget. Body selection does not remove item metadata or
+completion facts. Reasoning and tool outputs can remain omitted until requested.
 
-- **Its main benefit was already available.** Typed protobuf in the browser comes from
-  `ts_proto_library` on the `.proto`, not from the transport: `client.ts` gets
-  `EventEntry` through `fromJson` over plain REST today. Connect's remaining benefit over
-  proto-JSON on SSE is a generated _frame union_ and binary framing -- and the frame union
-  is obtainable from a declared Pydantic union, while binary framing mattered most for the
-  raw-event firehose this design exists to stop sending.
-- **No Python client follows an open stream.** connecpy's generated async client yielded
-  zero frames in 20 s from a stream whose first frame is immediate. `acceptance/agent.py`
-  consumes this stream, so the RPC could not replace the SSE without hand-decoding
-  envelopes in the one place a library was supposed to help.
-- **The surrounding work was the cost.** An ASGI mount inherits no FastAPI route
-  dependency, so authorization needed re-plumbing to reach it; each generated service
-  needed a `mypy.ini` `warn_unused_ignores` exemption; and the binary/JSON default differs
-  between the two ends.
-- Protobuf `oneof` in Python is `WhichOneof(...)` string comparison, which
-  <../../STYLE.md> § General discourages in favour of `isinstance` narrowing. The
-  derived types are ours to define, so they get the better form.
+## Queries
 
-What is backed out is the **RPC layer**, not protobuf: the schemas, the generated types on
-both ends and proto-JSON on the wire all stay, and the derived types join them. The Bazel
-rule in <../../devinfra/python/connect.bzl> and `app/transport_probe/` remain; removing
-them is separable and not required by this.
+The logical operations in `thread_api.proto` map to sync-engine queries or existing app
+HTTP calls. They do not mandate a second wire protocol beside the engine.
 
-Reconsidering an RPC transport is deferred rather than closed, tracked as
-`THREAD_VIEW_TRANSPORT` in <../plans/task_dag.md>. Its gate is authorization: the browser
-credential and what an RPC surface would need from it are settled in
-<operator_federation.md> § Why the browser holds a handle and not a token, and an RPC
-transport should be revisited only against that, not on transport ergonomics alone. The
-message definitions are the durable part; a `service` block on top of them is the cheap
-part to add later.
+| Operation                   | Meaning                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.               |
+| List before cursor          | Closest N earlier segments, excluding the cursor.              |
+| List after cursor           | Closest N later segments, excluding the cursor.                |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                 |
+| Read payload                | Whole immutable selected content, or typed unavailability.     |
+| List pending commands       | Keyset page by admission cursor.                               |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response. |
+| Submit                      | Existing runner-first command admission; no app queue.         |
 
-### Rejected: gRPC-Web through an Envoy translation hop
+There is no `around` operation, offset pagination, query byte budget or truncated body.
+Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
+arguments and output; selecting nothing still returns metadata and references. Selecting
+text includes confirmed user input as well as assistant text. The `ConfirmedInput` record separates that selectable body from its metadata; the
+exact confirmation Event remains evidence at the Segment cursor.
 
-Rejected before Connect was, and still rejected: the transport that replaced Connect is
-in-process too, so both constraints below bind at least as hard now.
+A page's `position` reports its short consistent database snapshot. `exhausted` states
+whether anything else existed in that direction at that snapshot. Before/after paging
+continues from returned item cursors, not a count of scanned native Events. A by-ID query
+returns only existing requested items and marks its result exhausted; absent IDs are
+absent at the sampled position. A minimum processed cursor is a lag precondition, not a
+filter or a subscription token. Missed deadlines report lag rather than stale success.
 
-gRPC-Web — `grpc.aio` plus a standard translator — was built and measured, and lost.
-It is not infeasible: a spike put a
-browser-shaped gRPC-Web request through Envoy into a `grpc.aio` servicer running the
-same fold, and `envoy.filters.http.grpc_web` is in `cilium/proxy`'s build, so the
-gateway could carry it. Two constraints killed it anyway.
+## Reuse the synchronization engine
 
-**It costs the test that covers the production wire.** `//agentplane/app:test_thread_browser`
-drives real Chromium against the real app over the _exact_ wire production uses,
-because the RPC is in-process. Put Envoy in front in production and that stops being
-true: the test either grows an Envoy container — in a test already running PostgreSQL,
-the app and a browser — or it exercises a path production does not have. The
-translation hop is precisely the part that cannot be reasoned about from the source,
-and it is the part the test would stop covering.
+**Preferred integration to evaluate: Electric with its TanStack DB collection.** Agentplane
+owns projection, domain records, command admission and authorization. The engine should
+own snapshot/live handoff, transaction reconciliation, resumable delivery and refetch.
+Do not implement an Agentplane `Changes` journal, suffix wire messages, client replay
+reducer or `FollowView` service before establishing a concrete gap in that integration.
 
-**It does not buy a Python client for the browser's wire**, which was the argument for
-moving. `grpcio` is mature, but it speaks _native gRPC_ straight to the server and skips
-the translation hop, so a test using it covers the servicer and nothing about what the
-browser reads. Covering that wire means decoding gRPC-Web's 5-byte envelope by hand —
-the same envelope, for the same reason, as Connect's. Neither transport has a Python
-client that follows a browser's stream. (This is moot for our own tests, which drive the
-service's fold and leave framing to the library, but it was the reason to switch.)
+Electric documents changes-only shape logs plus subset snapshots with ordering and limits;
+its snapshots carry PostgreSQL transaction metadata for reconciling concurrent changes.
+Shapes can select columns and are immutable. See the [HTTP API](https://electric-sql.com/docs/api/http)
+and [shape definitions](https://electric-sql.com/docs/guides/shapes). The
+[TanStack Electric collection](https://tanstack.com/db/latest/docs/collections/electric-collection)
+provides the existing client integration. These are capabilities to exercise against
+pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
-Smaller, and not decisive on their own: a second listener needs its own `Service` port,
-`NetworkPolicy` and readiness, where the Connect mount is an `app.mount()` on the ASGI
-app that already exists; the 71 lines of Envoy config must agree with the proto's service
-name, the bound port and the browser's path with nothing checking that; and each gRPC
-service costs a `mypy.ini` `warn_unused_ignores` exemption for `mypy-protobuf`'s
-generated stub.
+The evaluation must resolve:
 
-**Authorization does not distinguish them**, and no part of this rejection rests on it:
-bearer-token-in-metadata versus this app's session cookie is a header decision either
-transport carries identically, and `fetch` sends the cookie for Connect today. What the
-browser credential is, and what a bearer token would cost, is decided in
-<operator_federation.md> § Why the browser holds a handle and not a token.
+1. **Limited bootstrap and recovery.** Establish changes-only/on-demand synchronization
+   and fetch the selected tail. A full shape for the whole Thread must never load as an
+   initialization or recovery side effect. The collection documentation describes some
+   persisted-cache recovery paths that request a full shape even in on-demand mode.
+   Initially omit persistent browser caching; still test handle expiry and library reset
+   paths. Reject a configuration that silently falls back to full history.
+2. **Membership versus live traffic.** A limited subset snapshot does not necessarily
+   limit the underlying live shape. Measure updates to unloaded items and ensure large
+   bodies never enter a broad metadata shape. Evaluate bounded interest shapes if active
+   unloaded items otherwise dominate traffic. Shape replacement must use the library's
+   supported handoff and must preserve updates.
+3. **Atomic visibility.** PostgreSQL transaction atomicity does not establish atomic React
+   publication across several collections. Evaluate one entity collection containing
+   segments, controls/checkpoint and commands, with queryable kind/cursor/identity columns.
+   Publish a visible transaction only with every relevant selected update. Keep immutable
+   payload data separate and select it by reference. Cross-collection consistency needs
+   proof before using a different layout.
+4. **Streaming storage.** Database row replication must not retransmit the entire growing
+   text on each write. Replicate immutable content chunks and changing manifests/references;
+   hydrate the selected revision through the supported snapshot mechanism. Assemble the
+   whole selected body for reads. Final replacement switches its manifest atomically.
+5. **Authorization and operational cost.** Proxy shape access through the app's existing
+   caller checks; the app owns Thread predicates and allowed columns. Test cookies, expiry,
+   cancellation and reconnect through the deployed ingress. Measure logical replication,
+   retained WAL and sync-service failure/recovery as well as app-replica replacement.
+6. **Library ownership.** Use the published client for reconciliation; do not hand-interpret
+   Electric snapshot metadata or maintain a second mutable cache. Pin versions, generate
+   domain types once, and verify exact 64-bit cursor handling.
 
-What is genuinely transport-coupled is thinner than "swap the adapter" suggests: the fold
-raises `ConnecpyException`, Connect's vocabulary, so a second adapter either translates a
-Connect exception type or the fold mints a third error type both adapters translate.
+Zero is the next engine candidate if Electric fails a required case; it supports query-driven
+partial sync but introduces its own replica and client integration. Matrix supplies useful
+limited-timeline and gap-recovery ideas, but its message-edit events do not provide streamed
+field replication without extra semantics. AG-UI, AI SDK and ACP provide useful agent-event
+vocabularies; they do not remove the storage/projection work. Evidence from the evaluation
+should select an engine before proposing a custom REST/SSE fallback.
 
-Spike code and its measurements: commit `7e1a36d8` (branch
-`claude/exciting-turing-83lyjb-grpcweb-spike`, never merged, so this record rather than
-the code is the durable part).
+The existing test-only TanStack DB spike establishes same-collection atomic updates and
+selective subscriptions, not Electric integration, React consistency or pagination races:
+<../app/frontend/db_spike/README.md>.
 
-Generation must use standard Bazel rules and pinned local plugins: keep `@protobuf`
-message targets and Aspect `ts_proto_library` for the protobuf payloads, and the existing
-OpenAPI-to-TypeScript path for everything Pydantic. No second TypeScript generator, no
-shell-driven codegen, no checked-in stubs.
+## Storage and durability
 
-Transport acceptance is what the browser test already covers, extended: incremental
-server frames before EOF, cancellation, terminal errors mid-stream, cookies, auth expiry,
-and cursors above `2^53`. Then exercise the deployed ingress -- buffering, idle timeout,
-reconnect, replica replacement. Extend `//agentplane/app:test_thread_browser`, which
-runs a real browser, app and PostgreSQL, and retain app draining behaviour for open
-streams.
+The initial implementation projects the existing exact archive. Each worker transaction
+validates its source/checkpoint, loads the affected prior records, applies a batch, commits
+changed records/content and advances `ViewState`. Serialize per-Thread writes with a row
+lock or fenced ownership. Recovery rereads the durable checkpoint; notifications are only
+wakeups. Every app replica serves the same committed data.
 
-Every route uses the existing caller/session authorization boundary, including resource
-access checks. Require same-origin requests, explicit cookie/CSRF protection for
-mutations, no wildcard credentialed CORS, and structured unauthenticated errors instead of
-HTML login redirects inside a stream. Bound stream lifetime and recheck authorization so
-an expired or revoked login cannot read forever. Cancellation releases
-listeners/transactions; it never issues an interrupt command.
+Do not reconstruct all segment maps, sort all history or recount every pending command per
+batch. Required work is proportional to incoming observations, touched entities and new
+content. Store pending counts with the same transactional transitions. Projection rebuild
+is explicit background work into a new epoch, never a first-view or reconnect operation.
 
-## Schema ownership and service surface
+Store append chunks and manifests so writes cost new content, rather than rewriting every
+prefix of a growing string. Authoritative completion can replace streamed content, even
+with an empty value. Immutable references need a documented retention lifetime and explicit
+expiry; retaining a reference must never silently return a different revision. Query reads
+return a whole selected value irrespective of storage chunk boundaries.
 
-Keep `protocol/{command,event,event_log}.proto` harness-neutral and unchanged by view
-requirements. `app/thread_view.proto` holds the derived types, `app/thread_api.proto` the
-services and request envelopes. Both reuse the generated `Command`, `Event`, `EventEntry`,
-`EventOrigin`, item/turn enums and timestamps. The runner must not import either app file.
-There is no product identity named Conversation.
+The target durability path is:
 
-**Those two files are the service surface.** They carry the protocol overview, worked
-interactions and per-field semantics, and this document does not restate them. An earlier
-version of this section listed every method and request shape, and drifted from the schema
-within a week of the schema existing.
+```text
+harness output -> runner commits semantic batch -> runner forwards batch
+               -> app commits content + projection + ingestion checkpoint
+               -> sync engine publishes committed state -> browser
+```
 
-`ThreadCommandService` covers submission and queries of both pending and settled commands.
-Its reads share the view's materialized checkpoint; the service boundary does not introduce
-an app-owned queue or another ordering.
+Batching amortizes commits without requiring provisional browser text. Runner-process or
+app-replica crashes replay from committed checkpoints. An uncommitted runner batch has not
+been forwarded. Permanent runner-volume loss can lose observations not yet copied to the
+app; app-committed content survives under the app database's storage guarantee. Output the
+runner never received is outside this guarantee. Measure commit latency on actual storage
+before relaxing publication durability.
 
-Operational inventory and runner status remain a separate authority. Existing live
-inventory endpoints stay. A later RPC replacement can offer unary reads and
-server-streaming snapshots with its own version and staleness metadata; it cannot borrow a
-Thread projection cursor. Sandbox CRUD, egress and action policies, Actions, connections,
-consent and settings are not converted by this work.
-
-## Positions, segments and payloads
-
-The shapes are in `thread_view.proto`. What follows is what a schema cannot state about
-itself.
-
-**One integer timeline.** The runner journal's dense sequence. The app archives each Event
-under that same number rather than assigning its own, which `TrajectoryStore.record`
-enforces, so a Segment's position, a Command's admission and a payload's revision are
-directly comparable. A projection checkpoint is a position in that space, never a new app
-Event number, and derived changes are explicitly not Events.
-
-- `source_id` is the original runner journal identity. A changed source is an integrity and
-  recovery condition, not a routine cache reset. Where the app has not observed that
-  identity yet, answer with an explicit projection-not-ready error rather than inventing a
-  source for an empty view. A known empty source can legitimately sit at a zero checkpoint.
-- `projection_epoch` identifies one coherent materialization generation. It is not an Event
-  counter and not a compatibility version. A rebuild publishes a new epoch atomically, and
-  clients rebootstrap rather than combine generations.
-- `through_cursor` covers every original Event through that position, including Events that
-  produced no Segment. Only a successful atomic installation advances it. A Segment's
-  revision says when that Segment last changed, not what a browser has consumed.
-
-**Most Events are carried, not transcribed.** Only an Item is folded, because only an Item
-accumulates across Events -- it is why a derived view exists at all. An Event whose meaning
-is already its final state is carried verbatim, so a reader learns one vocabulary rather
-than a parallel restatement of it, and keeps the Event's timestamp and causal
-`source_sequences`. Three things are genuinely derived, each joining or accumulating rather
-than renaming: `Item`, `CommandSummary`, and `Controls`.
-
-Command Events drive the queue and the controls, and produce no Segment. Grouping runs of
-tool calls and reasoning is a rendering rule over whatever a client is showing, not a fact
-about the log, so nothing marks one.
-
-`Controls` carry the evidenced applied model, active-turn identity and observed harness
-state. Initial configuration is separately identified as configuration provenance.
-`Attached` may be ahead of the archive and must not seed these Event-derived values.
-
-**A growing value streams as its growth.** A batch extending a Segment the caller is known
-to hold carries only what was added; re-sending a value whole on every update costs the sum
-of its prefixes, which is worse than the raw deltas the view replaces. A Segment the
-interval created arrives whole, as does a value replaced rather than grown -- authoritative
-arguments are not an extension of the partial JSON they supersede. A caller that cannot
-apply an extension re-reads that Segment rather than inventing a base. Snapshots and history
-pages only ever carry whole values.
-
-**Payloads are immutable at a reference**, scoped to the source and projection epoch, so a
-corrected rebuild cannot reuse an old derived payload's cache identity. Exact raw references
-remain epoch-independent original Event identities, not derived payload references, and
-`ReadPayload` with an `EventOrigin` returns serialized `EventEntry` bytes. A payload is
-returned whole: a finished value is never split across responses. UTF-8 byte offsets within
-one are not JavaScript string indices.
-
-Unloaded, loading, loaded-empty, streaming, failed-fetch and unavailable payloads are
-distinct UI states. Loaded payload caches are immutable and separate from mutable Segment
-metadata; they never become another authority for item completion.
-
-## Server materialization and replay
-
-The projection is a deterministic fold of a **committed contiguous** archive prefix,
-plus explicit immutable configuration provenance where Events lack an initial seed.
-It preserves the existing normal/Raw grouping semantics without retaining native
-payloads in each segment. Test parity with the current reducer's meaningful output;
-do not preserve accidental duplicate completion presentation.
-
-For each bounded batch `(H, K]`, a projector transaction locks the Thread projection
-checkpoint, reads its next archived Events, updates segments/command indexes/controls,
-records the derived change batch, and advances the checkpoint to `K`. Commit before
-notification. Multiple app replicas can serve reads and submissions; a row lock or
-fenced worker lease serializes projection writes. This is independent of the existing
-Sandbox ingestion lease. Projection may lag archival; report the two positions
-separately in debug/operational status.
-
-Retain a bounded journal of **derived updates** for short reconnects. It is a
-rebuildable cache, not another durable command queue or independent Event history.
-Each batch records original interval endpoints, not an app sequence number. Read
-transactions observe segments, controls and the checkpoint consistently. `LISTEN/NOTIFY`
-only wakes durable rereads; notifications lost between replicas or over reconnect
-cannot create gaps. Follow registers for wakeups before its last empty reread and
-checks again after listener reconnection. Do not hold a DB transaction open for the
-lifetime of a browser stream.
-
-Publish empty-visible-change batches too: a run of only native Events still advances
-coverage. Coalescing within a batch must retain every new historical Segment and
-command/control effect, even when its final state supersedes an earlier intermediate
-state. Exact intermediate streaming chronology remains in Raw.
-
-Keep the committed batch boundaries on replay; every snapshot position is one of
-those boundaries. A single source Event can affect many segments: if its update exceeds
-the transport budget, require bounded rebootstrap rather than publish half an effect
-or invent intermediate runner cursors. Large bodies remain referenced payloads.
-
-Before replay, enforce limits on retained batches, bytes and catch-up work. If the
-cursor expired or the budget would be exceeded, send `RebootstrapRequired` with a
-typed reason, then close normally. A slow consumer gets bounded buffering and the
-same resync path, not unbounded memory. A broken source, conflicting duplicate,
-future cursor, or corrupt projection is an error, not an empty fresh snapshot.
-Transport keepalives are not committed progress and have no invented cursor.
-
-Rebuild off the archived prefix into a new epoch, catch up, and atomically select
-that epoch. Reject/make explicit an incomplete archive; never skip corrupt Events.
-An unsupported new observation must halt the affected projection with a diagnostic
-until interpreted; exact evidence remains readable. Rebuild is background work,
-not work charged to the first viewer. Update-journal expiry does not delete raw data.
+Runner restart also needs incremental recovery: its current journal loads all Events and
+session initialization folds them all. Persist recovery state, index pending commands and
+page replay. Native harness resume cost is a separate measurement; bounding Agentplane's
+work does not prove Claude/Codex's own resume is bounded.
 
 ## Snapshot, live stream, and command recovery
 
-```mermaid
-sequenceDiagram
-    participant F as Browser
-    participant A as App projection/archive
-    participant R as Runner
-    F->>A: GetView {thread:T, window:{max_older:50}}
-    A-->>F: Snapshot {source:S, epoch:E, through:900, window, pending, controls}
-    F->>F: Atomically install snapshot and cursor 900
-    F->>A: FollowView {T, S, E, after:900}
-    A-->>F: Changes {after:900, through:940, segments, commands, controls}
-    F->>A: Submit {T, Command C: ChangeModel(M)}
-    A->>R: Same Command C
-    R-->>A: Event 941 CommandAdmitted(C)
-    A->>A: Archive admission
-    A--xF: Admission response lost
-    A-->>F: Changes {after:940, through:941, C admitted, applied_model unchanged}
-    Note over R: Current turn continues. Another command can be submitted
-    R-->>A: Event 970 ModelChanged(C, M)
-    A-->>F: Changes {after:941, through:970, C effected, applied_model:M}
-```
+These interactions state observable requirements; the engine supplies the actual wire
+messages and snapshot reconciliation algorithm.
 
-A batch that extends a Segment the caller holds carries only what was added, so an Item
-streaming over hundreds of Events costs its final size rather than the sum of its prefixes.
-A caller that cannot apply an extension re-reads that Segment.
+### Open at the tail
 
-`Submit` never waits for native effect. A normal return proves archived admission;
-a timeout/cancellation does not prove non-admission. Retain the exact local command
-until matched against archived evidence. A submit receipt beyond the installed view
-cursor can show saved confirmation but must not advance view coverage or applied
-controls. Ordinary input, model change and interrupt share this rule; interrupt
-continues to identify the intended turn and cannot drift onto a later turn.
+Subscribe through the engine to metadata/current controls and request the latest 30 items
+with text selected, reasoning and tool bodies omitted. Install the subset using its snapshot
+metadata; follow concurrent changes using its sync token. Initial data already contains
+assembled selected text. No replay of old token Events and no hidden background history load.
 
-`GetCommands` reconciles old **settled** commands as well as currently pending ones.
-`not_observed_through:H` is explicitly not a NACK. If the runner is reachable, retry
-the same immutable ID/payload against its journal; never mint a replacement ID to
-resolve an ambiguous response. Payload conflict remains a conflict. After a tab
-reload, local records that were reconciled can be removed without downloading all
-history. A queued model change remains pending until `ModelChanged`, failed or noop.
+### Scroll upward while an old item changes
 
-Pending summaries have their own bounded page independent of conversation segments.
-Keep unresolved count and controls always present, locally submitted IDs pinned,
-and fetch further pending entries on demand. Live command summaries/outcomes update
-loaded entries and counts even when their admission is outside the history window.
-The count must not imply the visible first page is the whole queue. Compare generated
-Commands on reconciliation, not just summary text or IDs.
+At processed source cursor 1000, request before item 400. The page reflects cursor 1010,
+while live changes include an update to an item on that page at 1030. The engine reconciles
+the snapshot and live transaction stream so 1030 wins. A late page cannot regress the item,
+and a page ahead of the currently installed transaction state cannot masquerade as an
+older consistent view. Preserve the visible item and pixel offset after prepending.
 
-On a short reconnect, follow from the last installed position. Batches must start at
-that position; duplicates require matching identity/content. Partial overlap or a
-gap is not guessed through. Recover by rereading/rebootstrap; report conflicting
-content as an integrity error. Connection loss leaves visible data marked stale.
+### Reconnect
 
-On a long gap or epoch change, cancel the old subscription, increment the frontend
-request generation, and get a new bounded snapshot whose window is where the reader is
-parked rather than the tail. Install its segments, controls, commands and position
-atomically, then follow, and reconcile any locally retained Command ids with
-`GetCommands` against the position just installed. Preserve drafts, disclosures and
-viewport position, not stale server truth. Old generation callbacks cannot write into the
-new store. An unavailable cursor is reported with a reason; the client does not silently
-jump to the tail.
+For a short disconnect, the engine resumes using its own token and deduplicates delivery.
+For expired history or excessive catch-up, discard the affected subscription generation
+and obtain fresh limited subsets. Restore an old reading position with by-ID and before/after
+queries. Preserve drafts, disclosure state and reading position. Do not download the items
+between that position and the tail. Ignore late callbacks from superseded subscriptions.
 
-```mermaid
-sequenceDiagram
-    participant F as Browser offline at 970
-    participant A as App through 500000
-    F->>A: FollowView {T, S, E, after:970}
-    A-->>F: RebootstrapRequired {UpdateCacheExpired}
-    F->>F: Cancel old generation. Retain draft and viewport at cursor 400
-    F->>A: GetView {T, window:{from_cursor:400, max_older:25, max_newer:25}}
-    A-->>F: Snapshot {through:500000, window around 400, controls, pending}
-    F->>A: GetCommands {T, ids:[C], minimum_through:500000}
-    A-->>F: Lookup {C settled}
-    F->>F: Atomic replacement without missed-token replay or jump to bottom
-    F->>A: FollowView {T, S, E, after:500000}
-    A-->>F: Changes {500000..500020}
-```
+### Expand content during streaming
 
-## History and live-data races
+An item points to output revision R. Hydrate that whole immutable value on demand and use
+the engine's supported content subscription for subsequent chunks/manifests. The reference
+is not a replacement for its sync token. If a newer manifest is selected before the read
+returns, cache the old immutable value without substituting it for the new one. Closing the
+panel releases interest and permits eviction. Content writes use field identity, so an
+output update cannot make an independently loaded arguments value appear stale.
 
-History is keyset-paginated by each Segment's immutable cursor, not by timestamp or
-offset. A new Segment cannot appear behind a cursor a caller already processed, and an
-updated old Item keeps the cursor it started at.
+### A command response is lost
 
-**Chosen consistency:** each page is a current short DB snapshot at `P`, at least
-the request's `minimum_through`. Adjacent pages need not share a long-lived historic
-DB snapshot; stable cursors prevent insert-induced holes. A page's Segment revisions
-are at most `P`. It does not advance the browser's live cursor.
-
-The view stream includes compact changes for every affected segment, including those
-outside loaded windows. The browser keeps a **bounded** recent change buffer, not all
-those segments. This permits race-free hydration without a bidirectional subscription
-or per-browser server-side window registry:
-
-1. At installed cursor `H`, request the page with `minimum_through:H`; retain change
-   batches from `H` while the request is outstanding.
-2. A response at `P > current_cursor` waits until the live stream reaches `P`.
-   It must not inject future state into an earlier snapshot.
-3. If the browser is already at `K >= P`, merge the page plus buffered changes `(P, K]`
-   for those Segments in one transaction. Ignoring a late lower-revision Segment is
-   sufficient only where a newer whole Segment is already loaded; an evicted Segment may
-   need the buffered extensions replayed onto the page, which is why the buffer exists.
-4. If the needed buffer was evicted, an extension names a revision the page does not
-   carry, or the epoch or source changed, discard and retry hydration or rebootstrap
-   bounded windows. Never declare a stale page current. Requests and buffered bytes have
-   explicit limits.
-
-A page always carries whole Segments, so it is a valid base to replay extensions onto. An
-extension for an unloaded Segment is buffered for a pending hydration rather than applied
-to a fabricated empty Item. A page becomes observable only after that replay; showing an
-unreconciled page as current would violate the checkpoint contract. Where a minimum cursor
-cannot be served before the request deadline, report projection lag rather than return an
-older successful page.
-
-```mermaid
-sequenceDiagram
-    participant F as Browser at 1000
-    participant A as App
-    F->>A: ListSegments {before_cursor:400, minimum_through:1000, max_segments:50}
-    A->>A: Read segments and checkpoint P=1010 consistently
-    A-->>F: Changes {1000..1010}
-    A-->>F: Changes {1010..1030, update old item I}
-    A-->>F: Delayed SegmentsPage {covers 350..400, whole Segments incl. I}
-    F->>F: Merge page + buffered 1010..1030 for its segments
-    Note over F: Still through 1030. Preserve visible segment and pixel offset
-    F->>A: ReadPayload {I.output at revision 1020}
-    A-->>F: The whole value at that reference, without changing the live cursor
-```
-
-Pending-page and command-lookup hydration obey the same position/generation rules.
-For pending membership, live settlement removes an entry even if it raced the page;
-new admissions have higher cursors and are found through live updates. An immutable
-payload needs no Segment overwrite: cache it by reference and show it only while that
-reference is selected, or label a historical revision explicitly.
-
-Keep a bounded tail window and, while reading far back, a bounded window around the
-viewport. Evict/refetch intervening history; do not accumulate a month of segments just
-because the tab stayed open. Pin controls, pending-page metadata and local commands,
-not the entire turn. Prepending preserves the visible segment plus pixel offset. New
-output sticks to the bottom only if the user was already there. Virtualization
-bounds mounted DOM independently of network/cache bounds.
+Keep the exact local Command and ID. Query that ID, including settled commands outside the
+visible history. `NotObservedThrough` is not a NACK. Retrying uses the same ID and payload;
+a different ID risks duplicate work. Admission marks saved intent, while model/interrupt
+controls change only on their observed effects. The runner remains the only command queue.
 
 ## Raw and debug surface
 
-Raw remains additive to the same conversation order and disclosures. Show source,
-Segment cursor and revision, installed projection cursor, applied command evidence and
-separately reported archive/runner positions. Fetch exact frames and causal
-`source_sequences` only when requested. Raw chronological entries retain original
-cursor order even when an aggregate card spans interleaved streaming Events.
+An item has indexed evidence associations to its producing observations and their native
+`source_sequences`. These are many-to-many and demand-paged, never an ever-growing list in
+the item's routine sync row. Evidence with no item association belongs at its turn/lifecycle
+position. Offer both "evidence for this item" and original chronological inspection.
+Retained raw identities remain source/sequence pairs independent of projection epoch.
 
-`ListEvents` reports the original range it scanned, which bounds what an empty page
-proves and is where a caller resumes from. A direct evidence lookup can find Native frames
-before the visible page and command Events, which the conversation carries no Segment for.
-The raw follower is an explicit debugging option, not a background
-requirement for normal mode. Neither raw pagination nor direct lookup moves the
-conversation checkpoint. A live Raw panel follows archive availability separately
-from the potentially lagging projection.
+The target separates three lifetimes: durable semantic content and execution facts;
+engine replay history for reconnect; optional raw/native capture. Omitting content from
+browser queries changes none of these retention policies.
 
-Availability is typed: retained, not-yet-archived, and unavailable. Transport failure is
-not empty evidence. Raw authentication is no weaker than conversation authentication, and
-raw payloads are not copied into routine telemetry or error messages.
+Initially retain all current Events. Before allowing capture to be disabled, make the
+semantic journal/checkpoints sufficient for projection and recovery without native frames.
+The existing dense Event stream mixes native and semantic observations: simply dropping
+Native rows would violate its contiguous-prefix checks. Define a semantic replication
+sequence/checkpoint and independent raw identities at that cutover; missing capture must
+not look like a corrupted semantic stream. Keep native resume artifacts under their own
+ownership, separate from debug capture.
 
-Initial implementation retains **all** observed runner Events, native frames and
-deltas. Optional app-wide/per-Thread retention is separate: define policy precedence,
-runner/app scope, future capture versus deletion, absent-range explanations and
-rebuild/recovery consequences before deleting anything. Final assembled text is not
-a lossless replacement for partial output, crash boundaries or streaming chronology.
+Raw batches may live compressed in object storage with indexed manifests in PostgreSQL,
+without one database transaction per packet. Record whether evidence was not captured,
+expired, not yet archived or lost. Raw-free recovery cannot reinterpret discarded native
+traffic after an adapter bug. Journal compaction must wait for durable downstream uptake
+or a sufficient retained checkpoint; it must not delete the only recoverable content.
 
-## Frontend ownership
+## Frontend ownership and acceptance
 
-One TanStack DB collection per open Thread owns a tagged union of segment, command,
-control and coverage records. Commit each snapshot/change envelope with a single
-collection transaction, so direct subscribers cannot see a new cursor with old
-controls. Read-only custom synchronization owns writes; optimistic user mutations
-cannot manufacture harness effects. Use selective queries per segment/queue/control.
-Separate immutable payload/raw collections do not participate in live coverage.
-Request generations and cancellation protect route changes and rebootstrap.
+One normalized server-state owner serves the open Thread. TanStack DB queries select loaded
+entities; do not copy them into another mutable React store. Payloads are immutable caches
+keyed by reference. Drafts, local unconfirmed commands and viewport/disclosure state retain
+their distinct local provenance. Logout clears subscriptions and user-scoped caches.
 
-The test-only spike's focused Bazel tests passed collection atomicity, selective
-subscriptions, generated `uint64` values above `2^53`, late-page regression, stale
-generation rejection, evidence separation, eviction and mutation rejection:
-[expanded test invocation](https://app.buildbuddy.io/invocation/0c593693-929f-4bab-a4ad-cb437efa60ff),
-in [the test-only evaluation PR](https://github.com/agentydragon/ducktape/pull/7069).
-This does **not** prove React render consistency, HTTP streaming, the page-buffer
-algorithm above, or deployed performance. Validate those before production cutover.
-If the library fails the required integration, use Redux Toolkit/RTK Query as the
-alternative owner, not as another cache beside it.
+Keep a limited tail and reading window; evict the middle. Virtualization limits mounted DOM
+independently of network/cache limits. Unloaded bodies, fetch failures, empty bodies and
+incomplete harness output must look different. New output follows the bottom only while
+the reader is already there.
 
-Validate an entire batch before `begin`: the evaluated sync API has no public
-rollback transaction. Await the commit receipt before marking initial load ready.
-Automatic query-to-server pushdown is not established by the spike; the view manager
-explicitly owns bounded requests, stream consumption and eviction.
+Required evidence before production cutover:
 
-Draft text, scroll/disclosure state and exact locally unconfirmed Commands remain
-local state with distinct provenance. Do not persist authentication-independent
-server caches across users; logout/identity change cancels subscriptions and clears
-accessible cached data. React consumes the collection through the library's supported
-external-store integration; no effect-based second copy of the entire Thread.
-
-## Failure and acceptance matrix
-
-RPC errors distinguish invalid input/ID conflict, authentication/authorization,
-missing Thread, temporary unavailability/projection lag, exhausted resource budgets,
-and integrity loss. A command rejected before admission has no runner Event;
-post-admission failure has `CommandFailed`. A submit deadline is neither kind of
-NACK. Retriable read errors preserve stale visible state and an actionable retry.
-`RebootstrapRequired` is a typed sync transition, not an arbitrary transport error.
-
-| Case                                                | Required observation                                                                                                              |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Short high-delta or month-long Thread               | Bounded first payload and work; assembled past text; no eventual full-history fetch                                               |
-| First screenful only                                | The visible conversation, controls and pending queue render and accept a command before any history or evidence is fetched        |
-| Item streaming over hundreds of Events              | Text and tool output appear while produced; bytes followed are proportional to what was added, not to the value's size per update |
-| Empty/new Thread; projector behind archive          | Valid empty snapshot or explicit projection-not-ready; never fake successful catch-up                                             |
-| Native-only interval                                | Coverage advances without fabricated conversation segments                                                                        |
-| Active pre-window item, huge turn/output            | Current controls intact; bounded segments/previews; exact demand-loaded content                                                   |
-| Model queued during Codex turn                      | Admission visible as pending; picker changes only on evidenced effect                                                             |
-| Interrupt or command failure                        | Original target/cause and error shown; no fabricated interrupted/completed state                                                  |
-| Claude-coalesced input                              | Exact confirmed text and all origin command IDs, at native confirmation position                                                  |
-| Failed turn without output                          | Terminal Event visible with its error, without Raw and without a duplicate completion card                                        |
-| Lost submit response; old settled local command     | Exact ID/payload reconciliation outside visible history; no duplicate send under a new ID                                         |
-| App/projector/replica restart, missed notification  | Replay resumes from durable committed checkpoint; segments and coverage agree                                                     |
-| Crash between projection writes/checkpoint          | Transaction rollback or complete batch, never partial progress                                                                    |
-| Long gap, expired update cache, slow client         | Explicit bounded rebootstrap preserving draft and viewport; local ids reconciled on the new position                              |
-| Late page/lookup/detail, eviction, stream race      | No regression or future contamination; buffered extensions replayed onto the page, or an explicit retry                           |
-| Single Event revising many Segments                 | The whole batch or none of it; no partial cursor advancement                                                                      |
-| Old-epoch payload returns after rebuild             | Immutable cache identity cannot collide; stale response cannot replace current bytes                                              |
-| Repeated upward paging during live changes          | No gaps/duplicates; stable viewport, explicit exhaustion, bounded cache                                                           |
-| Raw entry outside the loaded window                 | Exact original provenance and order; independent cursor and explicit availability                                                 |
-| Sandbox suspended/deleted; runner unreachable       | Archived page readable, controls show evidence/staleness, submit does not pretend to queue                                        |
-| Source conflict, unknown observation, corrupt batch | Explicit integrity/projection error; never silently reset or drop evidence                                                        |
-| Auth expiry, cross-user cache, CSRF, stream cancel  | No auth bypass/leak; controlled login/reconnect; no unintended command cancellation                                               |
-
-Reducer tests compare `snapshot(H) + changes(H,K]` to direct projection at `K`,
-including randomized batch boundaries and all command outcome types. Database tests
-exercise transactions, indexed bounded reads and cross-replica wakeup races. Frontend
-tests exercise subscriber and render boundaries, the full hydration algorithm, and
-visual states. Browser acceptance measures transfer, decoded bytes, mounted segments,
-first usable view and reconnect work against the measured staging shape and synthetic
-long history. Report browser measurements separately from host HTTP/store benchmarks.
+- Projection parity over different batch boundaries, including parallel tools finishing in
+  reverse order, authoritative replacement, independent content fields, unknown observations,
+  command outcomes and interruption. Invalid batches publish no partial state.
+- Transaction/crash tests for source/checkpoint validation, duplicate delivery and app-replica
+  takeover. Notifications lost across reconnect cannot lose committed data.
+- Real sync-engine/browser tests for history/live races, content selection, expired handles,
+  large individual bodies, unsubscribe/refetch, auth and old subscription callbacks.
+- Scale comparisons over orders of magnitude of history: initial queries and reconnect fetch
+  only requested windows; per-batch projection and memory do not scan/retain full history.
+  Measure transfer, storage writes and browser paint separately. Large selected content may
+  cost proportionally to its size; a fixed item count is not a fixed number of bytes.
+- Runner recovery from checkpoint plus bounded suffix; native harness resume measured separately.
 
 ## Implementation boundaries
 
-Implement in independently reviewable units: transport/codegen probe; pure projection
-and parity tests; transactional read model/rebuild/update journal; RPC reads/follow
-and auth; frontend store/Thread cutover; history/payload/Raw demand reads and browser
-acceptance. History and payload semantics must be supported by the initial schema,
-even if their UI lands later. Delete obsolete full-history stores/reducers and direct
-Thread HTTP callers at their replacement cutover; do not retain a compatibility mode.
+Review the domain schemas and requirements first. The pure incremental projector and its
+semantic tests are a separate change. Evaluate the existing sync integration independently
+of that server fold, then implement transactional materialization and integrate the browser.
+Tail loading, history paging, content selection and reconnect must all be exercised before
+cutover. Remove the obsolete full-history browser reducer at that cutover.
 
-No runner protocol migration, new command queue, combined Sandbox+Thread creation,
-resume implementation, optional retention deletion or conversation-density redesign
-is authorized by this document. Other app pages may adopt the chosen request/store
-patterns later, preserving their own authoritative versions and domain APIs.
+Optional raw capture and journal compaction follow durable semantic storage. This document
+changes no running runner, database schema, command queue, transport or capture policy.
+The parked Connect and gRPC-Web experiments remain reference material; no transport migration
+is required to choose the domain model or the sync engine.
+
+## Transport experiments
+
+The parked [Connect server PR](https://github.com/agentydragon/ducktape/pull/7079) and
+[browser PR](https://github.com/agentydragon/ducktape/pull/7083) preserve reusable replay/feed
+semantics. Its generated Python client yielded no frames in a recorded 20-second open-stream
+probe; the cause was not established. Separate ASGI mounts also needed explicit authorization
+wiring. These constrain that evaluated integration, not every implementation of Connect.
+
+The gRPC-Web/Envoy spike at commit `7e1a36d8` worked, but required an additional translation
+hop in production and the browser acceptance environment. A native Python gRPC client bypassed
+that browser wire. Generated protobuf domain types remain useful independently of either RPC
+transport; the current schemas therefore define messages without service stubs.

@@ -1,97 +1,80 @@
 syntax = "proto3";
 
-// The derived Thread view: what the app materializes from its archived Event prefix so that opening
-// a page does not replay the Thread. These types are app-owned and derived. The runner must not
-// import this file, and nothing here is an Event -- a Segment's cursors are positions in the
-// original runner cursor space, never a new app sequence.
-//
-// Contract: x/agentplane/docs/thread_view_sync.md. Fold: x/agentplane/app/projection.py.
+// Materialized Thread state. These messages describe domain records and complete query results;
+// the selected sync engine owns its offsets, snapshot boundaries, changes and reconnect protocol.
+// The runner must not import app schemas. Contract: agentplane/docs/thread_view_sync.md.
 package ducktape.agentplane.app.v1;
 
-// Identifiers and positions
-//
-// There is one integer timeline: the runner journal's dense sequence. The app archives each Event
-// under that same number rather than assigning its own -- `TrajectoryStore.record` rejects an entry
-// whose `origin.sequence` differs from its `cursor` -- so a Segment's position, a Command's
-// admission and a payload's revision are all positions in one order, directly comparable.
-//
-// Every field holding such a position ends in `_cursor`, or is named `cursor`. Every other integer
-// is a size, a count, or a byte offset within a single payload, and is never comparable with one.
-//
-// Identifiers are strings and are never positions: `thread_id` names the app's Thread, `source_id`
-// the runner journal those cursors belong to, `projection_epoch` one materialization generation of
-// it, and `command_id`, `turn_id`, `item_id` and `harness_message_id` are names minted inside the
-// conversation. Page tokens are opaque and bound to a Thread, source, epoch and direction.
+import "agentplane/protocol/command.proto";
+import "agentplane/protocol/event.proto";
 
-import "x/agentplane/protocol/command.proto";
-import "x/agentplane/protocol/event.proto";
-
-// How far a projection covers, in the original source's cursor space.
+// Projection progress in the runner journal. This is NOT a sync-engine continuation token.
 message Position {
-  // The original runner journal identity. A changed source is an integrity condition, not a cache
-  // reset.
   string source_id = 1;
-  // One coherent materialization generation. Not an Event counter and not a compatibility version:
-  // a rebuild publishes a new epoch atomically and clients rebootstrap rather than combine two.
+  // A rebuild selects a new generation atomically. Never mix records from different generations.
   string projection_epoch = 2;
-  // Covers every original Event through this cursor, including Events that produced no Segment.
+  // Includes observations that produced no conversation item, such as retained native frames.
   uint64 through_cursor = 3;
 }
 
-// An immutable byte range the client reads on demand, scoped to one source and epoch so a corrected
-// rebuild cannot reuse a stale derived payload's cache identity.
+enum PayloadField {
+  PAYLOAD_FIELD_UNSPECIFIED = 0;
+  PAYLOAD_FIELD_TEXT = 1;
+  PAYLOAD_FIELD_ARGUMENTS = 2;
+  PAYLOAD_FIELD_OUTPUT = 3;
+  PAYLOAD_FIELD_COMMAND_INPUT = 4;
+  PAYLOAD_FIELD_CONFIRMED_INPUT = 5;
+}
+
+// Immutable complete content at an item/field revision. A replacement gets a new reference;
+// independently growing fields do not invalidate each other's references.
 message PayloadRef {
   string source_id = 1;
   string projection_epoch = 2;
   uint64 owner_cursor = 3;
-  // Which field of the owning Segment this payload holds.
-  string field = 4;
+  PayloadField field = 4;
   uint64 revision_cursor = 5;
-  uint64 byte_length = 6;
 }
 
-// A value a response carries whole, leaves for an on-demand read, or extends.
-//
-// A snapshot and a history page only ever carry `value` or `omitted`, so a caller that has just read
-// one holds complete values. `suffix` appears only in a live batch, where re-sending a growing value
-// on every update would cost the sum of its prefixes -- quadratic in its final size, and worse than
-// the raw deltas it replaces. An empty `suffix` means this field did not change.
-//
-// A replacement rather than an extension -- authoritative arguments superseding streamed partial
-// JSON, or a completion whose text differs from what streamed -- is sent as `value`, because the new
-// value is not an extension of the old one.
+// Presence distinguishes an included empty value from an omitted body. Included values are whole
+// at this reference, even if the item is still streaming. Queries never truncate them to a budget.
 message Text {
-  oneof body {
-    string value = 1;
-    Omitted omitted = 2;
-    string suffix = 3;
-  }
-}
-
-// Why the value is not here and how to get it. `byte_length` lets a collapsed card say how much it
-// is not showing without fetching it.
-message Omitted {
   PayloadRef reference = 1;
-  uint64 byte_length = 2;
+  optional string value = 2;
 }
 
-// An item of the conversation: an assistant message, a reasoning step, or a tool call. This is the
-// one entity the projection actually folds -- it accumulates the deltas that arrive as separate
-// Events into the value a reader sees, which is most of why a derived view exists at all.
+// Content selection is independent of item membership and lifecycle. Selecting no bodies still
+// returns item metadata and references. Raw evidence is a separate explicit read.
+message ContentSelection {
+  bool text = 1;
+  bool reasoning = 2;
+  bool tool_arguments = 3;
+  bool tool_output = 4;
+}
+
 message Item {
+  // Native identity within the source. The Segment cursor is the stable timeline identity.
   string item_id = 1;
   ducktape.agentplane.protocol.v1.ItemKind kind = 2;
   string tool_name = 3;
-  // What has streamed so far, replaced by the authoritative value when the item completes.
   Text text = 4;
   Text arguments_json = 5;
   Text output = 6;
-  // Absent while streaming, and after a crash that ended the stream: unknown output is never
-  // converted into a successful completion.
+  // Missing means no completion was observed, including after interruption or process loss.
   oneof completion {
     TextCompleted completed_text = 7;
     ToolCompleted completed_tool = 8;
   }
+  // The turn active at first observation, when known. Later updates preserve this association.
+  optional string turn_id = 9;
+}
+
+// Separating the body permits selecting metadata without retransmitting the confirmed input.
+message ConfirmedInput {
+  string harness_message_id = 1;
+  repeated string origin_command_ids = 2;
+  optional string turn_id = 3;
+  Text text = 4;
 }
 
 message TextCompleted {}
@@ -107,50 +90,38 @@ enum HarnessState {
   HARNESS_STATE_LOST = 3;
 }
 
-// One unit of the derived conversation, keyed by the Event that created it.
-//
-// An Event whose meaning is already its final state -- a confirmed input, a turn starting or
-// ending, a model change, a harness lifecycle transition -- is carried verbatim rather than
-// transcribed into a parallel vocabulary, so a reader learns one language instead of two. Only an
-// Item is folded, because only an Item accumulates across Events. Native frames, harness stderr and
-// debug checkpoints produce no Segment at all, and Command Events appear as CommandSummary rather
-// than in the conversation.
+// One ordered history with updates to any item; no edits of past user input or branches.
+// Turn boundaries, model effects and harness lifecycle facts retain their Event vocabulary.
+// Confirmed input separates selectable content. Commands and raw evidence are separate records.
 message Segment {
-  // The cursor of the Event that created this Segment: its identity, which does not move when later
-  // Events revise it, so history pages key on it safely.
+  // First-observed source cursor: identity and order, unchanged by later updates.
   uint64 cursor = 1;
-  // When it last changed. Equal to `cursor` for a carried Event, which never revises; for an Item it
-  // is the latest delta folded into it.
   uint64 revision_cursor = 2;
-  // Set only where this update extends a value the caller already holds: the revision its copy must
-  // be at. Unset means every value here is whole, which is always so in a snapshot and a history
-  // page.
-  //
-  // A caller holding a different revision -- it evicted the Segment, or missed a batch -- has
-  // nothing to extend. It re-reads the Segment with a minimum at or beyond this batch's
-  // `through_cursor`, and what comes back already includes this extension, so the read replaces the
-  // extension rather than being appended to. Applying both would double the suffix; comparing
-  // revisions is what makes taking the read instead safe.
-  optional uint64 from_revision_cursor = 5;
   oneof content {
     Item item = 3;
     ducktape.agentplane.protocol.v1.Event event = 4;
+    ConfirmedInput confirmed_input = 5;
   }
 }
 
-// Current state as the Events evidence it, never as a request or a local expectation.
 message Controls {
   optional string applied_model = 1;
   optional string active_turn_id = 2;
   optional HarnessState harness_state = 3;
-  // Where an Event prefix carries no initial seed, the configured value, identified as
-  // configuration rather than as evidence.
+  // Configuration provenance when no Event supplied the initial model.
   optional string configured_model = 4;
+}
+
+// Committed atomically with the entities changed by the projector. Neither a runner Attached
+// snapshot ahead of the copied prefix nor a command receipt advances this state.
+message ViewState {
+  Position position = 1;
+  Controls controls = 2;
+  uint64 unresolved_count = 3;
 }
 
 message Pending {}
 
-// The specifically evidenced operation took effect, at this Event.
 message Effected {
   uint64 origin_cursor = 1;
 }
@@ -167,9 +138,9 @@ message CommandNoop {
 
 message CommandSummary {
   string command_id = 1;
-  // Which operation the Command carries, so a queue renders without opening it.
   string operation_kind = 2;
-  Text preview = 3;
+  // Exact submitted input or its reference, never a truncated preview.
+  Text input = 3;
   uint64 admission_cursor = 4;
   oneof outcome {
     Pending pending = 5;
@@ -179,7 +150,6 @@ message CommandSummary {
   }
 }
 
-// An exact admitted Command with whatever terminal evidence exists for it.
 message AdmittedCommand {
   ducktape.agentplane.protocol.v1.Command command = 1;
   uint64 admission_cursor = 2;
@@ -191,8 +161,7 @@ message AdmittedCommand {
   }
 }
 
-// Explicitly not a negative acknowledgement: the projection has not observed this id through that
-// cursor, which is not proof the runner never admitted it.
+// Absence through a projection checkpoint is not proof that the runner never admitted the command.
 message NotObservedThrough {
   string command_id = 1;
   uint64 through_cursor = 2;
@@ -206,84 +175,38 @@ message CommandLookupEntry {
 }
 
 message CommandLookup {
-  repeated CommandLookupEntry entries = 1;
+  Position position = 1;
+  repeated CommandLookupEntry entries = 2;
 }
 
-// A bounded page. Empty distinguishes exhaustion from a byte or scan limit, so `exhausted` is not
-// derivable from the segment count.
+// Query results are complete selected values at position. The sync engine coordinates their
+// installation with live updates; reading a page alone never advances a subscription token.
 message SegmentsPage {
-  repeated Segment segments = 1;
-  // The cursor range this page covers, so a caller knows exactly what it now holds even where the
-  // page is sparse -- most Events produce no Segment -- or empty. Paging further asks for the
-  // Segments before `covers_from_cursor`; keyset paging needs no separate page token.
-  uint64 covers_from_cursor = 2;
-  uint64 covers_through_cursor = 3;
-  // No Segments remain beyond this page in the requested direction, as distinct from a page that
-  // simply hit its count.
-  bool exhausted = 4;
+  Position position = 1;
+  repeated Segment segments = 2;
+  // True iff no more items existed in the requested direction at position.
+  bool exhausted = 3;
 }
 
 message CommandsPage {
-  repeated CommandSummary commands = 1;
-  bool exhausted = 2;
-  // Every unresolved Command, which the first page's length must not be mistaken for.
-  uint64 unresolved_count = 3;
-}
-
-message ViewSnapshot {
-  // What the whole snapshot is consistent with, and what the caller follows from.
   Position position = 1;
-  // The requested window. Further history is ListSegments, which orders against this Position.
-  SegmentsPage window = 2;
-  Controls controls = 3;
-  // Command summaries are view state, not a query answer: `Changes` carries them too, so a snapshot
-  // without them would break snapshot-plus-changes parity. Reconciling specific locally retained
-  // ids is `ThreadCommandService.GetCommands`, which orders against a snapshot through `minimum`.
-  CommandsPage pending = 4;
+  repeated CommandSummary commands = 2;
+  bool exhausted = 3;
 }
 
-// Everything that changed over an interval. Segments and commands carry complete values, so
-// applying a batch never depends on holding the previous revision.
-message Changes {
-  string source_id = 1;
-  string projection_epoch = 2;
-  uint64 after_cursor = 3;
-  uint64 through_cursor = 4;
-  repeated Segment segments = 5;
-  repeated CommandSummary commands = 6;
-  Controls controls = 7;
-  uint64 unresolved_count = 8;
-}
-
-message RebootstrapRequired {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    // The bounded journal of derived updates no longer reaches the client's position.
-    REASON_UPDATE_CACHE_EXPIRED = 1;
-    REASON_CATCHUP_BUDGET_EXCEEDED = 2;
-    REASON_PROJECTION_REBUILT = 3;
-  }
-  Reason reason = 1;
-}
-
-// A typed synchronization transition, not a transport error.
-message ViewUpdate {
-  oneof update {
-    Changes changes = 1;
-    RebootstrapRequired rebootstrap_required = 2;
-  }
-}
-
-// How available a piece of exact evidence is. Transport failure is not empty evidence.
 enum Availability {
   AVAILABILITY_UNSPECIFIED = 0;
-  AVAILABILITY_RETAINED = 1;
-  AVAILABILITY_NOT_YET_ARCHIVED = 2;
-  AVAILABILITY_LOST = 3;
+  AVAILABILITY_NOT_YET_ARCHIVED = 1;
+  AVAILABILITY_LOST = 2;
+  AVAILABILITY_NOT_CAPTURED = 3;
+  AVAILABILITY_EXPIRED = 4;
 }
 
-// The whole value at an immutable reference. Reading one never advances the caller's Position.
+// A whole immutable value, or a reason it is unavailable. Transport failure is an error, and an
+// included empty byte string is a successful read. Storage chunking is not query pagination.
 message Payload {
-  bytes data = 1;
-  Availability availability = 2;
+  oneof result {
+    bytes data = 1;
+    Availability unavailable = 2;
+  }
 }
