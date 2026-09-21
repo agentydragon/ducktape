@@ -1,6 +1,5 @@
 public_base_url: "https://airlock.allegedly.works"
-oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
-oidc_client_id: "airlock-operator"
+oidc_issuer: "https://auth.allegedly.works/application/o/airlock-server/"
 port: 8765
 
 oauth:

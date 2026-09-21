@@ -1,5 +1,5 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
@@ -11,127 +11,212 @@ js_openapi_schema(
     generator = "//props/backend:export_schema_bin",
 )
 
-# Standalone utilities (no local deps)
-
-js_library(
+ts_library(
     name = "llmRequestUtils",
     srcs = ["llmRequestUtils.ts"],
+    tsconfig = "//props/frontend:tsconfig",
 )
 
-js_library(
+ts_library(
     name = "router",
     srcs = ["router.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "colors",
     srcs = ["colors.ts"],
+    tsconfig = "//props/frontend:tsconfig",
 )
 
-js_library(
+ts_library(
+    name = "icon_types",
+    srcs = ["icon_types.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = ["//props/frontend:node_modules/@types/react"],
+)
+
+ts_library(
+    name = "icons",
+    srcs = [
+        "icons.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":icon_types",
+        "//props/frontend:node_modules/@tabler/icons-react",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "fileTypes",
     srcs = ["fileTypes.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":icon_types",
+        ":icons",
+    ],
 )
 
-js_library(
+ts_library(
     name = "highlighting",
     srcs = ["highlighting.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = ["//props/frontend:node_modules/highlight.js"],
 )
 
-js_library(
-    name = "expansionState",
-    srcs = ["expansionState.svelte.ts"],
-)
-
-js_library(
+ts_library(
     name = "token",
     srcs = ["stores/token.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-# Utilities with deps
-
-js_library(
+ts_library(
     name = "types",
     srcs = ["types.ts"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [":schema"],
 )
 
-js_library(
+ts_library(
     name = "client",
     srcs = ["api/client.ts"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":schema",
         ":token",
+        "//props/frontend:node_modules/openapi-fetch",
     ],
 )
 
-js_library(
+ts_library(
     name = "formatters",
     srcs = ["formatters.ts"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":client",
         ":types",
+        "//props/frontend:node_modules/date-fns",
     ],
 )
 
-js_library(
+ts_library(
     name = "status",
     srcs = ["status.ts"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [":client"],
 )
 
-# Link components
+ts_library(
+    name = "runModalContext",
+    srcs = ["runModalContext.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":types",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
 
-js_library(
+ts_library(
+    name = "toast",
+    srcs = ["toast.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/notifications",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "CritiqueIssueLink",
-    srcs = ["CritiqueIssueLink.svelte"],
-    deps = [":router"],
+    srcs = ["CritiqueIssueLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "FileLink",
-    srcs = ["FileLink.svelte"],
-    deps = [":router"],
+    srcs = ["FileLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "OccurrenceLink",
-    srcs = ["OccurrenceLink.svelte"],
-    deps = [":router"],
+    srcs = ["OccurrenceLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "RunIdLink",
-    srcs = ["RunIdLink.svelte"],
+    srcs = ["RunIdLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
         ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "DefinitionIdLink",
-    srcs = ["DefinitionIdLink.svelte"],
+    srcs = ["DefinitionIdLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
         ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "SnapshotLink",
-    srcs = ["SnapshotLink.svelte"],
+    srcs = ["SnapshotLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
         ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "ExampleLink",
-    srcs = ["ExampleLink.svelte"],
+    srcs = ["ExampleLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":client",
         ":router",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
     ],
 )

@@ -46,6 +46,186 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: aws-route53-cert-manager-credentials-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - aws-route53-cert-manager-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aws-route53-cert-manager-credentials-cert-manager-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aws-route53-cert-manager-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: cert-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aws-route53-dns-automation-credentials-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - aws-route53-dns-automation-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aws-route53-dns-automation-credentials-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aws-route53-dns-automation-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: brave-search-api-key-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - brave-search-api-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: brave-search-api-key-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: brave-search-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coinbase-api-credentials-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - coinbase-api-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coinbase-api-credentials-haku-sandbox-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: coinbase-api-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: haku-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: buildbuddy-api-key-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - buildbuddy-api-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-api-key-claude-sandbox-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: claude-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-api-key-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-api-key-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: llm-gemini-reader
   namespace: ducktape-flux
 rules:
@@ -151,7 +331,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: github-agentydragon-agent-agentplane-egress-credentials-reader
+  name: github-agentydragon-agent-agentplane-staging-egress-credentials-reader
   namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -161,7 +341,22 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: external-creds-reader
-    namespace: agentplane-egress-credentials
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-agentplane-testing-egress-credentials-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-testing-egress-credentials
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -372,3 +567,33 @@ subjects:
     kind: ServiceAccount
     name: external-creds-reader
     namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openclaw-telegram-bot-token-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - openclaw-telegram-bot-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openclaw-telegram-bot-token-claude-sandbox-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openclaw-telegram-bot-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: claude-sandbox

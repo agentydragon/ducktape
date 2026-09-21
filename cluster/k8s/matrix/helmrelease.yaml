@@ -1,0 +1,160 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: ananace-charts
+  namespace: matrix
+spec:
+  interval: 24h
+  url: https://ananace.gitlab.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: matrix-synapse
+  namespace: matrix
+spec:
+  interval: 15m
+  install:
+    strategy:
+      name: RetryOnFailure
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+  chart:
+    spec:
+      chart: matrix-synapse
+      version: "3.12.37"
+      sourceRef:
+        kind: HelmRepository
+        name: ananace-charts
+        namespace: matrix
+  valuesFrom:
+    # OIDC provider configuration from SOPS-managed secret
+    - kind: Secret
+      name: matrix-oidc-config
+      valuesKey: values.yaml
+    # Macaroon secret key (SOPS, k8s/matrix/secrets/synapse-macaroon-secret.sops.yaml)
+    - kind: Secret
+      name: synapse-macaroon-secret
+      valuesKey: macaroon_secret_key
+      targetPath: config.macaroonSecretKey
+    # Registration shared secret (SOPS)
+    - kind: Secret
+      name: synapse-registration-secret
+      valuesKey: registration_shared_secret
+      targetPath: config.registrationSharedSecret
+  values:
+    # Synapse image configuration
+    image:
+      repository: matrixdotorg/synapse
+      tag: v1.160.0
+      pullPolicy: IfNotPresent
+
+    # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)
+    serverName: allegedly.works
+
+    # Public server name - the hostname where Synapse is publicly accessible.
+    # The chart derives public_baseurl as https://<publicServerName>.
+    publicServerName: matrix.allegedly.works
+
+    # Resources
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+
+    # Media store on distributed storage — the AGENTS.md default for app data
+    # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
+    # directory. Supersedes the old idea of synapse-s3-storage-provider against
+    # SeaweedFS S3: that module never replaces the local media path (it is a
+    # backup/retrieval layer needing a custom image and an eviction cron), while
+    # the CSI class gives Synapse the filesystem it insists on directly.
+    persistence:
+      enabled: true
+      storageClass: "seaweedfs-ovh"
+      size: 20Gi
+      accessMode: ReadWriteMany
+
+    synapse:
+      # Same zone as matrix-db (cnpg_conventions.md R5) and the only nodes where
+      # the SeaweedFS CSI node plugin runs, which the media store above needs.
+      # This is `synapse.nodeSelector`, not the chart's top-level one — the chart
+      # has no top-level key of that name, so a selector placed there is silently
+      # ignored (which is why the previous `region: proxmox` never pinned
+      # anything, and Synapse only landed on wyrm2 by chance).
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      # Reloader: auto-restart pods when secrets change
+      annotations:
+        reloader.stakater.com/auto: "true"
+
+    # Synapse configuration
+    config:
+      enableRegistration: false
+      reportStats: false
+      # macaroonSecretKey and registrationSharedSecret injected via valuesFrom
+
+    # extraConfig with oidc_providers is injected via valuesFrom from
+    # matrix-oidc-config secret (SOPS-managed)
+
+    # Signing key from SOPS (disable chart auto-generation)
+    signingkey:
+      job:
+        enabled: false
+      existingSecret: synapse-signing-key
+      existingSecretKey: signing.key
+
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 8008
+      federation:
+        enabled: true
+        port: 8448
+
+    # PostgreSQL via external CNPG cluster (matrix-db)
+    postgresql:
+      enabled: false
+    externalPostgresql:
+      host: matrix-db-rw
+      port: 5432
+      username: synapse
+      database: synapse
+      existingSecret: matrix-db-app
+      existingSecretPasswordKey: password
+
+    # Redis (required by chart even for single-instance setup)
+    redis:
+      enabled: true
+      auth:
+        enabled: true
+        existingSecret: synapse-redis-password
+        existingSecretPasswordKey: redis-password
+      master:
+        # Keep Synapse's Redis in the same zone as Synapse; it is a subchart, so
+        # this key is separate from synapse.nodeSelector above. Without it the
+        # placement is luck, and a cross-site hop for every pub/sub round trip.
+        nodeSelector:
+          topology.kubernetes.io/zone: hil-ovh
+        persistence:
+          enabled: false
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+    # Synapse workers (disabled for now, can be enabled for scaling)
+    workers:
+      default:
+        enabled: false
+
+    # Service account
+    serviceAccount:
+      create: true

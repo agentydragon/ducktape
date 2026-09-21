@@ -335,8 +335,10 @@ locals {
             match = v.data_disk_match
           }
         }
+        # Prepare the existing XFS data volume for a future quota-aware local-PV provisioner.
         filesystem = {
-          type = "xfs"
+          type                = "xfs"
+          projectQuotaSupport = true
         }
       })
     ]

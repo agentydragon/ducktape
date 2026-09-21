@@ -1,5 +1,7 @@
 # Playwright + Bazel Module Resolution Investigation
 
+Historical investigation: Props now uses a React + Mantine harness with Puppeteer visual tests and no longer runs this Playwright setup. The module-identity findings remain context for other Bazel frontends.
+
 ## Problem
 
 When running Playwright tests via Bazel using `playwright_bin.playwright_test` from aspect_rules_js,

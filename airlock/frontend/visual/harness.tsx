@@ -70,29 +70,12 @@ if (!appElement) throw new Error("No #app element");
 
 const showApp = scenarioName !== null && Object.prototype.hasOwnProperty.call(SCENARIOS, scenarioName);
 if (showApp) {
-  const authority = "https://mock-auth";
-  const clientId = "mock-client";
-  sessionStorage.setItem(
-    "oidc.user:" + authority + ":" + clientId,
-    JSON.stringify({
-      id_token: "mock-id-token",
-      access_token: "mock-access-token",
-      token_type: "Bearer",
-      scope: "openid profile email",
-      profile: { iss: authority, sub: "mock-user", aud: clientId, exp: 9999999999, iat: 1700000000 },
-      expires_at: 9999999999,
-    })
-  );
-
   window.fetch = async (input: RequestInfo | URL): Promise<Response> => {
     const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
     const url = new URL(requestUrl, window.location.href);
     const json = (data: unknown): Response =>
       new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
 
-    if (url.pathname === "/auth/config") {
-      return json({ authority, client_id: clientId, redirect_uri: "http://localhost/auth/callback" });
-    }
     if (url.pathname === "/api/oauth/providers") return json(OAUTH_PROVIDERS);
     if (url.pathname === "/api/info") return json(DEPLOYMENT_INFO);
     throw new Error("Unmocked fetch: " + url);

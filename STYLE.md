@@ -292,10 +292,6 @@ take a `tsconfig` and emit a `ts_library`); every `.tsx` needs
 whole-program tools (type-aware ESLint) need a `filegroup` glob of the sources plus
 `no_copy_to_bin`, since `ts_library` does not propagate `.ts`.
 
-**Svelte packages keep `svelte_check_test`** — `ts_project` cannot process `.svelte`,
-and `svelte_check` already checks components and their `.ts` as one program with no
-second hand-maintained list.
-
 ### Runfiles: `_main` is the root module, not this repo
 
 A runfiles path begins with a repository name, and `_main` names whichever module is the

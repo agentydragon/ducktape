@@ -83,9 +83,11 @@ and observation coverage still require the agreed multi-day acceptance window.
 
 ## Central deployment
 
-Root Flux owns `app/` through the `github-api-proxy` Kustomization, after the
-identity/credentials, registry credentials, storage, monitoring, Gateway and
-Reloader dependencies. The Deployment starts from a verified published runtime
+The `github-api-proxy` Flux Kustomization composes `identity/` and `app/`, owning
+the Namespace, Certificates, and application together. Admission waits for the
+cert-manager and External Secrets operators, monitoring CRDs, and the issuer
+configuration consumed by Flux post-build substitution. Registry credentials,
+storage, issuers, and runtime controllers reconcile independently. The Deployment starts from a verified published runtime
 image; Forgejo image automation tracks subsequent devel releases. Verify the
 reconciled revision, actual image digest, Pod startup, individual Gateway listener
 and TLSRoute conditions, and the authenticated route before migrating a client.

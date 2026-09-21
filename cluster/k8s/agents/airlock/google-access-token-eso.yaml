@@ -8,6 +8,9 @@ spec:
   namespaces:
     - claude-sandbox
     - haku-sandbox
+    # agentplane-staging's egress proxy substitutes this into a sandbox's Gmail/Calendar
+    # requests (cluster/cdk8s/agentplane/egress.py's `google-readonly` EgressCredential).
+    - agentplane-staging
   externalSecretSpec:
     refreshInterval: 1m
     secretStoreRef:

@@ -420,7 +420,7 @@ reconcile recreates and re-runs it — recovery without a human. Change-driven s
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
 Rationale lives next to the Jobs themselves — see
 `HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp.py> and
-<../k8s/study-casino/db/readonly-role-provisioner-job.yaml>.
+<../k8s/study-casino/readonly-role-provisioner-job.yaml>.
 
 ## Removing a CRD Operator (Uninstall Runbook)
 

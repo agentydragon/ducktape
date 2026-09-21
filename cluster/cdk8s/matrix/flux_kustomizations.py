@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -16,15 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def matrix(
-    chart: Chart,
-    matrix_namespace: Kustomization,
-    matrix_db: Kustomization,
-    sso_providers_tf: Kustomization,
-    reflector: Kustomization,
-    gateway: Kustomization,
-    local_path_provisioner: Kustomization,
-) -> Kustomization:
+def matrix(chart: Chart, cnpg: Kustomization) -> Kustomization:
     name = "matrix"
     return flux_kustomization(
         chart,
@@ -36,8 +29,9 @@ def matrix(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="matrix-app", namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/matrix/app",
+            path="./cluster/k8s/matrix",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,
@@ -51,57 +45,7 @@ def matrix(
                     namespace="matrix",
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(
-                matrix_namespace,
-                # externalPostgresql reads the CNPG-generated matrix-db-app secret
-                matrix_db,
-                # writes matrix-oidc-config into the authentik namespace
-                sso_providers_tf,
-                # mirrors matrix-oidc-config into the matrix namespace
-                reflector,
-                gateway,
-                # local-path-proxmox media store PVC
-                local_path_provisioner,
-            ),
-        ),
-    )
-
-
-def matrix_db(
-    chart: Chart, matrix_namespace: Kustomization, cnpg: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
-    name = "matrix-db"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/matrix/db",
-            prune=True,
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(matrix_namespace, cnpg, local_path_provisioner),
-        ),
-    )
-
-
-def matrix_namespace(chart: Chart) -> Kustomization:
-    name = "matrix-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path="./cluster/k8s/matrix/namespace",
-            prune=False,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            timeout="1m",
+            depends_on=flux_kustomization_depends_on_many(cnpg),
         ),
     )
 

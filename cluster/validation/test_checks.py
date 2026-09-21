@@ -29,8 +29,11 @@ def _external_creds_cluster(
     consumer_docs: list[dict],
     store_docs: list[dict] | None = None,
     consumer_depends_on_supplier: bool = True,
+    consumer_depends_on_store: bool = True,
 ) -> ParsedCluster:
-    consumer_dependencies = [DependsOn(name="external-secrets-config")]
+    consumer_dependencies = []
+    if consumer_depends_on_store:
+        consumer_dependencies.append(DependsOn(name="external-secrets-config"))
     if consumer_depends_on_supplier:
         consumer_dependencies.append(DependsOn(name="external-creds"))
     return ParsedCluster(
@@ -289,12 +292,19 @@ def test_external_credential_store_conditions_match_source_approvals(tmp_path: P
     assert any("namespace conditions must equal the source-approved namespaces" in error for error in errors)
 
 
-def test_external_credential_store_requires_supplier_dependency(tmp_path: Path) -> None:
+@pytest.mark.parametrize("depends_on_supplier", [False, True])
+@pytest.mark.parametrize("depends_on_store", [False, True])
+def test_external_credential_consumers_can_reconcile_before_supplier_and_store(
+    tmp_path: Path, depends_on_supplier: bool, depends_on_store: bool
+) -> None:
     cluster = _external_creds_cluster(
-        tmp_path, [_source_role(), _source_binding()], [_consumer_external_secret()], consumer_depends_on_supplier=False
+        tmp_path,
+        [_source_role(), _source_binding()],
+        [_consumer_external_secret()],
+        consumer_depends_on_supplier=depends_on_supplier,
+        consumer_depends_on_store=depends_on_store,
     )
-    errors = check_external_credential_ownership(cluster, tmp_path)
-    assert any("does not depend on external-creds" in error for error in errors)
+    assert check_external_credential_ownership(cluster, tmp_path) == []
 
 
 if __name__ == "__main__":

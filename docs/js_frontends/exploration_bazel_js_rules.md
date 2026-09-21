@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent frontends (1 Svelte, 3 React).
+This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent React frontends.
 
 ---
 
@@ -94,7 +94,6 @@ npm.npm_translate_lock(
    - **Mitigation:** Use `--preserve-symlinks-main=true` in js_binary/js_library
 
 4. **Framework Integration Challenges**
-   - **SvelteKit:** Vite is built to watch source repo changes, but Bazel builds in sandbox. Needs special configuration.
    - **Next.js:** "read-only file system" errors when building in sandbox (historically problematic)
    - **React:** Works well with webpack-cli or esbuild; no inherent issues
 
@@ -123,11 +122,9 @@ npm.npm_translate_lock(
       "@eslint/js": [""],
       "@typescript-eslint/eslint-plugin": [""],
       "@typescript-eslint/parser": [""],
-      "eslint-plugin-svelte": [""],
-      "eslint-plugin-import": [""],
+      "eslint-plugin-import-x": [""],
       "eslint-plugin-react": [""],
       "eslint-plugin-react-hooks": [""],
-      "svelte-eslint-parser": [""],
       "globals": [""],
   },
   ```
@@ -136,11 +133,12 @@ npm.npm_translate_lock(
 
 The ducktape repository currently uses aspect_rules_js for:
 
-- **Props frontend** (SvelteKit): Vite build, svelte-check, storybook, playwright visual tests
+- **Props frontend** (React + Mantine): esbuild, TypeScript checks, Puppeteer visual harness
 - **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
+- **study_casino frontend** (React): browser frontend
 - **rspcache admin_ui** (React): Vite build
 
-All use cases work well for bundling and dev servers, but Playwright test runner hits the module identity issue (#1).
+Bundling and dev servers work across these projects. Props uses its Puppeteer harness; the Playwright module-identity issue (#1) remains relevant for projects that use Playwright.
 
 ---
 
@@ -373,9 +371,7 @@ Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources
 | **Module Resolution Correct**  | ✅ Yes                     | ❌ Requires rootDirs | ✅ Yes                     | ✅ Yes               |
 | **TypeScript Compilation**     | ❌ (via rules_ts)          | ⚠️ Deprecated        | ✅ Yes                     | ✅ (via ts_project)  |
 | **ESLint Support**             | ✅ (via rules_lint aspect) | ⚠️ External          | ✅ (via rules_lint aspect) | N/A                  |
-| **Svelte Support**             | ✅ Works                   | ⚠️ Issues            | ✅ Works                   | ✅ Works             |
 | **React Support**              | ✅ Works                   | ✅ Works             | ✅ Works                   | ✅ Works             |
-| **SvelteKit Support**          | ⚠️ Dev server limitation   | ❌ No                | ✅ Works                   | ✅ Works             |
 | **Next.js Support**            | ⚠️ Sandbox write issues    | ❌ No                | ⚠️ Issues                  | ⚠️ Issues            |
 | **Dev Server Watch**           | ⚠️ Manual deps             | ⚠️ Manual deps       | N/A                        | N/A                  |
 
@@ -383,7 +379,7 @@ Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources
 
 ## 10. Recommended Setup for Ducktape
 
-Given the current architecture (1 Svelte frontend, 3 React frontends):
+Given the current architecture (4 React frontends):
 
 ### Primary Stack
 
@@ -392,7 +388,7 @@ Given the current architecture (1 Svelte frontend, 3 React frontends):
 - **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
 - **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
 - **Browser binaries:** `rules_playwright` for playwright tests
-- **Framework tooling:** Let Vite/SvelteKit/build tools handle framework specifics
+- **Framework tooling:** Let the selected bundler and framework tools handle framework-specific requirements
 
 ### For Your Specific Issues
 
@@ -402,12 +398,7 @@ Given the current architecture (1 Svelte frontend, 3 React frontends):
    - Or: use custom `js_test` with explicit entry point configuration
    - Or: implement custom wrapper that ensures module identity consistency
 
-2. **SvelteKit Dev Server**
-   - Use `js_run_devserver` with explicit `data` deps on all source files
-   - SvelteKit's Vite will rebuild on changes (if file deps correct)
-   - Or: use `bazel run //props/frontend:dev` and manually reload
-
-3. **React (rspcache admin_ui)**
+2. **React (rspcache admin_ui)**
    - Should work as-is with aspect_rules_js
    - Vite+React works cleanly
    - No module identity issues expected
@@ -423,17 +414,12 @@ Given the current architecture (1 Svelte frontend, 3 React frontends):
    - Consider patching NODE_PATH or using require cache control
    - Evaluate if rules_playwright + custom runner better than npm packages
 
-2. **SvelteKit Dev Experience**
-   - Test if full source file glob deps eliminates rebuild issues
-   - Consider symlink vs copy for dev mode
-   - Evaluate ibazel for faster dev iteration
-
-3. **ESLint Integration**
+2. **ESLint Integration**
    - Set up aspect_rules_lint configuration
-   - Test with all three frontends (svelte-check, eslint combo)
+   - Test all four current frontends with their TypeScript and ESLint checks
    - Configure hoisting for all required plugins
 
-4. **Cross-Frontend Shared Packages**
+3. **Cross-Frontend Shared Packages**
    - Consider workspace members for shared components (if applicable)
    - Test pnpm workspace resolution through Bazel
 

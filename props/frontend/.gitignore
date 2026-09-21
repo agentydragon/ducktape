@@ -1,6 +1,5 @@
 # Build output
 dist/
-.svelte-kit/
 storybook-static/
 
 # Dependencies

@@ -50,6 +50,10 @@ from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -94,6 +98,7 @@ class _SecretEnv:
     name: str
     secret_name: str
     key: str
+    optional: bool = False
 
 
 _EnvEntry = _LiteralEnv | _SecretEnv
@@ -144,24 +149,16 @@ class ProxySpec:
         return self.config.namespace
 
 
-def _literal_env(name: str, value: str) -> _EnvEntry:
-    return _LiteralEnv(name, value)
-
-
-def _secret_env(name: str, secret_name: str, key: str) -> _EnvEntry:
-    return _SecretEnv(name, secret_name, key)
-
-
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (_literal_env("HOST", "0.0.0.0"), _literal_env("PORT", "4000"), *entries)
+    return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", "4000"), *entries)
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
-        _literal_env("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
-        _secret_env("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
-        _secret_env("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+        _LiteralEnv("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
+        _SecretEnv("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
+        _SecretEnv("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
     )
 
 
@@ -174,15 +171,17 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                _secret_env("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
-                _secret_env("DATABASE_URL", "litellm-db-app", "uri"),
-                _secret_env("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
-                _secret_env("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
-                _secret_env("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
-                _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
-                _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
-                _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
-                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
+                _SecretEnv("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
+                _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
+                _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
+                _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
+                _SecretEnv("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
+                _SecretEnv("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
+                _SecretEnv("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
+                _SecretEnv("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _SecretEnv(
+                    "TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token", optional=True
+                ),
             ),
             startup_failure_threshold=36,
             resources=ContainerResources(
@@ -283,8 +282,11 @@ class LiteLLMProxy(Construct):
             if isinstance(entry, _LiteralEnv):
                 result[entry.name] = EnvValue.from_value(entry.value)
             else:
-                result[entry.name] = EnvValue.from_secret_value(
-                    SecretValue(secret=secret_for(entry.secret_name), key=entry.key)
+                secret_value = SecretValue(secret=secret_for(entry.secret_name), key=entry.key)
+                result[entry.name] = (
+                    EnvValue.from_secret_value(secret_value, optional=True)
+                    if entry.optional
+                    else EnvValue.from_secret_value(secret_value)
                 )
         return result
 
@@ -420,15 +422,8 @@ class LiteLLMServiceMonitor(Construct):
 def litellm(
     flux_chart: Chart,
     root: Path,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    litellm_secrets: Kustomization,
-    litellm_db: Kustomization,
-    gateway: Kustomization,
-    cert_manager_environment: Kustomization,
-    langfuse_secrets: Kustomization,
-    reflector: Kustomization,
-    tana_mcp: Kustomization,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
@@ -447,26 +442,20 @@ def litellm(
         "litellm",
         spec=KustomizationSpec(
             interval="10m",
-            path=f"./{APP_DIR}",
+            path="./cluster/k8s/litellm",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+            decryption=KustomizationSpecDecryption(
+                provider=KustomizationSpecDecryptionProvider.SOPS,
+                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+            ),
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
             ),
             timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                litellm_secrets,
-                litellm_db,
-                gateway,
-                cert_manager_environment,
-                langfuse_secrets,
-                reflector,
-                tana_mcp,
-                # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-                # litellm-servicemonitor Kustomization, #7103).
-                monitoring_crds,
-            ),
+            retry_interval="1m",
+            wait=True,
+            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
         ),
     )
     write_yaml(

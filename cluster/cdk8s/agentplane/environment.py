@@ -16,23 +16,6 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.main import ActionServiceDeploymentSettings
 from agentplane.app.main import AppSettingsConfig
 
-# What every environment's Flux Kustomization waits on.
-DEPENDS_ON = (
-    "agentplane-crds",
-    "agent-sandbox-controller",
-    "cert-manager-environment",
-    "cert-manager-trust",
-    "claude-rbac",
-    "cnpg",
-    "external-creds",
-    "external-secrets-config",
-    "forgejo-images",
-    "gateway",
-    "litellm-keys-tf",
-    "local-path-provisioner",
-    "reflector",
-)
-
 
 @dataclass(frozen=True)
 class ReplicaProfile:
@@ -65,6 +48,8 @@ class EgressProps:
     # The interception CA's Secret/Bundle/ConfigMap name; the runner SandboxTemplate
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
+    credentials_namespace: str
+    include_forgejo_credential: bool
 
 
 @dataclass(frozen=True)
@@ -76,6 +61,9 @@ class AppProps:
     reach_incluster_authentik: bool
     # Pin runner Pods to a zone (near the database/LiteLLM), or None for no pin.
     runner_zone: str | None
+    # The OIDC client secret and the session signing key can have separate owners.
+    # Testing leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
+    oidc_session_secret_name: str = "agentplane-oidc"
 
 
 @dataclass(frozen=True)
@@ -114,7 +102,6 @@ class Environment:
     # The Namespace's `description` annotation and the Flux Kustomization's.
     description: str
     flux_description: str
-    depends_on: Sequence[str]
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     # Whether the operator Role may manage ActionPolicySet/Binding objects.

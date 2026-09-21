@@ -1,0 +1,6 @@
+# Consumer-owned identity for reading approved canonical credentials.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: haku-sandbox

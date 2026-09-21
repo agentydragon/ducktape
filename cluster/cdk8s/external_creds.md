@@ -23,7 +23,7 @@ contract.
 - The consumer owns its `external-creds-reader` ServiceAccount and
   ExternalSecret.
 - The consumer Flux Kustomization depends on both `external-creds` and
-  `external-secrets-config`. The supplier does not depend on ESO or consumer
+  `external-secrets-config`. Static suppliers do not depend on ESO or consumer
   namespaces: a RoleBinding may name a ServiceAccount before that namespace or
   identity exists.
 
@@ -37,7 +37,7 @@ receive the credential.
 
 ## Adding a credential or consumer
 
-Add a credential by creating one encrypted source Secret under
+Add a static credential by creating one encrypted source Secret under
 `cluster/k8s/external-creds` and adding its non-secret metadata to `CREDENTIALS`
 in `external_creds.py`. Add a consumer by adding its explicit
 `ApprovedConsumer` entry there, then add the ServiceAccount, ExternalSecret,

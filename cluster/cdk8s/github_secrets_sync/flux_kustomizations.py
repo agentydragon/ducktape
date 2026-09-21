@@ -85,7 +85,13 @@ def github_secrets_sync_secrets(
                     kind="ExternalSecret",
                     name="github-secrets-sync-pat",
                     namespace="flux-system",
-                )
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="buildbuddy-api-key",
+                    namespace="flux-system",
+                ),
             ],
             decryption=KustomizationSpecDecryption(
                 provider=KustomizationSpecDecryptionProvider.SOPS,

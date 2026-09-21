@@ -251,6 +251,9 @@
       mkNixos =
         {
           hostname,
+          # Most host modules are kept under nix/nixos/hosts. Component-owned
+          # guests can keep their module beside the component's other recipes.
+          hostModule ? ./nix/nixos/hosts/${hostname},
           username ? "agentydragon",
           homeManagerHost ? hostname,
           hardwareModule ? null,
@@ -298,7 +301,7 @@
           };
           modules = [
             ./nix/nixos/modules/base.nix
-            ./nix/nixos/hosts/${hostname}
+            hostModule
           ]
           ++ nixpkgs.lib.optionals enableHomeManager [
             home-manager.nixosModules.home-manager
@@ -357,16 +360,18 @@
       };
       inherit (devTools)
         localOnlyPackages
+        buildBuddyRunnerTools
         preCommitPackages
         systemLibs
         devToolPackages
         ;
     in
     {
-      # CI push targets for nix-attic-push, split by destination cache. Under
-      # legacyPackages so `nix flake {show,check}` skip them (they force-eval all
-      # host closures). drivefs isolation for `main` lives in the imported file.
-      legacyPackages.${system} =
+      # Purpose-specific targets for nix-attic-push, split by destination
+      # cache. These include the host closures we intend to publish, so keep
+      # them out of ordinary package/check outputs. drivefs isolation for
+      # `main` lives in the imported file.
+      atticPushTargets.${system} =
         let
           atticTargets = import ./devinfra/ci/nix_attic_targets.nix {
             inherit
@@ -377,10 +382,7 @@
               ;
           };
         in
-        {
-          ci-attic-main = atticTargets.main;
-          ci-attic-public = atticTargets.public;
-        };
+        atticTargets;
 
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
@@ -421,6 +423,7 @@
             nix-openclaw
             ruffLatest
             localOnlyPackages
+            buildBuddyRunnerTools
             preCommitPackages
             devToolPackages
             ;
@@ -451,7 +454,8 @@
 
         # Claude Code web session — headless standalone profile installed by
         # web_setup.sh's home-manager mode. Independent of the shared host
-        # structure: it only needs the devtools list and the skills args.
+        # structure: it uses the shared devToolPackages core and skills args.
+        # Unlike .#devtools, it intentionally omits localOnlyPackages.
         # Portable across the web container's user (home.username/homeDirectory
         # read from the env), so it must be built/activated with --impure:
         #   home-manager switch --impure --flake .#claude-web
@@ -527,10 +531,11 @@
           hostname = "public-coder-devbox";
           username = "coder";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./openclaw/public_coder_agent/devbox/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/public-coder-devbox.nix;
+            module = ./openclaw/public_coder_agent/devbox/home.nix;
           };
         };
 
@@ -558,16 +563,17 @@
         # from the OptiPlex host.
         cpap-gateway = mkNixos {
           hostname = "cpap-gateway";
+          hostModule = ./cpap/gateway/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           enableHomeManager = false;
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
-        # Not a real host — see nix/nixos/hosts/bazel-test/ for config.
+        # Not a real host — see devinfra/nixos_bazel_test/nixos.nix.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
-            ./nix/nixos/hosts/bazel-test
+            ./devinfra/nixos_bazel_test/nixos.nix
             home-manager.nixosModules.home-manager
           ];
         };

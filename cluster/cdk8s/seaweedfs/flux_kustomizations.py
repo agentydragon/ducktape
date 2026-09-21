@@ -162,34 +162,6 @@ def seaweedfs_forgejo_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> 
     )
 
 
-def seaweedfs_langfuse_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
-    name = "seaweedfs-langfuse-bucket"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path="./cluster/k8s/seaweedfs/langfuse-bucket",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
-            # The Bucket and S3Credentials moved to the Langfuse Kustomization and were
-            # live-verified there. Keep this small Kustomization for the cluster-global
-            # S3Identity that the namespaced S3Credentials references.
-            wait=True,
-            timeout="5m",
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="S3Identity", name="langfuse", namespace="seaweedfs"
-                )
-            ],
-        ),
-    )
-
-
 def seaweedfs_loom_gym_bucket(chart: Chart, seaweedfs_cluster: Kustomization) -> Kustomization:
     name = "seaweedfs-loom-gym-bucket"
     return flux_kustomization(

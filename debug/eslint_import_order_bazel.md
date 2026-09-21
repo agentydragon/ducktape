@@ -59,11 +59,8 @@ was then evaluated as the alternative — and **parked**:
 
 - It can sort `.ts` / `.tsx` / `.js` (these plugins hook Prettier's
   babel/typescript parsers — purely syntactic, no resolver / `package.json` /
-  `bazel-out` issues), but **not `.svelte`**: they don't touch
-  `prettier-plugin-svelte`'s parser, so the `.svelte` components in `props` and
-  `airlock` (the bulk of those apps) wouldn't be sorted.
-  Coverage would be inconsistent within a single frontend (a `.ts` sorted, the
-  `.svelte` next to it not).
+  `bazel-out` issues). This does not cover parsers outside those JavaScript and
+  TypeScript syntaxes.
 - Wiring spans **three build systems**: the Nix-bundled prettier
   (`nix/packages/prettier/` — `package.json` + an `npmDepsHash` rebuild, since
   pre-commit's `language: system` prettier resolves plugins off the Nix wrapper's

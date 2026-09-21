@@ -140,10 +140,7 @@ js_library(
         ":node_modules/eslint-plugin-import-x",
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-react-hooks",
-        ":node_modules/eslint-plugin-svelte",
         ":node_modules/globals",
-        ":node_modules/svelte",  # peer dep of svelte-eslint-parser & eslint-plugin-svelte
-        ":node_modules/svelte-eslint-parser",
         ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
     ],
 )
@@ -156,10 +153,6 @@ js_library(
     srcs = [".prettierrc.cjs"],
     tags = ["no-lint"],
     visibility = ["//devinfra:__subpackages__"],
-    deps = [
-        ":node_modules/prettier-plugin-svelte",
-        ":node_modules/svelte",
-    ],
 )
 
 # Generate requirements_bazel.txt from pyproject.toml

@@ -9,8 +9,7 @@ from cdk8s_plus_34 import Service
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecHealthChecks,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -31,34 +30,8 @@ _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
-def ssh_mcp_namespace(flux_chart: Chart) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "ssh-mcp-namespace",
-        description="Namespace for the standalone SSH MCP backend.",
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="2m",
-            path="./cluster/k8s/ssh-mcp/namespace",
-            prune=False,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
-            ),
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="ssh-mcp")],
-        ),
-    )
-
-
 def ssh_mcp(
-    flux_chart: Chart,
-    root: Path,
-    mesh: Mesh,
-    devbox_service: Service,
-    namespace_kustomization: Kustomization,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
+    flux_chart: Chart, root: Path, mesh: Mesh, devbox_service: Service, external_secrets_operator: Kustomization
 ) -> Kustomization:
     """Write the generated backend and sshpiper manifests under ``root``."""
     ssh_config = config.load(devbox_service)
@@ -80,22 +53,21 @@ def ssh_mcp(
             timeout="5m",
             path=f"./{_OUTPUT_DIR}",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             decryption=sops_decryption(_KEY_FILES),
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=config.NAME, namespace=NAMESPACE
             ),
-            depends_on=[
-                # Preserve the source YAML's omitted namespace field; Flux resolves it in this CR's namespace.
-                KustomizationSpecDependsOn(name=namespace_kustomization.name),
-                *flux_kustomization_depends_on_many(external_secrets_config, forgejo_images),
-            ],
+            depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
         ),
     )
     write_yaml(
         out_dir / "kustomization.yaml",
         kustomize_kustomization(
-            namespace=config.NAMESPACE, resources=[f"{config.NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]
+            namespace=config.NAMESPACE,
+            resources=["./namespace", f"{config.NAME}.k8s.yaml", *_KEY_FILES],
+            components=["./image-pins"],
         ),
     )
 

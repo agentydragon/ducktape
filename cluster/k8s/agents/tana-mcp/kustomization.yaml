@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - forgejo-images-creds-eso.yaml
   - namespace.yaml
+  - firebase-resigner-config.yaml
   - deployment.yaml
   - service.yaml
   - tana-agentydragon-gmail-com-account-pat.sops.yaml

@@ -234,6 +234,11 @@ class App(Construct):
         namespace = self.env.namespace
         postgres_app = Secret.from_secret_name(self, "postgres-app-secret", "postgres-app")
         oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
+        oidc_session_secret = (
+            oidc_secret
+            if self.env.app.oidc_session_secret_name == "agentplane-oidc"
+            else Secret.from_secret_name(self, "agentplane-oidc-session-secret", self.env.app.oidc_session_secret_name)
+        )
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
             CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
@@ -255,7 +260,7 @@ class App(Construct):
                 SecretValue(secret=oidc_secret, key="client-secret")
             ),
             env_name(OIDCSettings, "session_secret"): EnvValue.from_secret_value(
-                SecretValue(secret=oidc_secret, key="session-secret")
+                SecretValue(secret=oidc_session_secret, key="session-secret")
             ),
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
@@ -263,6 +268,9 @@ class App(Construct):
     def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
+        oidc_secret_reload = "agentplane-oidc"
+        if self.env.app.oidc_session_secret_name != "agentplane-oidc":
+            oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
         deployment = Deployment(
             self,
             "deployment",
@@ -273,7 +281,7 @@ class App(Construct):
                 annotations={
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
-                    "secret.reloader.stakater.com/reload": "agentplane-oidc",
+                    "secret.reloader.stakater.com/reload": oidc_secret_reload,
                     "configmap.reloader.stakater.com/reload": "agentplane-app-config",
                 },
             ),

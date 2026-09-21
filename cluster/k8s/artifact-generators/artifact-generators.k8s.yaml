@@ -36,8 +36,8 @@ spec:
       name: agent-machine-access-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/authentik/app/**"
-          to: "@artifact/cluster/k8s/authentik/app/"
+        - from: "@repo/cluster/k8s/authentik/**"
+          to: "@artifact/cluster/k8s/authentik/"
       name: authentik
       originRevision: "@repo"
     - copy:
@@ -80,8 +80,8 @@ spec:
       name: external-secrets-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/forgejo/app/**"
-          to: "@artifact/cluster/k8s/forgejo/app/"
+        - from: "@repo/cluster/k8s/forgejo/**"
+          to: "@artifact/cluster/k8s/forgejo/"
       name: forgejo
       originRevision: "@repo"
     - copy:
@@ -145,8 +145,8 @@ spec:
       name: tofu-controller
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/tofu-state/db/**"
-          to: "@artifact/cluster/k8s/tofu-state/db/"
+        - from: "@repo/cluster/k8s/tofu-state/**"
+          to: "@artifact/cluster/k8s/tofu-state/"
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
@@ -180,19 +180,9 @@ spec:
       name: haku-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/langfuse/namespace/**"
-          to: "@artifact/cluster/k8s/langfuse/namespace/"
-      name: langfuse-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/volsync/**"
           to: "@artifact/cluster/k8s/volsync/"
       name: volsync
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/authentik/namespace/**"
-          to: "@artifact/cluster/k8s/authentik/namespace/"
-      name: authentik-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/cert-manager/trust/**"
@@ -215,11 +205,6 @@ spec:
       name: kubevirt
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
-      name: public-coder-agent-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agentplane-index/**"
           to: "@artifact/cluster/k8s/agentplane-index/"
       name: agentplane-index
@@ -228,16 +213,6 @@ spec:
         - from: "@repo/cluster/k8s/clickhouse/cluster/**"
           to: "@artifact/cluster/k8s/clickhouse/cluster/"
       name: clickhouse
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/forgejo/namespace/**"
-          to: "@artifact/cluster/k8s/forgejo/namespace/"
-      name: forgejo-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/atuin/namespace/**"
-          to: "@artifact/cluster/k8s/atuin/namespace/"
-      name: atuin-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
@@ -260,36 +235,6 @@ spec:
       name: haku-rbac
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/langfuse/secrets/**"
-          to: "@artifact/cluster/k8s/langfuse/secrets/"
-      name: langfuse-secrets
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/litellm/namespace/**"
-          to: "@artifact/cluster/k8s/litellm/namespace/"
-      name: litellm-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/namespace/"
-      name: agentplane-egress-credentials-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
-      name: agentplane-egress-credentials
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/litellm/secrets/**"
-          to: "@artifact/cluster/k8s/litellm/secrets/"
-      name: litellm-secrets
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/matrix/namespace/**"
-          to: "@artifact/cluster/k8s/matrix/namespace/"
-      name: matrix-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/seaweedfs-csi/**"
           to: "@artifact/cluster/k8s/seaweedfs-csi/"
       name: seaweedfs-csi
@@ -303,11 +248,6 @@ spec:
         - from: "@repo/cluster/k8s/seaweedfs/external-credentials/**"
           to: "@artifact/cluster/k8s/seaweedfs/external-credentials/"
       name: seaweedfs-external-credentials
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/study-casino/namespace/**"
-          to: "@artifact/cluster/k8s/study-casino/namespace/"
-      name: study-casino-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/tana-mcp/**"
@@ -330,11 +270,6 @@ spec:
       name: flux-image-automation-ghcr
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/gatus/namespace/**"
-          to: "@artifact/cluster/k8s/gatus/namespace/"
-      name: gatus-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/monitoring/grafana-operator/**"
           to: "@artifact/cluster/k8s/monitoring/grafana-operator/"
       name: grafana-operator
@@ -354,33 +289,13 @@ spec:
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/console-namespace/**"
-          to: "@artifact/cluster/k8s/haku/console-namespace/"
-      name: haku-console-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
-      name: haku-egress-proxy-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
-          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
-      name: haku-mailbox-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
-      name: haku-openclaw-spike-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/home-assistant/**"
           to: "@artifact/cluster/k8s/home-assistant/"
       name: home-assistant
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/litellm/app/**"
-          to: "@artifact/cluster/k8s/litellm/app/"
+        - from: "@repo/cluster/k8s/litellm/**"
+          to: "@artifact/cluster/k8s/litellm/"
       name: litellm
       originRevision: "@repo"
     - copy:
@@ -404,11 +319,6 @@ spec:
       name: claude-sandbox-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
-          to: "@artifact/cluster/k8s/agents/coinbase-read/"
-      name: coinbase-read
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
           to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
       name: forgejo-token-rotation
@@ -421,12 +331,19 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-app
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/backup/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/backup/"
       name: haku-openclaw-spike-backup
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/haku/runtime/managed_agent/self_hosted/deploy/**"
+          to: "@artifact/haku/runtime/managed_agent/self_hosted/deploy/"
+      name: haku-managed-agent
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/app/**"
@@ -439,11 +356,6 @@ spec:
       name: loki-read-proxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
-      name: agents-mitmproxy-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
       name: plaid-mcp
@@ -451,6 +363,12 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
       name: public-coder-agent-app
       originRevision: "@repo"
     - copy:
@@ -484,16 +402,6 @@ spec:
       name: public-coder-agent-devbox
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
-      name: public-coder-agent-proxy
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
-      name: public-coder-agent-sshpiper
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/shared-rbac/**"
           to: "@artifact/cluster/k8s/agents/shared-rbac/"
       name: agent-shared-rbac
@@ -514,14 +422,9 @@ spec:
       name: clickhouse-grafana
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/atuin/app/**"
-          to: "@artifact/cluster/k8s/atuin/app/"
+        - from: "@repo/cluster/k8s/atuin/**"
+          to: "@artifact/cluster/k8s/atuin/"
       name: atuin
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/atuin/db/**"
-          to: "@artifact/cluster/k8s/atuin/db/"
-      name: atuin-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/atuin/user-provisioner/**"
@@ -529,19 +432,9 @@ spec:
       name: atuin-user-provisioner
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/authentik/db/**"
-          to: "@artifact/cluster/k8s/authentik/db/"
-      name: authentik-db
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/authentik/db-backups/**"
           to: "@artifact/cluster/k8s/authentik/db-backups/"
       name: authentik-db-backups
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/authentik/proxy-routes/**"
-          to: "@artifact/cluster/k8s/authentik/proxy-routes/"
-      name: authentik-proxy-routes
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
@@ -549,13 +442,10 @@ spec:
       name: cli-proxy-api
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
-          to: "@artifact/cluster/k8s/clickhouse/namespace/"
-      name: clickhouse-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/clickhouse/operator/**"
           to: "@artifact/cluster/k8s/clickhouse/operator/"
+        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
+          to: "@artifact/cluster/k8s/clickhouse/namespace/"
       name: clickhouse-operator
       originRevision: "@repo"
     - copy:
@@ -654,19 +544,9 @@ spec:
       name: cpap-data
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/forgejo/db/**"
-          to: "@artifact/cluster/k8s/forgejo/db/"
-      name: forgejo-db
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/gatus/app/**"
-          to: "@artifact/cluster/k8s/gatus/app/"
+        - from: "@repo/cluster/k8s/gatus/**"
+          to: "@artifact/cluster/k8s/gatus/"
       name: gatus
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/gatus/db/**"
-          to: "@artifact/cluster/k8s/gatus/db/"
-      name: gatus-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/gatus/sso-tf/**"
@@ -674,14 +554,9 @@ spec:
       name: gatus-sso-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/app/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/app/"
+        - from: "@repo/cluster/k8s/github-api-proxy/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/"
       name: github-api-proxy
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/identity/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/identity/"
-      name: github-api-proxy-identity
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-branch-protection/**"
@@ -738,17 +613,14 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/haku/console/**"
           to: "@artifact/cluster/k8s/haku/console/"
+        - from: "@repo/cluster/k8s/haku/console-namespace/**"
+          to: "@artifact/cluster/k8s/haku/console-namespace/"
       name: haku-console
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox/app/**"
-          to: "@artifact/cluster/k8s/haku/mailbox/app/"
-      name: haku-mailbox-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/haku/mailbox/db/**"
-          to: "@artifact/cluster/k8s/haku/mailbox/db/"
-      name: haku-mailbox-db
+        - from: "@repo/cluster/k8s/haku/mailbox/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/"
+      name: haku-mailbox
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/haku/forgejo-tea/**"
@@ -816,44 +688,14 @@ spec:
       name: kubevirt-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
-          to: "@artifact/cluster/k8s/kvm-device-plugin/"
-      name: kvm-device-plugin
+        - from: "@repo/cluster/k8s/langfuse/**"
+          to: "@artifact/cluster/k8s/langfuse/"
+      name: langfuse
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/langfuse/app/**"
-          to: "@artifact/cluster/k8s/langfuse/app/"
-      name: langfuse-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/seaweed/**"
-          to: "@artifact/cluster/k8s/langfuse/seaweed/"
-      name: langfuse-seaweed
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/cache/**"
-          to: "@artifact/cluster/k8s/langfuse/cache/"
-      name: langfuse-cache
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/langfuse/db/**"
-          to: "@artifact/cluster/k8s/langfuse/db/"
-      name: langfuse-db
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/litellm/db/**"
-          to: "@artifact/cluster/k8s/litellm/db/"
-      name: litellm-db
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/matrix/app/**"
-          to: "@artifact/cluster/k8s/matrix/app/"
+        - from: "@repo/cluster/k8s/matrix/**"
+          to: "@artifact/cluster/k8s/matrix/"
       name: matrix-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/matrix/db/**"
-          to: "@artifact/cluster/k8s/matrix/db/"
-      name: matrix-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/matrix/user-provisioner/**"
@@ -884,11 +726,6 @@ spec:
         - from: "@repo/cluster/k8s/monitoring/etcd/**"
           to: "@artifact/cluster/k8s/monitoring/etcd/"
       name: monitoring-etcd
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
-      name: monitoring-grafana-db
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/monitoring/loki/**"
@@ -951,11 +788,6 @@ spec:
       name: seaweedfs-forgejo-bucket
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/langfuse-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/langfuse-bucket/"
-      name: seaweedfs-langfuse-bucket
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/seaweedfs/loom-gym-bucket/**"
           to: "@artifact/cluster/k8s/seaweedfs/loom-gym-bucket/"
       name: seaweedfs-loom-gym-bucket
@@ -986,24 +818,14 @@ spec:
       name: ssh-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/study-casino/app/**"
-          to: "@artifact/cluster/k8s/study-casino/app/"
-      name: study-casino-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/study-casino/db/**"
-          to: "@artifact/cluster/k8s/study-casino/db/"
-      name: study-casino-db
+        - from: "@repo/cluster/k8s/study-casino/**"
+          to: "@artifact/cluster/k8s/study-casino/"
+      name: study-casino
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/talos-cloud-controller-manager/**"
           to: "@artifact/cluster/k8s/talos-cloud-controller-manager/"
       name: talos-cloud-controller-manager
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/tofu-state/namespace/**"
-          to: "@artifact/cluster/k8s/tofu-state/namespace/"
-      name: tofu-state-namespace
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/user-agentydragon/**"

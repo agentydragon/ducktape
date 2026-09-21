@@ -18,7 +18,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # the only copy of this key. CI does not decrypt it: tofu reads the same Secret
 # in-cluster and sets it as a GitHub Actions repository secret, so CI needs the
 # BuildBuddy capability without the broader CI decryption identity.
-try_export BUILDBUDDY_API_KEY "$REPO_ROOT/cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml" '["stringData"]["api-key"]' "BuildBuddy remote cache/execution (bbr)"
+try_export BUILDBUDDY_API_KEY "$REPO_ROOT/cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml" '["stringData"]["api-key"]' "BuildBuddy remote cache/execution (bbr)"
 
 # Bootstrap note: after the first deploy of the Alloy JWT rotator, the SOPS
 # file may be absent until the first successful rotation job writes it.

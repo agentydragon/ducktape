@@ -1,8 +1,5 @@
 {
   "name": "airlock-frontend",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "oidc-client-ts": "^3.1.0"
-  }
+  "type": "module"
 }

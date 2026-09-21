@@ -1,8 +1,8 @@
 """Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
-five reviewed GitHub-reads ActionPolicySets, and the ActionPolicyBinding granting them to
-that ServiceAccount. See cluster/k8s/agentplane-staging/README.md § Action policies --
-Sandbox-subject bindings are written by the integration app at runtime and are never
-checked in here.
+five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant-reads
+ActionPolicySet, and the ActionPolicyBinding granting them to that ServiceAccount. See
+cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject bindings
+are written by the integration app at runtime and are never checked in here.
 """
 
 from __future__ import annotations
@@ -29,7 +29,13 @@ from constructs import Construct
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, FORGEJO_HAKU_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    FORGEJO_HAKU_POLICY,
+    GOOGLE_READONLY_POLICY,
+    KUBERNETES_POLICY,
+    PACKAGES_POLICY,
+)
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -41,6 +47,7 @@ _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
 _SANDBOX_SET = "sandbox-self"
 _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
+_HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -121,6 +128,49 @@ _REPOSITORY_SCOPED_ACTIONS = [
     "search_issues",
     "search_pull_requests",
     "search_code",
+]
+
+
+# Home Assistant's read-only surface: every `ha_get_*`/`ha_list_*`/`ha_config_get_*`/
+# `ha_config_list_*` tool, plus `ha_search` -- none of which mutate state. Reviewed
+# exclusions: `ha_get_camera_image` returns a live camera snapshot rather than reading
+# state HA already holds, so it stays manual pending a privacy review. TODO(ha-camera):
+# reconsider adding it once that review happens. `ha_eval_template` renders a Jinja
+# template with the same context Automations get (entity/state access plus template
+# functions), wide enough to stay manual. `ha_report_issue` files an external
+# support/issue-tracker report, not a Home Assistant state read. New upstream tools stay
+# manual until reviewed here, same convention as the GitHub reads set above.
+_HOME_ASSISTANT_READS_ACTIONS = [
+    "ha_config_get_automation",
+    "ha_config_get_calendar_events",
+    "ha_config_get_category",
+    "ha_config_get_dashboard",
+    "ha_config_get_label",
+    "ha_config_get_scene",
+    "ha_config_get_script",
+    "ha_config_list_dashboard_resources",
+    "ha_config_list_groups",
+    "ha_config_list_helpers",
+    "ha_get_app",
+    "ha_get_automation_traces",
+    "ha_get_blueprint",
+    "ha_get_device",
+    "ha_get_entity",
+    "ha_get_entity_exposure",
+    "ha_get_hacs_info",
+    "ha_get_history",
+    "ha_get_integration",
+    "ha_get_logs",
+    "ha_get_operation_status",
+    "ha_get_overview",
+    "ha_get_skill_guide",
+    "ha_get_state",
+    "ha_get_system_health",
+    "ha_get_todo",
+    "ha_get_zone",
+    "ha_list_floors_areas",
+    "ha_list_services",
+    "ha_search",
 ]
 
 
@@ -254,7 +304,6 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
-    # What the console's `haku_v1` grants for GitHub (github-reads and
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
     # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
@@ -265,6 +314,10 @@ def add_staging_action_policies(scope: Construct) -> None:
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
+    # `google-readonly` substitutes the same read-only Google token Airlock already mints for other
+    # consumers -- currently granted `gmail.readonly` and `calendar.readonly` (see egress.py's
+    # `google-readonly` EgressCredential for the caveat about scopes Airlock's config requests but
+    # hasn't been granted yet).
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
@@ -284,7 +337,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY],
+            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY, GOOGLE_READONLY_POLICY],
         ),
     )
 
@@ -313,21 +366,45 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
-    # github-identity-reads), attached to the Claude.ai connector's principal. The
-    # binding's existence is the grant: deleting it, or the label on the
-    # ServiceAccount, puts every GitHub Action back on the human path.
-    _binding(
+    # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
+    # reviewed tool list and exclusions).
+    _policy_set(
         scope,
-        "actionpolicybinding-claude-ai-github-reads",
+        "actionpolicyset-home-assistant-reads",
         metadata=ApiObjectMetadata(
-            name="claude-ai-github-reads",
+            name=_HOME_ASSISTANT_READS_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+
+    # What the console's `haku_v1` grants for GitHub (github-reads and
+    # github-identity-reads) and now Home Assistant (home-assistant-reads), attached to
+    # the Claude.ai connector's principal. The binding's existence is the grant: deleting
+    # it, or the label on the ServiceAccount, puts every one of these Actions back on the
+    # human path.
+    _binding(
+        scope,
+        "actionpolicybinding-claude-ai-reads",
+        metadata=ApiObjectMetadata(
+            name="claude-ai-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the reviewed GitHub/Home Assistant reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
             subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET, _SANDBOX_SET],
+            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET, _SANDBOX_SET, _HOME_ASSISTANT_READS_SET],
         ),
     )

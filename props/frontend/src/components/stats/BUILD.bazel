@@ -1,47 +1,80 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
     "//props/frontend:__subpackages__",
 ])
 
-# Stats component libraries with explicit deps
-
-js_library(
+ts_library(
     name = "CreditBadge",
-    srcs = ["CreditBadge.svelte"],
-)
-
-js_library(
-    name = "OccurrenceStats",
-    srcs = ["OccurrenceStats.svelte"],
-)
-
-js_library(
-    name = "DistributionChart",
-    srcs = ["DistributionChart.svelte"],
-)
-
-js_library(
-    name = "CoverageHeatmap",
-    srcs = ["CoverageHeatmap.svelte"],
-    deps = ["//props/frontend/src/lib:formatters"],
-)
-
-js_library(
-    name = "SummaryCards",
-    srcs = ["SummaryCards.svelte"],
+    srcs = ["CreditBadge.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "OccurrenceStats",
+    srcs = ["OccurrenceStats.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "DistributionChart",
+    srcs = ["DistributionChart.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/chart.js",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "CoverageHeatmap",
+    srcs = ["CoverageHeatmap.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/chart.js",
+        "//props/frontend:node_modules/chartjs-chart-matrix",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:formatters",
+    ],
+)
+
+ts_library(
+    name = "SummaryCards",
+    srcs = ["SummaryCards.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:types",
     ],
 )
 
-js_library(
+ts_library(
     name = "DefinitionsTable",
-    srcs = ["DefinitionsTable.svelte"],
+    srcs = ["DefinitionsTable.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
     deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",

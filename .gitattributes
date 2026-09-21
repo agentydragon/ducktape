@@ -48,7 +48,8 @@ cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-testing/kustomization.yaml linguist-generated=true
+# Agentplane testing's root Kustomization is hand-maintained because Flux image
+# automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/db/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/migration/kustomization.yaml linguist-generated=true
@@ -102,7 +103,9 @@ nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 # Parked manifests are retained for possible revival but are not active cluster config.
 cluster/k8s/parked/** cluster-manifest-ignored=true
-cluster/k8s/evidence/market-roster/market-roster.yaml cluster-manifest-ignored=true
+# The retired Codex pod's manifests are kept beside their source, not active cluster config.
+x/codex_pod_image/deploy/** cluster-manifest-ignored=true
+cluster/k8s/evidence/market-roster.yaml cluster-manifest-ignored=true
 # rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
@@ -110,9 +113,9 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-haku/x/dispatch/deploy/dispatcher/job-template.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-haku/x/dispatch/deploy/dispatcher/zones.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/zones.yaml cluster-manifest-ignored=true
 # per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.
 cluster/k8s/haku/console/indexer-chunk-*-config.yaml cluster-manifest-ignored=true
 # iron-proxy config for the coder agent's egress proxy, mounted via

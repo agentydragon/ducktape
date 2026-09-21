@@ -35,6 +35,7 @@ _NAMESPACE_ANNOTATIONS = {
 }
 _NAMESPACE_RESOURCES = [NAMESPACE_MANIFEST, "serviceaccount.yaml"]
 _DEVBOX_RESOURCES = [
+    "buildbuddy-api-key-eso.yaml",
     "ssh-host-key.sops.yaml",
     "bazel-cache-pvc.yaml",
     "virtualmachine.yaml",

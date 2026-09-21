@@ -94,7 +94,7 @@ let
       # Local pre-commit hooks call these entry points. The package wraps its own compatible
       # Python + pygit2 closure, rather than depending on a persisted pip venv from an older image.
       ducktapePkgs.ducktape-git-hooks
-      # The Nix package carries prettier-plugin-svelte and wraps NODE_PATH so the repository's
+      # The Nix package carries the repository's pinned Prettier plugins and wraps NODE_PATH so
       # .prettierrc.cjs resolves reliably inside the minimal image.
       ducktapePkgs.prettier
     ];

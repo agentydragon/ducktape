@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -13,15 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def gatus(
-    chart: Chart,
-    gatus_namespace: Kustomization,
-    gatus_db: Kustomization,
-    gatus_sso_tf: Kustomization,
-    litellm_secrets: Kustomization,
-    gateway: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
+def gatus(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization) -> Kustomization:
     name = "gatus"
     return flux_kustomization(
         chart,
@@ -33,68 +26,16 @@ def gatus(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            path="./cluster/k8s/gatus/app",
+            path="./cluster/k8s/gatus",
             prune=True,
+            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="gatus", namespace="gatus"
                 )
             ],
-            depends_on=flux_kustomization_depends_on_many(
-                gatus_namespace,
-                gatus_db,
-                gatus_sso_tf,
-                litellm_secrets,
-                gateway,
-                # the ServiceMonitor/PodMonitor CRD
-                monitoring_crds,
-            ),
-        ),
-    )
-
-
-def gatus_db(chart: Chart, gatus_namespace: Kustomization, cnpg: Kustomization) -> Kustomization:
-    name = "gatus-db"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/gatus/db",
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="postgresql.cnpg.io/v1", kind="Cluster", name="gatus-db", namespace="gatus"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(gatus_namespace, cnpg),
-        ),
-    )
-
-
-def gatus_namespace(chart: Chart) -> Kustomization:
-    name = "gatus-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/gatus/namespace",
-            prune=True,
-            wait=True,
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gatus")],
+            depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds),
         ),
     )
 

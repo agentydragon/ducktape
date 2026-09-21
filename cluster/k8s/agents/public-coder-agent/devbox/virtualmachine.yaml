@@ -87,7 +87,7 @@ spec:
             # ../../../flux-image-automation-forgejo/. Until the workflow's first run
             # completes, this placeholder tag doesn't exist yet and the pod sits in
             # ImagePullBackOff -- expected, and self-resolving once CI publishes.
-            image: git.allegedly.works/ducktape-ci/public-coder-devbox:devel-20260920095325-d4865e5 # {"$imagepolicy": "flux-system:public-coder-devbox"}
+            image: git.allegedly.works/ducktape-ci/public-coder-devbox:devel-20260921042952-1f56121 # {"$imagepolicy": "flux-system:public-coder-devbox"}
             imagePullPolicy: IfNotPresent
         - name: bazel-cache
           persistentVolumeClaim:
@@ -97,8 +97,7 @@ spec:
             name: public-coder-agent-proxy-ca-cert
         - name: buildbuddy-api-key
           secret:
-            # Reflected from claude-sandbox/buildbuddy-api-key by the existing
-            # shared-secret reflector policy.
+            # Synced from external-creds by the ExternalSecret in this directory.
             secretName: buildbuddy-api-key
         - name: ssh-host-key
           secret:

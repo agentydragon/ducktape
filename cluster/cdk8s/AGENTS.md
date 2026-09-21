@@ -324,9 +324,9 @@ typed, including `resourceNames`:
 
 ## `image-pins/kustomization.yaml`: the `:tag` Setters marker, not the bare form
 
-Every converted directory's hand-written (never generated) `image-pins/` Component pins
-the real tag via a placeholder `newTag:` plus a Flux image-automation Setters marker
-comment, one entry per image:
+Where a converted directory uses a hand-written (never generated) `image-pins/`
+Component, it pins the real tag via a placeholder `newTag:` plus a Flux image-automation
+Setters marker comment, one entry per image:
 
 ```yaml
 images:
@@ -341,6 +341,11 @@ _whole_ marked field to the full `repository:tag` reference — which corrupted 
 took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one. See
 <https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
 update markers". Don't repeat this explanation per directory; point back here instead.
+
+Agentplane testing keeps its image pins inline in the hand-maintained root
+`kustomization.yaml`, since the Kustomization itself is part of the flat resource
+directory. Flux updates those `newTag:` markers in place; cdk8s generates only the
+separate `agentplane.k8s.yaml` resource file.
 
 The `images:` transformer matches by image `name:` across **every resource in the
 Kustomization's rendered output**, not just one Deployment — relevant when a directory's
@@ -365,15 +370,19 @@ Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing
-   else. Merge and let it reconcile — this is what makes the handoff safe.
+   else. Merge and let it reconcile to protect against deletion during the handoff.
 2. Only then: delete the old Kustomization(s), let the new one render and claim the
-   same objects. Flux's SSA apply adopts them (updates the ownership label); no race
-   left, since the old CR's deletion no longer touches them.
+   same objects. Flux's SSA apply adopts them (updates the ownership label); the old
+   owner's deletion can no longer delete the transferred objects.
 
 Live-cluster ownership concern, not manifest content — `kustomize build`/`flux build
 --dry-run` render correctly either way and can't catch it. Verify via the live cluster
 (`kubectl get <kind> -n <namespace> -o jsonpath='{.metadata.uid}'` unchanged = adopted,
 not recreated), not by diffing rendered YAML.
+
+Adoption can also change operator-generated Service selectors. Follow
+[the ownership-label traffic checks](../AGENTS.md#migrating-stateful-flux-kustomizations)
+and verify service continuity separately from object survival.
 
 Complementary, resource-level tool: `kustomize.toolkit.fluxcd.io/prune: "disabled"`
 annotation, for a single object dropped from a still-live Kustomization's output (no CR

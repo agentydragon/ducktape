@@ -39,6 +39,8 @@ py_library(
     deps = [
         ":k8s_client",
         ":provider",
+        "//airlock:auth",
+        "//airlock:config",
         "@pypi//fastapi",
     ],
 )

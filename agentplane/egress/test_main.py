@@ -16,6 +16,7 @@ CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
 def _args(tmp_path: Path) -> list[str]:
     return [
         "--rules-namespace=egress-test",
+        "--credentials-namespace=egress-test-credentials",
         f"--ca-cert={tmp_path / 'ca.crt'}",
         f"--ca-key={tmp_path / 'ca.key'}",
         f"--confdir={tmp_path}",
@@ -43,6 +44,17 @@ def test_a_deployment_naming_no_workload_namespace_is_refused(tmp_path: Path, mo
 
     with pytest.raises(ValidationError, match="allowed_service_account_namespaces"):
         Settings(_cli_parse_args=_args(tmp_path))
+
+
+def test_a_deployment_must_choose_its_credentials_namespace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = tmp_path / "settings.yaml"
+    config.write_text("allowed_service_account_namespaces: [egress-test]\n")
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.delenv("AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE", raising=False)
+    args = [arg for arg in _args(tmp_path) if not arg.startswith("--credentials-namespace=")]
+
+    with pytest.raises(ValidationError, match="credentials_namespace"):
+        Settings(_cli_parse_args=args)
 
 
 def test_a_settings_file_that_is_not_there_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

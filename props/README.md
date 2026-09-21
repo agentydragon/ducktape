@@ -30,7 +30,7 @@ props/
 │       ├── ground_truth.py   # Snapshot/issue browsing API
 │       ├── llm.py            # LLM proxy (OpenAI-compatible)
 │       └── registry.py       # OCI registry proxy
-├── frontend/                 # Svelte dashboard UI
+├── frontend/                 # React + Mantine dashboard UI
 ├── agents/                   # Agent implementations
 │   ├── critic/               # Critic agent (finds issues in code)
 │   ├── grader/               # Grader agent (matches issues to ground truth)
@@ -146,11 +146,11 @@ the root Flux bundle and set `suspend: false` there.
 
 ### Components
 
-| Component  | Deployment package resource |
-| ---------- | --------------------------- |
-| Backend    | `props/deploy/app/`         |
-| PostgreSQL | `props/deploy/db/`          |
-| Secrets    | `props/deploy/secrets/`     |
+| Area       | Files in `props/deploy/`                                                    |
+| ---------- | --------------------------------------------------------------------------- |
+| Backend    | `deployment.yaml`, `service.yaml`, `llm-proxy-*.yaml`                       |
+| PostgreSQL | `postgres-cluster.yaml`                                                     |
+| Secrets    | `*.sops.yaml`, `forgejo-images-creds-eso.yaml`, `registry-pull-secret.yaml` |
 
 The package keeps its existing node placement and workload-level configuration.
 

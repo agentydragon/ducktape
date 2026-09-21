@@ -62,7 +62,7 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
         "haku-mailbox.allegedly.works",
         # Coinbase read-only source: Haku reads the operator's crypto balances (CDP Advanced
         # Trade get_accounts) from a haku-sandbox pod -- Plaid does not support Coinbase as a
-        # readable institution -- with the reflected read-only `coinbase-api-credentials`
+        # readable institution -- with the ESO-distributed read-only `haku-sandbox-coinbase-api-credentials`
         # (cluster-sops-read) CDP key, and marks ETH/BTC to USD via the public /v2/prices
         # endpoint on the same host.
         "api.coinbase.com",
