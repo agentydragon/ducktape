@@ -88,6 +88,8 @@ async def reader_layout(page: Page) -> dict[str, float | str]:
                 composerHeight: composerBox.height,
                 composerTop: composerBox.top,
                 viewportHeight: window.innerHeight,
+                windowScrollY: window.scrollY,
+                documentHeight: document.documentElement.scrollHeight,
                 scrollTop: history.scrollTop,
                 anchor: anchor.dataset.conversationAnchor ?? '',
                 anchorTop: anchorBox.top,
@@ -101,6 +103,8 @@ def assert_reader_visible(layout: dict[str, float | str]) -> None:
     assert float(layout["historyHeight"]) > 0
     assert float(layout["composerHeight"]) > 0
     assert 0 <= float(layout["composerTop"]) < float(layout["viewportHeight"])
+    assert float(layout["windowScrollY"]) == 0
+    assert float(layout["documentHeight"]) <= float(layout["viewportHeight"])
 
 
 async def test_pending_command_pages_bound_selection_refresh_and_cleanup(thread_browser: ThreadBrowser) -> None:
