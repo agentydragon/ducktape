@@ -65,6 +65,22 @@ the selected original frame; its PNG was downloaded and inspected. The unit test
 checks eviction after 129 disclosure choices and isolation of a replacement source.
 Actual history eviction/revisit and source-reset browser coverage remain separate.
 
+## Navigation between threads
+
+At `406735fec3`, the real browser navigated between two stored 80-item conversations
+after selecting older history in the first:
+[cf04b70e](https://app.buildbuddy.io/invocation/cf04b70e-ae88-470f-8f85-c19498aec244).
+Both route transitions requested a fresh tail without the previous thread's
+`before_cursor`, displayed the correct name and rendered its newest item. The view
+is keyed by thread ID; older-page selection and asynchronous header state cannot
+carry into another thread. The resulting PNG was downloaded and inspected.
+
+The first run's five-second body assertion expired during initial shape creation;
+its trace shows successful payload responses and the expected rendered tail just
+afterward. The test now waits for the selected metadata row before awaiting its
+lazy body. This test verifies navigation state isolation, not a cold-load latency
+target.
+
 ## Native harness measurements
 
 Independent draft #7562 adds a controlled-upstream experiment above runner #7535.
@@ -165,3 +181,35 @@ and data committed during the outage. The old stream handle returned
 `409` with `must-refetch`; a new snapshot included that data. No manual storage reset
 was needed. This establishes the service/protocol recovery path; browser subscription
 recovery and final deployment configuration are verified separately.
+
+## Electric update-heavy reload gate
+
+The real stalled-socket probe passed
+[918c554f](https://app.buildbuddy.io/invocation/918c554f-4203-444c-a208-d7f3ee77518d).
+It updated the same 30 selected rows 49 times, writing 96,337,920 bytes. Logical-slot
+checkpoints and an independent reader confirmed progress while the stalled reader's
+kernel receive queue reached 13,568 bytes. Sampled Electric PID RSS grew 10,420 KiB
+against a 16,384 KiB experiment budget. Resume reached the current values across 19
+response pages; persisted restart succeeded after the mapped host port changed.
+
+This does **not** close the reload/resource gate. Fresh `offset=-1` loading after
+restart transferred 191,324,303 bytes and 1,500 operations for only 30 current rows.
+The artifact's `restart.rowCount` counts operations, not distinct current entities.
+Container cgroup usage grew 205,303,808 bytes; additional anonymous/file-cache
+measurements are needed to attribute that growth. Stable PID RSS alone does not
+establish bounded total container memory.
+
+Pinned Electric 1.8.1's [file storage implementation](https://github.com/electric-sql/electric/blob/%40core%2Fsync-service%401.8.1/packages/sync-service/lib/electric/shape_cache/pure_file_storage.ex)
+defaults to ten-minute compaction with 50% scheduling jitter and retains two complete
+log chunks. The short experiment therefore does not establish post-compaction size.
+More importantly, a fixed row predicate alone does not guarantee inexpensive reloads
+while those rows receive many revisions. Evaluate the existing standard
+changes-only/on-demand snapshot path against the same update-heavy workload,
+combined with the bounded interest predicate, before accepting production bootstrap
+and reconnect costs. Do not delete shared shapes to force snapshots.
+
+BuildBuddy records the base commit `7ac50fd7` for this probe; its runner log shows
+the worktree patch applied before execution. The built probe source artifact's
+SHA-256 `7792dbc7d23f302de5fe7afb9e6acb2bd84e68fa13c0121079407c31258577b7`
+matches the file in spike commit `830fb2cfcc`. The downloaded measurement artifact
+was independently inspected; it is finite evidence, not a months-long guarantee.
