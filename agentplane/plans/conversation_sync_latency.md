@@ -39,6 +39,33 @@ a browser's round trip is smaller. What survives that is the shape of it — the
 
 Nothing overlaps: `ConversationCollection` mounts no body until the entity shape has caught up.
 
+## What Electric gives us
+
+Every flow below has to be built from these, so they are worth stating before the flows rather
+than assumed inside them. Deployed: `electricsql/electric:1.8.1`, `ELECTRIC_STORAGE=fast_file`,
+`ELECTRIC_MAX_SHAPES=1024` (<../../cluster/k8s/agentplane-testing/agentplane.k8s.yaml>).
+
+- **A shape is its predicate.** Identity is `(table, columns, where, bound params, replica)`. Two
+  readers whose predicates match share one server-side shape, its log and its cache; change any
+  bound and it is a **different shape** with its own handle, log and snapshot cost. This is the
+  single fact the rest of the design turns on.
+- **A shape has a log, addressed by offset.** `offset=-1` replays it whole. `offset=<O>&handle=<H>`
+  resumes from a position, which is also how a reader that went away comes back without
+  re-transferring. `live=true` long-polls for what comes after.
+- **Two read modes.** `log=full` replays every change ever made — correct and cheap for an
+  append-only table, since each row appears once. `log=changes_only` plus a **subset snapshot**
+  (`offset=now`, then `offset=<O>&handle=<H>&subset__where=…`) bootstraps from current state
+  instead, which is what a mutable table needs: replaying a full log would cost a reader one
+  message per past revision of every row.
+- **409 `must-refetch`** retires a handle whose log the server can no longer serve from. It is
+  Electric's own signal and means rebuild this shape, not rebuild the reader's view.
+- **Shapes are evicted by an LRU** bounded at 1024. A predicate that no two readers ever share, or
+  that one reader never reuses between opens, spends this budget and gets no cache in return.
+
+What Electric does **not** offer, and so cannot be designed around: no way to widen or narrow a
+live shape in place (a new predicate is a new shape), and no server-side notion of a reader's
+viewport. Anything viewport-shaped has to be assembled from shapes, client-side.
+
 ## Flows the design has to satisfy
 
 Latency is one property of this component and not the only one it can get wrong. What follows
@@ -186,81 +213,205 @@ subtree and is swapped in only once its `view_state` has caught up to the intere
 ### What writing these out changes
 
 - Flows 2 and 7 are load-bearing and work; a design that breaks either is not an improvement.
-- Flow 4 is a defect in the current design that W9 would amplify, so W9 is **blocked** on deciding
-  what rotation is for (flow 5) rather than the other way round.
-- Flow 3's place-keeping is measure-and-correct, which is the mechanism most sensitive to a window
-  being rebuilt underneath it. Every extra rotation is another chance for it to visibly fail.
-- Flow 6 names a requirement — a reconnect resumes — that nothing currently verifies.
+- **Every failure is the same failure.** Rotation moves `tail_from`; paging up replaces the window;
+  a dropped stream rebuilds the selection. Each redefines a shape a reader is looking at, which is a
+  new server-side shape and a set of rows that go away and come back. Flows 3, 4, 5 and 6 are four
+  faces of that, not four problems.
+- So the ordering the earlier draft had was backwards. It made W9 blocked on "what is rotation for",
+  as though rotation were a policy to be tuned. Rotation is a **consequence** of a bound that moves,
+  and the question to settle first is the partition — which is what the next section does.
+- Flow 6's requirement is not unverified after all, as this plan first claimed:
+  `test_projected_browser_streams_runner_events_and_loads_bodies_lazily` takes the browser offline
+  and asserts the visible text survives. What was unverified was whether the design meets it.
+- Flow 3's place-keeping is measure-and-correct against `[data-conversation-anchor]`, which is only
+  needed because the window is rebuilt underneath the reader. Under a partition that is never
+  rebuilt there is nothing to restore, and that machinery can go.
 
-## W9 — one shape for the window's content
+## A partition that satisfies every flow
 
-`conversation_payload_chunk` carries `owner_cursor`, so a single shape over
-`owner_cursor >= tail_from AND field IN ('text','confirmed_input')` — the entity interest's own
-bounds — covers every body the page renders. The open path becomes four requests whatever the
-conversation holds, and reasoning, arguments and output keep their own selected shapes for when a
-disclosure opens them.
+The flows above fail in one place — every one of them, including the two that work, turns on
+**redefining a shape while a reader is looking at it**. Rotation moves `tail_from`; paging up
+replaces the window; a dropped stream rebuilds the selection. Since a shape _is_ its predicate
+(§ What Electric gives us), each of those is a new server-side shape, a new snapshot and a reader
+whose rows go away and come back.
 
-It also retires a distinction the conversation model never asked for. `follow` is currently derived
-from `live && completion === null`, so a completed item is treated as final; the model says existing
-items can change anywhere in the history. On a window shape there is nothing to derive: a body
-updates because its chunks did.
+So the fix is not to make redefinition cheaper. It is to stop redefining: make a reader's view an
+**additive set of subscriptions to fixed partitions**, and let scrolling and streaming change which
+subscriptions it holds rather than what any of them mean.
 
-Three pieces, one epoch bump:
+### The partition
 
-- **`PayloadField.REASONING`.** Reasoning writes to `text` today, distinguished only by the item's
-  `kind` on its entity row, so a shape on `field = 'text'` drags in every reasoning body — which may
-  stay omitted until requested, and which `ContentSelection` already names as its own kind. The
-  criterion for the window is **what the page always renders**, and reasoning fails it: it renders
-  behind a `RetainedDisclosure`, exactly like tool arguments and output, and a reasoning trace is
-  routinely longer than the answer it precedes. Splitting the field is what lets the window carry
-  the one and not the other; the item `kind` cannot, because a shape predicate selects over the
-  chunk table, which has no kind.
-- **The extent on `PayloadRef`** — `content_bytes`, the value's whole length at the revision. A
+Segments are append-only within a scope, so an index assigned at projection time is stable forever.
+Give each segment a monotone `segment_index` and cut it into pages of a fixed size `P`:
+
+```sql
+-- page k, for every reader of this conversation, for all time
+thread_id = $1 AND source_id = $2 AND projection_epoch = $3
+AND entity_kind IN ('item','confirmed_input','lifecycle')
+AND segment_index >= $4 AND segment_index < $5      -- $4 = k*P, $5 = (k+1)*P
+```
+
+Both bounds are multiples of `P`, so page `k`'s shape is the **same shape** on every open, for
+every reader, forever. The newest page is incomplete and grows; its predicate does not change, so
+Electric simply appends to that shape's log. Cursor quantization cannot do this — how many segments
+a cursor range admits depends on how densely a turn packs them — which is why the index has to be
+stored rather than derived.
+
+What is _not_ paged moves out of the window shape entirely, into one shape per conversation that is
+stable for the conversation's life:
+
+```sql
+thread_id = $1 AND source_id = $2 AND projection_epoch = $3
+AND (entity_kind IN ('view_state','controls') OR (entity_kind = 'command' AND pending = TRUE))
+```
+
+Today these ride inside every window shape, so a rotation re-sends the view state and every pending
+command along with everything else. They are not tail-scoped and never were.
+
+Content pages mirror entity pages over the chunk table, which means the chunk rows carry their
+owner's `segment_index`:
+
+```sql
+thread_id = $1 AND source_id = $2 AND projection_epoch = $3
+AND owner_segment_index >= $4 AND owner_segment_index < $5
+AND field IN (…)
+```
+
+### The flows, as requests
+
+`P = 50` below for concreteness; sizing it is an open question (§ What this costs). Entity and
+control shapes are mutable, so they bootstrap `log=changes_only` through a subset snapshot; content
+is append-only, so it replays `log=full` from `offset=-1`.
+
+**Open at the tail.** One resolve, then a fixed number of subscriptions whatever the conversation
+holds:
+
+```text
+GET /sync/interest                      → {scope, latest_page: k, latest_index}
+GET /sync/entities?page=k&offset=now     → handle Hk, offset Ok
+GET /sync/entities?page=k&offset=Ok&handle=Hk&subset__where=true = true   → rows
+GET /sync/entities?page=k&offset=…&handle=Hk&live=true                    → long poll
+  … the same three for page k-1, so the tail is 50–100 segments rather than 0–50
+GET /sync/controls?offset=now → … → subset → live                         (3)
+GET /sync/content?page=k&offset=-1       → every body of page k
+GET /sync/content?page=k&offset=…&live=true                               → long poll
+  … the same two for page k-1
+```
+
+Nine requests and five long polls, constant in conversation size — against today's four plus two
+per rendered body. Every one of those shapes is shared with every other reader of this conversation
+and with this reader's next open, which is what the current per-view bounds give up.
+
+**New items stream in.** Zero requests. A new segment's index is inside page `k`'s predicate, so it
+arrives on the poll already open; its body arrives on the content poll the same way. When the
+conversation crosses into page `k+1`, the reader subscribes to one new entity page and one new
+content page — **once per `P` segments**, not once per segment, and the shape it creates is then
+warm for everyone.
+
+**Scroll up.** Subscribe to page `k-2`. Three requests plus two, and **nothing already on screen is
+touched**: no predicate moves, no shape is retired, no rows are withdrawn and re-delivered. The
+reader holds pages `k-2 … k` and can keep going down. This is the flow that today replaces the
+window and relies on re-finding a `[data-conversation-anchor]` afterwards; here there is nothing to
+restore because nothing moved.
+
+**Scroll up, then an item streams in.** The two are now independent. The new segment lands in page
+`k`; the history pages are untouched; no threshold is crossed because there is no threshold. Flow 4
+stops existing rather than getting a fix.
+
+**Rotation.** Also stops existing. Bounding what a reader holds becomes a client-side decision to
+**unsubscribe** from pages far off screen — which frees browser memory, disturbs nothing on screen,
+and leaves the server's shapes for whoever wants them next. The server keeps no per-reader window
+to expire, so `ConversationInterestExpiredError` and the 60-segment threshold both go.
+
+**The connection drops and comes back.** Each page resumes itself:
+`GET /sync/entities?page=k&offset=<last>&handle=<Hk>&live=true`. Nothing is rebuilt, so nothing
+blanks — which is the whole of flow 6's requirement. A handle the server can no longer serve from
+answers 409 `must-refetch`, and then **that one page** re-snapshots while every other page keeps
+its rows.
+
+**The scope is replaced.** Every shape is scoped by `projection_epoch`, so the proxy 410s them all;
+the reader resolves a new interest and subscribes to the new epoch's pages behind the existing
+hidden double-buffer. Unchanged from today, and still covered by
+<../debug/conversation_acceptance.md>.
+
+### What this costs
+
+- **Shapes.** A conversation costs one control shape plus two per page a reader has open. A reader
+  at the tail holds five; one that has scrolled back 500 segments holds twenty-one. Against
+  `ELECTRIC_MAX_SHAPES=1024`, shared across readers and opens — where today's per-view bounds are
+  shared with nobody. **`P` has to be sized against that budget before this is built**, and the
+  shape-creation log (§ W7, landed) is the instrument: count distinct handles over a session.
+- **Two schema additions**, both at projection time: `segment_index` on the entity rows and
+  `owner_segment_index` on the chunk rows. Both are append-only facts, so neither can drift.
+- **Nine requests on open rather than four.** The trade is deliberate: constant either way, and
+  these are cache hits for the second reader where the current four are not.
+
+### What this does not answer
+
+- **Whether a page's content should carry reasoning.** Orthogonal to partitioning, and open —
+  reasoning writes to `text` and renders behind a disclosure (§ W9).
+- **Per-card readiness.** A page collection is a smaller and more local unit than one window
+  collection, but a page still has no signal for "this card's body has arrived". Whatever waited on
+  a card being mounted — a visual gate, a test — needs something explicit to wait on either way.
+- **How a reader decides to unsubscribe.** Bounding held pages is now a client policy with no
+  server contract behind it, which is simpler but is not free of judgement.
+
+## W9 and W5, as they stand after the flows
+
+Both were written before the flows were, and the flows overtake them. Kept here for the parts that
+survive, and marked where they do not.
+
+### W5 — superseded, and promoted
+
+W5 identified the defect correctly: `conversation_entity_interest` sets `tail_from` to the
+30th-largest segment cursor, so appending one segment makes the 30th-largest what was the 29th — a
+new bound, a new shape definition, a new handle. An idle conversation reuses its shape across opens;
+a growing one defines a fresh one on every open, and rotation defines another. A shape _per
+conversation_ is ordinary; a shape per _view of_ a conversation is what this builds.
+
+It proposed the page-aligned bound over a stored per-segment index, and then called it **"hygiene
+rather than latency"** and deferred it. That judgement is now wrong. The flows show the moving bound
+is not a cache-efficiency footnote — it is what makes paging replace the window, what makes rotation
+exist, what opens flow 4's hole, and what turns a dropped connection into a rebuild. The partition
+is the design, not its tidying, and it is written out in full above.
+
+One rejection recorded there still holds: **one shape per thread**, the whole conversation's
+metadata stable forever, was considered and rejected because opening a conversation loads its tail,
+not its history. That is a product decision and independent of everything here — paging keeps it.
+
+### W9 — the content shape, at page granularity
+
+W9's premise stands: the bodies a reader renders are the items it renders, so they belong in a shape
+alongside them rather than one shape per body, and the open path must not be `O(bodies)` round
+trips. What changes is the bound. W9 proposed `owner_cursor >= tail_from` — the interest's own
+moving bound, and so an inheritance of exactly the defect W5 names. Content pages carry the same
+content under a bound that does not move.
+
+Three pieces of it are independent of the partition and survive intact:
+
+- **The extent on `PayloadRef`** — `content_bytes`, the value's whole length at that revision. A
   shape carrying many bodies hands a reader more than the revision its metadata names, so each body
-  needs a bound it can apply without a second request. This is also a correctness requirement on its
-  own; see below. A chunk count beside it would be redundant and worse than redundant: the byte
-  length is a projection fact, while how many chunks a value occupies depends on how the store
-  batched the writes, so the two can disagree.
-- **The shape per generation, not per revision.** A `chunk_index < n` bound makes shape identity
-  depend on the revision, so every append defines a new shape and a completing item pays a cold
-  creation for bytes its own stream already delivered. Bound the shape to the generation and let the
-  extent bound the read.
+  needs a bound it can apply without a second request. This is a **consistency requirement, not an
+  optimisation**: `test_http_admission_ahead_of_replay_does_not_skip_earlier_events` holds
+  `/sync/entities` while leaving the body route alone, and a reader with no bound renders chunks the
+  held metadata has not reached. Contiguity from index 0 gives the whole value at _some_ revision of
+  the generation, which is not the one being shown. A chunk count beside it would be worse than
+  redundant: the byte length is a projection fact, while how many chunks a value occupies depends on
+  how the store batched its writes, so the two can disagree.
+- **The shape per generation, not per revision**, for the bodies that stay individually read. A
+  `chunk_index < n` bound makes shape identity depend on the revision, so every append defines a new
+  shape and a completing item pays a cold creation for bytes its own stream already delivered.
+- **`follow` is not a thing the model has.** It is derived from `live && completion === null`, so a
+  completed item is treated as final, while the model says existing items can change anywhere in the
+  history. With an extent there is nothing to derive: a reader renders the prefix its own reference
+  covers, and a short prefix is what streaming looks like.
 
-### The extent is a consistency requirement, not an optimisation
-
-A revision is what makes a body and the row naming it one fact. Remove the reader's bound and an
-item's text can run ahead of its own metadata: `agentplane/app/test_thread_browser.py`'s
-`test_http_admission_ahead_of_replay_does_not_skip_earlier_events` holds `/sync/entities` while
-leaving `/sync/payload-chunks` alone, and a reader with no bound renders chunks the held metadata
-has not reached. Contiguity from index 0 gives the whole value at _some_ revision of the
-generation, which is not the one being shown.
-
-## W5 — a shape is a partition, not a viewport
-
-`conversation_entity_interest` sets `tail_from` to the 30th-largest segment cursor, and that value
-is the shape's bound. Append one segment and the 30th-largest becomes what was the 29th: a new
-bound, a new shape definition, a new handle. An idle conversation reuses its shape across opens; a
-growing one defines a fresh one on every open, and rotation defines another.
-
-A shape is a server-side cache with a log, maintained from the replication stream, shared by every
-reader whose interest matches it and meant to outlive any of them — which is why the deployment
-caps how many exist and evicts by use. A predicate carrying a continuously moving bound gives up
-all of it: no reuse between two readers of one conversation, no reuse between two opens by one
-reader, and an eviction queue churning behind both. A shape _per conversation_ is ordinary; a shape
-per _view of_ a conversation is what this builds.
-
-The measurement says this is worth sub-second per open, so it is hygiene rather than latency. The
-fix is a **page-aligned bound over a stored per-segment index**: segments are append-only, so a
-monotone index assigned at projection time is stable, and a bound rounded to a page admits between
-one and two pages by construction while being redefined once per page instead of once per segment.
-Cursor quantization cannot do this — how many segments a cursor range admits depends on how densely
-a turn packs them, so no granularity is both stable and bounded.
-
-One shape per thread — the whole conversation's metadata, stable forever — was considered and
-**rejected**: opening a conversation loads its tail, not its history. That is a product decision,
-not an inference from the measurement, and it holds whatever a row weighs.
-
-W9 carries the same bound, so whichever partitioning this gets is the one W9 needs.
+One piece is still **undecided**, and the partition does not decide it: whether a page's content
+carries reasoning. Reasoning writes to `text` and renders behind a `RetainedDisclosure`, exactly
+like tool arguments and output, and a trace is routinely longer than the answer it precedes. The
+criterion — what the page always renders — excludes it, and the item `kind` cannot express that,
+because the predicate selects over the chunk table, which has no kind. Splitting
+`PayloadField.REASONING` is what would let a page carry the one and not the other.
 
 ## Smaller items
 
@@ -285,7 +436,15 @@ W9 carries the same bound, so whichever partitioning this gets is the one W9 nee
 - Open-to-first-text for a 30-segment tail, cold and warm, with upstream shape-creation duration
   reported separately from transfer. `agentplane/acceptance/test_conversation_latency.py` is the
   instrument, and it only exercises what the deployment is running.
-- Distinct Electric shape handles created during one turn: zero new shapes per completing item.
+- Distinct Electric shape handles created during one turn: zero new shapes per completing item, and
+  zero per arriving segment while a reader holds a history page. The second is flow 4, and the
+  shape-creation log (§ W7, landed) reports a handle per request, so counting distinct handles over
+  a session answers both.
+- **`P` against `ELECTRIC_MAX_SHAPES=1024`**, before the partition is built rather than after: how
+  many pages a plausible set of concurrent readers holds, given that pages are shared between them.
+- Browser coverage for the two flows nothing asserts end to end: scroll up and then stream (no hole
+  appears, and the reader's place does not move), and a page's rows surviving an unsubscribe of a
+  page above it.
 - Small-file create/fsync latency on `seaweedfs-ovh` versus `local-path-ovh-ssd` from the Electric
   pod's node, before spending W1's PVC change.
 
