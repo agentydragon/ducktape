@@ -505,9 +505,10 @@ export function PayloadBody({
     ]
   );
   // A generation only ever grows, so an earlier revision's value is a prefix of the newer one.
-  // Carrying it into the completed read keeps arrived text on screen while that read is in flight,
-  // instead of blanking what the reader is already reading. It stands in for nothing else: an
-  // unavailable revision is a fact about the content, not a slower way of loading it.
+  // Carrying it forward keeps arrived text on screen while the next read is in flight, whether that
+  // read is a chunk stream or a completed revision, and whether it is slow or offline. It stands in
+  // for nothing else: an unavailable revision is a fact about the content, not a slower load, so
+  // the completed path passes that through rather than falling back to what it last showed.
   const retained = useRef<{ generation: string; body: string } | null>(null);
   const generation = generationKey(stableReference);
   if (retained.current !== null && retained.current.generation !== generation) retained.current = null;
@@ -532,7 +533,7 @@ export function PayloadBody({
     </StreamingPayloadBody>
   ) : (
     <CompletedPayloadBody threadId={threadId} reference={stableReference} pending={retained.current?.body ?? null}>
-      {children}
+      {remember}
     </CompletedPayloadBody>
   );
 }

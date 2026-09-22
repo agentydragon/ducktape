@@ -9,11 +9,11 @@ returns are exactly what the shape's identity is made of.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -21,7 +21,9 @@ import pytest_bazel
 from fastapi import FastAPI, Request
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
+from testcontainers.postgres import PostgresContainer
 
+from agentplane.app.conftest import migrated_database
 from agentplane.app.conversation_projection import PayloadField
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
@@ -46,8 +48,18 @@ class Seeded:
     generation: int
 
 
+# Every case here reads: the proxy builds a query and forwards or refuses it, and none writes. The
+# expensive part of a per-test database is creating and migrating it, and that fixture is
+# synchronous, so the module can share one without a module-scoped event loop the async fixtures
+# would then need. Each case still seeds its own sandbox, so they share no thread and no lease.
+@pytest.fixture(scope="module")
+def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+    yield from migrated_database(postgres_container, "test_electric")
+
+
 @pytest.fixture
 async def seeded(store: TrajectoryStore) -> Seeded:
+    sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
     started: dict[str, int] = {}
     for index in range(_ITEMS):
@@ -58,8 +70,8 @@ async def seeded(store: TrajectoryStore) -> Seeded:
             )
         ).cursor
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=f"body {index}")))
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=2))
+    thread = await store.thread(sandbox, SESSION, source.attached.spec)
+    lease = await store.acquire_ingestion(sandbox, timedelta(minutes=2))
     assert lease is not None
     await store.set_attached(thread, source.attached, lease=lease)
     await store.record(thread, source.entries, lease=lease)

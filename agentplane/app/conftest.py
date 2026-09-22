@@ -53,9 +53,12 @@ def pytest_runtest_makereport(
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    """A pristine, migrated per-test database on the shared container, as an asyncpg URL."""
+def migrated_database(postgres_container: PostgresContainer, name: str) -> Iterator[str]:
+    """A pristine, migrated database on the shared container, as an asyncpg URL.
+
+    Creating and migrating one costs a second or two, so a module whose cases only read may share
+    one at module scope rather than paying that per case; `db_url` is the per-test default.
+    """
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
@@ -71,12 +74,18 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
             )
     finally:
         admin_engine.dispose()
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
+    db_name = re.sub(r"[^a-z0-9_]", "_", name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
     RUNNER.apply(async_url)
     yield async_url
     force_drop_database_sync(admin_url, db_name)
+
+
+@pytest.fixture
+def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
+    """A pristine, migrated per-test database on the shared container, as an asyncpg URL."""
+    yield from migrated_database(postgres_container, request.node.name)
 
 
 @pytest.fixture
