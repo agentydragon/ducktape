@@ -103,17 +103,13 @@ is an ordinary Electric pattern; a shape per _view of_ a conversation is not, an
 
 Two ways to stop treating it as a viewport:
 
-- **One shape per thread.** Predicate `thread_id = $1`, the whole conversation's metadata, stable
-  forever and shared by every reader and every open, with Electric syncing it incrementally as
-  designed. Bodies stay separately selected, which is where the bytes are. The requirement that
-  opening a Thread must not replay its history was written against **raw events** — the inspection
-  behind it measured 3,091 events and 1.79 MB of SSE for eight turns — and a projected entity row
-  is not that: one row per segment, no payload. What makes this a real question rather than an
-  obvious win is that a lifecycle row embeds its whole event as JSON, so the rows are not uniformly
-  small, and a conversation's row count still grows without bound. Measure rows and bytes per
-  conversation before ruling it in or out.
+- ~~**One shape per thread.**~~ Predicate `thread_id = $1`, the whole conversation's metadata,
+  stable forever and shared by everyone. **Rejected by the owner:** opening a conversation loads its
+  tail, not its whole history, and that holds whatever the row size turns out to be. It is recorded
+  here so the question is not reopened — the requirement is a product decision, not an inference
+  from the measurement.
 - **One shape per page of a thread.** Keep a bound, but make it a partition many opens share, which
-  is the scheme below.
+  is the scheme below. This is the direction.
 
 If the arithmetic below is needed at all, it has to make the bound stable without unbounding the
 window:
