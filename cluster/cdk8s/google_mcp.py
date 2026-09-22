@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -48,7 +48,7 @@ from cdk8s_plus_34 import (
     SecretValue,
     Service,
     ServicePort,
-    k8s,
+    Volume,
 )
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
@@ -63,7 +63,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -83,7 +82,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 
 _NAME = "google-mcp"
@@ -104,6 +103,13 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 
 
 def _bearer_credentials(scope: Construct) -> None:
+    """Mint this pod's caller-facing bearer here, in its own namespace.
+
+    agentplane-staging reads a copy through the `kubernetes-google-mcp-secret-store`
+    ClusterSecretStore (cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml) --
+    ESO's own cross-namespace read, the same mechanism Airlock's tokens and the Tana PAT
+    already use for agentplane-staging, not Stakater Reflector.
+    """
     Password(
         scope,
         "bearer-password-generator",
@@ -119,18 +125,7 @@ def _bearer_credentials(scope: Construct) -> None:
             target=ExternalSecretSpecTarget(
                 name=BEARER_SECRET_NAME,
                 creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
-                        }
-                    ),
-                    data={BEARER_SECRET_KEY: "{{ .password }}"},
-                ),
+                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
             ),
             data_from=[
                 ExternalSecretSpecDataFrom(
@@ -174,7 +169,7 @@ class GoogleMcpApp(Construct):
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=_LABELS))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
         deployment.add_container(
             name="server",
@@ -205,29 +200,12 @@ class GoogleMcpApp(Construct):
                 read_only_root_filesystem=False,
             ),
         )
-        # cdk8s_plus has no optional SecretVolumeSource builder, and this Secret is populated by
-        # a ClusterExternalSecret in a different Kustomization (Airlock's) with no Flux-level
-        # ordering guarantee -- keep the optionality in typed Kubernetes structs, matching
-        # ssh_mcp/backend.py's key-volume pattern, so the pod comes up (failing readiness, not
-        # crash-looping) before that Secret first appears. `add` (not `/-` append) because no
-        # other volume/mount exists yet to make these arrays non-empty.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes",
-                [
-                    k8s.Volume(
-                        name="google-token",
-                        secret=k8s.SecretVolumeSource(secret_name=GOOGLE_TOKEN_SECRET_NAME, optional=True),
-                    )
-                ],
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts",
-                [k8s.VolumeMount(name="google-token", mount_path=_GOOGLE_TOKEN_DIR, read_only=True)],
-            )
-        )
+        # `optional=True`: this Secret is populated by a ClusterExternalSecret in a different
+        # Kustomization (Airlock's) with no Flux-level ordering guarantee, so the pod must come
+        # up (failing readiness, not crash-looping) before that Secret first appears.
+        google_token_secret = Secret.from_secret_name(self, "google-token-secret-ref", GOOGLE_TOKEN_SECRET_NAME)
+        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret, optional=True)
+        deployment.containers[0].mount(_GOOGLE_TOKEN_DIR, google_token_volume, read_only=True)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
