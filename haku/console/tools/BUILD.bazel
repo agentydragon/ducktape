@@ -15,9 +15,17 @@ package(default_visibility = ["//haku/console:__subpackages__"])
 # it is a loud `fixture 'x' not found`, and the parent conftest defines no autouse fixtures or
 # hooks, so its absence changes nothing else.
 
+# `gmail_client`, `google_calendar_client`, `google_service`, `gmail`, `google_calendar`, and
+# `google_discovery` below are also visible to `//x/google_mcp_server`, which reuses these
+# generic tool definitions as-is (a bearer-token parameter, no haku-console coupling) to serve
+# agentplane's own Gmail/Calendar ActionGroups against a separate Google credential.
 py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         "//gmail_api:filters",
         "//gmail_api:labels",
@@ -29,6 +37,10 @@ py_library(
 py_library(
     name = "google_calendar_client",
     srcs = ["google_calendar_client.py"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         "@pypi//pydantic",
         "@pypi//python_dateutil",
@@ -38,7 +50,10 @@ py_library(
 py_library(
     name = "google_service",
     srcs = ["google_service.py"],
-    visibility = ["//haku/console:__subpackages__"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
@@ -48,7 +63,10 @@ py_library(
 py_library(
     name = "gmail",
     srcs = ["gmail.py"],
-    visibility = ["//haku/console:__subpackages__"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         ":gmail_client",
         ":google_discovery",
@@ -66,7 +84,10 @@ py_library(
 py_library(
     name = "google_calendar",
     srcs = ["google_calendar.py"],
-    visibility = ["//haku/console:__subpackages__"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         ":google_calendar_client",
         ":google_service",
@@ -334,7 +355,10 @@ py_test(
 py_library(
     name = "google_discovery",
     srcs = ["google_discovery.py"],
-    visibility = ["//haku/console:__subpackages__"],
+    visibility = [
+        "//haku/console:__subpackages__",
+        "//x/google_mcp_server:__pkg__",
+    ],
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
