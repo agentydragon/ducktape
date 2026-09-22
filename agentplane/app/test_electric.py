@@ -1,7 +1,7 @@
 """The proxy's forwarding and validation, over the real projection it reads its bounds from.
 
 Electric itself is a `MockTransport`, because what these assert is the query the proxy builds and
-what it refuses to build. The interest, scope and payload revision behind it are real: a faked
+what it refuses to build. The interest, scope and payload generation behind it are real: a faked
 resolver can drift from `conversation_entity_interest` without any test noticing, and the bounds it
 returns are exactly what the shape's identity is made of.
 """
@@ -27,7 +27,7 @@ from agentplane.app.conftest import migrated_database
 from agentplane.app.conversation_projection import PayloadField
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, TrajectoryStore
+from agentplane.app.trajectory import ConversationEntityInterest, TrajectoryStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -43,7 +43,9 @@ class Seeded:
 
     thread: UUID
     interest: ConversationEntityInterest
-    selection: ConversationPayloadSelection
+    owner_cursor: int
+    owner_id: str
+    generation: int
 
 
 # Every case here reads: the proxy builds a query and forwards or refuses it, and none writes. The
@@ -77,22 +79,19 @@ async def seeded(store: TrajectoryStore) -> Seeded:
 
     interest = await store.conversation_entity_interest(thread)
     assert interest is not None
-    # Two deltas, so the generation the chain opened and the revision it has reached are different
-    # cursors and a route cannot pass one where it means the other. Resolving them here makes the
-    # projector's rule a checked fact: if it changes, this fixture fails instead of a case below.
+    # A first write takes its own cursor as the generation, and the appends that follow keep it.
+    # Resolving it here makes the projector's rule a checked fact: if it changes, this fixture
+    # fails instead of a case below.
     owner_id = f"item-{_ITEMS - 1}"
     owner_cursor = started[owner_id]
-    selection = await store.conversation_payload_selection(
-        thread,
-        owner_cursor=owner_cursor,
-        owner_id=owner_id,
-        field=PayloadField.TEXT,
-        generation=owner_cursor + 1,
-        revision_cursor=owner_cursor + 2,
+    generation = owner_cursor + 1
+    assert (
+        await store.conversation_payload_generation(
+            thread, owner_cursor=owner_cursor, owner_id=owner_id, field=PayloadField.TEXT, generation=generation
+        )
+        is not None
     )
-    assert selection is not None
-    assert selection.chunk_count > 0
-    return Seeded(thread, interest, selection)
+    return Seeded(thread, interest, owner_cursor, owner_id, generation)
 
 
 def make_app(upstream: httpx.MockTransport, store: TrajectoryStore) -> tuple[FastAPI, httpx.AsyncClient]:
@@ -113,15 +112,13 @@ def entity_query(seeded: Seeded) -> dict[str, str]:
 
 
 def payload_query(seeded: Seeded) -> dict[str, str]:
-    selection = seeded.selection
     return {
-        "source_id": selection.scope.source_id,
-        "projection_epoch": selection.scope.projection_epoch,
-        "owner_cursor": str(selection.owner_cursor),
-        "owner_id": selection.owner_id,
-        "field": selection.field,
-        "generation": str(selection.generation),
-        "revision_cursor": str(selection.revision_cursor),
+        "source_id": seeded.interest.scope.source_id,
+        "projection_epoch": seeded.interest.scope.projection_epoch,
+        "owner_cursor": str(seeded.owner_cursor),
+        "owner_id": seeded.owner_id,
+        "field": PayloadField.TEXT,
+        "generation": str(seeded.generation),
     }
 
 
@@ -293,40 +290,68 @@ async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision(store: TrajectoryStore, seeded: Seeded) -> None:
-    seen: httpx.Request | None = None
+async def test_content_shape_takes_the_entity_window_s_own_bound(store: TrajectoryStore, seeded: Seeded) -> None:
+    """A body is in a reader's window exactly when the entity naming it is, over one shared bound."""
+    seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
-        nonlocal seen
-        seen = request
+        seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
     app, electric = make_app(httpx.MockTransport(upstream), store)
-    selection = seeded.selection
+    path = f"/threads/{seeded.thread}/sync"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        interest = await client.get(f"/threads/{seeded.thread}/sync/payload-interest", params=payload_query(seeded))
-        chunks = await client.get(
-            f"/threads/{seeded.thread}/sync/payload-chunks", params=payload_query(seeded) | {"offset": "-1"}
-        )
-        missing = await client.get(
-            f"/threads/{seeded.thread}/sync/payload-interest",
-            params=payload_query(seeded) | {"revision_cursor": str(selection.revision_cursor + 1)},
-        )
+        content = await client.get(f"{path}/content", params=entity_query(seeded) | {"offset": "-1"})
+        entities = await client.get(f"{path}/entities", params=entity_query(seeded) | {"offset": "-1"})
+        widened = await client.get(f"{path}/content", params=entity_query(seeded) | {"tail_from": "0"})
+        half = await client.get(f"{path}/content", params=entity_query(seeded) | {"window_from": "1"})
     await electric.aclose()
 
-    # The interest is the manifest's, so a reader's extent comes from the row the projector wrote.
-    assert interest.json()["chunk_count"] == str(selection.chunk_count)
-    assert interest.json()["content_bytes"] == str(selection.content_bytes)
-    assert chunks.status_code == 200
-    assert missing.status_code == 410
-    assert seen is not None
-    forwarded = httpx.QueryParams(seen.url.query)
+    assert content.status_code == 200
+    assert widened.status_code == 410
+    assert half.status_code == 422
+    forwarded, entity_forwarded = (httpx.QueryParams(request.url.query) for request in seen)
     assert forwarded["table"] == "conversation_payload_chunk"
-    # The shape stops at the revision's own extent: a later append to the same generation is a
-    # different shape, and this one never grows past what its metadata named.
-    assert "chunk_index < $8" in forwarded["where"]
-    assert forwarded["params[7]"] == str(selection.generation)
-    assert forwarded["params[8]"] == str(selection.chunk_count)
+    assert forwarded["where"] == (
+        "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor >= $4 AND "
+        "field IN ('text','confirmed_input')"
+    )
+    assert entities.status_code == 200
+    assert {key: value for key, value in forwarded.items() if key.startswith("params[")} == {
+        key: value for key, value in entity_forwarded.items() if key.startswith("params[")
+    }
+    assert forwarded["params[4]"] == str(seeded.interest.tail_from)
+
+
+async def test_payload_shape_selects_a_whole_generation_and_no_revision_within_it(
+    store: TrajectoryStore, seeded: Seeded
+) -> None:
+    """A revision-bounded prefix would define a distinct shape per revision; the route refuses one."""
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream), store)
+    path = f"/threads/{seeded.thread}/sync/payload-chunks"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        chunks = await client.get(path, params=payload_query(seeded) | {"offset": "-1"})
+        narrowed = await client.get(
+            path, params=payload_query(seeded) | {"offset": "-1", "revision_cursor": str(seeded.generation)}
+        )
+        missing = await client.get(path, params=payload_query(seeded) | {"generation": str(seeded.generation + 1)})
+    await electric.aclose()
+
+    assert chunks.status_code == 200
+    assert narrowed.status_code == 400
+    assert missing.status_code == 410
+    assert [request.url for request in seen] == [seen[0].url]
+    forwarded = httpx.QueryParams(seen[0].url.query)
+    assert forwarded["table"] == "conversation_payload_chunk"
+    assert "chunk_index" not in forwarded["where"]
+    assert "params[8]" not in forwarded
+    assert forwarded["params[7]"] == str(seeded.generation)
 
 
 async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(

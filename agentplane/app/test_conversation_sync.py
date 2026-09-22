@@ -80,6 +80,33 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
             await store.close()
 
 
+def _reference_of(entity: dict[str, object]) -> dict[str, str]:
+    """An entity's text reference, which arrives over the shape log as JSON text."""
+    raw = entity["text_ref"]
+    return json.loads(raw) if isinstance(raw, str) else raw  # type: ignore[arg-type,return-value]
+
+
+def _body(chunks: list[dict[str, object]], reference: dict[str, str]) -> str:
+    """What a reader assembles: the prefix of the reference's generation its extent covers."""
+    ordered = sorted(
+        (
+            row
+            for row in chunks
+            if str(row["owner_id"]) == reference["owner_item_id"]
+            and str(row["field"]) == reference["field"]
+            and str(row["generation"]) == reference["generation"]
+        ),
+        key=lambda row: int(str(row["chunk_index"])),
+    )
+    body = ""
+    for row in ordered:
+        candidate = body + str(row["text"])
+        if len(candidate.encode()) > int(reference["content_bytes"]):
+            break
+        body = candidate
+    return body
+
+
 async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[str, str]) -> httpx.Response:
     start = await client.get(path, params=params | {"offset": "now"})
     start.raise_for_status()
@@ -123,29 +150,16 @@ async def _cross_replica_sync(
         first_item = next(row for row in rows if row["entity_id"] == "first")
         raw_ref = first_item["text_ref"]
         reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
-        payload_params = {
-            "source_id": reference["source_id"],
-            "projection_epoch": reference["projection_epoch"],
-            "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
-            "field": reference["field"],
-            "generation": reference["generation"],
-            "revision_cursor": reference["revision_cursor"],
-        }
-        body_before = await client_one.get(
-            f"{path}/payload-chunks", params=payload_params | {"offset": "-1", "follow": "true"}
-        )
-        body_before.raise_for_status()
-        before_chunks = [message["value"] for message in body_before.json() if "value" in message]
-        assert (
-            "".join(row["text"] for row in sorted(before_chunks, key=lambda row: int(row["chunk_index"])))
-            == "Hello world"
-        )
+        content_before = await client_one.get(f"{path}/content", params=entity_params | {"offset": "-1"})
+        content_before.raise_for_status()
+        seen_content = [message["value"] for message in content_before.json() if "value" in message]
+        assert _body(seen_content, reference) == "Hello world"
         entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="!")))
         await store.record(thread, [entry], lease=lease)
         # Resume the same shape handle/offset through a different application process.
         metadata_offset = initial.headers["electric-offset"]
-        while True:
+        revised = None
+        while revised is None:
             changed = await client_two.get(
                 f"{path}/entities",
                 params=entity_params
@@ -153,38 +167,36 @@ async def _cross_replica_sync(
             )
             changed.raise_for_status()
             metadata_offset = changed.headers["electric-offset"]
-            if any(
-                message.get("value", {}).get("entity_id") == "first"
-                and str(message.get("value", {}).get("revision_cursor")) == str(entry.cursor)
-                for message in changed.json()
-            ):
-                break
-        offset = body_before.headers["electric-offset"]
+            revised = next(
+                (
+                    message["value"]
+                    for message in changed.json()
+                    if message.get("value", {}).get("entity_id") == "first"
+                    and str(message.get("value", {}).get("revision_cursor")) == str(entry.cursor)
+                ),
+                None,
+            )
+        offset = content_before.headers["electric-offset"]
+        grown: list[dict[str, object]] = list(seen_content)
         while True:
             changed_body = await client_two.get(
-                f"{path}/payload-chunks",
-                params=payload_params
-                | {
-                    "offset": offset,
-                    "handle": body_before.headers["electric-handle"],
-                    "live": "true",
-                    "follow": "true",
-                },
+                f"{path}/content",
+                params=entity_params
+                | {"offset": offset, "handle": content_before.headers["electric-handle"], "live": "true"},
             )
             changed_body.raise_for_status()
             offset = changed_body.headers["electric-offset"]
-            chunks = [message["value"] for message in changed_body.json() if "value" in message]
-            if chunks:
-                assert [row["text"] for row in chunks] == ["!"]
+            arrived = [message["value"] for message in changed_body.json() if "value" in message]
+            grown.extend(arrived)
+            if arrived:
+                assert [row["text"] for row in arrived] == ["!"]
                 break
-        # A pinned R read made after R+1 committed reconstructs exactly the old whole body.
-        pinned = await client_two.get(f"{path}/payload-chunks", params=payload_params | {"offset": "-1"})
-        pinned.raise_for_status()
-        old_chunks = [message["value"] for message in pinned.json() if "value" in message]
-        assert (
-            "".join(row["text"] for row in sorted(old_chunks, key=lambda row: int(row["chunk_index"]))) == "Hello world"
-        )
-        stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
+        # The two shapes advance independently, so a reader can hold the old entity while the new
+        # chunk has already arrived. The extent on the old reference is what makes that safe: it
+        # still reconstructs exactly the revision it named, and the new one sees the growth.
+        assert _body(grown, reference) == "Hello world"
+        assert _body(grown, _reference_of(revised)) == "Hello world!"
+        stale = await client_two.get(f"{path}/content", params=entity_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
         await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
         await _selected_command_outcome(client_one, client_two, path, store, source, thread, lease)
@@ -355,26 +367,12 @@ async def _history_windows(
     assert len(versions) == 1
     item = versions[0]
     assert str(item["revision_cursor"]) == str(hidden.cursor)
-    raw_ref = item["text_ref"]
-    reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
-    selected = await client_one.get(
-        f"{path}/payload-chunks",
-        params={
-            "source_id": reference["source_id"],
-            "projection_epoch": reference["projection_epoch"],
-            "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
-            "field": reference["field"],
-            "generation": reference["generation"],
-            "revision_cursor": reference["revision_cursor"],
-            "offset": "-1",
-        },
-    )
-    selected.raise_for_status()
-    selected_chunks = [message["value"] for message in selected.json() if "value" in message]
-    assert "".join(row["text"] for row in sorted(selected_chunks, key=lambda row: int(row["chunk_index"]))) == (
-        "Body 40" + hidden_text
-    )
+    # A reopened history window carries its own bodies: the content shape takes the same two-part
+    # bound as the entity shape, so an item the reader can see is never one it cannot render.
+    revisit_content = await client_one.get(f"{path}/content", params=revisit_params | {"offset": "-1"})
+    revisit_content.raise_for_status()
+    revisit_chunks = [message["value"] for message in revisit_content.json() if "value" in message]
+    assert _body(revisit_chunks, _reference_of(item)) == "Body 40" + hidden_text
 
 
 if __name__ == "__main__":

@@ -58,7 +58,8 @@ bbr test //agentplane/app/...
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
   `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
 - `conversation_projection.py`: typed deterministic event fold with independent item revisions.
-- `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
+- `electric.py`: authenticated, scope-checked shape proxy: a window's entities, that window's
+  rendered content, selected commands, and a single named body.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener conversation copies.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.

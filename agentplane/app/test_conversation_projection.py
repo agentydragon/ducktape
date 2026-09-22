@@ -203,6 +203,9 @@ def test_parallel_old_item_updates_keep_positions_fields_and_evidence(script: li
     assert first.arguments is not None
     assert first.output is not None
     assert store.payloads[first.arguments.reference] == '{"path":"x"}'
+    # An append chain carries the whole value's length, so the extent a reader stops at is the one
+    # its own reference named and not whatever the chain has reached since.
+    assert first.arguments.reference.content_bytes == len('{"path":"x"}')
     assert store.payloads[first.output.reference] == ""
     assert first.output.reference.field is PayloadField.OUTPUT
     assert first.arguments.reference.field is PayloadField.ARGUMENTS
@@ -237,6 +240,9 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     assert store.payloads[completed] == ""
     assert completed.generation == completed.revision_cursor == 2
     assert completed.generation != streamed.generation
+    # A replacement's extent is its own, not the stream's: a reader holding the old reference stops
+    # at the bytes it named, and this one names none.
+    assert (streamed.content_bytes, completed.content_bytes) == (len("streamed"), 0)
 
 
 def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[event_log_pb2.EventEntry]) -> None:
@@ -301,7 +307,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
         "item",
         prior.cursor,
         prior.revision_cursor,
-        text=FieldValue(PayloadRef(SOURCE, EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)),
+        text=FieldValue(PayloadRef(SOURCE, EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1, 0)),
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(ValueError, match="owner revision"):

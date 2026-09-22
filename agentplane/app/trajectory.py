@@ -60,7 +60,7 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//asyncpg
 
 
-CONVERSATION_PROJECTION_EPOCH = "v1"
+CONVERSATION_PROJECTION_EPOCH = "v2"
 
 
 class Thread(Base):
@@ -323,19 +323,6 @@ class ConversationEntityInterest:
     window_before: int | None = None
 
 
-@dataclass(frozen=True)
-class ConversationPayloadSelection:
-    scope: ConversationScope
-    owner_cursor: int
-    owner_id: str
-    field: str
-    generation: int
-    revision_cursor: int
-    present: bool
-    chunk_count: int
-    content_bytes: int
-
-
 class ConversationPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -346,6 +333,7 @@ class ConversationPayloadReference(BaseModel):
     field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
     revision_cursor: str
     generation: str
+    content_bytes: str
 
 
 class ConversationControlsState(BaseModel):
@@ -602,17 +590,23 @@ class TrajectoryStore:
                 raise ValueError("before cursor cannot be negative")
             return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
 
-    async def conversation_payload_selection(
-        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-    ) -> ConversationPayloadSelection | None:
+    async def conversation_payload_generation(
+        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int
+    ) -> ConversationScope | None:
+        """The current scope, if this generation is materialized in it.
+
+        No revision within the generation: chunks are append-only there, so a reader takes the
+        extent its `PayloadRef` carries and a revision-bounded shape would only mint a new one per
+        revision. What this answers is whether the generation is the caller's to read at all.
+        """
         async with self._sessions() as session:
             checkpoint = await session.scalar(
                 select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
             )
             if checkpoint is None:
                 return None
-            manifest = await session.scalar(
-                select(ConversationPayloadManifest).where(
+            materialized = await session.scalar(
+                select(ConversationPayloadManifest.present).where(
                     ConversationPayloadManifest.thread_id == thread_id,
                     ConversationPayloadManifest.source_id == checkpoint.source_id,
                     ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
@@ -620,22 +614,11 @@ class TrajectoryStore:
                     ConversationPayloadManifest.owner_id == owner_id,
                     ConversationPayloadManifest.field == field,
                     ConversationPayloadManifest.generation == generation,
-                    ConversationPayloadManifest.revision_cursor == revision_cursor,
                 )
             )
-            if manifest is None:
+            if materialized is None:
                 return None
-            return ConversationPayloadSelection(
-                ConversationScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
-                owner_cursor,
-                owner_id,
-                field,
-                generation,
-                revision_cursor,
-                manifest.present,
-                manifest.chunk_count,
-                manifest.content_bytes,
-            )
+            return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
 
     async def conversation_evidence(
         self,
@@ -1334,6 +1317,7 @@ def _payload_ref_from_json(value: dict[str, object]) -> conversation_projection.
         conversation_projection.PayloadField(_json_str(value, "field")),
         _json_int(value, "revision_cursor"),
         _json_int(value, "generation"),
+        _json_int(value, "content_bytes"),
     )
 
 
@@ -1622,6 +1606,7 @@ def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[
         "field": reference.field,
         "revision_cursor": str(reference.revision_cursor),
         "generation": str(reference.generation),
+        "content_bytes": str(reference.content_bytes),
     }
 
 

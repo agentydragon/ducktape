@@ -628,14 +628,8 @@ const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
-function payloadKey(
-  ownerCursor: string,
-  ownerId: string,
-  field: string,
-  generation: string,
-  revisionCursor: string
-): string {
-  return `${ownerCursor}:${ownerId}:${field}:${generation}:${revisionCursor}`;
+function payloadKey(ownerCursor: string, ownerId: string, field: string, generation: string): string {
+  return `${ownerCursor}:${ownerId}:${field}:${generation}`;
 }
 
 function payload(
@@ -653,9 +647,28 @@ function payload(
     field,
     generation: "1",
     revision_cursor: String(revisionCursor),
+    content_bytes: String(new TextEncoder().encode(body).byteLength),
   };
-  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1"), body);
   return reference;
+}
+
+/** One shape row per stored body, as the window content shape serves them. */
+function payloadChunkRows(threadId: string): Record<string, string>[] {
+  return [...payloadBodies].map(([key, body]) => {
+    const [ownerCursor, ownerId, field, generation] = key.split(":");
+    return {
+      thread_id: threadId,
+      source_id: CONVERSATION_SOURCE,
+      projection_epoch: CONVERSATION_EPOCH,
+      owner_cursor: ownerCursor,
+      owner_id: ownerId,
+      field,
+      generation,
+      chunk_index: "0",
+      text: body,
+    };
+  });
 }
 
 function entity(
@@ -1230,26 +1243,22 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
-    (_match, query) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      return {
-        source_id: CONVERSATION_SOURCE,
-        projection_epoch: CONVERSATION_EPOCH,
-        owner_cursor: ownerCursor,
-        owner_id: ownerId,
-        field,
-        generation,
-        revision_cursor: revisionCursor,
-        present: body !== undefined,
-        chunk_count: body === undefined ? "0" : "1",
-        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
-      };
+    /^\/threads\/([0-9a-f-]+)\/sync\/content$/,
+    (match, query, signal) => {
+      const tailFrom = BigInt(query.get("tail_from") ?? "0");
+      const subset = currentSubset(query);
+      if (!subset && query.get("offset") !== null) {
+        if (query.get("live") === "true")
+          return electricLongPoll(`visual-content-${match[1]}`, "conversation_payload_chunk", signal);
+        return electricShape([], `visual-content-${match[1]}`);
+      }
+      const rows = payloadChunkRows(match[1]).filter(
+        (row) => ["text", "confirmed_input"].includes(row.field) && BigInt(row.owner_cursor) >= tailFrom
+      );
+      const shaped = rows.map((row) => shapeRow("conversation_payload_chunk", row));
+      return subset
+        ? electricSubset(shaped, `visual-content-${match[1]}`)
+        : electricShape(shaped, `visual-content-${match[1]}`);
     },
   ],
   [
@@ -1260,8 +1269,7 @@ routes.push(
       const ownerId = query.get("owner_id") ?? "";
       const field = query.get("field") ?? "";
       const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation));
       const rows =
         query.get("offset") !== null && query.get("offset") !== "-1"
           ? []

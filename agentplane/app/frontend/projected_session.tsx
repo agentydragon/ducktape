@@ -60,20 +60,18 @@ function lifecyclePresentation(observation: string, event: unknown): { label: st
 function Body({
   threadId,
   reference,
-  follow,
   plain = false,
 }: {
   threadId: string;
   reference: PayloadRef | null;
-  follow: boolean;
   plain?: boolean;
 }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
   return (
-    <PayloadBody threadId={threadId} reference={reference} follow={follow}>
+    <PayloadBody threadId={threadId} reference={reference}>
       {(body) =>
         body === null ? (
-          <Text c="dimmed">Loading complete revision…</Text>
+          <Text c="dimmed">Loading body…</Text>
         ) : plain ? (
           <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {body}
@@ -93,7 +91,6 @@ function LazyBody({
   label: string;
   threadId: string;
   reference: PayloadRef;
-  follow: boolean;
   plain?: boolean;
 }): JSX.Element {
   const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_item_id}:${body.reference.field}`;
@@ -292,7 +289,7 @@ function EntityCard({
     return (
       <Group justify="flex-end" data-conversation-anchor={entity.cursor.toString()}>
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
-          <Body threadId={threadId} reference={entity.inputRef} follow={false} />
+          <Body threadId={threadId} reference={entity.inputRef} />
           <Evidence threadId={threadId} entity={entity} />
         </Paper>
       </Group>
@@ -348,16 +345,12 @@ function EntityCard({
       </Group>
       {entity.textRef &&
         (reasoning ? (
-          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} follow={streaming} />
+          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} />
         ) : (
-          <Body threadId={threadId} reference={entity.textRef} follow={streaming} />
+          <Body threadId={threadId} reference={entity.textRef} />
         ))}
-      {entity.argumentsRef && (
-        <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} follow={streaming} plain />
-      )}
-      {entity.outputRef && (
-        <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={streaming} plain />
-      )}
+      {entity.argumentsRef && <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} plain />}
+      {entity.outputRef && <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} plain />}
       <Evidence threadId={threadId} entity={entity} />
     </Paper>
   );
@@ -482,7 +475,7 @@ function SelectedCommandRows({
                   {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
@@ -917,7 +910,7 @@ function ProjectedSessionBody({
                     : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} />}
                 <Evidence threadId={threadId} entity={row} />
               </Paper>
             ))}

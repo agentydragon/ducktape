@@ -4,14 +4,12 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-const captured = vi.hoisted(
-  (): { options: Array<{ id: string; shapeOptions: { onError?: (reason: unknown) => void } }> } => ({
-    options: [],
-  })
-);
+type CapturedOptions = { id: string; shapeOptions: { url: string; onError?: (reason: unknown) => void } };
+
+const captured = vi.hoisted((): { options: CapturedOptions[] } => ({ options: [] }));
 
 vi.mock("@tanstack/electric-db-collection", () => ({
-  electricCollectionOptions: (options: { id: string; shapeOptions: { onError?: (reason: unknown) => void } }) => {
+  electricCollectionOptions: (options: CapturedOptions) => {
     captured.options.push(options);
     return options;
   },
@@ -81,47 +79,39 @@ it("wires command terminal callbacks to the current collection and ignores retir
   expect(container.textContent).not.toContain("retired callback");
 });
 
-it("keeps a payload callback error through a follow revision and replaces it on retry", async () => {
-  const fetch = vi.fn().mockResolvedValue(Response.json({ chunk_count: "1", content_bytes: "4" }));
-  vi.stubGlobal("fetch", fetch);
+it("keeps a body on screen through a stream error and rebuilds its shape on retry", async () => {
   const reference: PayloadRef = {
     source_id: "source",
     projection_epoch: "epoch",
     owner_cursor: "1",
     owner_item_id: "item",
-    field: "text",
+    field: "output",
     generation: "1",
     revision_cursor: "1",
+    content_bytes: "4",
   };
   const container = await render(
-    <PayloadBody threadId="thread" reference={reference} follow>
+    <PayloadBody threadId="thread" reference={reference}>
       {(body) => <p>{body ?? "payload retained"}</p>}
     </PayloadBody>
   );
   await vi.waitFor(() =>
     expect(captured.options.some((value) => value.id.startsWith("agentplane-payload:"))).toBe(true)
   );
-  expect(fetch).toHaveBeenCalledTimes(1);
+  // A body outside the window shape reads on its own, and its shape names a generation and no
+  // revision within it: a re-render at a later revision of the same generation reuses it.
   await rerender(
-    <PayloadBody threadId="thread" reference={{ ...reference }} follow>
+    <PayloadBody threadId="thread" reference={{ ...reference, revision_cursor: "2", content_bytes: "8" }}>
       {(body) => <p>{body ?? "payload retained"}</p>}
     </PayloadBody>
   );
-  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(captured.options.filter((value) => value.id.startsWith("agentplane-payload:")).length).toBe(1);
   const retired = option("agentplane-payload:");
 
   await act(async () => retired.shapeOptions.onError?.(new Error("stream closed after ready")));
 
   expect(container.textContent).toContain("Payload synchronization stopped: stream closed after ready");
   expect(container.textContent).toContain("payload retained");
-
-  await rerender(
-    <PayloadBody threadId="thread" reference={{ ...reference, revision_cursor: "2" }} follow={true}>
-      {(body) => <p>{body ?? "payload retained"}</p>}
-    </PayloadBody>
-  );
-  expect(container.textContent).toContain("Payload synchronization stopped: stream closed after ready");
-  expect(captured.options.filter((value) => value.id.startsWith("agentplane-payload:")).length).toBe(1);
 
   await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
   await vi.waitFor(() =>
@@ -130,6 +120,35 @@ it("keeps a payload callback error through a follow revision and replaces it on 
 
   await act(async () => retired.shapeOptions.onError?.(new Error("retired callback")));
   expect(container.textContent).not.toContain("retired callback");
+});
+
+it("opens the window's content shape under the same bounds as its entities", async () => {
+  const interest = {
+    source_id: "source",
+    projection_epoch: "epoch",
+    anchor_cursor: "40",
+    tail_from: "11",
+    window_from: "3",
+    window_before: "9",
+    through_cursor: "40",
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(interest)));
+  await render(<ConversationCollection threadId="thread">{() => <p>retained conversation</p>}</ConversationCollection>);
+  await vi.waitFor(() =>
+    expect(captured.options.some((value) => value.id.startsWith("agentplane-content:"))).toBe(true)
+  );
+
+  // Whatever the server admitted as this reader's window bounds both shapes: a body outside the
+  // entities a window carries would be a body with nothing to render it.
+  const bounds = (id: string): string => {
+    const url = new URL(option(id).shapeOptions.url);
+    return ["source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before"]
+      .map((key) => `${key}=${url.searchParams.get(key)}`)
+      .join("&");
+  };
+  expect(bounds("agentplane-content:")).toBe(bounds("agentplane-conversation:"));
+  expect(bounds("agentplane-content:")).toContain("tail_from=11");
+  expect(bounds("agentplane-content:")).toContain("window_before=9");
 });
 
 it("refreshes the active conversation selection after a disconnected ready stream", async () => {

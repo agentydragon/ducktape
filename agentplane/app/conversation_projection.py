@@ -49,6 +49,10 @@ class PayloadRef:
     field: PayloadField
     revision_cursor: int
     generation: int
+    # The value's whole length at this revision. A reader assembles chunks of `generation` in
+    # index order and has the revision exactly when the bytes reach this; a later append to the
+    # same generation is what it would otherwise show in place of what its own metadata named.
+    content_bytes: int
 
 
 @dataclass(frozen=True)
@@ -326,6 +330,7 @@ class _Fold:
         base = current.reference if current is not None else None
         if base is not None:
             self._validate_ref(base, owner, field, preloaded=False)
+        continued = base if append and base is not None else None
         reference = PayloadRef(
             self.state.position.source_id,
             self.state.position.projection_epoch,
@@ -333,7 +338,8 @@ class _Fold:
             owner.owner_id,
             field,
             cursor,
-            base.generation if append and base else cursor,
+            continued.generation if continued else cursor,
+            (continued.content_bytes if continued else 0) + len(text.encode()),
         )
         self.payload_writes.append(AppendPayload(base, reference, text) if append else ReplacePayload(reference, text))
         return FieldValue(reference)

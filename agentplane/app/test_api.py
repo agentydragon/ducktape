@@ -623,7 +623,7 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
-@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
+@pytest.mark.parametrize("endpoint", ["interest", "entities", "content", "payload-chunks", "commands"])
 def test_conversation_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
     path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
     for credentials in (

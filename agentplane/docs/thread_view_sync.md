@@ -108,7 +108,7 @@ not mandate a second wire protocol beside the engine.
 | List before cursor          | Closest N earlier segments, excluding the cursor.                                     |
 | List after cursor           | Closest N later segments, excluding the cursor.                                       |
 | Get segments by cursor      | Exact identities, even outside loaded windows.                                        |
-| Read payload                | Whole immutable selected content, or typed unavailability.                            |
+| Read payload                | The prefix of a reference's generation that its own extent covers.                    |
 | List pending commands       | Keyset page by admission cursor.                                                      |
 | Get commands by ID          | Reconcile admitted and settled commands after a lost response.                        |
 | Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes. |
@@ -295,12 +295,16 @@ messages and snapshot reconciliation algorithm.
 
 ### Open at the tail
 
-Subscribe through the engine to metadata/current controls and request the latest 30 items
-with text selected, reasoning and tool bodies omitted. The metadata collection catches up
-to the sampled projection position through the engine. Selected text loads from its exact
-payload reference; loading is explicit until its whole revision is available. Follow
-concurrent changes using engine sync tokens. No replay of old token Events and no hidden
-background history load.
+Subscribe through the engine to metadata/current controls and the latest 30 items, and to
+the content of that same window in one further subscription: the bodies a reader is about
+to render are the items it is about to render, so they share a bound and a partition rather
+than opening a subscription per body. Tool arguments and outputs stay omitted until a
+reader expands one, and are read one body at a time. The metadata collection catches up to
+the sampled projection position through the engine. A body assembles from the prefix of its
+reference's generation that the reference's own extent covers, so content arriving ahead of
+the entity naming it never shows more than that entity named. Follow concurrent changes
+using engine sync tokens. No replay of old token Events and no hidden background history
+load.
 
 ### Scroll upward while an old item changes
 
