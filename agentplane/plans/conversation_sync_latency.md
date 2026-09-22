@@ -73,38 +73,57 @@ cost is that a node drain loses it and clients take one refetch round.
 **Deferred by the owner for now; the storage class stays as it is.** The fixes above cut the open
 path from ~31 shape creations to one, which is what makes deferring it tolerable.
 
-### W5 — entity and command shape churn
+### W5 — the entity shape is redefined by every appended segment
 
-Both remaining shapes still fragment, and both are now a much smaller share than when this plan
-was written:
+This was written as a minor follow-up gated on W1's measurement. Reading the resolver closely says
+otherwise, and it is now the largest remaining cost on the open path.
 
-- **Entities.** The shape binds `tail_from`, recomputed on every mount and on every rotation
-  (`segmentCount > 60`), so an actively growing Thread mints a shape per rotation and a reload
-  during a run mints another. Quantizing the lower bound trades shape reuse against
-  over-selection, and the naive form (round down to a multiple of `G`) admits an unbounded
-  over-selection where cursors are dense, which would break the bounded-interest contract. The
-  scheme that does not is page-aligned bounds over a stored per-segment index, since segment
-  positions are stable under append — a schema addition.
-- **Commands.** The shape binds a sorted `entity_id IN (...)` list, so every change to the
-  selected set is a new shape. This is by-ID reconciliation of terminal outcomes, which wants a
-  lookup rather than a subscription; pending commands already stream on the entity shape. The
-  change is small but sits on the command-recovery path that four lost-response/reconnect cases
-  cover, for the smallest of the remaining wins.
+`conversation_entity_interest` sets `tail_from` to the **30th-largest segment cursor** at or below
+the checkpoint (`lower(anchor + 1)`), and that value is the shape's `$4`. Append one segment and
+the 30th-largest becomes what was the 29th — a different bound, a different shape definition, a new
+handle. So an idle conversation reuses its shape across opens, while **a growing one defines a
+fresh shape on every open**, and rotation at `segmentCount > 60` defines another. With W1 deferred,
+each of those is a cold creation on the slow volume, which matches a report of delays clustered
+around an active conversation rather than a dormant one.
 
-**Both stay open deliberately.** This item's gate was W1's measurement, and W1 is deferred, so the
-data that would say whether either is worth its risk does not exist yet. The shape-creation log
-above is what supplies it: it reports a handle per request, so counting distinct handles over a
-run answers directly how much rotation and command churn actually cost.
+The fix has to make the bound stable without unbounding the window:
+
+- **Cursor quantization is not it.** Rounding `tail_from` down to a multiple of `G` is stable, but
+  how many segments that admits depends on how densely cursors fall, which varies per turn — a
+  tool-heavy turn packs segments together. There is no `G` both large enough to be stable and small
+  enough to stay bounded, and a bounded fallback to the exact cursor restores the churn exactly
+  where conversations are busiest.
+- **A stored segment index is.** Segments are append-only — an item takes its first-observed cursor
+  and keeps it — so a monotone per-segment index assigned at projection time is stable under
+  append. The projector carries the running count on the checkpoint and stamps each new segment;
+  the interest returns a **page-aligned** `segment_index` bound, so the shape admits between one
+  and two pages by construction and is redefined once per page rather than once per segment. The
+  history window converts its `before_cursor` to an index with one indexed lookup. It costs a
+  column, a projector change and an epoch bump, and no tuning constant.
+
+**Commands** are a separate, much smaller case: that shape binds a sorted `entity_id IN (...)`
+list, so every change to the selected set defines a new one. It is by-ID reconciliation of terminal
+outcomes, which wants a lookup rather than a subscription — pending commands already stream on the
+entity shape. The set changes at human pace, and the change sits on the recovery path four
+lost-response cases cover, so it stays behind the entity work.
+
+**What decides the order.** If a cold shape creation turns out to be milliseconds, the entity work
+is not worth a schema change and W1 is the whole story; if it is seconds, this is the fix and it
+does not depend on W1 landing. The measurement below answers that.
 
 ## Measurement gates
 
 None of the landed work is accepted on a passing build.
+`agentplane/acceptance/test_conversation_latency.py` is the instrument for the first two: it opens
+a real one-turn conversation through the deployed app's own routes and times the interest, the
+entity snapshot and the bodies separately, cold and warm. Its ceilings are regression gates rather
+than targets, and it has not yet been run against the deployment.
 
 - Open-to-first-text for a Thread with a 30-segment tail, cold and warm, with the upstream
   shape-creation duration reported separately from transfer.
 - Distinct Electric shape handles created during one turn of an agent run. The target for the
-  landed work is zero new shapes per completing item; what remains attributes to rotation and
-  commands, which is what decides W5.
+  landed work is zero new shapes per completing item; what remains attributes to the entity
+  interest, which is what decides W5.
 - Small-file create/fsync latency on `seaweedfs-ovh` versus `local-path-ovh-ssd` from the Electric
   pod's own node, so W1's rationale is a number rather than an inference from the storage class
   description.

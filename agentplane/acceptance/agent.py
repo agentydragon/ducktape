@@ -105,6 +105,11 @@ class Agent:
         self._thread_id = thread_id
         self._cursor = cursor
 
+    @property
+    def thread_id(self) -> UUID:
+        """The Thread a scenario reads back through the app's own conversation routes."""
+        return self._thread_id
+
     @classmethod
     async def open(
         cls, client: Client, *, sandbox: str, harness: protocol_pb2.Harness, model: str, instructions: str = ""

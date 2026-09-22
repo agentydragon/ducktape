@@ -13,7 +13,7 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -631,6 +631,14 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
+# A conversation cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
+# string -- the representation every conversation response model already publishes it in. Declaring
+# it `int` here would put `integer` in the schema and make every browser caller cast past it.
+_DECIMAL = r"^\d+$"
+DecimalCursor = Annotated[str, Query(pattern=_DECIMAL)]
+DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL)]
+
+
 @threads.get("/{thread_id}/conversation/evidence")
 async def conversation_evidence(
     thread_id: UUID,
@@ -639,7 +647,7 @@ async def conversation_evidence(
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_cursor: Annotated[int, Query(ge=0)] = 0,
+    after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
     return await store.conversation_evidence(
@@ -648,7 +656,7 @@ async def conversation_evidence(
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        after_cursor=after_cursor,
+        after_cursor=int(after_cursor),
         limit=limit,
     )
 
@@ -656,13 +664,13 @@ async def conversation_evidence(
 @threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
 async def conversation_native_frames(
     thread_id: UUID,
-    observation_cursor: int,
+    observation_cursor: DecimalCursorPath,
     store: Store,
     source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
     return await store.conversation_native_frames(
@@ -671,8 +679,8 @@ async def conversation_native_frames(
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        observation_cursor=observation_cursor,
-        after_sequence=after_sequence,
+        observation_cursor=int(observation_cursor),
+        after_sequence=int(after_sequence),
         limit=limit,
     )
 
@@ -683,11 +691,11 @@ async def conversation_payload(
     store: Store,
     source_id: str,
     projection_epoch: str,
-    owner_cursor: Annotated[int, Query(ge=0)],
+    owner_cursor: DecimalCursor,
     owner_id: str,
     field: str,
-    generation: Annotated[int, Query(ge=0)],
-    revision_cursor: Annotated[int, Query(ge=0)],
+    generation: DecimalCursor,
+    revision_cursor: DecimalCursor,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
     """One completed field revision, whole, without an Electric shape for immutable content."""
@@ -705,11 +713,11 @@ async def conversation_payload(
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     body = await store.conversation_payload_body(
         thread_id,
-        owner_cursor=owner_cursor,
+        owner_cursor=int(owner_cursor),
         owner_id=owner_id,
         field=field,
-        generation=generation,
-        revision_cursor=revision_cursor,
+        generation=int(generation),
+        revision_cursor=int(revision_cursor),
     )
     if body is None:
         raise HTTPException(status.HTTP_410_GONE, "the selected payload revision is unavailable")
@@ -717,9 +725,11 @@ async def conversation_payload(
 
 
 @threads.get("/{thread_id}/conversation/observations/{cursor}")
-async def conversation_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+async def conversation_observation_entry(
+    thread_id: UUID, cursor: DecimalCursorPath, store: Store
+) -> ArchivedObservationEntry:
     """The raw entry behind one listed observation, read only when a reader expands it."""
-    entry = await store.conversation_observation_entry(thread_id, cursor)
+    entry = await store.conversation_observation_entry(thread_id, int(cursor))
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
     return entry
@@ -729,8 +739,8 @@ async def conversation_observation_entry(thread_id: UUID, cursor: int, store: St
 async def conversation_observations(
     thread_id: UUID,
     store: Store,
-    before_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
-    after_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    before_cursor: DecimalCursor | None = None,
+    after_cursor: DecimalCursor | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> ObservationPage:
     """Original chronological observations; default to the tail, including unlinked debug data."""
@@ -741,7 +751,10 @@ async def conversation_observations(
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
     return await store.conversation_observations(
-        thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+        thread_id,
+        before_cursor=None if before_cursor is None else int(before_cursor),
+        after_cursor=None if after_cursor is None else int(after_cursor),
+        limit=limit,
     )
 
 

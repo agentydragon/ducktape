@@ -251,3 +251,32 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Live, like the rest of this package: a real sandbox, a real turn, and the deployed app's own
+# conversation routes. `eternal` covers the sandbox wait and the harness start; what the test
+# actually gates are the per-stage ceilings inside it, not Bazel's clock.
+py_test(
+    name = "test_conversation_latency",
+    timeout = "eternal",
+    srcs = ["test_conversation_latency.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
