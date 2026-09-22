@@ -5,12 +5,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 
-class ConversationScopeChangedError(ValueError):
+class ThreadScopeChangedError(ValueError):
     """A reference names a source or projection epoch no longer materialized."""
 
 
-class ConversationEvidenceNotFoundError(LookupError):
-    """The selected entity or observation has no association in this conversation."""
+class ThreadEvidenceNotFoundError(LookupError):
+    """The selected entity or observation has no association in this thread."""
 
 
 class EvidenceObservation(BaseModel):

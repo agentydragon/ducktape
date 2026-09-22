@@ -60,7 +60,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     assert lease is not None
     await store.set_attached(thread, source.attached, lease=lease)
     await store.record(thread, source.entries, lease=lease)
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
     app = create_app(
         inventory,

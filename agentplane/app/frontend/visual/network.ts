@@ -25,7 +25,7 @@ export interface ElectricShapeMessage {
 }
 
 const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
-  conversation_entity: {
+  thread_entity: {
     arguments_ref: { type: "jsonb" },
     cursor: { type: "int8", not_null: true },
     entity_id: { type: "text", not_null: true, pk_index: 4 },
@@ -41,7 +41,7 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
     turn_id: { type: "text" },
   },
-  conversation_payload_chunk: {
+  thread_payload_chunk: {
     chunk_index: { type: "int8", not_null: true, pk_index: 7 },
     field: { type: "text", not_null: true, pk_index: 5 },
     generation: { type: "int8", not_null: true, pk_index: 6 },
@@ -59,7 +59,7 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
  * Visual conversation scenes use this rather than an EventSource replay so the collection's column
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
-function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "conversation_entity") {
+function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "thread_entity") {
   const relation = rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : fallback;
   const schema = ELECTRIC_SCHEMAS[relation];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
@@ -96,7 +96,7 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
  * Electric's body reader waits until the collection cancels it during teardown.
  */
 export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
-  const schema = ELECTRIC_SCHEMAS[relation ?? "conversation_entity"];
+  const schema = ELECTRIC_SCHEMAS[relation ?? "thread_entity"];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
   let onAbort: (() => void) | undefined;
   const removeAbortListener = () => {

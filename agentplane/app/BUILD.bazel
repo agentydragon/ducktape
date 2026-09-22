@@ -5,34 +5,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-py_library(
-    name = "conversation_projection",
-    srcs = ["conversation_projection.py"],
-    deps = [
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
-    ],
-)
-
-py_test(
-    name = "test_conversation_projection",
-    srcs = ["test_conversation_projection.py"],
-    deps = [
-        ":conftest",
-        ":conversation_projection",
-        "//:conftest",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
@@ -66,7 +38,6 @@ py_library(
         ":auth_routes",
         ":bridge",
         ":consent",
-        ":conversation_debug",
         ":decisions",
         ":egress",
         ":electric",
@@ -77,6 +48,7 @@ py_library(
         ":operator_sessions",
         ":presets",
         ":shutdown",
+        ":thread_debug",
         ":trajectory",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -461,10 +433,10 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
-        ":conversation_debug",
-        ":conversation_projection",
         ":operator_sessions",
         ":presets",
+        ":thread_debug",
+        ":thread_fold",
         ":trajectory_updates",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
@@ -1005,8 +977,8 @@ py_test(
     srcs = ["test_electric.py"],
     deps = [
         ":conftest",
-        ":conversation_projection",
         ":electric",
+        ":thread_fold",
         ":trajectory",
         "//:conftest",
         "//agentplane/app/testing:replication_source",
@@ -1062,16 +1034,50 @@ py_test(
 )
 
 py_library(
-    name = "conversation_debug",
-    srcs = ["conversation_debug.py"],
-    deps = ["@pypi//pydantic"],
+    name = "ingestion",
+    srcs = ["ingestion.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+    ],
 )
 
 py_test(
-    name = "test_conversation_debug",
-    size = "medium",
-    srcs = ["test_conversation_debug.py"],
-    requires_docker = True,
+    name = "test_ingestion",
+    srcs = ["test_ingestion.py"],
+    deps = [
+        ":conftest",
+        ":ingestion",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "thread_debug",
+    srcs = ["thread_debug.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "thread_fold",
+    srcs = ["thread_fold.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "test_thread_debug",
+    srcs = ["test_thread_debug.py"],
     deps = [
         ":action_policy",
         ":api",
@@ -1094,26 +1100,18 @@ py_test(
     ],
 )
 
-py_library(
-    name = "ingestion",
-    srcs = ["ingestion.py"],
-    deps = [
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:client",
-        "@pypi//protobuf",
-    ],
-)
-
 py_test(
-    name = "test_ingestion",
-    srcs = ["test_ingestion.py"],
+    name = "test_thread_fold",
+    srcs = ["test_thread_fold.py"],
     deps = [
         ":conftest",
-        ":ingestion",
+        ":thread_fold",
         "//:conftest",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:client",
+        "//agentplane/protocol:event_pb2",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

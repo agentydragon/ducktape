@@ -16,9 +16,9 @@ from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
 from agentplane.app.trajectory import (
-    ConversationEntityInterest,
-    ConversationInterestExpiredError,
-    ConversationPayloadSelection,
+    ThreadEntityInterest,
+    ThreadInterestExpiredError,
+    ThreadPayloadSelection,
     TrajectoryStore,
 )
 
@@ -118,7 +118,7 @@ class ElectricProxy:
     ) -> StreamingResponse:
         if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
-        scope = await self._store.current_conversation_scope(thread_id)
+        scope = await self._store.current_scope(thread_id)
         if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
             raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
         params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
@@ -127,7 +127,7 @@ class ElectricProxy:
         placeholders = ",".join(f"${index}" for index in range(4, 4 + len(selected)))
         return await self._forward(
             request,
-            table="conversation_entity",
+            table="thread_entity",
             columns=_ENTITY_COLUMNS,
             where=(
                 "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
@@ -138,12 +138,12 @@ class ElectricProxy:
 
     async def entity_interest(
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
-    ) -> ConversationEntityInterest:
+    ) -> ThreadEntityInterest:
         try:
-            interest = await self._store.conversation_entity_interest(
+            interest = await self._store.entity_interest(
                 thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=_PAGE_SIZE
             )
-        except ConversationInterestExpiredError as error:
+        except ThreadInterestExpiredError as error:
             # Electric owns 409/must-refetch; an expired app interest needs new bounds.
             raise HTTPException(status.HTTP_410_GONE, str(error)) from error
         except ValueError as error:
@@ -162,8 +162,8 @@ class ElectricProxy:
         field: str,
         generation: int,
         revision_cursor: int,
-    ) -> ConversationPayloadSelection:
-        selection = await self._store.conversation_payload_selection(
+    ) -> ThreadPayloadSelection:
+        selection = await self._store.payload_selection(
             thread_id,
             owner_cursor=owner_cursor,
             owner_id=owner_id,
@@ -191,7 +191,7 @@ class ElectricProxy:
         window_from: int | None,
         window_before: int | None,
     ) -> StreamingResponse:
-        current_scope = await self._store.current_conversation_scope(thread_id)
+        current_scope = await self._store.current_scope(thread_id)
         if current_scope is None or (current_scope.source_id, current_scope.projection_epoch) != (
             source_id,
             projection_epoch,
@@ -218,9 +218,7 @@ class ElectricProxy:
             f"{segment} OR entity_kind = 'view_state' OR "
             "(entity_kind = 'command' AND pending = TRUE))"
         )
-        return await self._forward(
-            request, table="conversation_entity", columns=_ENTITY_COLUMNS, where=where, params=params
-        )
+        return await self._forward(request, table="thread_entity", columns=_ENTITY_COLUMNS, where=where, params=params)
 
     async def payload_chunks(
         self,
@@ -254,7 +252,7 @@ class ElectricProxy:
             params["8"] = str(selection.chunk_count)
         return await self._forward(
             request,
-            table="conversation_payload_chunk",
+            table="thread_payload_chunk",
             columns=_CHUNK_COLUMNS,
             where=(
                 "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor = $4 AND "
@@ -268,7 +266,7 @@ class ElectricProxy:
     ) -> StreamingResponse:
         # Mutable rows bootstrap from a current snapshot. Replaying a full shape log
         # would make reload cost proportional to the number of past revisions.
-        log_mode = "changes_only" if table == "conversation_entity" else "full"
+        log_mode = "changes_only" if table == "thread_entity" else "full"
         subset_keys = _SUBSET_QUERY if log_mode == "changes_only" else frozenset()
         allowed = _PASSTHROUGH_QUERY | subset_keys
         if rejected := set(request.query_params) - allowed - _INTEREST_QUERY:

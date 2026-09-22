@@ -4,7 +4,7 @@ import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
-import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
+import { conversationInterest, displayableError, type ThreadEntityView, type EntityInterest } from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 const RefreshConversation = createContext<() => void>(() => undefined);
@@ -17,8 +17,8 @@ type Decimal = z.output<typeof decimal>;
 export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
-export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-type ConversationState = ConversationStoredEntity["state"];
+export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
+type ConversationState = ThreadEntityView["state"];
 
 export interface ConversationEntity {
   threadId: string;
@@ -40,7 +40,7 @@ const payloadRefSchema = z.object({
   source_id: z.string(),
   projection_epoch: z.string(),
   owner_cursor: z.string(),
-  owner_item_id: z.string(),
+  owner_id: z.string(),
   field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
   revision_cursor: z.string(),
   generation: z.string(),
@@ -432,7 +432,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
   url.searchParams.set("source_id", reference.source_id);
   url.searchParams.set("projection_epoch", reference.projection_epoch);
   url.searchParams.set("owner_cursor", reference.owner_cursor);
-  url.searchParams.set("owner_id", reference.owner_item_id);
+  url.searchParams.set("owner_id", reference.owner_id);
   url.searchParams.set("field", reference.field);
   url.searchParams.set("generation", reference.generation);
   url.searchParams.set("revision_cursor", reference.revision_cursor);
@@ -443,7 +443,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
 function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
+      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
@@ -470,13 +470,13 @@ export function PayloadBody({
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
   const refreshConversation = useContext(RefreshConversation);
-  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
   const stableReference = useMemo<PayloadRef>(
     () => ({
       source_id: reference.source_id,
       projection_epoch: reference.projection_epoch,
       owner_cursor: reference.owner_cursor,
-      owner_item_id: reference.owner_item_id,
+      owner_id: reference.owner_id,
       field: reference.field,
       generation: reference.generation,
       revision_cursor: reference.revision_cursor,
@@ -485,7 +485,7 @@ export function PayloadBody({
       reference.field,
       reference.generation,
       reference.owner_cursor,
-      reference.owner_item_id,
+      reference.owner_id,
       reference.projection_epoch,
       reference.revision_cursor,
       reference.source_id,
@@ -602,7 +602,7 @@ function ActivePayloadBody({
         source_id: reference.source_id,
         projection_epoch: reference.projection_epoch,
         owner_cursor: reference.owner_cursor,
-        owner_item_id: reference.owner_item_id,
+        owner_id: reference.owner_id,
         field: reference.field,
         generation: reference.generation,
         revision_cursor: follow ? reference.revision_cursor : selectedRevision,
@@ -618,7 +618,7 @@ function ActivePayloadBody({
     reference.field,
     reference.generation,
     reference.owner_cursor,
-    reference.owner_item_id,
+    reference.owner_id,
     reference.projection_epoch,
     reference.source_id,
     refreshGeneration,

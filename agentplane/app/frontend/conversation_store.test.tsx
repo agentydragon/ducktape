@@ -88,7 +88,7 @@ it("keeps a payload callback error through a follow revision and replaces it on 
     source_id: "source",
     projection_epoch: "epoch",
     owner_cursor: "1",
-    owner_item_id: "item",
+    owner_id: "item",
     field: "text",
     generation: "1",
     revision_cursor: "1",
