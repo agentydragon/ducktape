@@ -11,13 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.db import McpOAuthTokenStateRow, make_sessionmaker
-from agentplane.action_service.mcp_linkage import (
-    McpLinkageAuthority,
-    McpLinkageStart,
-    McpLinkageStatus,
-    McpOAuthServer,
-    McpProvider,
-)
+from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
 
 OPERATOR = OperatorPrincipal(issuer="test-linkage", subject="operator")
@@ -36,7 +30,6 @@ def _provider(request: httpx2.Request) -> httpx2.Response:
 async def test_first_linkage_creates_token_state(engine: AsyncEngine) -> None:
     server = McpOAuthServer(
         server_id="kubernetes",
-        provider=McpProvider.KUBERNETES,
         server_url="https://mcp.example.test/mcp",
         authorization_endpoint="https://idp.example.test/authorize",
         token_endpoint=TOKEN_ENDPOINT,

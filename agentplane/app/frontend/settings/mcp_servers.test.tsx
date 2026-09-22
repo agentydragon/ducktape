@@ -65,7 +65,6 @@ function pendingGroupList(): {
 it.each(["Reconnect", "Disconnect"])("spins only the clicked %s button until the operation fails", async (label) => {
   const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
     server_id,
-    provider: "github",
     server_url: "https://mcp.example.test",
     status: "linked",
     revision: 1,
@@ -152,7 +151,6 @@ it("keeps the last inventory visible while refreshing", async () => {
   const list = vi.fn<McpLinkageService["list"]>().mockResolvedValueOnce([
     {
       server_id: "example-mcp",
-      provider: "github",
       server_url: "https://mcp.example.test",
       status: "unlinked",
       revision: 0,
@@ -205,7 +203,6 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
     async () => [
       {
         server_id: "github",
-        provider: "github",
         server_url: "https://mcp.example.test",
         status: "linked",
         revision: 1,
@@ -243,7 +240,6 @@ it("renders an oauth linkage with no matching health row exactly as before", asy
   const container = await render(async () => [
     {
       server_id: "kubernetes",
-      provider: "kubernetes",
       server_url: "https://mcp.example.test",
       status: "unlinked",
       revision: 0,

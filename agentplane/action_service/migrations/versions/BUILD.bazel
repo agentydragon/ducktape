@@ -18,6 +18,7 @@ exports_files(
         "0014_action_policies.py",
         "0015_action_request_context.py",
         "0016_structured_principals.py",
+        "0017_drop_mcp_linkage_provider.py",
     ],
     visibility = ["//agentplane/action_service/migrations:__pkg__"],
 )
@@ -157,6 +158,15 @@ py_library(
 py_library(
     name = "0016_structured_principals",
     srcs = ["0016_structured_principals.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0017_drop_mcp_linkage_provider",
+    srcs = ["0017_drop_mcp_linkage_provider.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

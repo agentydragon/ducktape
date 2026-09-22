@@ -257,7 +257,6 @@ class McpServerLinkageRow(Base):
     )
 
     server_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    provider: Mapped[str] = mapped_column(Text)
     server_url: Mapped[str] = mapped_column(Text)
     revision: Mapped[int] = mapped_column(Integer)
     scopes: Mapped[list[str]] = mapped_column(JSONB)
