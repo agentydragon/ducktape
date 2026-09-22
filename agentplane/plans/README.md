@@ -10,6 +10,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
+- [Conversation sync latency](conversation_sync_latency.md) — why an opened Thread waits tens of seconds on Electric shape creation, and the burn-down that removes it
 - [Task DAG](task_dag.md) — remaining work and proposed priorities: deployed command acceptance, UI usability/history, native recovery, and deferred cluster-browser/subagent work
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
