@@ -38,6 +38,7 @@ from agentplane.app.consent import (
     preview_enrollment,
 )
 from agentplane.app.conversation_debug import (
+    ArchivedObservationEntry,
     ConversationEvidenceNotFoundError,
     ConversationScopeChangedError,
     EvidencePage,
@@ -672,6 +673,15 @@ async def conversation_native_frames(
         after_sequence=after_sequence,
         limit=limit,
     )
+
+
+@threads.get("/{thread_id}/conversation/observations/{cursor}")
+async def conversation_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+    """The raw entry behind one listed observation, read only when a reader expands it."""
+    entry = await store.conversation_observation_entry(thread_id, cursor)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
+    return entry
 
 
 @threads.get("/{thread_id}/conversation/observations")

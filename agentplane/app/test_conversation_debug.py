@@ -156,7 +156,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             assert (await client.get(chronological, params=bounds, headers=AGENT_AUTH)).status_code == 422
 
         # These retained observations deliberately have no item/native-evidence association.
-        # Selecting chronological debug still returns their complete original bodies.
+        # Chronological debug still reaches their complete original bodies, one expansion at a time:
+        # the listing carries identity only, so opening the drawer transfers no entry at all.
         source.append(event_pb2.Event(native=event_pb2.Native(line="unlinked native packet")))
         stderr = "λ" * (1024 * 1024 + 1)
         source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
@@ -168,9 +169,15 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert [row["cursor"] for row in rows] == ["10", "11", "12"]
         assert [row["source_sequence"] for row in rows] == ["10", "11", "12"]
         assert all(row["source_id"] == scope.source_id for row in rows)
-        assert rows[0]["entry"]["event"]["native"]["line"] == "unlinked native packet"
-        assert rows[1]["entry"]["event"]["harnessStderr"]["text"] == stderr
-        assert rows[2]["entry"]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
+        assert "entry" not in rows[0]
+        assert stderr not in debug_tail.text
+        entries = [(await client.get(f"{chronological}/{row['cursor']}", headers=AGENT_AUTH)).json() for row in rows]
+        assert [entry["cursor"] for entry in entries] == ["10", "11", "12"]
+        assert entries[0]["entry"]["event"]["native"]["line"] == "unlinked native packet"
+        assert entries[1]["entry"]["event"]["harnessStderr"]["text"] == stderr
+        assert entries[2]["entry"]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
+        absent = await client.get(f"{chronological}/99999", headers=AGENT_AUTH)
+        assert absent.status_code == 404
 
         for command_id in ("failed-debug", "noop-debug"):
             source.append(

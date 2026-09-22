@@ -6,6 +6,7 @@ fetch, EventSource, rendering, and page reload are not replaced by the visual ha
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
@@ -527,12 +528,16 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
     await expect(observations).to_have_count(30)
     await expect(observations.first).to_have_attribute("data-debug-observation", str(last.cursor - 29))
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    # The listing carries identity only: a page of 30 raw entries is what used to make opening this
+    # drawer wait on its own transfer and parse, and none of them is what the reader asked to see.
     assert await dialog.locator("pre").count() == 0
+    assert not any(re.search(r"/conversation/observations/\d+", url) for url in requests)
     for entry in (source.entries[-4], stderr, checkpoint, last):
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
         await record.locator("summary").click()
         await expect(record.locator("pre")).to_be_visible()
         assert json_format.Parse(await record.locator("pre").inner_text(), event_log_pb2.EventEntry()) == entry
+        assert any(url.endswith(f"/conversation/observations/{entry.cursor}") for url in requests)
     await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)

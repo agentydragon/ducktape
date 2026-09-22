@@ -1153,23 +1153,16 @@ function archivedCompletion(cursor: number): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
+  "31": () => archivedStderr(31),
+  "34": () => archivedCompletion(34),
+};
+
 function observationPage(threadId: string) {
   return {
     observations: [
-      {
-        cursor: "31",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "31",
-        kind: "harness_stderr",
-        entry: archivedStderr(31),
-      },
-      {
-        cursor: "34",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "34",
-        kind: "item_completed",
-        entry: archivedCompletion(34),
-      },
+      { cursor: "31", source_id: CONVERSATION_SOURCE, source_sequence: "31", kind: "harness_stderr" },
+      { cursor: "34", source_id: CONVERSATION_SOURCE, source_sequence: "34", kind: "item_completed" },
     ],
     next_before_cursor: null,
     next_after_cursor: null,
@@ -1308,7 +1301,12 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])]
+  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/conversation\/observations\/([0-9]+)$/,
+    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
+  ]
 );
 
 const FRESH: WatchHealth = {
