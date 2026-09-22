@@ -45,6 +45,7 @@ flowchart LR
     E -->|copy exact entries| P[App PostgreSQL history]
     P -->|exact replay / Raw evidence| F
     P -. proposed deterministic projection .-> V[App conversation read model]
+    P -->|same id, plus what an operator sets| T[Thread]
     V -. proposed snapshot and changes .-> F
     K[Kubernetes Sandbox state] -->|operational snapshot| A
     A -->|operational snapshot| F
@@ -67,21 +68,27 @@ The implemented frontend replays the exact archive. The proposed
 [conversation-view sync](#planned-conversation-view-synchronization) adds a derived
 read interface; it does not change runner Events or command admission.
 
-| Representation                       | Authority and identity                                                           | Ordering                                                                   |
-| ------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Native conversation                  | The selected harness; native ids and resume artifacts                            | Harness-defined; not portable between Claude and Codex                     |
-| Thread                               | App-minted product id, stable URL, static Sandbox association                    | One runner-owned Event sequence across supported harness incarnations      |
-| Runner session / harness incarnation | Attachment and execution provenance within a Thread                              | Does not create a new conversation or a new Thread Event counter           |
-| Runner command journal               | Exact immutable `Command`, identified by `command_id` within its execution scope | Serialized admission; operation-specific execution                         |
-| Runner Event log and app copy        | Runner appends; app persists the same `EventEntry`                               | One Thread sequence; app and browser track consumed prefixes               |
-| Sandbox and bootstrap state          | Kubernetes desired/observed objects; bootstrap's own log                         | Separate operational state, with its own provenance                        |
-| Conversation view                    | Pure projection of runner Events                                                 | Cards anchored to their causal Event; streaming may compact several Events |
+| Representation                       | Authority and identity                                                                                                                                        | Ordering                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Native conversation                  | The selected harness; native ids and resume artifacts                                                                                                         | Harness-defined; not portable between Claude and Codex                                              |
+| Thread                               | The operator's handle on one Event log: that log's id and stable URL, plus the name and archive state an operator sets                                        | Its Event log's sequence, presented through the conversation view                                   |
+| Runner session / harness incarnation | Attachment and execution provenance within an Event log                                                                                                       | Does not create a new conversation or a new Event counter                                           |
+| Runner command journal               | Exact immutable `Command`, identified by `command_id` within its execution scope                                                                              | Serialized admission; operation-specific execution                                                  |
+| Runner Event log and app copy        | Runner appends; the app mints the copy's identity, with its static Sandbox association, on first sight of a runner session and persists the same `EventEntry` | One sequence per log across supported harness incarnations; app and browser track consumed prefixes |
+| Sandbox and bootstrap state          | Kubernetes desired/observed objects; bootstrap's own log                                                                                                      | Separate operational state, with its own provenance                                                 |
+| Conversation view                    | Pure projection of runner Events                                                                                                                              | Cards anchored to their causal Event; streaming may compact several Events                          |
 
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
 the target product Thread/incarnation relationship. The identity cutover must make the
-mapping explicit without duplicating the Thread's static Sandbox on each association.
+mapping explicit without duplicating the log's static Sandbox on each association.
+
+The Thread sits above its Event log rather than owning it. The app mints the log when it first
+sees a runner session, and everything recorded hangs off the log: the copied Events, the feed
+state, and the conversation view projected from them. The Thread adds only what an operator sets
+(a name, and whether it is archived) under the log's id, so a Thread exists exactly when its log
+does and ingestion never has to create one.
 
 ## What storage guarantees
 
@@ -136,17 +143,17 @@ storage permits independent progress followed by catch-up. Storage exhaustion mu
 surface explicitly and stop accepting more work before the runner cannot record it;
 silently trimming unreplicated history violates this contract.
 
-### One Thread Event high-water mark across harness sessions
+### One Event high-water mark per log across harness sessions
 
-There is one runner-owned sequence per Thread, continued from its durable journal
-through supported runner/harness restarts. The app checkpoint says how much it has
-copied; the browser checkpoint says how much it has consumed. They are positions in
-the same sequence, not additional Event counters.
+There is one runner-owned sequence per Event log, and so per Thread, continued from
+its durable journal through supported runner/harness restarts. The app checkpoint says
+how much it has copied; the browser checkpoint says how much it has consumed. They are
+positions in the same sequence, not additional Event counters.
 
-Only one runner writer may own a Thread journal at a time. Local storage ownership
+Only one runner writer may own a log's journal at a time. Local storage ownership
 and replacement handoff must fence the old writer before a successor appends or
 retries commands. The app's ingestion lease only fences PostgreSQL copying; it does
-not fence native execution or two runners writing the same Thread.
+not fence native execution or two runners writing the same log.
 
 A copied high-water mark alone cannot recover lost runner state. The runner might
 have emitted an unreplicated suffix while the app was offline. Starting a replacement
@@ -514,12 +521,12 @@ optional retention changes require a separate, explicit contract.
 | Long tool interrupted                       | Pin partial output, process abortion, tool result, and the fate of queued inputs on the next prompt, separately per harness                            |
 | App/browser reconnect                       | Competing ingesters, stale lease owner, lost wakeup, reload after lost submit response, and replay/live handoff converge on the same durable prefix    |
 | Suspend/resume and deletion                 | Real state mount survives intended Pod replacement; native resume is evidenced; final archive is copied before managed storage removal                 |
-| Writer replacement                          | Fence old runner, continue same Thread Event journal, preserve native references; missing journal cannot be replaced by an app checkpoint              |
+| Writer replacement                          | Fence old runner, continue the same Event journal, preserve native references; missing journal cannot be replaced by an app checkpoint                 |
 | Normal/Raw UI                               | Streaming, grouped inputs, admission without effect, failed/no-op, suspended/deleted Sandbox, local unconfirmed submission, and additive native detail |
 
 ### Deferred: commands unsettled across successor sessions
 
-Keeping one Thread Event journal does not decide whether an unsettled command is
+Keeping one Event journal per log does not decide whether an unsettled command is
 valid in a successor execution scope. Preserve the original target and causal ids.
 Do not replay automatically into a successor until both harnesses' native evidence
 and the operation's target semantics establish that this is safe.

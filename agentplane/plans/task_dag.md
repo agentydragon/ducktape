@@ -1180,7 +1180,7 @@ This investigation does not block current container correctness work.
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
 **Identity/storage cutover:** implement
-[one Thread high-water mark](../docs/thread_layering.md#one-thread-event-high-water-mark-across-harness-sessions):
+[one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
 app-minted Thread identity, explicit incarnation association, and a retained runner journal on
 the landed exclusive writer fence. Thread owns its static Sandbox; association rows do not
 duplicate it. App and browser checkpoints refer to the runner's sequence. Native recovery remains
