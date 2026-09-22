@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Generator, Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
@@ -28,7 +30,9 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory import IngestionLease, TrajectoryStore
+from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -105,6 +109,28 @@ async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
         yield replica
     finally:
         await replica.close()
+
+
+SPEC = protocol_pb2.SessionSpec(
+    harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+)
+
+
+@pytest.fixture
+async def lease(store: TrajectoryStore) -> IngestionLease:
+    lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
+    assert lease is not None
+    return lease
+
+
+def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+    """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""
+    at = Timestamp()
+    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
+    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
+    return event_log_pb2.EventEntry(
+        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
+    )
 
 
 @pytest.fixture
