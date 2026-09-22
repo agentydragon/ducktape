@@ -52,23 +52,19 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
     SOPS_DECRYPTION,
     ConfigMapArgs,
     flux_kustomization,
@@ -335,6 +331,7 @@ def chart(app: App) -> Chart:
 
 def aiquota(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
@@ -360,10 +357,8 @@ def aiquota(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-            ),
-            path=f"./{OUTPUT_DIR}",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.

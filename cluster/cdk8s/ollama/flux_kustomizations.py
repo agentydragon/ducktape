@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def ollama(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
     nvidia_runtimeclass: Kustomization,
@@ -29,11 +27,9 @@ def ollama(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/ollama",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="ollama-app", namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="10m",
             health_checks=[
                 KustomizationSpecHealthChecks(

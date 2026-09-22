@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def cpap_sync(
-    chart: Chart, external_secrets_config: Kustomization, kubevirt: Kustomization, forgejo_images: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_config: Kustomization,
+    kubevirt: Kustomization,
+    forgejo_images: Kustomization,
 ) -> Kustomization:
     name = "cpap-sync"
     return flux_kustomization(
@@ -23,11 +24,9 @@ def cpap_sync(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/cpap-sync",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             timeout="30m",
             depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images),

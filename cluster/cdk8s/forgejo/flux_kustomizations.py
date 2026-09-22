@@ -7,15 +7,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def forgejo_agentydragon_repos(
-    chart: Chart, forgejo: Kustomization, tofu_controller: Kustomization, tofu_state_db: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    forgejo: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
 ) -> Kustomization:
     name = "forgejo-agentydragon-repos"
     return flux_kustomization(
@@ -25,14 +29,12 @@ def forgejo_agentydragon_repos(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/agentydragon-repos",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Wait for the Terraform apply (adopts ducktape/gaffer-private, creates
             # collaborator service users/keys, and grants repo access).
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -51,7 +53,9 @@ def forgejo_agentydragon_repos(
     )
 
 
-def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization) -> Kustomization:
+def forgejo_agentydragon(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, tofu_state_db: Kustomization
+) -> Kustomization:
     name = "forgejo-agentydragon"
     return flux_kustomization(
         chart,
@@ -60,12 +64,10 @@ def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_stat
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/agentydragon",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -81,6 +83,7 @@ def forgejo_agentydragon(chart: Chart, tofu_controller: Kustomization, tofu_stat
 
 def forgejo(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -94,10 +97,8 @@ def forgejo(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/forgejo",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
@@ -123,6 +124,7 @@ def forgejo(
 
 def budget_ledger(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
@@ -136,14 +138,12 @@ def budget_ledger(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/budget-ledger",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service user + the
             # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -164,24 +164,24 @@ def budget_ledger(
     )
 
 
-def budget_namespace(chart: Chart) -> Kustomization:
+def budget_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "budget-namespace"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="1h",
-            path="./cluster/k8s/forgejo/budget-namespace",
+            path=artifact_path(artifact),
             prune=False,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="1m",
         ),
     )
 
 
-def forgejo_cache(chart: Chart, valkey: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
+def forgejo_cache(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, local_path_provisioner: Kustomization
+) -> Kustomization:
     name = "forgejo-cache"
     return flux_kustomization(
         chart,
@@ -190,10 +190,8 @@ def forgejo_cache(chart: Chart, valkey: Kustomization, local_path_provisioner: K
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/forgejo/cache",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Retry until the forgejo aggregate creates the Namespace. Waiting for
@@ -205,6 +203,7 @@ def forgejo_cache(chart: Chart, valkey: Kustomization, local_path_provisioner: K
 
 def forgejo_claude(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
@@ -218,15 +217,13 @@ def forgejo_claude(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/claude",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the claude Forgejo service user + the
             # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
             # tf/thrive-scrape) and agent sessions can depend on it.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -249,6 +246,7 @@ def forgejo_claude(
 
 def cpap_data(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
@@ -262,14 +260,12 @@ def cpap_data(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/cpap-data",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service users + the
             # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -292,6 +288,7 @@ def cpap_data(
 
 def haku_state(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
@@ -306,14 +303,12 @@ def haku_state(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/forgejo/haku-state",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Wait for the Terraform apply (creates the Forgejo repo + service user + the
             # haku-forgejo-git Secret) so scan runs can depend on it.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",

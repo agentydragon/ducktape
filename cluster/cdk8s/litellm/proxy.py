@@ -47,13 +47,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -61,11 +55,12 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsBearerTokenSecret,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    NAMESPACE,
     SOPS_DECRYPTION,
     flux_kustomization,
     flux_kustomization_depends_on_many,
@@ -419,6 +414,7 @@ class LiteLLMServiceMonitor(Construct):
 
 def litellm(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
@@ -440,13 +436,11 @@ def litellm(
         "litellm",
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/litellm",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=SOPS_DECRYPTION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="10m",
             retry_interval="1m",
             wait=True,

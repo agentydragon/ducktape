@@ -7,14 +7,16 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def authentik(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization) -> Kustomization:
+def authentik(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "authentik"
     return flux_kustomization(
         chart,
@@ -22,12 +24,10 @@ def authentik(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization)
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/authentik",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="10m0s",
             wait=True,
             # Health checks ensure Authentik is fully operational before dependents start
@@ -48,7 +48,9 @@ def authentik(chart: Chart, cnpg: Kustomization, monitoring_crds: Kustomization)
     )
 
 
-def authentik_db_backups(chart: Chart, cnpg: Kustomization, seaweedfs_cluster: Kustomization) -> Kustomization:
+def authentik_db_backups(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_cluster: Kustomization
+) -> Kustomization:
     name = "authentik-db-backups"
     return flux_kustomization(
         chart,
@@ -57,12 +59,10 @@ def authentik_db_backups(chart: Chart, cnpg: Kustomization, seaweedfs_cluster: K
             interval="10m",
             retry_interval="1m",
             timeout="15m",
-            path="./cluster/k8s/authentik/db-backups",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1",
@@ -96,7 +96,11 @@ def authentik_db_backups(chart: Chart, cnpg: Kustomization, seaweedfs_cluster: K
 
 
 def sso_providers_tf(
-    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    authentik: Kustomization,
 ) -> Kustomization:
     name = "sso-providers-tf"
     return flux_kustomization(
@@ -105,11 +109,9 @@ def sso_providers_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/authentik/sso-providers-tf",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",

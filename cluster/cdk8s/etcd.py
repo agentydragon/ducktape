@@ -13,12 +13,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -27,15 +22,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, health_checks, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
@@ -108,7 +99,11 @@ class TalosEtcdMetrics(Construct):
 
 
 def etcd_monitoring(
-    flux_chart: Chart, root: Path, mesh: nebula_mesh.Mesh, monitoring_crds: Kustomization
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    mesh: nebula_mesh.Mesh,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "etcd-monitoring"
     out_dir = root / OUTPUT_DIR
@@ -126,11 +121,9 @@ def etcd_monitoring(
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path=f"./{OUTPUT_DIR}",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-etcd", namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             # the ServiceMonitor CRD
             depends_on=[flux_kustomization_depends_on(monitoring_crds)],
             wait=True,

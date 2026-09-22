@@ -9,10 +9,10 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -22,7 +22,7 @@ from cluster.cdk8s.flux import (
 )
 
 
-def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
+def haku_forgejo_tea(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_rbac: Kustomization) -> Kustomization:
     name = "haku-forgejo-tea"
     return flux_kustomization(
         chart,
@@ -31,12 +31,10 @@ def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/forgejo-tea",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             depends_on=[
                 # haku-sandbox ns the secret lives in
@@ -53,6 +51,7 @@ def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
 
 def haku_mailbox(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     cert_manager: Kustomization,
     external_secrets_operator: Kustomization,
@@ -66,13 +65,11 @@ def haku_mailbox(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/mailbox",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 cnpg,
@@ -94,53 +91,49 @@ def haku_mailbox(
     )
 
 
-def haku_namespace(chart: Chart) -> Kustomization:
+def haku_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "haku-namespace"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/namespace",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="2m",
         ),
     )
 
 
-def haku_rbac(chart: Chart, haku_namespace: Kustomization) -> Kustomization:
+def haku_rbac(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_namespace: Kustomization) -> Kustomization:
     name = "haku-rbac"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/rbac",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="2m",
             depends_on=[flux_kustomization_depends_on(haku_namespace)],
         ),
     )
 
 
-def haku_ui_image_webhook(chart: Chart, haku_state: Kustomization) -> Kustomization:
+def haku_ui_image_webhook(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization
+) -> Kustomization:
     name = "haku-ui-image-webhook"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/haku/ui-image-webhook",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[
                 # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
                 # and the Forgejo package webhook that targets this receiver.
@@ -150,7 +143,7 @@ def haku_ui_image_webhook(chart: Chart, haku_state: Kustomization) -> Kustomizat
     )
 
 
-def haku_workloads(chart: Chart, haku_state: Kustomization) -> Kustomization:
+def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization) -> Kustomization:
     name = "haku-workloads"
     return flux_kustomization(
         chart,
@@ -159,14 +152,12 @@ def haku_workloads(chart: Chart, haku_state: Kustomization) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./cluster/k8s/haku/workloads",
+            path=artifact_path(artifact),
             prune=True,
             # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
             # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
             wait=False,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[
                 # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
                 # haku-forgejo-git Secret (now also reflected into flux-system for the
@@ -179,6 +170,7 @@ def haku_workloads(chart: Chart, haku_state: Kustomization) -> Kustomization:
 
 def haku_workspaces(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     agent_sandbox_controller: Kustomization,
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
@@ -193,14 +185,10 @@ def haku_workspaces(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/haku/workspaces/app",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="haku-workspaces-app",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 # shared CRDs + controller
                 agent_sandbox_controller,

@@ -67,17 +67,9 @@ neighbourhood is in. "1:1 first, abstract when the neighbourhood is in": literal
 duplicated while the other side is still YAML; a shared type, registry, loader or
 derived roster is not written until every node it would touch is a construct.
 
-## Wave 1: derive what the Flux chart makes derivable
+## Pause after Wave 1
 
-Independent of each other; fan out.
-
-- **Artifacts from the chart.** Each Kustomization node builds its artifact value first
-  and reads `sourceRef` off it; the `ArtifactGenerator` is assembled from the list
-  last. Deletes `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the
-  triple-written names; retires `cluster/validation/test_actions_artifact.py`. Exit:
-  `kustomize build` of each packaged directory unchanged, checked once in the PR.
-
-**Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
+Look at the Flux layer as one thing before building on it:
 
 - Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
   whether that is acceptable as is, wants keyword-only parameters, or reveals that
@@ -97,7 +89,7 @@ Independent of each other; fan out.
 
 ## Wave 2: split the trees
 
-One PR, after Wave 1's first two entries, because each half is broken alone.
+One PR, because each half is broken alone.
 
 - cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
   hand-written files only. Each artifact gets a second copy op from the generated

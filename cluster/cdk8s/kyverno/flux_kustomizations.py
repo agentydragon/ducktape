@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def kyverno(chart: Chart) -> Kustomization:
+def kyverno(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "kyverno"
     return flux_kustomization(
         chart,
@@ -21,11 +18,9 @@ def kyverno(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/kyverno/app",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="10m0s",
             wait=True,
             # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
@@ -71,7 +66,7 @@ def kyverno(chart: Chart) -> Kustomization:
     )
 
 
-def kyverno_policies(chart: Chart, kyverno: Kustomization) -> Kustomization:
+def kyverno_policies(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     name = "kyverno-policies"
     return flux_kustomization(
         chart,
@@ -83,11 +78,9 @@ def kyverno_policies(chart: Chart, kyverno: Kustomization) -> Kustomization:
                 flux_kustomization_depends_on(kyverno)
             ],
             interval="5m",
-            path="./cluster/k8s/kyverno/policies",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             timeout="2m",
         ),

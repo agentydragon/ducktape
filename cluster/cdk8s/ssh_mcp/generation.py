@@ -6,36 +6,32 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Service
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecDeletionPolicy
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.ssh_mcp import backend, config, sshpiper
 from cluster.scripts.nebula_mesh import Mesh
 
-_OUTPUT_DIR = "cluster/k8s/ssh-mcp"
+OUTPUT_DIR = "cluster/k8s/ssh-mcp"
 _SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 
 def ssh_mcp(
-    flux_chart: Chart, root: Path, mesh: Mesh, devbox_service: Service, external_secrets_operator: Kustomization
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    mesh: Mesh,
+    devbox_service: Service,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     """Write the generated backend and sshpiper manifests under ``root``."""
     ssh_config = config.load(devbox_service)
-    out_dir = root / _OUTPUT_DIR
+    out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     app = App(outdir=str(out_dir))
@@ -51,14 +47,12 @@ def ssh_mcp(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path=f"./{_OUTPUT_DIR}",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
             decryption=sops_decryption(_KEY_FILES),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=config.NAME, namespace=NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
         ),
     )

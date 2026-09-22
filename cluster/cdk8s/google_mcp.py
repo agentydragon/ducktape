@@ -64,21 +64,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -250,7 +242,11 @@ class GoogleMcp(Construct):
 
 
 def google_mcp(
-    flux_chart: Chart, root: Path, external_secrets_operator: Kustomization, forgejo_images: Kustomization
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    external_secrets_operator: Kustomization,
+    forgejo_images: Kustomization,
 ) -> Kustomization:
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -268,12 +264,10 @@ def google_mcp(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path=f"./{OUTPUT_DIR}",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=_NAME, namespace=NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
         ),
     )
