@@ -39,6 +39,7 @@ export type CommandReconciliationResponse = components["schemas"]["CommandReconc
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
+export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -68,6 +69,20 @@ export async function reconcileCommands(
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
     body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationObservationEntry(
+  threadId: string,
+  cursor: string,
+  signal?: AbortSignal
+): Promise<ArchivedObservationEntry> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations/{cursor}", {
+    // openapi-fetch serializes path values without converting them to JS numbers.
+    params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
     signal,
   });
   if (error) throw new Error(displayableError(error));
