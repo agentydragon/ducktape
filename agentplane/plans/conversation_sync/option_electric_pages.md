@@ -404,7 +404,19 @@ them is still catching up". It is more moving parts than one comparison, and it 
 page rather than all-or-nothing, which is what lets a page arrive without the rest of the view
 waiting on it.
 
-### What this costs
+#### Watching the tail while reading elsewhere
+
+S4's permission fits this option without new mechanism: a reader scrolled into history keeps the
+tail page and the control shape subscribed alongside its history pages. The control shape already
+carries `view_state`, so "the conversation is moving" arrives whether or not the reader is looking.
+
+S4 itself holds because a page's shape delivers every change to a row in that page, regardless of
+when the row was first written — an edit to an old segment in a page the reader holds arrives on
+that page's poll. The risk is the opposite one: a reader that has **unsubscribed** from a page to
+bound its shape count will not hear about edits there. That is correct (it is not showing them) but
+it means the unsubscribe policy is also a correctness surface, not purely a memory one.
+
+## What this costs
 
 - **Shapes.** A conversation costs one control shape plus two per page a reader has open, and a
   reader at the tail holds three pages — the one it is reading, the one before it, and the empty

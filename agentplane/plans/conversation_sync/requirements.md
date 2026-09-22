@@ -61,6 +61,26 @@ from designs that do not, and every design here can grow one.
 | S3  | A reader can distinguish **"caught up"** from "still arriving", per whatever unit it subscribes in.                                        | `view_state` catch-up gate             |
 | S4  | A revision to an item the reader **currently holds** always reaches it. No silent staleness.                                               | P3 + P2                                |
 
+**S4, and the assumption it exists to forbid.** Conversations are _usually_ edited near their tail.
+That is an observation about traffic and **must not become an assumption in the protocol**: an edit
+to a message in the middle of a window a reader is looking at is delivered on the same terms as an
+edit to the last one. Nothing may be dropped on the floor because it was old.
+
+The concrete trap is that **`segment_index` and `revision_cursor` are independent axes**. A segment
+written long ago and edited just now has a _low_ index and a _high_ revision. Any delta must filter
+on both — the window by index, the freshness by revision — and an implementation that conflates them
+into one "everything after cursor X" silently implements the tail-only assumption. Recency is not
+position.
+
+Things that would bake it in, none of which are allowed: scanning only the last _K_ rows for
+changes; a changes feed that retains only recent entries; ordering a window query by revision and
+truncating it.
+
+**Explicitly permitted:** a reader may stay subscribed to the **tail** even while looking somewhere
+else, so it can tell that the conversation is moving and keep `view_state` current. That is a second
+watch alongside the window, which D1 does not charge for. It is a permission, not a requirement — an
+option that does not need it is not worse for that.
+
 ## Efficiency
 
 | ID  | Requirement                                                                                                   | Source                          |

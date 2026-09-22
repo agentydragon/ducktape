@@ -59,6 +59,26 @@ server has nothing per-reader to keep in step with it.
 - **S3**: `through` is the caught-up signal, and it is one number rather than a per-partition
   composite.
 
+## The tail, alongside the window
+
+S4 forbids assuming edits cluster at the tail, and the permission beside it lets a reader watch the
+tail unconditionally. Both land here as: **two watches, not one** — the window the reader is looking
+at, and the tail it is not.
+
+```text
+GET /conversation?want=50:150&have=…&since=…      # what I am reading
+GET /conversation?want=tail&since=…               # what is happening, wherever I am
+```
+
+The window watch is what makes S4 hold: an edit to segment 60 is `revision_cursor > since` **and**
+inside 50–150, so it is delivered on exactly the terms an edit to the newest segment is. The delta
+query filters the two axes separately — `segment_index BETWEEN …` for position, `revision_cursor >
+…` for freshness — which is what keeps the tail-only assumption out of the implementation rather
+than out of the prose.
+
+Two watches is not a retreat from D1: D1 charges for re-transfer, not for subscriptions, and these
+two never overlap in what they deliver.
+
 ## What it costs, honestly
 
 - **The server owes the delta query.** `segment_index BETWEEN 50 AND 99` (whole) `OR
