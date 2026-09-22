@@ -67,26 +67,6 @@ neighbourhood is in. "1:1 first, abstract when the neighbourhood is in": literal
 duplicated while the other side is still YAML; a shared type, registry, loader or
 derived roster is not written until every node it would touch is a construct.
 
-## Pause after Wave 1
-
-Look at the Flux layer as one thing before building on it:
-
-- Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
-  whether that is acceptable as is, wants keyword-only parameters, or reveals that
-  some dependencies are not the node's own (a dependency inherited from a chart's
-  needs, say). A record type for "dependencies" is not one of the options.
-- Repetition. Re-measure lines per node after the artifact step. The remaining
-  repetition should be operational fields (`interval`, `prune`, `wait`, ...) and
-  literal `healthChecks` for hand-written directories; if anything else repeats,
-  name it before adding a helper.
-- Cycle check. `test_cluster_integration.test_no_dependency_errors` exercises the check over
-  the emitted local Flux graph; the cycle-specific tests in `test_dependencies.py` exercise
-  it on synthetic graphs. In-chart `dependsOn` entries now come from earlier Kustomization
-  objects. The remaining literal edge,
-  `artifact-generators -> flux-system`, targets the bootstrap Kustomization outside this
-  chart. Revisit whether the output-level check still adds value once construction order
-  makes an in-chart cycle impossible.
-
 ## Wave 2: split the trees
 
 One PR, because each half is broken alone.
@@ -170,8 +150,11 @@ declarations again.
   property unrepresentable or checkable over constructs rather than parsed output:
   `test_crd_layering` (a Kustomization applying an operator's kinds depends on that
   operator's Kustomization; what roster it still needs is decided then),
-  `test_dependencies`, `test_health_checks`, `test_generator_namespace`. Others may
-  follow; the remaining list is what is left, not a target.
+  `test_dependencies` (with `test_cluster_integration.test_no_dependency_errors`, whose
+  cycle check construction order already makes moot for in-chart edges; the one literal
+  edge left is `artifact-generators -> flux-system`), `test_health_checks`,
+  `test_generator_namespace`. Others may follow; the remaining list is what is left, not
+  a target.
 
 ## Candidates I am not sure about
 
@@ -185,12 +168,15 @@ by any wave. Each names what would settle it. None is a reason to widen a wave's
   directory's workloads convert, at which point the nodes move into the component's
   package. Unsure whether the move is worth doing before Wave 4 moves most of them
   anyway; decide at the Wave 1 pause from how many areas Wave 4 will touch.
-- **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
+- **The entry point at 1,430 lines.** `generate_manifests.py` is the whole topological
   order by hand, which is the design. If it becomes hard to read, the shape to try is
   one function per area that builds its subgraph from explicit predecessor parameters
   and returns the nodes others need, called from the entry point in order; not a
   registry, not per-module imports of other areas' nodes. Unsure it is needed; the
   file has not yet caused a wrong edit.
+- **`postBuild.substituteFrom: cert-manager-issuer-config`** is the one non-operational
+  block still repeated verbatim, on 6 nodes. Same value everywhere, so it may become a
+  `flux` constant like `SOPS_DECRYPTION`; low value at 6 sites.
 - **`generation.write_charts(*builders)`** still takes builder callables at 8 call
   sites (`lambda app: chart(app, mesh)` in `dns_automation`). Confident it should
   become `app = directory_app(root, path); chart(app, mesh); app.synth()`; only the
