@@ -937,12 +937,13 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item is not None
     assert item.text_ref == {
         "source_id": "test-runner",
-        "projection_epoch": "v1",
+        "projection_epoch": "v2",
         "owner_cursor": "1",
         "owner_item_id": "old",
         "field": "text",
         "revision_cursor": "3",
         "generation": "1",
+        "content_bytes": "12",
     }
     assert [(manifest.revision_cursor, manifest.generation, manifest.chunk_count) for manifest in manifests] == [
         (2, 1, 1),
@@ -972,6 +973,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item is not None
     assert item.text_ref is not None
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
+    # The reference's extent is the manifest's: what a reader stops at is what was written.
+    assert item.text_ref["content_bytes"] == str(replacement.content_bytes)
 
     with pytest.raises(ConversationProjectionError, match="cursor 5"):
         await store.record(thread, [_event(5)], lease=lease)
