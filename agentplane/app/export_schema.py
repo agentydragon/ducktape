@@ -21,7 +21,7 @@ from agentplane.app.electric import EntityInterestResponse, PayloadInterestRespo
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import ConversationStoredEntity, TrajectoryStore
+from agentplane.app.trajectory import ThreadEntityView, TrajectoryStore
 
 
 async def _unreachable(name: str) -> str:
@@ -46,7 +46,7 @@ def openapi_document() -> dict[str, Any]:
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):
         raise ValueError("OpenAPI document has no schema components")
-    for model in (ConversationStoredEntity, EntityInterestResponse, PayloadInterestResponse):
+    for model in (ThreadEntityView, EntityInterestResponse, PayloadInterestResponse):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
         components["schemas"].update(schema.pop("$defs", {}))
         components["schemas"][model.__name__] = schema

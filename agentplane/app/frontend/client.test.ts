@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, conversationObservations, displayableError, httpError } from "./client";
+import { api, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -16,7 +16,7 @@ it.each(["before", "after"] as const)("preserves %s archive cursors above JS int
   };
   api.use(middleware);
   try {
-    await conversationObservations("test-thread", { [direction]: "9007199254740993" });
+    await threadObservations("test-thread", { [direction]: "9007199254740993" });
     expect(requests).toHaveLength(1);
     expect(requests[0].searchParams.get(`${direction}_cursor`)).toBe("9007199254740993");
     expect(requests[0].searchParams.get("limit")).toBe("30");

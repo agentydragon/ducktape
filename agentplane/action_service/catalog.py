@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from agentplane.sandbox_actions.binding import SandboxExecutorBinding
 
@@ -150,6 +150,18 @@ class ActionCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     groups: dict[Key, ActionGroup] = Field(default_factory=dict)
+
+    # Lets the operator settings page join an ActionGroupView back to its McpLinkageView by
+    # matching `key` against `server_id` directly, with no separate wire-carried join key needed.
+    @model_validator(mode="after")
+    def _server_id_matches_group_key(self) -> ActionCatalog:
+        for key, group in self.groups.items():
+            if not isinstance(group.executor, McpExecutorBinding):
+                continue
+            server_id = group.executor.config.get("server_id")
+            if server_id is not None and server_id != key:
+                raise ValueError(f"ActionGroup {key!r} executor config server_id {server_id!r} must match its key")
+        return self
 
     def resolve(self, group_key: str, action_key: str) -> tuple[ActionGroup, ActionDefinition]:
         group = self.groups.get(group_key)

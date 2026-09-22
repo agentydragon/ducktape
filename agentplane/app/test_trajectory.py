@@ -21,21 +21,21 @@ from agentplane.app import trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
-    ConversationEntity,
-    ConversationOperationalState,
-    ConversationPayloadChunk,
-    ConversationPayloadManifest,
-    ConversationProjectionCheckpoint,
-    ConversationProjectionError,
-    ConversationProjectionEvidence,
-    ConversationProjectionNativeLink,
     EventReplicationError,
     FeedEnd,
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
     SandboxIngestion,
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadFoldError,
+    ThreadNativeLink,
     ThreadNotFoundError,
+    ThreadOperationalState,
+    ThreadPayloadChunk,
+    ThreadPayloadManifest,
     TrajectoryStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -149,20 +149,18 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
             thread, [_history_event(cursor, materialized_item_count) for cursor in range(start, stop)], lease=lease
         )
 
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
     # Warm the driver, typed codec, and Python caches before taking its allocation profile.
     assert await store.admitted_command(thread, command) == admitted
-    assert await store.command_outcomes(thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]) == {
+    assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
         "admission": "pending",
         "absent": None,
     }
     captured: list[tuple[str, Any]] = []
 
     def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and (
-            "conversation_entity" in statement or " FROM event" in statement
-        ):
+        if statement.lstrip().startswith("SELECT") and ("thread_entity" in statement or " FROM event" in statement):
             captured.append((statement, parameters))
 
     event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
@@ -176,9 +174,10 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
             lease=lease,
         )
         assert await store.admitted_command(thread, command) == admitted
-        assert await store.command_outcomes(
-            thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]
-        ) == {"admission": "pending", "absent": None}
+        assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
+            "admission": "pending",
+            "absent": None,
+        }
         current, peak = tracemalloc.get_traced_memory()
         after = tracemalloc.take_snapshot()
     finally:
@@ -186,9 +185,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
     assert peak < 1_000_000, f"bounded record/read path allocated {peak} bytes for {history_size} historical rows"
     async with store._sessions() as session:
-        item = await session.get(
-            ConversationEntity, (thread, scope.source_id, scope.projection_epoch, "item", "old-item")
-        )
+        item = await session.get(ThreadEntity, (thread, scope.projection_epoch, "item", "old-item"))
     assert item is not None
     assert item.revision_cursor == history_size + 3
 
@@ -197,7 +194,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         # Use normal planner statistics after the actual write workload.  The artifact below is
         # deliberately the captured production statements, not a hand-written query with planner
         # switches, so its buffers compare point lookups across entity cardinalities.
-        await connection.exec_driver_sql("ANALYZE conversation_entity")
+        await connection.exec_driver_sql("ANALYZE thread_entity")
         for statement, parameters in captured:
             result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
             plans.extend(row[0] for row in result)
@@ -263,12 +260,12 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
             cursor += 1
         await store.record(thread, batch, lease=lease)
 
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
     captured: list[tuple[str, Any]] = []
 
     def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and "conversation_entity" in statement:
+        if statement.lstrip().startswith("SELECT") and "thread_entity" in statement:
             captured.append((statement, parameters))
 
     event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
@@ -276,15 +273,14 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
         async with store._sessions() as session:
             cursors = list(
                 await session.scalars(
-                    select(ConversationEntity.cursor)
+                    select(ThreadEntity.cursor)
                     .where(
-                        ConversationEntity.thread_id == thread,
-                        ConversationEntity.source_id == scope.source_id,
-                        ConversationEntity.projection_epoch == scope.projection_epoch,
-                        ConversationEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
-                        ConversationEntity.cursor < scope.through_cursor + 1,
+                        ThreadEntity.thread_id == thread,
+                        ThreadEntity.projection_epoch == scope.projection_epoch,
+                        ThreadEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
+                        ThreadEntity.cursor < scope.through_cursor + 1,
                     )
-                    .order_by(ConversationEntity.cursor.desc())
+                    .order_by(ThreadEntity.cursor.desc())
                     .limit(30)
                 )
             )
@@ -293,11 +289,11 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
     assert cursors == [1]
     assert len(captured) == 1
     async with store._engine.connect() as connection:
-        await connection.exec_driver_sql("ANALYZE conversation_entity")
+        await connection.exec_driver_sql("ANALYZE thread_entity")
         statement, parameters = captured[0]
         result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
         plan = "\n".join(row[0] for row in result)
-    assert "ix_conversation_entity_scope_segment_cursor" in plan
+    assert "ix_thread_entity_scope_segment_cursor" in plan
     assert "Rows Removed by Filter" not in plan
     (undeclared_outputs_dir() / f"{request.node.name}-segment-tail-profile.txt").write_text(
         f"settled_command_count=10000\n{plan}\n"
@@ -648,25 +644,23 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     await store.set_attached(thread, attached, lease=lease)
     await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
     async with replica._sessions() as session:
-        checkpoint_before = await session.get(ConversationProjectionCheckpoint, thread)
+        checkpoint_before = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_before is not None
         view_before = await session.get(
-            ConversationEntity,
-            (thread, checkpoint_before.source_id, checkpoint_before.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_before.projection_epoch, "view_state", "current")
         )
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
     await store.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3", error_cursor=3)
     async with replica._sessions() as session:
-        checkpoint_after = await session.get(ConversationProjectionCheckpoint, thread)
+        checkpoint_after = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_after is not None
         view_after = await session.get(
-            ConversationEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert view_after is not None
-        operational = ConversationOperationalState.model_validate(view_after.state["operational"])
+        operational = ThreadOperationalState.model_validate(view_after.state["operational"])
     assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
     assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
     assert operational.model_dump() == {
@@ -681,11 +675,10 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     )
     async with replica._sessions() as session:
         view_reset = await session.get(
-            ConversationEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert view_reset is not None
-        reset = ConversationOperationalState.model_validate(view_reset.state["operational"])
+        reset = ThreadOperationalState.model_validate(view_reset.state["operational"])
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
     assert reset.model_dump() == {
         "operational_version": "2",
@@ -697,11 +690,10 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     await store.end_feed(thread, lease=lease, error="projection invariant failed")
     async with replica._sessions() as session:
         unknown_failure = await session.get(
-            ConversationEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert unknown_failure is not None
-        operational = ConversationOperationalState.model_validate(unknown_failure.state["operational"])
+        operational = ThreadOperationalState.model_validate(unknown_failure.state["operational"])
     assert operational.model_dump() == {
         "operational_version": "3",
         "status": "failed",
@@ -904,42 +896,33 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     await store.record(thread, [_event(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
     async with store._sessions() as session:
         item = await session.scalar(
-            select(ConversationEntity).where(
-                ConversationEntity.thread_id == thread,
-                ConversationEntity.entity_kind == "item",
-                ConversationEntity.entity_id == "old",
+            select(ThreadEntity).where(
+                ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == "item", ThreadEntity.entity_id == "old"
             )
         )
         manifests = (
             await session.scalars(
-                select(ConversationPayloadManifest)
-                .where(ConversationPayloadManifest.thread_id == thread)
-                .order_by(ConversationPayloadManifest.revision_cursor)
+                select(ThreadPayloadManifest)
+                .where(ThreadPayloadManifest.thread_id == thread)
+                .order_by(ThreadPayloadManifest.revision_cursor)
             )
         ).all()
         chunks = (
             await session.scalars(
-                select(ConversationPayloadChunk)
-                .where(ConversationPayloadChunk.thread_id == thread)
-                .order_by(ConversationPayloadChunk.chunk_index)
+                select(ThreadPayloadChunk)
+                .where(ThreadPayloadChunk.thread_id == thread)
+                .order_by(ThreadPayloadChunk.chunk_index)
             )
         ).all()
-        evidence = (
-            await session.scalars(
-                select(ConversationProjectionEvidence).where(ConversationProjectionEvidence.thread_id == thread)
-            )
-        ).all()
+        evidence = (await session.scalars(select(ThreadEvidence).where(ThreadEvidence.thread_id == thread))).all()
         native_links = (
-            await session.scalars(
-                select(ConversationProjectionNativeLink).where(ConversationProjectionNativeLink.thread_id == thread)
-            )
+            await session.scalars(select(ThreadNativeLink).where(ThreadNativeLink.thread_id == thread))
         ).all()
     assert item is not None
     assert item.text_ref == {
-        "source_id": "test-runner",
         "projection_epoch": "v1",
         "owner_cursor": "1",
-        "owner_item_id": "old",
+        "owner_id": "old",
         "field": "text",
         "revision_cursor": "3",
         "generation": "1",
@@ -955,15 +938,13 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
     async with store._sessions() as session:
         replacement = await session.scalar(
-            select(ConversationPayloadManifest).where(
-                ConversationPayloadManifest.thread_id == thread, ConversationPayloadManifest.revision_cursor == 4
+            select(ThreadPayloadManifest).where(
+                ThreadPayloadManifest.thread_id == thread, ThreadPayloadManifest.revision_cursor == 4
             )
         )
         item = await session.scalar(
-            select(ConversationEntity).where(
-                ConversationEntity.thread_id == thread,
-                ConversationEntity.entity_kind == "item",
-                ConversationEntity.entity_id == "old",
+            select(ThreadEntity).where(
+                ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == "item", ThreadEntity.entity_id == "old"
             )
         )
     assert replacement is not None
@@ -973,7 +954,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item.text_ref is not None
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
 
-    with pytest.raises(ConversationProjectionError, match="cursor 5"):
+    with pytest.raises(ThreadFoldError, match="cursor 5"):
         await store.record(thread, [_event(5)], lease=lease)
     assert await store.last_cursor(thread) == 4
 
@@ -1027,15 +1008,13 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
     async with store._sessions() as session:
         entities = {
             (row.entity_kind, row.entity_id): row
-            for row in (
-                await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread))
-            ).all()
+            for row in (await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread))).all()
         }
         manifests = (
             await session.scalars(
-                select(ConversationPayloadManifest)
-                .where(ConversationPayloadManifest.thread_id == thread)
-                .order_by(ConversationPayloadManifest.owner_id, ConversationPayloadManifest.revision_cursor)
+                select(ThreadPayloadManifest)
+                .where(ThreadPayloadManifest.thread_id == thread)
+                .order_by(ThreadPayloadManifest.owner_id, ThreadPayloadManifest.revision_cursor)
             )
         ).all()
     first, second = entities[("item", "tool-a")], entities[("item", "tool-b")]

@@ -4,25 +4,24 @@ import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
-import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
+import { threadEntityInterest, displayableError, type ThreadEntityView, type EntityInterest } from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
-const RefreshConversation = createContext<() => void>(() => undefined);
+const RefreshThread = createContext<() => void>(() => undefined);
 declare global {
   interface Window {
-    __agentplaneConversationCollectionTrace?: unknown[];
+    __agentplaneThreadCollectionTrace?: unknown[];
   }
 }
 type Decimal = z.output<typeof decimal>;
 export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
-export type PayloadRef = NonNullable<ConversationStoredEntity["text_ref"]>;
-type ConversationState = ConversationStoredEntity["state"];
+export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
+type ThreadEntityState = ThreadEntityView["state"];
 
-export interface ConversationEntity {
+export interface ThreadEntity {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
   entityId: string;
@@ -30,17 +29,16 @@ export interface ConversationEntity {
   revisionCursor: Decimal;
   pending: boolean;
   turnId: string | null;
-  state: ConversationState;
+  state: ThreadEntityState;
   textRef: PayloadRef | null;
   argumentsRef: PayloadRef | null;
   outputRef: PayloadRef | null;
   inputRef: PayloadRef | null;
 }
 const payloadRefSchema = z.object({
-  source_id: z.string(),
   projection_epoch: z.string(),
   owner_cursor: z.string(),
-  owner_item_id: z.string(),
+  owner_id: z.string(),
   field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
   revision_cursor: z.string(),
   generation: z.string(),
@@ -78,7 +76,6 @@ const stateSchema = z.union([
 ]);
 const entitySchema = z.object({
   threadId: z.string(),
-  sourceId: z.string(),
   projectionEpoch: z.string(),
   entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
   entityId: z.string(),
@@ -95,7 +92,6 @@ const entitySchema = z.object({
 
 const chunkSchema = z.object({
   threadId: z.string(),
-  sourceId: z.string(),
   projectionEpoch: z.string(),
   ownerCursor: decimal,
   ownerId: z.string(),
@@ -108,7 +104,6 @@ type PayloadChunk = z.output<typeof chunkSchema>;
 
 function entityUrl(threadId: string, interest: EntityInterest): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
-  url.searchParams.set("source_id", interest.source_id);
   url.searchParams.set("projection_epoch", interest.projection_epoch);
   url.searchParams.set("anchor_cursor", interest.anchor_cursor);
   url.searchParams.set("tail_from", interest.tail_from);
@@ -120,7 +115,7 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
 function entityCollection(threadId: string, interest: EntityInterest, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-conversation:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      id: `agentplane-thread:${threadId}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
@@ -140,7 +135,7 @@ function traceEntityCollection(
   role: "active" | "pending",
   collection: ReturnType<typeof entityCollection>
 ): boolean {
-  const trace = window.__agentplaneConversationCollectionTrace;
+  const trace = window.__agentplaneThreadCollectionTrace;
   if (!trace) return false;
   trace.push({
     kind,
@@ -155,14 +150,8 @@ function traceEntityCollection(
   return true;
 }
 
-function commandUrl(
-  threadId: string,
-  sourceId: string,
-  projectionEpoch: string,
-  commandIds: readonly string[]
-): string {
+function commandUrl(threadId: string, projectionEpoch: string, commandIds: readonly string[]): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/commands`, window.location.href);
-  url.searchParams.set("source_id", sourceId);
   url.searchParams.set("projection_epoch", projectionEpoch);
   for (const id of [...new Set(commandIds)].sort()) url.searchParams.append("command_id", id);
   return url.toString();
@@ -170,7 +159,6 @@ function commandUrl(
 
 function commandCollection(
   threadId: string,
-  sourceId: string,
   projectionEpoch: string,
   commandIds: readonly string[],
   onError: (error: unknown) => void
@@ -178,13 +166,13 @@ function commandCollection(
   const selected = [...new Set(commandIds)].sort();
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}`,
+      id: `agentplane-commands:${threadId}:${projectionEpoch}:${selected.join(":")}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => row.entityId,
       syncMode: "on-demand",
       shapeOptions: {
-        url: commandUrl(threadId, sourceId, projectionEpoch, selected),
+        url: commandUrl(threadId, projectionEpoch, selected),
         params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
         onError,
@@ -195,16 +183,14 @@ function commandCollection(
 
 export function CommandSelection({
   threadId,
-  sourceId,
   projectionEpoch,
   commandIds,
   children,
 }: {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   commandIds: readonly string[];
-  children: (rows: ConversationEntity[]) => JSX.Element;
+  children: (rows: ThreadEntity[]) => JSX.Element;
 }): JSX.Element {
   const key = [...new Set(commandIds)].sort().join("\u0000");
   const [attempt, setAttempt] = useState(0);
@@ -219,12 +205,12 @@ export function CommandSelection({
   }, []);
   const collection = useMemo(() => {
     let next: ReturnType<typeof commandCollection>;
-    next = commandCollection(threadId, sourceId, projectionEpoch, key.split("\u0000"), (reason) => {
+    next = commandCollection(threadId, projectionEpoch, key.split("\u0000"), (reason) => {
       if (currentCollection.current !== next) return;
       setStreamError({ collection: next, message: displayableError(reason) });
     });
     return next;
-  }, [attempt, key, projectionEpoch, sourceId, threadId]);
+  }, [attempt, key, projectionEpoch, threadId]);
   useEffect(() => {
     currentCollection.current = collection;
     return () => {
@@ -253,7 +239,7 @@ export function CommandSelection({
   );
 }
 
-function ActiveConversation({
+function ActiveCollection({
   threadId,
   interest,
   collection,
@@ -265,7 +251,7 @@ function ActiveConversation({
   threadId: string;
   interest: EntityInterest;
   collection: ReturnType<typeof entityCollection>;
-  onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+  onRows: (rows: ThreadEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
   onCaughtUp?: () => void;
   role: "active" | "pending";
@@ -297,26 +283,26 @@ function ActiveConversation({
     return () => window.clearTimeout(retry);
   }, [onRotate, query.isError]);
   return (
-    <RefreshConversation.Provider value={onRotate}>
-      {query.isError && <p role="alert">Conversation synchronization stopped.</p>}
+    <RefreshThread.Provider value={onRotate}>
+      {query.isError && <p role="alert">Thread synchronization stopped.</p>}
       {!query.isError && !caughtUp && (
-        <p role="status" data-conversation-catchup="true">
-          Catching up conversation…
+        <p role="status" data-thread-catchup="true">
+          Catching up thread…
         </p>
       )}
       {onRows(caughtUp ? rows : [], interest)}
-    </RefreshConversation.Provider>
+    </RefreshThread.Provider>
   );
 }
 
-export function ConversationCollection({
+export function ThreadCollection({
   threadId,
   beforeCursor,
   children,
 }: {
   threadId: string;
   beforeCursor?: string;
-  children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+  children: (rows: ThreadEntity[], interest: EntityInterest) => JSX.Element;
 }): JSX.Element {
   type Selection = { interest: EntityInterest; collection: ReturnType<typeof entityCollection> };
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -343,7 +329,7 @@ export function ConversationCollection({
     const controller = new AbortController();
     let retry: number | undefined;
     setInterestError(null);
-    void conversationInterest(threadId, beforeCursor, controller.signal).then(
+    void threadEntityInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) {
           const next: Selection = {
@@ -384,20 +370,20 @@ export function ConversationCollection({
     };
   }, [beforeCursor, generation, rotate, threadId]);
   if (!selection) {
-    if (interestError) return <p role="alert">Conversation sync failed: {interestError}</p>;
-    return <p role="status">Loading conversation…</p>;
+    if (interestError) return <p role="alert">Thread sync failed: {interestError}</p>;
+    return <p role="status">Loading thread…</p>;
   }
   return (
     <>
       {interestError && (
-        <p role="alert">Conversation sync failed: {interestError}; showing the current window and retrying.</p>
+        <p role="alert">Thread sync failed: {interestError}; showing the current window and retrying.</p>
       )}
       {streamError && (
         <p role="alert">
-          Conversation synchronization stopped: {streamError} <button onClick={rotate}>Refresh conversation</button>
+          Thread synchronization stopped: {streamError} <button onClick={rotate}>Refresh thread</button>
         </p>
       )}
-      <ActiveConversation
+      <ActiveCollection
         threadId={threadId}
         interest={selection.interest}
         collection={selection.collection}
@@ -407,7 +393,7 @@ export function ConversationCollection({
       />
       {pendingSelection && (
         <div hidden>
-          <ActiveConversation
+          <ActiveCollection
             threadId={threadId}
             interest={pendingSelection.interest}
             collection={pendingSelection.collection}
@@ -429,10 +415,9 @@ export function ConversationCollection({
 
 function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-chunks`, window.location.href);
-  url.searchParams.set("source_id", reference.source_id);
   url.searchParams.set("projection_epoch", reference.projection_epoch);
   url.searchParams.set("owner_cursor", reference.owner_cursor);
-  url.searchParams.set("owner_id", reference.owner_item_id);
+  url.searchParams.set("owner_id", reference.owner_id);
   url.searchParams.set("field", reference.field);
   url.searchParams.set("generation", reference.generation);
   url.searchParams.set("revision_cursor", reference.revision_cursor);
@@ -443,7 +428,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
 function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
+      id: `agentplane-payload:${threadId}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
@@ -469,14 +454,13 @@ export function PayloadBody({
   follow: boolean;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
-  const refreshConversation = useContext(RefreshConversation);
-  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const refreshThread = useContext(RefreshThread);
+  const referenceKey = `${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
   const stableReference = useMemo<PayloadRef>(
     () => ({
-      source_id: reference.source_id,
       projection_epoch: reference.projection_epoch,
       owner_cursor: reference.owner_cursor,
-      owner_item_id: reference.owner_item_id,
+      owner_id: reference.owner_id,
       field: reference.field,
       generation: reference.generation,
       revision_cursor: reference.revision_cursor,
@@ -485,10 +469,9 @@ export function PayloadBody({
       reference.field,
       reference.generation,
       reference.owner_cursor,
-      reference.owner_item_id,
+      reference.owner_id,
       reference.projection_epoch,
       reference.revision_cursor,
-      reference.source_id,
     ]
   );
   const [selection, setSelection] = useState<{
@@ -515,8 +498,8 @@ export function PayloadBody({
       void fetch(url, { signal: controller.signal })
         .then(async (response) => {
           if (response.status === 410) {
-            refreshConversation();
-            throw new Error("Payload revision is unavailable after conversation reset");
+            refreshThread();
+            throw new Error("Payload revision is unavailable after thread reset");
           }
           if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
           const value = (await response.json()) as { chunk_count: string; content_bytes: string };
@@ -547,10 +530,8 @@ export function PayloadBody({
       if (retry !== undefined) window.clearTimeout(retry);
       window.removeEventListener("online", online);
     };
-  }, [follow, referenceKey, refreshConversation, refreshGeneration, stableReference, threadId]);
-  const sameScope =
-    selection?.reference.source_id === reference.source_id &&
-    selection.reference.projection_epoch === reference.projection_epoch;
+  }, [follow, referenceKey, refreshThread, refreshGeneration, stableReference, threadId]);
+  const sameScope = selection?.reference.projection_epoch === reference.projection_epoch;
   if (!selection || !sameScope) return error ? <p role="alert">{error}</p> : children(null);
   return (
     <>
@@ -599,10 +580,9 @@ function ActivePayloadBody({
     next = chunkCollection(
       threadId,
       {
-        source_id: reference.source_id,
         projection_epoch: reference.projection_epoch,
         owner_cursor: reference.owner_cursor,
-        owner_item_id: reference.owner_item_id,
+        owner_id: reference.owner_id,
         field: reference.field,
         generation: reference.generation,
         revision_cursor: follow ? reference.revision_cursor : selectedRevision,
@@ -618,9 +598,8 @@ function ActivePayloadBody({
     reference.field,
     reference.generation,
     reference.owner_cursor,
-    reference.owner_item_id,
+    reference.owner_id,
     reference.projection_epoch,
-    reference.source_id,
     refreshGeneration,
     selectedRevision,
     threadId,

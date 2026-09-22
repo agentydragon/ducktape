@@ -1,4 +1,9 @@
-"""Stable HTTP API with separate workload and operator/BFF authentication paths."""
+"""Stable HTTP API with separate workload and operator/BFF authentication paths.
+
+The one exception is `/v1/action-groups`: its response is identical and non-sensitive for both
+callers (already fully agent-visible, so an operator gains nothing new by also reading it), so it
+accepts either bearer scheme rather than being duplicated under `/v1/operator/...`.
+"""
 
 from __future__ import annotations
 
@@ -128,6 +133,16 @@ def _callers(request: Request) -> PolicyIndex:
     return cast(PolicyIndex, request.app.state.callers)
 
 
+async def _try_workload(
+    request: Request, authenticator: WorkloadPrincipalAuthenticator, callers: PolicyIndex
+) -> CallerPrincipal | None:
+    try:
+        principal = await authenticator(request)
+    except HTTPException:
+        return None
+    return callers.admit(principal.account)
+
+
 async def _workload(
     request: Request,
     authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
@@ -138,7 +153,7 @@ async def _workload(
     Authenticating is not being admitted: without the label an account reaches no route, so a
     workload the operator has not named cannot queue Actions for them either.
     """
-    caller = callers.admit((await authenticator(request)).account)
+    caller = await _try_workload(request, authenticator, callers)
     if caller is None:
         # Deliberately the authenticator's own generic refusal: which account was presented is not
         # the caller's to learn from the difference.
@@ -148,20 +163,43 @@ async def _workload(
     return caller
 
 
+async def _try_operator(
+    credentials: HTTPAuthorizationCredentials | None, authenticator: OperatorAuthenticator
+) -> OperatorPrincipal | None:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return None
+    return await authenticator.authenticate(credentials.credentials)
+
+
 async def _operator(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
     authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
 ) -> OperatorPrincipal:
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    principal = await _try_operator(credentials, authenticator)
+    if principal is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "operator bearer required", headers={"WWW-Authenticate": "Bearer"}
         )
-    principal = await authenticator.authenticate(credentials.credentials)
-    if principal is None:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "operator bearer is not accepted", headers={"WWW-Authenticate": "Bearer"}
-        )
     return principal
+
+
+async def _workload_or_operator(
+    request: Request,
+    workload_authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
+    callers: Annotated[PolicyIndex, Depends(_callers)],
+    operator_credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+    operator_authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+) -> CallerPrincipal | OperatorPrincipal:
+    """Either bearer scheme, for the one route whose response is identical either way."""
+    workload = await _try_workload(request, workload_authenticator, callers)
+    if workload is not None:
+        return workload
+    operator = await _try_operator(operator_credentials, operator_authenticator)
+    if operator is not None:
+        return operator
+    raise HTTPException(
+        status.HTTP_401_UNAUTHORIZED, "workload or operator bearer required", headers={"WWW-Authenticate": "Bearer"}
+    )
 
 
 def create_app(
@@ -331,9 +369,11 @@ def create_app(
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
+    # Operators read this too (for the MCP group health settings page) rather than duplicating it
+    # under /v1/operator/...: the response is identical and non-sensitive either way.
     @app.get("/v1/action-groups", response_model=list[ActionGroupView])
     async def list_action_groups(
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal | OperatorPrincipal, Depends(_workload_or_operator)],
         action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
     ) -> list[ActionGroupView]:
         del principal

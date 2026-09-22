@@ -179,8 +179,8 @@ class AgentRbac(Construct):
     **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake OAuth and
     credentialless MCP fixtures -- nothing here reaches a real account. `agentplane-staging`
     is the opposite: real Authentik-federated operator login, real GitHub/Kubernetes MCP
-    OAuth linkage, and `claude-ai` Sandboxes carry the real Gmail/Calendar-scoped
-    `google-readonly` egress credential (`egress.py`). An agent identity holding this
+    OAuth linkage, and `claude-ai` Sandboxes carry the real read-only Google
+    `google-readonly` egress credential (`egress_staging_credentials.py`). An agent identity holding this
     Role there could stamp a Sandbox under that ServiceAccount and reach the operator's
     real external accounts with no human in the loop -- the opposite of what "testing"
     fixtures are for. So only `testing.chart` instantiates this construct; `staging.chart`

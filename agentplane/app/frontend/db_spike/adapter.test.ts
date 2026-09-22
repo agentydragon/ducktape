@@ -188,7 +188,7 @@ it("rebootstraps after a long gap and ignores old pages, raw requests, snapshots
   expect(store.coverage.revision).toBe(H + 1001n);
 });
 
-it("loads exact raw evidence only on demand without publishing conversation changes", async () => {
+it("loads exact raw evidence only on demand without publishing thread changes", async () => {
   const store = view();
   await store.bootstrap(snapshot([item("item:a", H, "assembled")]));
   const changed = vi.fn();

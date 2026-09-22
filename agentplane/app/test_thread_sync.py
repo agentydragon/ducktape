@@ -36,7 +36,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
             await store.set_attached(thread, source.attached, lease=lease)
             await store.record(thread, source.entries, lease=lease)
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
+                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
                 initial = await client.get("/v1/shape", params=params)
                 assert initial.status_code == 200, initial.text
                 entities = [message["value"] for message in initial.json() if "value" in message]
@@ -66,7 +66,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                 chunks = await client.get(
                     "/v1/shape",
                     params={
-                        "table": "conversation_payload_chunk",
+                        "table": "thread_payload_chunk",
                         "where": f"thread_id = '{thread}' AND owner_id = 'first'",
                         "offset": "-1",
                     },
@@ -116,7 +116,7 @@ async def _cross_replica_sync(
         interest = await client_one.get(f"{path}/interest")
         interest.raise_for_status()
         selection = interest.json()
-        entity_params = {key: selection[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
+        entity_params = {key: selection[key] for key in ("projection_epoch", "anchor_cursor", "tail_from")}
         initial = await _current_snapshot(client_one, f"{path}/entities", entity_params)
         assert initial.status_code == 200, initial.text
         rows = [message["value"] for message in initial.json()["data"] if "value" in message]
@@ -124,10 +124,9 @@ async def _cross_replica_sync(
         raw_ref = first_item["text_ref"]
         reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
         payload_params = {
-            "source_id": reference["source_id"],
             "projection_epoch": reference["projection_epoch"],
             "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
+            "owner_id": reference["owner_id"],
             "field": reference["field"],
             "generation": reference["generation"],
             "revision_cursor": reference["revision_cursor"],
@@ -199,13 +198,9 @@ async def _selected_command_outcome(
     thread: UUID,
     lease: IngestionLease,
 ) -> None:
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
-    params = {
-        "source_id": scope.source_id,
-        "projection_epoch": scope.projection_epoch,
-        "command_id": "selected-command",
-    }
+    params = {"projection_epoch": scope.projection_epoch, "command_id": "selected-command"}
     snapshot = await _current_snapshot(client_one, f"{path}/commands", params)
     snapshot.raise_for_status()
     assert not [message for message in snapshot.json()["data"] if "value" in message]
@@ -275,10 +270,10 @@ async def _history_windows(
     tail = await client_two.get(f"{path}/interest")
     tail.raise_for_status()
     tail_interest = tail.json()
-    tail_params = {key: tail_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
+    tail_params = {key: tail_interest[key] for key in ("projection_epoch", "anchor_cursor", "tail_from")}
     snapshot = await _current_snapshot(client_two, f"{path}/entities", tail_params)
     snapshot.raise_for_status()
-    assert snapshot.headers["cache-control"] == "private, no-store"
+    assert snapshot.headers["cache-control"] == "private, no-cache"
     rows = [message["value"] for message in snapshot.json()["data"] if "value" in message]
     assert {row["entity_id"] for row in rows if row["entity_kind"] == "item"} == {
         f"history-{index:03}" for index in range(65, 95)
@@ -293,7 +288,7 @@ async def _history_windows(
         interest = selected.json()
         window_params = {
             key: interest[key]
-            for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
+            for key in ("projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
         }
         page = await _current_snapshot(client_two, f"{path}/entities", window_params)
         page.raise_for_status()
@@ -344,7 +339,7 @@ async def _history_windows(
     revisit_interest = revisit.json()
     revisit_params = {
         key: revisit_interest[key]
-        for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
+        for key in ("projection_epoch", "anchor_cursor", "tail_from", "window_from", "window_before")
     }
     revisit_page = await _current_snapshot(client_one, f"{path}/entities", revisit_params)
     versions = [
@@ -360,10 +355,9 @@ async def _history_windows(
     selected = await client_one.get(
         f"{path}/payload-chunks",
         params={
-            "source_id": reference["source_id"],
             "projection_epoch": reference["projection_epoch"],
             "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
+            "owner_id": reference["owner_id"],
             "field": reference["field"],
             "generation": reference["generation"],
             "revision_cursor": reference["revision_cursor"],

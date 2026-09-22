@@ -60,7 +60,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     assert lease is not None
     await store.set_attached(thread, source.attached, lease=lease)
     await store.record(thread, source.entries, lease=lease)
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
     app = create_app(
         inventory,
@@ -73,13 +73,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         action_policy,
         reviewer=reviewer,
     )
-    path = f"/threads/{thread}/conversation/evidence"
-    params = {
-        "source_id": scope.source_id,
-        "projection_epoch": scope.projection_epoch,
-        "entity_kind": "item",
-        "entity_id": "first",
-    }
+    path = f"/threads/{thread}/evidence"
+    params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         denied = await client.get(path, params=params)
         assert denied.status_code == 401
@@ -114,9 +109,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert empty.json() == {"frames": [], "next_after_sequence": None}
         wrong_entity = await client.get(f"{path}/8/frames", params=params | {"entity_id": "second"}, headers=AGENT_AUTH)
         assert wrong_entity.status_code == 404
-        for field in ("source_id", "projection_epoch"):
-            stale = await client.get(path, params=params | {field: "stale"}, headers=AGENT_AUTH)
-            assert stale.status_code == 410
+        stale = await client.get(path, params=params | {"projection_epoch": "stale"}, headers=AGENT_AUTH)
+        assert stale.status_code == 410
         lifecycle = await client.get(
             path, params=params | {"entity_kind": "lifecycle", "entity_id": "2"}, headers=AGENT_AUTH
         )
@@ -127,7 +121,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         for limit in ("0", "201"):
             assert (await client.get(path, params=params | {"limit": limit}, headers=AGENT_AUTH)).status_code == 422
 
-        chronological = f"/threads/{thread}/conversation/observations"
+        chronological = f"/threads/{thread}/observations"
         assert (await client.get(chronological)).status_code == 401
         tail = await client.get(chronological, params={"limit": "3"}, headers=AGENT_AUTH)
         assert tail.status_code == 200, tail.text
@@ -156,7 +150,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             assert (await client.get(chronological, params=bounds, headers=AGENT_AUTH)).status_code == 422
 
         # These retained observations deliberately have no item/native-evidence association.
-        # Selecting chronological debug still returns their complete original bodies.
+        # Chronological debug still reaches their complete original bodies, one expansion at a time:
+        # the listing carries identity only, so opening the drawer transfers no entry at all.
         source.append(event_pb2.Event(native=event_pb2.Native(line="unlinked native packet")))
         stderr = "λ" * (1024 * 1024 + 1)
         source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
@@ -166,11 +161,15 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         rows = debug_tail.json()["observations"]
         assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
         assert [row["cursor"] for row in rows] == ["10", "11", "12"]
-        assert [row["source_sequence"] for row in rows] == ["10", "11", "12"]
-        assert all(row["source_id"] == scope.source_id for row in rows)
-        assert rows[0]["entry"]["event"]["native"]["line"] == "unlinked native packet"
-        assert rows[1]["entry"]["event"]["harnessStderr"]["text"] == stderr
-        assert rows[2]["entry"]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
+        assert "entry" not in rows[0]
+        assert stderr not in debug_tail.text
+        entries = [(await client.get(f"{chronological}/{row['cursor']}", headers=AGENT_AUTH)).json() for row in rows]
+        assert [entry["cursor"] for entry in entries] == ["10", "11", "12"]
+        assert entries[0]["entry"]["event"]["native"]["line"] == "unlinked native packet"
+        assert entries[1]["entry"]["event"]["harnessStderr"]["text"] == stderr
+        assert entries[2]["entry"]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
+        absent = await client.get(f"{chronological}/99999", headers=AGENT_AUTH)
+        assert absent.status_code == 404
 
         for command_id in ("failed-debug", "noop-debug"):
             source.append(

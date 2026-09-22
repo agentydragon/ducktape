@@ -130,7 +130,7 @@ a single endpoint.
 2. **`environment_variable` vault credentials are _not_ supported in self-hosted**
    (egress is yours, so there's nowhere for Anthropic to substitute the secret).
    That's fine: the secrets Haku's **bash** tools need — the `haku` kubeconfig/JWT,
-   the Plaid `plaid-mcp-db-readonly` DSN, the `google-access-token`, the
+   the Plaid `plaid-mcp-db-readonly` DSN, the
    `haku-forgejo-git` creds — stay materialized **in-container from
    `haku-sandbox` k8s secrets at bootstrap**, exactly as `bootstrap.sh` does now.
 

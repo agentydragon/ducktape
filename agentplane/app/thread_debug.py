@@ -5,12 +5,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 
-class ConversationScopeChangedError(ValueError):
+class ThreadScopeChangedError(ValueError):
     """A reference names a source or projection epoch no longer materialized."""
 
 
-class ConversationEvidenceNotFoundError(LookupError):
-    """The selected entity or observation has no association in this conversation."""
+class ThreadEvidenceNotFoundError(LookupError):
+    """The selected entity or observation has no association in this thread."""
 
 
 class EvidenceObservation(BaseModel):
@@ -43,12 +43,18 @@ class NativeFramePage(BaseModel):
 
 
 class ArchivedObservation(BaseModel):
+    """Identity and kind only; the raw entry is fetched per observation on expansion."""
+
     model_config = ConfigDict(extra="forbid")
 
     cursor: str
-    source_id: str
-    source_sequence: str
     kind: str
+
+
+class ArchivedObservationEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str
     entry: dict[str, JsonValue]
 
 

@@ -1,0 +1,281 @@
+"""agentplane-staging's egress credentials beyond the shared set (`egress.py`,
+`egress_credentials.py`): each real account the staging proxy presents for a sandbox, with the
+Secret plumbing that delivers it and the EgressPolicy that scopes where it is presented. Testing
+reaches no real account, so nothing here is rendered there.
+"""
+
+from agentplane_egresscredential_crds.works.allegedly.agentplane import (
+    EgressCredential,
+    EgressCredentialSpec,
+    EgressCredentialSpecSource,
+    EgressCredentialSpecSourceSecretRef,
+    EgressCredentialSpecTargets,
+    EgressCredentialSpecTargetsMethod,
+)
+from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
+    EgressPolicy,
+    EgressPolicySpec,
+    EgressPolicySpecRules,
+    EgressPolicySpecRulesCredentialRef,
+    EgressPolicySpecRulesMethods,
+)
+from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
+from constructs import Construct
+from external_secret_store_crds.io.external_secrets import (
+    ClusterSecretStore,
+    ClusterSecretStoreSpec,
+    ClusterSecretStoreSpecConditions,
+    ClusterSecretStoreSpecProvider,
+    ClusterSecretStoreSpecProviderKubernetes,
+    ClusterSecretStoreSpecProviderKubernetesAuth,
+    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
+    ClusterSecretStoreSpecProviderKubernetesServer,
+    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
+    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
+)
+
+from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
+from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
+from cluster.cdk8s.agentplane.egress_credentials import credential_external_secret
+from cluster.cdk8s.metadata import metadata
+
+_FORGEJO_STORE = "kubernetes-agentplane-staging-forgejo-secret-store"
+_READER = "external-creds-reader"
+
+
+def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+    construct = Construct(scope, "staging-egress-credentials")
+    _forgejo_haku(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _google_readonly(construct, namespace=namespace)
+    _grocy_sf_readonly(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+
+
+def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+    reader = ServiceAccount(scope, "reader", metadata=metadata(_READER, credentials_namespace))
+    source_role = Role(
+        scope,
+        "forgejo-source-role",
+        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(scope, "forgejo-source", "haku-forgejo-git")], verbs=["get"]
+            )
+        ],
+    )
+    RoleBinding(
+        scope,
+        "forgejo-source-binding",
+        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
+        role=source_role,
+    ).add_subjects(reader)
+    ClusterSecretStore(
+        scope,
+        "forgejo-store",
+        metadata=ApiObjectMetadata(name=_FORGEJO_STORE),
+        spec=ClusterSecretStoreSpec(
+            conditions=[ClusterSecretStoreSpecConditions(namespaces=[credentials_namespace])],
+            provider=ClusterSecretStoreSpecProvider(
+                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
+                    remote_namespace="haku-sandbox",
+                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
+                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=_READER)
+                    ),
+                    server=ClusterSecretStoreSpecProviderKubernetesServer(
+                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name="kube-root-ca.crt",
+                            key="ca.crt",
+                            namespace="default",
+                        )
+                    ),
+                )
+            ),
+        ),
+    )
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="haku-forgejo-git",
+        source="haku-forgejo-git",
+        key="password",
+        store=_FORGEJO_STORE,
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-forgejo-haku",
+        metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The password of the `haku` account on the internal Forgejo, the service user that "
+                "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
+                "its full authority -- it is the account's own password, not a scoped token, so it "
+                "reaches every repository haku can reach and the web UI besides. The proxy narrows "
+                "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
+                "account."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="haku-forgejo-git", key="password")
+            ),
+            # Git over HTTP and Forgejo's REST API both authenticate with `Basic
+            # base64(haku:<password>)`, so the placeholder travels as the password half. A client
+            # sends the username itself; only the secret half is substituted here.
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-forgejo-haku",
+        metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # No method or path list. The credential is haku's whole account, so a verb or path
+                # list here would narrow the request without narrowing the authority behind it --
+                # the same reason the Kubernetes rule carries none. What it does admit is the whole
+                # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
+                # web UI.
+                EgressPolicySpecRules(
+                    hosts=[FORGEJO_HOST],
+                    cluster_internal=True,
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
+                )
+            ]
+        ),
+    )
+
+
+def _google_readonly(scope: Construct, *, namespace: str) -> None:
+    # The Secret itself arrives by Airlock's ClusterExternalSecret
+    # (cluster/k8s/agents/airlock/google-access-token-eso.yaml).
+    EgressCredential(
+        scope,
+        "egresscredential-google-readonly",
+        metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "A Google OAuth access token minted and refreshed by Airlock "
+                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of "
+                "Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, "
+                "Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the "
+                "token was actually granted is whatever the operator consented to at Airlock, which "
+                "can be narrower than that list -- an API outside it answers 403 "
+                "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
+                "presents it."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-google-readonly",
+        metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # One API per host, so read-only methods are the only restriction needed.
+                EgressPolicySpecRules(
+                    hosts=[
+                        "gmail.googleapis.com",
+                        "tasks.googleapis.com",
+                        "people.googleapis.com",
+                        "docs.googleapis.com",
+                        "sheets.googleapis.com",
+                        "slides.googleapis.com",
+                        "youtube.googleapis.com",
+                    ],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
+                # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
+                # YouTube is reachable on both hosts; client libraries differ on which they use.
+                EgressPolicySpecRules(
+                    hosts=["www.googleapis.com"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
+                # Drive Activity's only read is a POST query.
+                EgressPolicySpecRules(
+                    hosts=["driveactivity.googleapis.com"],
+                    methods=[EgressPolicySpecRulesMethods.POST],
+                    paths=["/v2/activity:query"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
+            ]
+        ),
+    )
+
+
+def _grocy_sf_readonly(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="grocy-sf-readonly",
+        source="grocy-sf-readonly-token",
+        key="token",
+        store="kubernetes-flux-system-secret-store",
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "An Authentik-outpost-scoped bearer token minted and refreshed by the "
+                "authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into "
+                "this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP "
+                "server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works "
+                "outpost accepts. The proxy does not narrow what the token itself may do -- "
+                "`grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read "
+                "routes."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
+                # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
+                # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
+                # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
+                # that distinction directly, so GET-only admits exactly the routes
+                # haku-console's `grocy_reads` ActionPolicySet names as tools (entities/stock/
+                # user/system/file reads); PUT, POST and DELETE -- every write -- are refused by
+                # the proxy regardless of path.
+                EgressPolicySpecRules(
+                    hosts=["grocy-sf.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=[
+                        "/api/objects/**",
+                        "/api/stock/**",
+                        "/api/user",
+                        "/api/system/info",
+                        "/api/system/db-changed-time",
+                        "/api/files/**",
+                    ],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
+                )
+            ]
+        ),
+    )

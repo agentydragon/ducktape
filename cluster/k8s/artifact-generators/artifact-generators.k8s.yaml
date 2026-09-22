@@ -574,6 +574,11 @@ spec:
       name: goldilocks
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/google-mcp/**"
+          to: "@artifact/cluster/k8s/google-mcp/"
+      name: google-mcp
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
           to: "@artifact/cluster/k8s/grocy/sf/mcp/"
         - from: "@repo/cluster/k8s/grocy/mcp-base/**"

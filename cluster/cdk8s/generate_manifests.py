@@ -17,6 +17,7 @@ from cluster.cdk8s import (
     forgejo_image_automation,
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
+    google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
     ntfy,
@@ -619,6 +620,7 @@ def generate_manifests(root: Path) -> None:
     ssh_mcp_kustomization = ssh_mcp_generation.ssh_mcp(
         flux_chart, root, mesh, devbox_service, external_secrets_operator_kustomization
     )
+    google_mcp.google_mcp(flux_chart, root, external_secrets_operator_kustomization, forgejo_images_kustomization)
     study_casino_flux_kustomizations.study_casino(
         flux_chart, cnpg_kustomization, external_secrets_operator_kustomization
     )

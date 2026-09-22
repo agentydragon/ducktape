@@ -8,8 +8,8 @@ import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import {
   command,
-  conversationEvidence,
-  conversationFrames,
+  threadEvidence,
+  threadNativeFrames,
   displayableError,
   getThread,
   models,
@@ -19,13 +19,13 @@ import {
   type ThreadView,
 } from "./client";
 import {
-  ConversationCollection,
+  ThreadCollection,
   CommandSelection,
   decimalBigInt,
   PayloadBody,
-  type ConversationEntity,
+  type ThreadEntity,
   type PayloadRef,
-} from "./conversation_store";
+} from "./thread_store";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
@@ -96,7 +96,7 @@ function LazyBody({
   follow: boolean;
   plain?: boolean;
 }): JSX.Element {
-  const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_item_id}:${body.reference.field}`;
+  const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
       <Body {...body} />
@@ -110,7 +110,7 @@ function EvidenceFramesPage({
   observationCursor,
 }: {
   threadId: string;
-  entity: ConversationEntity;
+  entity: ThreadEntity;
   observationCursor: string;
 }): JSX.Element {
   const [page, setPage] = useState<NativeFramePage | null>(null);
@@ -119,7 +119,6 @@ function EvidenceFramesPage({
   const [afterSequence, setAfterSequence] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
-    sourceId: entity.sourceId,
     projectionEpoch: entity.projectionEpoch,
     entityKind: entity.entityKind,
     entityId: entity.entityId,
@@ -134,7 +133,7 @@ function EvidenceFramesPage({
     const controller = new AbortController();
     request.current = controller;
     setLoading(true);
-    void conversationFrames(threadId, scope, observationCursor, after, controller.signal)
+    void threadNativeFrames(threadId, scope, observationCursor, after, controller.signal)
       .then(
         (value) => {
           if (!controller.signal.aborted) {
@@ -184,13 +183,9 @@ function EvidenceFramesPage({
   );
 }
 
-function EvidenceFrames(props: {
-  threadId: string;
-  entity: ConversationEntity;
-  observationCursor: string;
-}): JSX.Element {
+function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observationCursor: string }): JSX.Element {
   const { entity } = props;
-  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
+  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
     <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
       <EvidenceFramesPage key={id} {...props} />
@@ -198,14 +193,13 @@ function EvidenceFrames(props: {
   );
 }
 
-function EvidencePageView({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
+function EvidencePageView({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
   const [page, setPage] = useState<EvidencePage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [afterCursor, setAfterCursor] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
-    sourceId: entity.sourceId,
     projectionEpoch: entity.projectionEpoch,
     entityKind: entity.entityKind,
     entityId: entity.entityId,
@@ -220,7 +214,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
     const controller = new AbortController();
     request.current = controller;
     setLoading(true);
-    void conversationEvidence(threadId, scope, after, controller.signal)
+    void threadEvidence(threadId, scope, after, controller.signal)
       .then(
         (value) => {
           if (!controller.signal.aborted) {
@@ -270,8 +264,8 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Conv
   );
 }
 
-function Evidence({ threadId, entity }: { threadId: string; entity: ConversationEntity }): JSX.Element {
-  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+function Evidence({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
+  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
   return (
     <RetainedDisclosure id={id} summary="Evidence">
       <EvidencePageView key={id} threadId={threadId} entity={entity} />
@@ -285,12 +279,12 @@ function EntityCard({
   live,
 }: {
   threadId: string;
-  entity: ConversationEntity;
+  entity: ThreadEntity;
   live: boolean;
 }): JSX.Element {
   if (entity.entityKind === "confirmed_input") {
     return (
-      <Group justify="flex-end" data-conversation-anchor={entity.cursor.toString()}>
+      <Group justify="flex-end" data-thread-anchor={entity.cursor.toString()}>
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
           <Body threadId={threadId} reference={entity.inputRef} follow={false} />
           <Evidence threadId={threadId} entity={entity} />
@@ -303,7 +297,7 @@ function EntityCard({
     const event = "event" in entity.state ? entity.state.event : null;
     const presentation = lifecyclePresentation(observation, event);
     return (
-      <Stack gap="xs" data-conversation-anchor={entity.cursor.toString()}>
+      <Stack gap="xs" data-thread-anchor={entity.cursor.toString()}>
         <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
           {presentation.label}
         </Text>
@@ -332,7 +326,7 @@ function EntityCard({
   const reasoning = kind === ItemKind.REASONING;
   const streaming = live && completion === null;
   return (
-    <Paper p="sm" withBorder data-conversation-anchor={entity.cursor.toString()}>
+    <Paper p="sm" withBorder data-thread-anchor={entity.cursor.toString()}>
       <Group justify="space-between" mb="xs">
         <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
         {streaming && (
@@ -363,7 +357,7 @@ function EntityCard({
   );
 }
 
-function useProjectedCommands(threadId: string, entities: ConversationEntity[]) {
+function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, string>());
@@ -415,7 +409,6 @@ function useProjectedCommands(threadId: string, entities: ConversationEntity[]) 
 
 function SelectedCommandOutcomes({
   threadId,
-  sourceId,
   projectionEpoch,
   commands,
   store,
@@ -423,7 +416,6 @@ function SelectedCommandOutcomes({
   deliver,
 }: {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   commands: LocalCommand[];
   store: LocalCommands;
@@ -432,7 +424,7 @@ function SelectedCommandOutcomes({
 }): JSX.Element {
   const ids = commands.slice(0, 128).map((value) => value.command.commandId);
   return (
-    <CommandSelection threadId={threadId} sourceId={sourceId} projectionEpoch={projectionEpoch} commandIds={ids}>
+    <CommandSelection threadId={threadId} projectionEpoch={projectionEpoch} commandIds={ids}>
       {(rows) => (
         <SelectedCommandRows
           threadId={threadId}
@@ -456,7 +448,7 @@ function SelectedCommandRows({
   deliver,
 }: {
   threadId: string;
-  rows: ConversationEntity[];
+  rows: ThreadEntity[];
   commands: LocalCommand[];
   store: LocalCommands;
   errors: ReadonlyMap<string, string>;
@@ -532,7 +524,7 @@ function VirtualizedHistory({
   onLoadOlder,
 }: {
   threadId: string;
-  segments: ConversationEntity[];
+  segments: ThreadEntity[];
   running: boolean;
   activeTurn: string | null;
   onLoadOlder: (cursor: string) => void;
@@ -575,7 +567,7 @@ function VirtualizedHistory({
     const anchor = readingAnchor.current;
     const element = viewport.current;
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
-    const row = element.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+    const row = element.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
     if (!row) return null;
     const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
@@ -619,11 +611,11 @@ function VirtualizedHistory({
   };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
-    const first = [...element.querySelectorAll<HTMLElement>("[data-conversation-anchor]")].find(
+    const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
       (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
     );
     const firstEntity = first
-      ? segments.find((entity) => entity.cursor.toString() === first.dataset.conversationAnchor)
+      ? segments.find((entity) => entity.cursor.toString() === first.dataset.threadAnchor)
       : undefined;
     if (first && firstEntity) {
       readingAnchor.current = {
@@ -640,7 +632,7 @@ function VirtualizedHistory({
     restoringAnchor.current = anchor.key;
     const correctFromDom = (): number | null => {
       const element = viewport.current;
-      const row = element?.querySelector<HTMLElement>(`[data-conversation-anchor="${anchor.cursor}"]`);
+      const row = element?.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
       if (!element || !row) return null;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
@@ -829,7 +821,7 @@ function ProjectedSessionBody({
   available,
 }: {
   threadId: string;
-  entities: ConversationEntity[];
+  entities: ThreadEntity[];
   thread: ThreadView;
   onLoadOlder: (cursor: string) => void;
   available: boolean;
@@ -869,7 +861,7 @@ function ProjectedSessionBody({
     );
   const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
-    (row): row is ConversationEntity & { state: Extract<ConversationEntity["state"], { outcome: string }> } =>
+    (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
       row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
   );
   const hasPendingCommands = projectedCommands.length > 0;
@@ -926,7 +918,6 @@ function ProjectedSessionBody({
         {view && selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
             threadId={threadId}
-            sourceId={view.sourceId}
             projectionEpoch={view.projectionEpoch}
             commands={selectedCommandIds}
             store={commands.store}
@@ -1086,7 +1077,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
         )}
         {thread?.archived && (
           <Text role="status" c="dimmed">
-            Thread archived. Showing retained conversation history; controls are disabled.
+            Thread archived. Showing retained thread history; controls are disabled.
           </Text>
         )}
         {thread &&
@@ -1097,7 +1088,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             </Text>
           )}
         {thread && (
-          <ConversationCollection key={threadId} threadId={threadId} beforeCursor={before}>
+          <ThreadCollection key={threadId} threadId={threadId} beforeCursor={before}>
             {(rows) => (
               <ProjectedSessionBody
                 threadId={threadId}
@@ -1107,7 +1098,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
                 available={sandboxAvailable}
               />
             )}
-          </ConversationCollection>
+          </ThreadCollection>
         )}
       </Stack>
     </ChronologicalDebugProvider>
