@@ -8,14 +8,16 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomization:
+def clickhouse(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, clickhouse_operator: Kustomization
+) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
         chart,
@@ -23,12 +25,10 @@ def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomizatio
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/clickhouse/cluster",
+            path=artifact_path(artifact),
             prune=True,
             decryption=SOPS_DECRYPTION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="20m",
             wait=True,
             health_checks=[
@@ -66,7 +66,9 @@ def clickhouse(chart: Chart, clickhouse_operator: Kustomization) -> Kustomizatio
     )
 
 
-def clickhouse_operator(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+def clickhouse_operator(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "clickhouse-operator"
     return flux_kustomization(
         chart,
@@ -74,13 +76,11 @@ def clickhouse_operator(chart: Chart, monitoring_crds: Kustomization) -> Kustomi
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/clickhouse/operator",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=SOPS_DECRYPTION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="10m",
             wait=True,
             health_checks=[

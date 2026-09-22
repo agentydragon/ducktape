@@ -10,7 +10,9 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -20,7 +22,9 @@ from cluster.cdk8s.flux import (
 )
 
 
-def claude_rbac(chart: Chart, kyverno_policies: Kustomization) -> Kustomization:
+def claude_rbac(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno_policies: Kustomization
+) -> Kustomization:
     # TODO: migrate this live Flux object name to agent-rbac-base in a staged
     # change. Renaming it directly would delete the old Kustomization and may prune
     # its inventory before the replacement owns the same RBAC resources.
@@ -30,11 +34,9 @@ def claude_rbac(chart: Chart, kyverno_policies: Kustomization) -> Kustomization:
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/agent-rbac-base",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="2m",
             depends_on=[flux_kustomization_depends_on(kyverno_policies)],
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="claude-sandbox")],
@@ -46,7 +48,7 @@ def claude_rbac(chart: Chart, kyverno_policies: Kustomization) -> Kustomization:
     )
 
 
-def agent_sandbox_controller(chart: Chart) -> Kustomization:
+def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "agent-sandbox-controller"
     return flux_kustomization(
         chart,
@@ -55,12 +57,10 @@ def agent_sandbox_controller(chart: Chart) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/agent-sandbox/controller",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1",
@@ -79,6 +79,7 @@ def agent_sandbox_controller(chart: Chart) -> Kustomization:
 
 def agent_workspaces_app(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     agent_sandbox_controller: Kustomization,
     kyverno_policies: Kustomization,
@@ -91,12 +92,10 @@ def agent_workspaces_app(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/agent-sandbox/workspaces",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
@@ -113,7 +112,9 @@ def agent_workspaces_app(
     )
 
 
-def airlock(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
+def airlock(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "airlock"
     return flux_kustomization(
         chart,
@@ -123,10 +124,8 @@ def airlock(chart: Chart, external_secrets_operator: Kustomization) -> Kustomiza
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/agents/airlock",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             decryption=SOPS_DECRYPTION,
@@ -141,7 +140,11 @@ def airlock(chart: Chart, external_secrets_operator: Kustomization) -> Kustomiza
 
 
 def alloy_otlp_bearer(
-    chart: Chart, external_secrets_config: Kustomization, claude_rbac: Kustomization, haku_rbac: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_config: Kustomization,
+    claude_rbac: Kustomization,
+    haku_rbac: Kustomization,
 ) -> Kustomization:
     name = "alloy-otlp-bearer"
     return flux_kustomization(
@@ -149,11 +152,9 @@ def alloy_otlp_bearer(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/alloy-otlp-bearer",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 # ClusterSecretStore + CRDs
                 external_secrets_config,
@@ -168,7 +169,9 @@ def alloy_otlp_bearer(
     )
 
 
-def authentik_jwt_rotation(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
+def authentik_jwt_rotation(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "authentik-jwt-rotation"
     return flux_kustomization(
         chart,
@@ -176,11 +179,9 @@ def authentik_jwt_rotation(chart: Chart, external_secrets_operator: Kustomizatio
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/agents/authentik-jwt-rotation",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -196,7 +197,10 @@ def authentik_jwt_rotation(chart: Chart, external_secrets_operator: Kustomizatio
 
 
 def claude_sandbox_secrets(
-    chart: Chart, claude_rbac: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    claude_rbac: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "claude-sandbox-secrets"
     return flux_kustomization(
@@ -205,11 +209,9 @@ def claude_sandbox_secrets(
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",
-            path="./cluster/k8s/agents/claude-sandbox-secrets",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m",
             decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
@@ -234,6 +236,7 @@ def claude_sandbox_secrets(
 
 def forgejo_token_rotation(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     authentik_jwt_rotation: Kustomization,
     forgejo_claude: Kustomization,
@@ -246,11 +249,9 @@ def forgejo_token_rotation(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/forgejo-token-rotation",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 forgejo_images,
                 # owns the agents-infra namespace
@@ -266,6 +267,7 @@ def forgejo_token_rotation(
 
 def haku_egress_proxy(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     external_secrets_operator: Kustomization,
@@ -276,12 +278,10 @@ def haku_egress_proxy(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/haku-egress-proxy",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m",
             depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
             decryption=SOPS_DECRYPTION,
@@ -290,7 +290,10 @@ def haku_egress_proxy(
 
 
 def haku_openclaw_spike_app(
-    chart: Chart, external_secrets_operator: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-openclaw-spike-app"
     return flux_kustomization(
@@ -300,13 +303,11 @@ def haku_openclaw_spike_app(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/agents/haku-openclaw-spike/app",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -336,7 +337,10 @@ def haku_openclaw_spike_app(
 
 
 def haku_openclaw_spike_backup(
-    chart: Chart, external_secrets_operator: Kustomization, volsync: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_operator: Kustomization,
+    volsync: Kustomization,
 ) -> Kustomization:
     name = "haku-openclaw-spike-backup"
     return flux_kustomization(
@@ -347,11 +351,9 @@ def haku_openclaw_spike_backup(
             retry_interval="1m",
             timeout="5m",
             wait=True,
-            path="./cluster/k8s/agents/haku-openclaw-spike/backup",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
@@ -371,7 +373,7 @@ def haku_openclaw_spike_backup(
     )
 
 
-def kubectl_passthrough_mcp(chart: Chart) -> Kustomization:
+def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "kubectl-passthrough-mcp"
     return flux_kustomization(
         chart,
@@ -381,10 +383,8 @@ def kubectl_passthrough_mcp(chart: Chart) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/agents/kubectl-passthrough-mcp/app",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[
@@ -399,7 +399,9 @@ def kubectl_passthrough_mcp(chart: Chart) -> Kustomization:
     )
 
 
-def loki_read_proxy(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
+def loki_read_proxy(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "loki-read-proxy"
     return flux_kustomization(
         chart,
@@ -408,13 +410,11 @@ def loki_read_proxy(chart: Chart, external_secrets_operator: Kustomization) -> K
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            path="./cluster/k8s/agents/loki-read-proxy",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="loki-read-proxy", namespace="loki-read-proxy"
@@ -430,7 +430,11 @@ def loki_read_proxy(chart: Chart, external_secrets_operator: Kustomization) -> K
 
 
 def agent_machine_access_tf(
-    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    authentik: Kustomization,
 ) -> Kustomization:
     name = "agent-machine-access-tf"
     return flux_kustomization(
@@ -439,11 +443,9 @@ def agent_machine_access_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/agents/machine-access-tf",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -480,6 +482,7 @@ def agents_mitmproxy(chart: Chart, cert_manager_trust: Kustomization) -> Kustomi
 
 def plaid_mcp(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     cnpg: Kustomization,
@@ -498,10 +501,8 @@ def plaid_mcp(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/agents/plaid-mcp",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             decryption=SOPS_DECRYPTION,
@@ -534,6 +535,7 @@ def plaid_mcp(
 
 def public_coder_agent_app(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     external_secrets_operator: Kustomization,
@@ -545,12 +547,10 @@ def public_coder_agent_app(
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/public-coder-agent/app",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             timeout="5m",
             retry_interval="1m",
@@ -598,6 +598,7 @@ def public_coder_agent_app(
 
 def public_coder_agent_backup(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     seaweedfs_public_coder_agent_backups_bucket: Kustomization,
     external_secrets_config: Kustomization,
     volsync: Kustomization,
@@ -611,11 +612,9 @@ def public_coder_agent_backup(
             retry_interval="1m",
             timeout="5m",
             wait=True,
-            path="./cluster/k8s/agents/public-coder-agent/backup",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
@@ -650,6 +649,7 @@ def public_coder_agent_backup(
 
 def public_coder_agent_devbox(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
     forgejo_images: Kustomization,
     external_creds: Kustomization,
@@ -665,11 +665,9 @@ def public_coder_agent_devbox(
             interval="10m",
             retry_interval="1m",
             timeout="30m",
-            path="./cluster/k8s/agents/public-coder-agent/devbox",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 kubevirt,
@@ -703,18 +701,18 @@ def public_coder_agent_devbox(
     )
 
 
-def agent_shared_rbac(chart: Chart, claude_rbac: Kustomization, kyverno_policies: Kustomization) -> Kustomization:
+def agent_shared_rbac(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization, kyverno_policies: Kustomization
+) -> Kustomization:
     name = "agent-shared-rbac"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/shared-rbac",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="2m",
             depends_on=flux_kustomization_depends_on_many(claude_rbac, kyverno_policies),
         ),
@@ -726,18 +724,18 @@ def agent_shared_rbac(chart: Chart, claude_rbac: Kustomization, kyverno_policies
     )
 
 
-def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomization:
+def agent_shared_secrets(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization
+) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/agents/shared-secrets",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m",
             depends_on=[flux_kustomization_depends_on(claude_rbac)],
             decryption=SOPS_DECRYPTION,
@@ -747,6 +745,7 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
 
 def tana_mcp(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     valkey: Kustomization,
@@ -760,10 +759,8 @@ def tana_mcp(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/agents/tana-mcp",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             decryption=SOPS_DECRYPTION,

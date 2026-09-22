@@ -1,10 +1,10 @@
 """Typed cdk8s synthesis for source-watcher ArtifactGenerator resources.
 
-The artifact inventory is explicit here. The validation suite checks that each
-entry has exactly one declared Flux consumer and that its copy operations preserve
-the consumer's rendered Kustomize resources.
+The entry point builds each consumer's artifact before its Kustomization node, which
+reads `sourceRef` and `path` off it, and passes every artifact here last.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Yaml
@@ -34,234 +34,33 @@ _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
     alias="repo", kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
 )
 
-# name -> source directories copied into the output artifact, in copy order.
-# The first path is the consumer's Kustomization directory; following paths are
-# shared bases that its Kustomization references.
-_DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("agentplane-staging", ("cluster/k8s/agentplane-staging",)),
-    ("monitoring-stack", ("cluster/k8s/monitoring/stack",)),
-    ("ntfy", ("cluster/k8s/ntfy",)),
-    ("agentplane-testing", ("cluster/k8s/agentplane-testing",)),
-    ("claude-rbac", ("cluster/k8s/agents/agent-rbac-base",)),
-    ("agent-machine-access-tf", ("cluster/k8s/agents/machine-access-tf",)),
-    ("authentik", ("cluster/k8s/authentik",)),
-    ("sso-providers-tf", ("cluster/k8s/authentik/sso-providers-tf",)),
-    ("cert-manager", ("cluster/k8s/cert-manager/app",)),
-    (
-        "cert-manager-environment",
-        (
-            "cluster/k8s/cert-manager/environment",
-            "cluster/k8s/cert-manager/config",
-            "cluster/k8s/cert-manager/cluster-ca",
-        ),
-    ),
-    ("cert-manager-issuer-config", ("cluster/k8s/cert-manager/issuer-config",)),
-    ("cnpg", ("cluster/k8s/cnpg",)),
-    ("external-secrets-config", ("cluster/k8s/external-secrets/config",)),
-    ("external-secrets-operator", ("cluster/k8s/external-secrets/operator",)),
-    ("forgejo", ("cluster/k8s/forgejo",)),
-    ("forgejo-images", ("cluster/k8s/forgejo-images",)),
-    ("gateway", ("cluster/k8s/gateway",)),
-    ("kyverno", ("cluster/k8s/kyverno/app",)),
-    ("litellm-keys-tf", ("cluster/k8s/litellm/keys-tf",)),
-    ("local-path-provisioner", ("cluster/k8s/local-path-provisioner",)),
-    ("reflector", ("cluster/k8s/reflector",)),
-    ("seaweedfs-cluster", ("cluster/k8s/seaweedfs/cluster",)),
-    ("seaweedfs-filer-db", ("cluster/k8s/seaweedfs/db",)),
-    ("seaweedfs-namespace", ("cluster/k8s/seaweedfs/namespace",)),
-    ("seaweedfs-operator", ("cluster/k8s/seaweedfs/operator",)),
-    ("seaweedfs-secrets", ("cluster/k8s/seaweedfs/secrets",)),
-    ("tofu-controller", ("cluster/k8s/tofu-controller",)),
-    ("tofu-state-db", ("cluster/k8s/tofu-state",)),
-    ("valkey", ("cluster/k8s/valkey",)),
-    ("kyverno-policies", ("cluster/k8s/kyverno/policies",)),
-    ("haku-state", ("cluster/k8s/forgejo/haku-state",)),
-    ("agentplane-crds", ("cluster/k8s/agentplane-crds",)),
-    ("monitoring-namespace", ("cluster/k8s/monitoring/namespace",)),
-    ("haku-namespace", ("cluster/k8s/haku/namespace",)),
-    ("volsync", ("cluster/k8s/volsync",)),
-    ("cert-manager-trust", ("cluster/k8s/cert-manager/trust",)),
-    ("agent-sandbox-controller", ("cluster/k8s/agents/agent-sandbox/controller",)),
-    ("grafana-helmrepository", ("cluster/k8s/monitoring/grafana-helmrepository",)),
-    ("kubevirt", ("cluster/k8s/kubevirt/app",)),
-    ("agentplane-index", ("cluster/k8s/agentplane-index",)),
-    ("clickhouse", ("cluster/k8s/clickhouse/cluster",)),
-    ("github-secrets-sync-secrets", ("cluster/k8s/github-secrets-sync/secrets",)),
-    ("grafana-instance", ("cluster/k8s/monitoring/grafana-instance",)),
-    ("haku-egress-proxy", ("cluster/k8s/agents/haku-egress-proxy",)),
-    ("haku-rbac", ("cluster/k8s/haku/rbac",)),
-    ("seaweedfs-csi", ("cluster/k8s/seaweedfs-csi",)),
-    ("seaweedfs-public-s3", ("cluster/k8s/seaweedfs/public-s3",)),
-    ("seaweedfs-external-credentials", ("cluster/k8s/seaweedfs/external-credentials",)),
-    ("tana-mcp", ("cluster/k8s/agents/tana-mcp",)),
-    ("authentik-jwt-rotation", ("cluster/k8s/agents/authentik-jwt-rotation",)),
-    ("cdi", ("cluster/k8s/kubevirt/cdi",)),
-    ("flux-image-automation-ghcr", ("cluster/k8s/flux-image-automation-ghcr",)),
-    ("grafana-operator", ("cluster/k8s/monitoring/grafana-operator",)),
-    ("grocy-sf", ("cluster/k8s/grocy/sf/app", "cluster/k8s/grocy/app-base")),
-    ("grocy-vallejo", ("cluster/k8s/grocy/vallejo/app", "cluster/k8s/grocy/app-base")),
-    ("home-assistant", ("cluster/k8s/home-assistant",)),
-    ("litellm", ("cluster/k8s/litellm",)),
-    ("nix-cache", ("cluster/k8s/nix-cache",)),
-    ("nvidia-device-plugin", ("cluster/k8s/nvidia-device-plugin",)),
-    ("nvidia-runtimeclass", ("cluster/k8s/nvidia-runtimeclass",)),
-    ("claude-sandbox-secrets", ("cluster/k8s/agents/claude-sandbox-secrets",)),
-    ("forgejo-token-rotation", ("cluster/k8s/agents/forgejo-token-rotation",)),
-    ("ha-mcp", ("cluster/k8s/agents/ha-mcp/app",)),
-    (
-        "haku-openclaw-spike-app",
-        ("cluster/k8s/agents/haku-openclaw-spike/app", "cluster/k8s/agents/haku-openclaw-spike/namespace"),
-    ),
-    ("haku-openclaw-spike-backup", ("cluster/k8s/agents/haku-openclaw-spike/backup",)),
-    ("haku-managed-agent", ("haku/runtime/managed_agent/self_hosted/deploy",)),
-    ("kubectl-passthrough-mcp", ("cluster/k8s/agents/kubectl-passthrough-mcp/app",)),
-    ("loki-read-proxy", ("cluster/k8s/agents/loki-read-proxy",)),
-    ("plaid-mcp", ("cluster/k8s/agents/plaid-mcp",)),
-    (
-        "public-coder-agent-app",
-        (
-            "cluster/k8s/agents/public-coder-agent/app",
-            "cluster/k8s/agents/public-coder-agent/namespace",
-            "cluster/k8s/agents/public-coder-agent/proxy",
-            "cluster/k8s/agents/public-coder-agent/sshpiper",
-        ),
-    ),
-    ("public-coder-agent-backup", ("cluster/k8s/agents/public-coder-agent/backup",)),
-    ("activitywatch", ("cluster/k8s/activitywatch",)),
-    ("agent-workspaces-app", ("cluster/k8s/agents/agent-sandbox/workspaces",)),
-    ("airlock", ("cluster/k8s/agents/airlock",)),
-    ("alloy-otlp-bearer", ("cluster/k8s/agents/alloy-otlp-bearer",)),
-    ("public-coder-agent-devbox", ("cluster/k8s/agents/public-coder-agent/devbox",)),
-    ("agent-shared-rbac", ("cluster/k8s/agents/shared-rbac",)),
-    ("agent-shared-secrets", ("cluster/k8s/agents/shared-secrets",)),
-    ("aiquota", ("cluster/k8s/aiquota",)),
-    ("clickhouse-grafana", ("cluster/k8s/grafana",)),
-    ("atuin", ("cluster/k8s/atuin",)),
-    ("atuin-user-provisioner", ("cluster/k8s/atuin/user-provisioner",)),
-    ("authentik-db-backups", ("cluster/k8s/authentik/db-backups",)),
-    ("cli-proxy-api", ("cluster/k8s/cli-proxy-api",)),
-    ("clickhouse-operator", ("cluster/k8s/clickhouse/operator", "cluster/k8s/clickhouse/namespace")),
-    ("clickhouse-schema", ("cluster/k8s/clickhouse/schema",)),
-    ("coredns-custom", ("cluster/k8s/coredns-custom",)),
-    ("cpap-sync", ("cluster/k8s/cpap-sync",)),
-    ("dcgm-exporter", ("cluster/k8s/dcgm-exporter",)),
-    ("descheduler", ("cluster/k8s/descheduler",)),
-    ("dns-automation", ("cluster/k8s/dns-automation",)),
-    ("flux-grafana-secrets", ("cluster/k8s/flux-grafana-secrets",)),
-    ("flux-image-automation-forgejo", ("cluster/k8s/flux-image-automation-forgejo",)),
-    ("flux-monitoring", ("cluster/k8s/flux-monitoring",)),
-    ("flux-webhook", ("cluster/k8s/flux-webhook",)),
-    ("flux-webhook-token", ("cluster/k8s/flux-webhook-token",)),
-    ("forgejo-agentydragon", ("cluster/k8s/forgejo/agentydragon",)),
-    ("forgejo-agentydragon-repos", ("cluster/k8s/forgejo/agentydragon-repos",)),
-    ("budget-ledger", ("cluster/k8s/forgejo/budget-ledger",)),
-    ("budget-namespace", ("cluster/k8s/forgejo/budget-namespace",)),
-    ("forgejo-cache", ("cluster/k8s/forgejo/cache",)),
-    ("forgejo-claude", ("cluster/k8s/forgejo/claude",)),
-    ("cpap-data", ("cluster/k8s/forgejo/cpap-data",)),
-    ("gatus", ("cluster/k8s/gatus",)),
-    ("gatus-sso-tf", ("cluster/k8s/gatus/sso-tf",)),
-    ("github-api-proxy", ("cluster/k8s/github-api-proxy",)),
-    ("github-branch-protection", ("cluster/k8s/github-branch-protection",)),
-    ("github-exporter", ("cluster/k8s/github-exporter",)),
-    ("github-secrets-sync", ("cluster/k8s/github-secrets-sync",)),
-    ("goldilocks", ("cluster/k8s/goldilocks",)),
-    ("google-mcp", ("cluster/k8s/google-mcp",)),
-    (
-        "grocy-mcp-sf",
-        ("cluster/k8s/grocy/sf/mcp", "cluster/k8s/grocy/mcp-base", "cluster/k8s/grocy/mcp-servicemonitor-base"),
-    ),
-    ("grocy-sf-user-perms", ("cluster/k8s/grocy/sf/user-perms", "cluster/k8s/grocy/user-perms-base")),
-    (
-        "grocy-mcp-vallejo",
-        ("cluster/k8s/grocy/vallejo/mcp", "cluster/k8s/grocy/mcp-base", "cluster/k8s/grocy/mcp-servicemonitor-base"),
-    ),
-    ("grocy-vallejo-user-perms", ("cluster/k8s/grocy/vallejo/user-perms", "cluster/k8s/grocy/user-perms-base")),
-    ("haku-console", ("cluster/k8s/haku/console", "cluster/k8s/haku/console-namespace")),
-    ("haku-mailbox", ("cluster/k8s/haku/mailbox",)),
-    ("haku-forgejo-tea", ("cluster/k8s/haku/forgejo-tea",)),
-    ("haku-ui-image-webhook", ("cluster/k8s/haku/ui-image-webhook",)),
-    ("haku-workloads", ("cluster/k8s/haku/workloads",)),
-    ("haku-workspaces-app", ("cluster/k8s/haku/workspaces/app",)),
-    ("haku-ci", ("cluster/k8s/haku-ci",)),
-    ("headlamp-app", ("cluster/k8s/headlamp",)),
-    ("hubble-ui", ("cluster/k8s/hubble-ui",)),
-    ("infra-drift", ("cluster/k8s/infra-drift",)),
-    ("keda", ("cluster/k8s/keda",)),
-    ("kube-api-proxy", ("cluster/k8s/kube-api-proxy",)),
-    ("kube-system", ("cluster/k8s/kube-system",)),
-    ("kubevirt-cdi-operator", ("cluster/k8s/kubevirt/cdi-operator",)),
-    ("kubevirt-operator", ("cluster/k8s/kubevirt/operator",)),
-    ("langfuse", ("cluster/k8s/langfuse",)),
-    ("matrix-app", ("cluster/k8s/matrix",)),
-    ("matrix-user-provisioner", ("cluster/k8s/matrix/user-provisioner",)),
-    ("metrics-server", ("cluster/k8s/metrics-server",)),
-    ("monitoring-alloy", ("cluster/k8s/monitoring/alloy",)),
-    ("monitoring-alloy-otlp-bearer-token-tf", ("cluster/k8s/monitoring/alloy-otlp-bearer-token-tf",)),
-    ("monitoring-cilium", ("cluster/k8s/monitoring/cilium",)),
-    ("monitoring-etcd", ("cluster/k8s/monitoring/etcd",)),
-    ("monitoring-loki", ("cluster/k8s/monitoring/loki",)),
-    ("monitoring-mimir", ("cluster/k8s/monitoring/mimir",)),
-    ("monitoring-rules", ("cluster/k8s/monitoring/rules",)),
-    ("monitoring-tempo", ("cluster/k8s/monitoring/tempo",)),
-    ("node-feature-discovery", ("cluster/k8s/node-feature-discovery",)),
-    ("oci-cache", ("cluster/k8s/oci-cache",)),
-    ("ollama-app", ("cluster/k8s/ollama",)),
-    ("openebs-lvm", ("cluster/k8s/openebs-lvm",)),
-    ("proxmox-proxy", ("cluster/k8s/proxmox-proxy",)),
-    ("reloader", ("cluster/k8s/reloader",)),
-    ("seaweedfs-drivefs-artifacts-bucket", ("cluster/k8s/seaweedfs/drivefs-artifacts-bucket",)),
-    ("seaweedfs-forgejo-bucket", ("cluster/k8s/seaweedfs/forgejo-bucket",)),
-    ("seaweedfs-loom-gym-bucket", ("cluster/k8s/seaweedfs/loom-gym-bucket",)),
-    ("seaweedfs-monitoring", ("cluster/k8s/seaweedfs/monitoring",)),
-    ("seaweedfs-pr-visuals-bucket", ("cluster/k8s/seaweedfs/pr-visuals-bucket",)),
-    ("seaweedfs-public-coder-agent-backups-bucket", ("cluster/k8s/seaweedfs/public-coder-agent-backups-bucket",)),
-    ("seaweedfs-registry-cache-bucket", ("cluster/k8s/seaweedfs/registry-cache-bucket",)),
-    ("ssh-mcp", ("cluster/k8s/ssh-mcp",)),
-    ("study-casino", ("cluster/k8s/study-casino",)),
-    ("talos-cloud-controller-manager", ("cluster/k8s/talos-cloud-controller-manager",)),
-    ("user-agentydragon", ("cluster/k8s/user-agentydragon",)),
-    ("vector-talos-logs", ("cluster/k8s/vector-talos-logs",)),
-    ("vm-images-publisher", ("cluster/k8s/vm-images-publisher",)),
-    ("vpa", ("cluster/k8s/vpa",)),
-    ("website", ("cluster/k8s/website",)),
-)
-_FLUX_SYSTEM_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (("external-creds", ("cluster/k8s/external-creds",)),)
+
+def artifact(name: str, *directories: str) -> ArtifactGeneratorSpecArtifacts:
+    """An artifact packaging `directories`, in copy order. The first is the consumer's
+    Kustomization directory; following ones are shared bases its Kustomization references."""
+    return ArtifactGeneratorSpecArtifacts(
+        name=name,
+        origin_revision="@repo",
+        copy=[
+            ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{directory}/**", to=f"@artifact/{directory}/")
+            for directory in directories
+        ],
+    )
 
 
-def _copy_operation(source_path: str) -> ArtifactGeneratorSpecArtifactsCopy:
-    return ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source_path}/**", to=f"@artifact/{source_path}/")
+def artifact_source_ref(artifact: ArtifactGeneratorSpecArtifacts) -> KustomizationSpecSourceRef:
+    return KustomizationSpecSourceRef(
+        kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=artifact.name, namespace=NAMESPACE
+    )
 
 
-def _artifacts(definitions: tuple[tuple[str, tuple[str, ...]], ...]) -> list[ArtifactGeneratorSpecArtifacts]:
-    return [
-        ArtifactGeneratorSpecArtifacts(
-            name=name, origin_revision="@repo", copy=[_copy_operation(path) for path in source_paths]
-        )
-        for name, source_paths in definitions
-    ]
+def artifact_path(artifact: ArtifactGeneratorSpecArtifacts) -> str:
+    """The consumer's Kustomization `spec.path`: the artifact's first directory."""
+    return "./" + artifact.copy[0].to.removeprefix("@artifact/").removesuffix("/")
 
 
-def artifact_generators(flux_chart: Chart, root: Path) -> Kustomization:
-    """Synthesize the ArtifactGenerator CRs and return their Flux consumer."""
-    out_dir = root / _ARTIFACT_GENERATORS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "artifact-generators", disable_resource_name_hashes=True)
-    for name, definitions, source in (
-        ("ducktape-artifacts", _DUCKTAPE_ARTIFACTS, _DUCKTAPE_SOURCE),
-        ("flux-system-artifacts", _FLUX_SYSTEM_ARTIFACTS, _FLUX_SYSTEM_SOURCE),
-    ):
-        ArtifactGenerator(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            spec=ArtifactGeneratorSpec(artifacts=_artifacts(definitions), sources=[source]),
-        )
-    app.synth()
-
-    kustomization = flux_kustomization(
+def artifact_generators(flux_chart: Chart) -> Kustomization:
+    return flux_kustomization(
         flux_chart,
         "artifact-generators",
         spec=KustomizationSpec(
@@ -276,7 +75,30 @@ def artifact_generators(flux_chart: Chart, root: Path) -> Kustomization:
             depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace="flux-system")],
         ),
     )
+
+
+def write_artifact_generators(
+    root: Path,
+    *,
+    ducktape: Sequence[ArtifactGeneratorSpecArtifacts],
+    flux_system: Sequence[ArtifactGeneratorSpecArtifacts],
+) -> None:
+    """Synthesize one ArtifactGenerator per source repository from the artifacts its consumers read."""
+    out_dir = root / _ARTIFACT_GENERATORS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "artifact-generators", disable_resource_name_hashes=True)
+    for name, artifacts, source in (
+        ("ducktape-artifacts", ducktape, _DUCKTAPE_SOURCE),
+        ("flux-system-artifacts", flux_system, _FLUX_SYSTEM_SOURCE),
+    ):
+        ArtifactGenerator(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+            spec=ArtifactGeneratorSpec(artifacts=list(artifacts), sources=[source]),
+        )
+    app.synth()
     (out_dir / "kustomization.yaml").write_text(
         Yaml.format_objects([kustomize_kustomization(resources=["artifact-generators.k8s.yaml"])])
     )
-    return kustomization

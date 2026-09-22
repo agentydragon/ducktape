@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
@@ -20,7 +17,11 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
 def litellm_keys_tf(
-    chart: Chart, litellm: Kustomization, tofu_controller: Kustomization, tofu_state_db: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    litellm: Kustomization,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
 ) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
@@ -30,15 +31,13 @@ def litellm_keys_tf(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path="./cluster/k8s/litellm/keys-tf",
+            path=artifact_path(artifact),
             prune=True,
             # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
             # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
             # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
             decryption=SOPS_DECRYPTION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(

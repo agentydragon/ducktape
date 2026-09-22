@@ -7,15 +7,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def langfuse(
-    chart: Chart, cnpg: Kustomization, valkey: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cnpg: Kustomization,
+    valkey: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "langfuse"
     return flux_kustomization(
@@ -25,13 +29,11 @@ def langfuse(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/langfuse",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             decryption=SOPS_DECRYPTION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="20m",
             wait=True,
             health_checks=[

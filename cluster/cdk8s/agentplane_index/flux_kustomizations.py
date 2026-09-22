@@ -7,15 +7,16 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agentplane_index(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
@@ -30,16 +31,14 @@ def agentplane_index(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/agentplane-index",
+            path=artifact_path(artifact),
             prune=True,
             # haku-state's Terraform Kustomization depends on this aggregate to create
             # the target Namespace, then reflects haku-forgejo-git into it. Waiting for
             # the haku-state Deployment here would deadlock that bootstrap: the Pod
             # needs the Secret created by the dependency.
             wait=False,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agentplane-index"),
                 KustomizationSpecHealthChecks(

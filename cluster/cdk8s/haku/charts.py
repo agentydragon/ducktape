@@ -19,13 +19,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
     flux_kustomization_depends_on_many,
@@ -93,6 +92,7 @@ def write_console_manifests(root: Path) -> Chart:
 
 def haku_console(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
@@ -113,15 +113,13 @@ def haku_console(
             interval="10m",
             retry_interval="1m",
             timeout=TIMEOUT,
-            path=f"./{PATH}",
+            path=artifact_path(artifact),
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
             # would take the console's approval ledger with them.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             decryption=sops_decryption(EXTRA_RESOURCES),
             # The two Jobs gate every dependent Kustomization: nothing downstream
             # reconciles until the schema is migrated and the indexer GRANTs applied.

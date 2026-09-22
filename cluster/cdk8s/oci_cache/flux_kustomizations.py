@@ -7,15 +7,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def oci_cache(
-    chart: Chart, valkey: Kustomization, seaweedfs_registry_cache_bucket: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    valkey: Kustomization,
+    seaweedfs_registry_cache_bucket: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "oci-cache"
     return flux_kustomization(
@@ -25,10 +29,8 @@ def oci_cache(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/oci-cache",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             # Do not delete the cache namespace if this Flux owner is removed later.
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

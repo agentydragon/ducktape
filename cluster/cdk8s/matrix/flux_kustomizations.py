@@ -7,14 +7,14 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def matrix(chart: Chart, cnpg: Kustomization) -> Kustomization:
+def matrix(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
     name = "matrix"
     return flux_kustomization(
         chart,
@@ -23,10 +23,8 @@ def matrix(chart: Chart, cnpg: Kustomization) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="matrix-app", namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/matrix",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
             wait=True,
@@ -45,7 +43,11 @@ def matrix(chart: Chart, cnpg: Kustomization) -> Kustomization:
 
 
 def matrix_user_provisioner(
-    chart: Chart, external_secrets_config: Kustomization, forgejo_images: Kustomization, matrix: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    matrix: Kustomization,
 ) -> Kustomization:
     name = "matrix-user-provisioner"
     return flux_kustomization(
@@ -54,11 +56,9 @@ def matrix_user_provisioner(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/matrix/user-provisioner",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m",
             # The job registers users against Synapse's admin API, so it must not start
             # until Synapse answers. Depending on the app Kustomization (which is

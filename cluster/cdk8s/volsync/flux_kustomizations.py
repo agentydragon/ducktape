@@ -7,14 +7,16 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def volsync(chart: Chart, snapshot_controller: Kustomization) -> Kustomization:
+def volsync(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, snapshot_controller: Kustomization
+) -> Kustomization:
     name = "volsync"
     return flux_kustomization(
         chart,
@@ -23,10 +25,8 @@ def volsync(chart: Chart, snapshot_controller: Kustomization) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/volsync",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             depends_on=[flux_kustomization_depends_on(snapshot_controller)],

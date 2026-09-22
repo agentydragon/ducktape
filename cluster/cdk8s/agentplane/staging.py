@@ -31,9 +31,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
@@ -51,7 +50,8 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -465,6 +465,7 @@ def _add_session_secret(scope: Chart) -> None:
 
 def agentplane_staging(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
@@ -483,7 +484,7 @@ def agentplane_staging(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path=f"./cluster/k8s/{ENV.namespace}",
+            path=artifact_path(artifact),
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
@@ -503,9 +504,7 @@ def agentplane_staging(
                 )
             ],
             decryption=sops_decryption(ENV.extra_resources),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 agentplane_crds,
                 agent_sandbox_controller,
