@@ -166,6 +166,7 @@ class ThreadEntity(Base):
             "cursor",
             postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
+        Index("ix_thread_entity_scope_entity_index", "thread_id", "projection_epoch", "entity_index"),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
@@ -183,6 +184,11 @@ class ThreadEntity(Base):
     arguments_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     output_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     input_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    # A dense position in the thread, assigned once and never revised, over every kind rather than
+    # only the rendered ones -- so a range of it is every row in that stretch of the thread,
+    # whatever it is. A cursor cannot stand in: how many rows a cursor range covers
+    # depends on how densely a turn packs them, so only an index gives fixed-size pages.
+    entity_index: Mapped[int] = mapped_column(BigInteger)
 
 
 class ThreadPayloadManifest(Base):
@@ -1088,10 +1094,14 @@ async def _record_thread_fold(
     batch = thread_fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
     result = thread_fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
     await _write_payloads(session, thread_id, result.payload_writes)
-    for values in _entity_rows(thread_id, result, operational):
-        await session.execute(
+    # Numbered here rather than in the fold, which reports upserts without saying which are new.
+    # A revision takes the conflict path and `set_` omits the index, so `returning` hands back the
+    # number the row already had and the counter stays where it is.
+    next_index = await _next_entity_index(session, thread_id, result.state.position)
+    for values in _ordered_entity_rows(thread_id, result, operational):
+        stored = await session.execute(
             insert(ThreadEntity)
-            .values(**values)
+            .values(**values, entity_index=next_index)
             .on_conflict_do_update(
                 index_elements=[
                     ThreadEntity.thread_id,
@@ -1101,7 +1111,9 @@ async def _record_thread_fold(
                 ],
                 set_=values,
             )
+            .returning(ThreadEntity.entity_index)
         )
+        next_index = max(next_index, stored.scalar_one() + 1)
     for evidence in result.evidence_upserts:
         values = {
             "thread_id": thread_id,
@@ -1371,6 +1383,31 @@ def _payload_manifest_key(
         reference.field,
         reference.generation,
         reference.revision_cursor,
+    )
+
+
+async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: thread_fold.Position) -> int:
+    """The scope's next free index, read once so a batch numbers its rows without a query apiece."""
+    highest = await session.scalar(
+        select(func.max(ThreadEntity.entity_index)).where(
+            ThreadEntity.thread_id == thread_id, ThreadEntity.projection_epoch == scope.projection_epoch
+        )
+    )
+    return 0 if highest is None else highest + 1
+
+
+def _ordered_entity_rows(
+    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
+) -> list[dict[str, object]]:
+    """A batch's rows in thread order, which is the order they are numbered.
+
+    `_next_entity_index` reads back what the statements before it wrote, so a batch inserting in
+    upsert order would number its rows in that order rather than the reader's. Kind and identity
+    break a tie, so a batch numbers the same rows the same way however it was assembled.
+    """
+    return sorted(
+        _entity_rows(thread_id, result, operational),
+        key=lambda row: (row["cursor"], row["entity_kind"], row["entity_id"]),
     )
 
 

@@ -845,3 +845,51 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    """The index is a position in the thread, so it is dense, ordered and fixed once given."""
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(
+        thread,
+        [
+            event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1)),
+            event_entry(2, text_delta=event_pb2.TextDelta(item_id="first", text="a")),
+            event_entry(3, text_delta=event_pb2.TextDelta(item_id="second", text="b")),
+        ],
+        lease=lease,
+    )
+
+    async def numbered() -> list[tuple[str, str, int]]:
+        async with store._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ThreadEntity).where(ThreadEntity.thread_id == thread).order_by(ThreadEntity.entity_index)
+                )
+            ).all()
+            return [(row.entity_kind, row.entity_id, row.entity_index) for row in rows]
+
+    first_pass = await numbered()
+    # Dense from zero over every kind, the view state included -- a range of the index is every row
+    # in that stretch of the thread, not only the rendered ones.
+    assert [index for _, _, index in first_pass] == list(range(len(first_pass)))
+    assert ("view_state", "current") in [(kind, entity_id) for kind, entity_id, _ in first_pass]
+    assert [entity_id for kind, entity_id, _ in first_pass if kind == "item"] == ["first", "second"]
+
+    # A revision keeps its number; a new row takes the next one.
+    await store.record(
+        thread,
+        [
+            event_entry(4, text_delta=event_pb2.TextDelta(item_id="first", text="c")),
+            event_entry(5, text_delta=event_pb2.TextDelta(item_id="third", text="d")),
+        ],
+        lease=lease,
+    )
+    after = await numbered()
+    positions = {(kind, entity_id): index for kind, entity_id, index in after}
+    before = {(kind, entity_id): index for kind, entity_id, index in first_pass}
+    assert before.items() <= positions.items()
+    assert [index for _, _, index in after] == list(range(len(after)))
+    assert positions[("item", "third")] == len(first_pass)
