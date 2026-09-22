@@ -39,6 +39,148 @@ a browser's round trip is smaller. What survives that is the shape of it — the
 
 Nothing overlaps: `ConversationCollection` mounts no body until the entity shape has caught up.
 
+## Flows the design has to satisfy
+
+Latency is one property of this component and not the only one it can get wrong. What follows
+walks each thing a reader does, from the gesture to the requests to what the DOM ends up holding,
+so a proposed design can be checked against all of them rather than against the open path alone.
+
+**Read from the code, not run.** Cursor arithmetic below comes from `conversation_entity_interest`
+(<../app/trajectory.py>) and `ConversationCollection` (<../app/frontend/conversation_store.tsx>);
+the two marked **unverified** are predictions that need a browser test before anyone relies on
+them. `_PAGE_SIZE` is 30 throughout, and a "segment" is an entity of kind `item`,
+`confirmed_input` or `lifecycle` — a turn emits lifecycle rows too, so segments accrue faster than
+messages do.
+
+### Vocabulary
+
+An **interest** is `(anchor_cursor, tail_from, window_from, window_before)`, resolved by the app
+from the projection checkpoint. A **selection** is an interest plus the collections built from it.
+`anchor_cursor` is the checkpoint's `through_cursor` **frozen at the moment the interest was
+resolved**; `tail_from` is the 30th-largest segment cursor at or below it. The entity shape's
+predicate is `cursor >= tail_from` with **no upper bound**, optionally unioned with a single
+history page `window_from <= cursor < window_before`.
+
+Two consequences follow from that and matter everywhere below: new segments land in the open shape
+without any request, and a reader holds **at most one** history page, because the interest has one
+`window_from`/`window_before` pair rather than a list.
+
+### 1. Open at the tail
+
+`GET /sync/interest` resolves the interest. The entity shape is created and snapshotted, and every
+rendered body is fetched separately — the cost this plan opens with.
+
+### 2. New items stream in while the reader is at the bottom
+
+Nothing is requested. The segments are above `tail_from`, so they are already inside the open
+shape's predicate and arrive on the live long poll, which returns and is re-issued. The virtualizer
+appends; `followPreviousBottom` keeps the viewport pinned to the bottom as cards grow.
+
+This is the case the current design handles well, and the one to avoid regressing.
+
+### 3. Scroll up one page
+
+At `scrollTop < 80` the view calls `onLoadOlder(boundary)`, where `boundary` is the cursor of the
+**second** segment currently held — one segment of deliberate overlap, so the virtualizer has a row
+it has already measured on both sides of the change.
+
+That sets `beforeCursor`, which re-resolves the interest and builds a **new selection**. The old
+collection is evicted. The reader's place is restored rather than preserved: `readingAnchor`
+records the first visible row's cursor and pixel offset, and `correctRestoration` finds
+`[data-conversation-anchor="<cursor>"]` in the new render and corrects `scrollTop` by the
+difference.
+
+Two properties of this are worth stating plainly, because the rest of the plan depends on them:
+paging **replaces** the history window rather than extending it, so scrolling up twice drops the
+first page; and place is kept by **measure-and-correct after the swap**, not by keeping the nodes.
+
+### 4. Scroll up, then an item streams in — **unverified, believed broken**
+
+This is where the arithmetic stops working. With a history page open, the collection holds 30 tail
+segments and 30 history segments. `ActiveConversation` rotates the selection when it holds more
+than 60:
+
+```tsx
+useEffect(() => {
+  if (segmentCount > 60) onRotate();
+}, [onRotate, segmentCount]);
+```
+
+So **one** streamed segment takes the count to 61 and rotates. The rotation re-resolves with the
+same `beforeCursor`, which yields 30 + 30 again, and the next streamed segment rotates again. A
+reader who scrolls up during an active turn should therefore get a full selection rebuild **per
+arriving segment**, each one a fresh shape, a hidden catch-up, a swap and a scroll-restoration
+attempt.
+
+W9 as drafted makes this worse rather than better: a rotation would rebuild two shapes instead of
+one, and the content shape replays from `offset=-1`, so the whole window's text re-transfers on
+each. Eager window content is the right trade for an open (§ W9) and the wrong one for a
+per-segment rebuild.
+
+A browser test should confirm the rotation-per-segment reading before anything is designed around
+it. If it holds, a fix has to come **before** W9, not after.
+
+### 5. Rotation on a long turn at the bottom
+
+With no history page, the same threshold trips once about every 31 streamed segments. There is a
+server-side counterpart: `/sync/entities` re-requested with a frozen `anchor_cursor` raises
+`ConversationInterestExpiredError` once more than `_PAGE_SIZE * 2` segments sit above the anchor,
+which the proxy turns into 410 and the client turns into a rotation. The two count different
+things — the client counts every segment it holds, the server only those newer than the anchor —
+which is why a history page moves the client's threshold and not the server's.
+
+**Why rotation exists at all is an open question, and the first one to answer.** What it bounds is
+the shape's width and the collection's size in memory: the predicate has no upper bound, so without
+rotation a shape opened at the start of a long turn keeps widening. What it does **not** bound is
+the DOM, which is virtualized independently.
+
+Against that it costs exactly what § W5 says a moving bound costs — a new shape definition, a new
+handle, no reuse between opens or readers — and it spends a scroll restoration each time. So the
+mechanism this plan criticises as churn in W5 is also deliberately triggered on a timer here. Two
+directions worth costing before either is built:
+
+- **Keep the bound, drop the rotation.** If a wide shape is acceptable — and W5's page-aligned
+  bound is what would make it cheap — then growth is a client-side eviction concern, not a reason
+  to redefine the server's partition. A reader at the bottom does not need the segments it scrolled
+  past to stay in its collection.
+- **Keep the rotation, make it free.** If the bound is page-aligned, a rotation moves it by a whole
+  page rather than by one segment, so consecutive rotations reuse a shape the server already holds
+  and the swap stops meaning a re-transfer.
+
+Either way the 60-segment threshold wants to be stated as a bound on something specific, rather
+than as `page_size * 2` in two places that count differently.
+
+### 6. The connection drops and comes back
+
+A terminal stream error with `status === 0` is treated the same as an expired interest: rotate the
+whole selection. That is the heaviest available response to a transient blip — a new interest
+fetch, new shapes from `offset=-1`, and a scroll restoration — where the Electric protocol's own
+`handle` + `offset` resumption exists precisely so a reconnect re-attaches to the shape it was
+already reading.
+
+What is unestablished is whether the collection can survive that error at all: the comment at the
+call site says the adapter preserves a ready collection after terminal stream errors, and rotating
+is how the code gets a live stream back. Whether TanStack's Electric collection retries internally,
+and under what conditions it gives up, has not been checked against the pinned version. Until it
+has, "reconnect resumes rather than rebuilds" is a requirement this design does not yet meet.
+
+### 7. The projection scope is replaced underneath a reader
+
+A rebuild publishes a new `projection_epoch`. Every shape is scoped to it, so the old ones 410. The
+pending-selection mechanism is what this was built for: the new selection syncs in a `hidden`
+subtree and is swapped in only once its `view_state` has caught up to the interest's
+`through_cursor`, so the visible tree never blanks. Covered by
+<../debug/conversation_acceptance.md>.
+
+### What writing these out changes
+
+- Flows 2 and 7 are load-bearing and work; a design that breaks either is not an improvement.
+- Flow 4 is a defect in the current design that W9 would amplify, so W9 is **blocked** on deciding
+  what rotation is for (flow 5) rather than the other way round.
+- Flow 3's place-keeping is measure-and-correct, which is the mechanism most sensitive to a window
+  being rebuilt underneath it. Every extra rotation is another chance for it to visibly fail.
+- Flow 6 names a requirement — a reconnect resumes — that nothing currently verifies.
+
 ## W9 — one shape for the window's content
 
 `conversation_payload_chunk` carries `owner_cursor`, so a single shape over
