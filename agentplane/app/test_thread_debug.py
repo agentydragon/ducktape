@@ -16,7 +16,7 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf

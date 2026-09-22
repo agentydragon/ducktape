@@ -71,13 +71,13 @@ from agentplane.app.thread_debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.thread_fold import CommandOutcome
-from agentplane.app.trajectory import (
+from agentplane.app.trajectory.store import (
     CommandIdConflictError,
     ThreadNotFoundError,
     ThreadScopeResetError,
-    ThreadView,
     TrajectoryStore,
 )
+from agentplane.app.trajectory.views import ThreadView
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 

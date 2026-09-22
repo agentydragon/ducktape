@@ -34,7 +34,7 @@ from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient

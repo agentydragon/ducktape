@@ -41,7 +41,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.trajectory import IngestionLease, TrajectoryStore
+from agentplane.app.trajectory.store import IngestionLease, TrajectoryStore
 from agentplane.protocol import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf

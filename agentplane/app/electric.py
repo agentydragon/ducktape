@@ -15,14 +15,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.trajectory import (
-    SEGMENT_KINDS,
-    EntityKind,
+from agentplane.app.trajectory.store import (
     ThreadEntityInterest,
     ThreadInterestExpiredError,
     ThreadPayloadSelection,
     TrajectoryStore,
 )
+from agentplane.app.trajectory.views import SEGMENT_KINDS, EntityKind
 
 logger = logging.getLogger(__name__)
 

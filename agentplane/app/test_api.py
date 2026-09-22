@@ -34,7 +34,8 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import THREAD_FOLD_EPOCH, TrajectoryStore
+from agentplane.app.trajectory.recording import THREAD_FOLD_EPOCH
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

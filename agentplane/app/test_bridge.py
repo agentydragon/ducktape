@@ -22,7 +22,6 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app import trajectory
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import Feed, RunnerAdmissionTimeoutError, RunnerBridge
@@ -34,7 +33,9 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import FeedError, ThreadCheckpoint, ThreadEntity, ThreadOperationalState, TrajectoryStore
+from agentplane.app.trajectory.models import ThreadCheckpoint, ThreadEntity
+from agentplane.app.trajectory.store import FeedError, TrajectoryStore
+from agentplane.app.trajectory.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -530,7 +531,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
     monkeypatch.setattr(store, "admitted_command", observed_lookup)
-    monkeypatch.setattr(trajectory, "_notify", drop_notification)
+    monkeypatch.setattr("agentplane.app.trajectory.store.notify", drop_notification)
     monkeypatch.setattr("agentplane.app.bridge.RECONCILE_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:

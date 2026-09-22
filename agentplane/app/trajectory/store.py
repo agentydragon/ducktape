@@ -3,8 +3,7 @@ PostgreSQL as it arrives.
 
 A thread is one runner session, keyed by the sandbox and the client-chosen session id; its entries
 are stored as the protocol's own proto-JSON under the source's follow cursor, so a thread reads back
-without a runner and a deleted sandbox loses nothing. The schema is owned by the Alembic migrations
-under `migrations/`, applied by `database_migrate.py` as a separate deploy step.
+without a runner and a deleted sandbox loses nothing.
 """
 
 from __future__ import annotations
@@ -12,34 +11,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from enum import StrEnum
-from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    DateTime,
-    Enum as SqlEnum,
-    ForeignKey,
-    Index,
-    Text,
-    UniqueConstraint,
-    delete,
-    func,
-    select,
-    text,
-    update,
-)
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import Mapped, mapped_column
 
 from agentplane.app import thread_fold
 from agentplane.app.changes import Changes
-from agentplane.app.operator_sessions import Base, OperatorSessionStore
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.thread_debug import (
     ArchivedObservation,
@@ -52,7 +33,25 @@ from agentplane.app.thread_debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
-from agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
+from agentplane.app.trajectory.models import (
+    Event,
+    FeedState,
+    SandboxIngestion,
+    Thread,
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadManifest,
+)
+from agentplane.app.trajectory.recording import (
+    EventReplicationError,
+    ThreadFoldError,
+    record_thread_fold,
+    set_operational,
+)
+from agentplane.app.trajectory.updates import TrajectoryUpdates, notify
+from agentplane.app.trajectory.views import SEGMENT_KINDS, EntityKind, ThreadCommandState, ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 
@@ -60,206 +59,6 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 # SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
 # gazelle:include_dep @pypi//asyncpg
-
-
-THREAD_FOLD_EPOCH = "v1"
-
-
-class Thread(Base):
-    __tablename__ = "thread"
-    __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
-
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    sandbox: Mapped[str] = mapped_column(Text)
-    session_id: Mapped[str] = mapped_column(Text)
-    harness: Mapped[Harness] = mapped_column(
-        SqlEnum(
-            Harness,
-            native_enum=False,
-            create_constraint=False,
-            values_callable=lambda values: [item.value for item in values],
-        )
-    )
-    model: Mapped[str] = mapped_column(Text)
-    cwd: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    # NULL while unnamed; never the empty string.
-    name: Mapped[str | None] = mapped_column(Text)
-    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
-
-
-class Event(Base):
-    __tablename__ = "event"
-    __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    # `record` admits an entry only where `origin.sequence == cursor`, so this key is also the
-    # runner's follow sequence that `ThreadNativeLink.source_sequence` names. The entry's own
-    # proto-JSON `payload` names its `origin.source_id`, which is constant for a Thread.
-    cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    # The observation's oneof case, for filtering without opening the payload; "native" for frames.
-    kind: Mapped[str] = mapped_column(Text)
-    # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams.
-    payload: Mapped[dict[str, object]] = mapped_column(JSONB)
-
-
-class SandboxIngestion(Base):
-    __tablename__ = "sandbox_ingestion"
-
-    sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
-    token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-class FeedState(Base):
-    __tablename__ = "feed_state"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    attached: Mapped[dict[str, object]] = mapped_column(JSONB)
-    # NULL means the stream has not ended. Empty JSON is a normal end; a message is an error end.
-    end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
-
-
-class ThreadCheckpoint(Base):
-    """One source/epoch-owned materialized prefix for a Thread.
-
-    `thread_id` alone keys this row, and `TrajectoryStore.record` refuses an entry whose
-    `origin.source_id` disagrees with the prefix, so this is the one place a Thread's runner
-    source is stored: every other fold table is scoped by `(thread_id, projection_epoch)` and
-    reads its source from here.
-    """
-
-    __tablename__ = "thread_checkpoint"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    source_id: Mapped[str] = mapped_column(Text)
-    projection_epoch: Mapped[str] = mapped_column(Text)
-    through_cursor: Mapped[int] = mapped_column(BigInteger)
-
-
-class EntityKind(StrEnum):
-    VIEW_STATE = "view_state"
-    ITEM = "item"
-    CONFIRMED_INPUT = "confirmed_input"
-    LIFECYCLE = "lifecycle"
-    COMMAND = "command"
-
-
-# Kinds positioned in the thread and paged by cursor; view state and command rows sync whole.
-SEGMENT_KINDS = (EntityKind.ITEM, EntityKind.CONFIRMED_INPUT, EntityKind.LIFECYCLE)
-
-
-class ThreadEntity(Base):
-    """The mutable, tagged current row consumed by the thread view shape."""
-
-    __tablename__ = "thread_entity"
-    __table_args__ = (
-        Index("ix_thread_entity_scope_revision", "thread_id", "projection_epoch", "revision_cursor"),
-        Index("ix_thread_entity_scope_cursor", "thread_id", "projection_epoch", "cursor", "entity_kind", "entity_id"),
-        Index(
-            "ix_thread_entity_scope_pending_cursor",
-            "thread_id",
-            "projection_epoch",
-            "cursor",
-            "entity_kind",
-            "entity_id",
-            postgresql_where=text("pending"),
-        ),
-        Index(
-            "ix_thread_entity_scope_segment_cursor",
-            "thread_id",
-            "projection_epoch",
-            "cursor",
-            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
-        ),
-        Index("ix_thread_entity_scope_entity_index", "thread_id", "projection_epoch", "entity_index"),
-    )
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    entity_kind: Mapped[str] = mapped_column(Text, primary_key=True)
-    entity_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    cursor: Mapped[int] = mapped_column(BigInteger)
-    revision_cursor: Mapped[int] = mapped_column(BigInteger)
-    pending: Mapped[bool] = mapped_column(Boolean)
-    turn_id: Mapped[str | None] = mapped_column(Text)
-    state: Mapped[dict[str, object]] = mapped_column(JSONB)
-    text_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    arguments_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    output_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    input_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    # A dense position in the thread, assigned once and never revised, over every kind rather than
-    # only the rendered ones -- so a range of it is every row in that stretch of the thread,
-    # whatever it is. A cursor cannot stand in: how many rows a cursor range covers
-    # depends on how densely a turn packs them, so only an index gives fixed-size pages.
-    entity_index: Mapped[int] = mapped_column(BigInteger)
-
-
-class ThreadPayloadManifest(Base):
-    """An immutable exact field revision; chunks are owned by its generation."""
-
-    __tablename__ = "thread_payload_manifest"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    field: Mapped[str] = mapped_column(Text, primary_key=True)
-    generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    revision_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    chunk_count: Mapped[int] = mapped_column(BigInteger)
-    content_bytes: Mapped[int] = mapped_column(BigInteger)
-
-
-class ThreadPayloadChunk(Base):
-    """A UTF-8 fragment, immutable within a payload generation."""
-
-    __tablename__ = "thread_payload_chunk"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    field: Mapped[str] = mapped_column(Text, primary_key=True)
-    generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    chunk_index: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    text: Mapped[str] = mapped_column(Text)
-
-
-class ThreadEvidence(Base):
-    __tablename__ = "thread_evidence"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-
-
-class ThreadNativeLink(Base):
-    __tablename__ = "thread_native_link"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
-    entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    source_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
 
 @dataclass(frozen=True)
@@ -270,18 +69,6 @@ class IngestionLease:
 
 class IngestionLeaseLostError(Exception):
     """The sandbox ingester no longer owns authority to commit observations."""
-
-
-class EventReplicationError(ValueError):
-    """The runner stream conflicts with the archived prefix or skips an entry."""
-
-    def __init__(self, message: str, *, cursor: int | None = None) -> None:
-        super().__init__(message)
-        self.cursor = cursor
-
-
-class ThreadFoldError(EventReplicationError):
-    """A semantic observation could not advance the durable thread fold."""
 
 
 class ThreadInterestExpiredError(ValueError):
@@ -339,153 +126,6 @@ class ThreadPayloadSelection:
     content_bytes: int
 
 
-class ThreadPayloadReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    projection_epoch: str
-    owner_cursor: str
-    owner_id: str
-    field: thread_fold.PayloadField
-    revision_cursor: str
-    generation: str
-
-
-class ThreadControlsState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    applied_model: str | None
-    active_turn_id: str | None
-    harness_state: str | None
-
-
-class ThreadFeedErrorState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    cursor: str | None
-    message: str
-
-
-class ThreadOperationalState(BaseModel):
-    """Feed lifecycle state with an independent version, never a fabricated runner cursor."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["active", "ended", "failed"]
-    last_verified_cursor: str
-    feed_error: ThreadFeedErrorState | None
-
-
-class ThreadViewState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    controls: ThreadControlsState
-    operational: ThreadOperationalState
-
-
-class ThreadItemState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: int
-    tool_name: str
-    completion: str | None
-    tool_succeeded: bool | None
-
-
-class ThreadConfirmedInputState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    harness_message_id: str
-    origin_command_ids: list[str]
-
-
-class ThreadLifecycleState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    observation: str
-    event: JsonValue
-
-
-class ThreadCommandState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    operation: str
-    outcome: thread_fold.CommandOutcome
-    outcome_cursor: str | None
-    outcome_reason: str | None
-
-
-class _ThreadEntityViewFields(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    thread_id: UUID
-    projection_epoch: str
-    entity_id: str
-    cursor: int
-    revision_cursor: int
-    pending: bool
-    turn_id: str | None
-    text_ref: ThreadPayloadReference | None
-    arguments_ref: ThreadPayloadReference | None
-    output_ref: ThreadPayloadReference | None
-    input_ref: ThreadPayloadReference | None
-
-
-class ThreadViewStateEntityView(_ThreadEntityViewFields):
-    entity_kind: Literal[EntityKind.VIEW_STATE]
-    state: ThreadViewState
-
-
-class ThreadItemEntityView(_ThreadEntityViewFields):
-    entity_kind: Literal[EntityKind.ITEM]
-    state: ThreadItemState
-
-
-class ThreadConfirmedInputEntityView(_ThreadEntityViewFields):
-    entity_kind: Literal[EntityKind.CONFIRMED_INPUT]
-    state: ThreadConfirmedInputState
-
-
-class ThreadLifecycleEntityView(_ThreadEntityViewFields):
-    entity_kind: Literal[EntityKind.LIFECYCLE]
-    state: ThreadLifecycleState
-
-
-class ThreadCommandEntityView(_ThreadEntityViewFields):
-    entity_kind: Literal[EntityKind.COMMAND]
-    state: ThreadCommandState
-
-
-# The generated client contract for a synchronized current thread entity row.
-ThreadEntityView = Annotated[
-    ThreadViewStateEntityView
-    | ThreadItemEntityView
-    | ThreadConfirmedInputEntityView
-    | ThreadLifecycleEntityView
-    | ThreadCommandEntityView,
-    Field(discriminator="entity_kind"),
-]
-
-
-class ThreadView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    sandbox: str
-    session_id: str
-    harness: Harness = Field(description="The runner protocol Harness enum member.")
-    model: str
-    cwd: str
-    created_at: datetime
-    name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
-    archived: bool
-    last_cursor: int = Field(description="The highest stored follow cursor; 0 while nothing is stored.")
-    last_event_at: datetime | None = None
-    harness_state: str = Field(
-        description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
-        "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
-    )
-
-
 class ThreadNotFoundError(Exception):
     def __init__(self, thread_id: UUID) -> None:
         super().__init__(f"no thread {thread_id}")
@@ -530,7 +170,7 @@ class TrajectoryStore:
                 .returning(Thread.id)
             )
             if created is not None:
-                await _notify(session)
+                await notify(session)
                 return created
             return (
                 await session.scalars(
@@ -861,7 +501,7 @@ class TrajectoryStore:
             if not inserted:
                 return
             try:
-                await _record_thread_fold(session, thread_id, inserted[0].origin.source_id, inserted)
+                await record_thread_fold(session, thread_id, inserted[0].origin.source_id, inserted)
             except EventReplicationError:
                 raise
             except (thread_fold.ObservationNotUnderstoodError, thread_fold.FoldContractError) as error:
@@ -890,7 +530,7 @@ class TrajectoryStore:
                         update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
-            await _notify(session)
+            await notify(session)
 
     async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
         _positive_duration(duration)
@@ -947,8 +587,8 @@ class TrajectoryStore:
                 .on_conflict_do_update(index_elements=[FeedState.thread_id], set_=values)
             )
             await session.execute(update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model))
-            await _set_operational(session, thread_id, status="active", error=None)
-            await _notify(session)
+            await set_operational(session, thread_id, status="active", error=None)
+            await notify(session)
 
     async def end_feed(
         self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
@@ -959,7 +599,7 @@ class TrajectoryStore:
             if state is None:
                 raise ValueError("cannot end a feed before persisting its attachment")
             state.end = {} if error is None else {"message": error}
-            await _set_operational(
+            await set_operational(
                 session,
                 thread_id,
                 status="ended" if error is None else "failed",
@@ -967,7 +607,7 @@ class TrajectoryStore:
                 error_cursor=error_cursor,
             )
             await session.flush()
-            await _notify(session)
+            await notify(session)
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
         async with self._sessions() as session:
@@ -1059,7 +699,7 @@ class TrajectoryStore:
             thread.name = name
             await session.flush()
             renamed = _view(thread, *await _last(session, thread_id))
-            await _notify(session)
+            await notify(session)
         return renamed
 
     async def archive(self, thread_id: UUID) -> ThreadView:
@@ -1077,7 +717,7 @@ class TrajectoryStore:
             thread.archived = archived
             await session.flush()
             view = _view(thread, *await _last(session, thread_id))
-            await _notify(session)
+            await notify(session)
         return view
 
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
@@ -1090,454 +730,6 @@ class TrajectoryStore:
                 .limit(limit)
             )
             return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
-
-
-async def _record_thread_fold(
-    session: AsyncSession, thread_id: UUID, source_id: str, entries: Sequence[event_log_pb2.EventEntry]
-) -> None:
-    checkpoint = await session.scalar(
-        select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id).with_for_update()
-    )
-    if checkpoint is None:
-        state = thread_fold.initial(source_id, THREAD_FOLD_EPOCH)
-        operational = None
-    else:
-        if checkpoint.source_id != source_id:
-            raise EventReplicationError(
-                f"thread fold source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
-            )
-        if checkpoint.projection_epoch != THREAD_FOLD_EPOCH:
-            raise ThreadFoldError(
-                f"thread fold epoch {checkpoint.projection_epoch!r} must be reset for {THREAD_FOLD_EPOCH!r}",
-                cursor=entries[0].cursor,
-            )
-        state, operational = await _fold_state(session, checkpoint)
-    batch = thread_fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
-    result = thread_fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
-    await _write_payloads(session, thread_id, result.payload_writes)
-    # Numbered here rather than in the fold, which reports upserts without saying which are new.
-    # A revision takes the conflict path and `set_` omits the index, so `returning` hands back the
-    # number the row already had and the counter stays where it is.
-    next_index = await _next_entity_index(session, thread_id, result.state.position)
-    for values in _ordered_entity_rows(thread_id, result, operational):
-        stored = await session.execute(
-            insert(ThreadEntity)
-            .values(**values, entity_index=next_index)
-            .on_conflict_do_update(
-                index_elements=[
-                    ThreadEntity.thread_id,
-                    ThreadEntity.projection_epoch,
-                    ThreadEntity.entity_kind,
-                    ThreadEntity.entity_id,
-                ],
-                set_=values,
-            )
-            .returning(ThreadEntity.entity_index)
-        )
-        next_index = max(next_index, stored.scalar_one() + 1)
-    for evidence in result.evidence_upserts:
-        values = {
-            "thread_id": thread_id,
-            "projection_epoch": evidence.projection_epoch,
-            "entity_cursor": evidence.entity_cursor,
-            "observation_cursor": evidence.observation_cursor,
-        }
-        await session.execute(insert(ThreadEvidence).values(**values).on_conflict_do_nothing())
-        for source_sequence in evidence.source_sequences:
-            await session.execute(
-                insert(ThreadNativeLink).values(**values, source_sequence=source_sequence).on_conflict_do_nothing()
-            )
-    checkpoint_values = {
-        "source_id": result.state.position.source_id,
-        "projection_epoch": result.state.position.projection_epoch,
-        "through_cursor": result.state.position.through_cursor,
-    }
-    await session.execute(
-        insert(ThreadCheckpoint)
-        .values(thread_id=thread_id, **checkpoint_values)
-        .on_conflict_do_update(index_elements=[ThreadCheckpoint.thread_id], set_=checkpoint_values)
-    )
-
-
-async def _fold_state(
-    session: AsyncSession, checkpoint: ThreadCheckpoint
-) -> tuple[thread_fold.ViewState, ThreadOperationalState]:
-    row = await session.scalar(
-        select(ThreadEntity).where(
-            ThreadEntity.thread_id == checkpoint.thread_id,
-            ThreadEntity.projection_epoch == checkpoint.projection_epoch,
-            ThreadEntity.entity_kind == EntityKind.VIEW_STATE,
-            ThreadEntity.entity_id == "current",
-        )
-    )
-    if row is None:
-        raise ValueError("thread checkpoint has no current controls")
-    view = ThreadViewState.model_validate(row.state)
-    return thread_fold.ViewState(
-        thread_fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
-        thread_fold.Controls(
-            applied_model=view.controls.applied_model,
-            active_turn_id=view.controls.active_turn_id,
-            harness_state=view.controls.harness_state,
-        ),
-    ), view.operational
-
-
-async def _set_operational(
-    session: AsyncSession,
-    thread_id: UUID,
-    *,
-    status: Literal["active", "ended", "failed"],
-    error: str | None,
-    error_cursor: int | None = None,
-) -> None:
-    checkpoint = await session.get(ThreadCheckpoint, thread_id)
-    if checkpoint is None:
-        return
-    row = await session.get(ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current"))
-    if row is None:
-        raise ValueError("thread checkpoint has no current controls")
-    view = ThreadViewState.model_validate(row.state)
-    row.state = view.model_copy(
-        update={
-            "operational": ThreadOperationalState(
-                status=status,
-                last_verified_cursor=str(checkpoint.through_cursor),
-                feed_error=(
-                    None
-                    if error is None
-                    else ThreadFeedErrorState(cursor=None if error_cursor is None else str(error_cursor), message=error)
-                ),
-            )
-        }
-    ).model_dump(mode="json")
-
-
-async def _prior_entities(
-    session: AsyncSession, thread_id: UUID, batch: thread_fold.EventBatch
-) -> thread_fold.PriorEntities:
-    required = thread_fold.touched_keys(batch)
-    checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
-    if checkpoint is None:
-        return thread_fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
-    rows = await session.scalars(
-        select(ThreadEntity).where(
-            ThreadEntity.thread_id == thread_id,
-            ThreadEntity.projection_epoch == checkpoint.projection_epoch,
-            (
-                (ThreadEntity.entity_kind == EntityKind.ITEM) & (ThreadEntity.entity_id.in_(required.item_ids))
-                | (ThreadEntity.entity_kind == EntityKind.COMMAND) & (ThreadEntity.entity_id.in_(required.command_ids))
-            ),
-        )
-    )
-    items: dict[str, thread_fold.Item | None] = dict.fromkeys(required.item_ids)
-    commands: dict[str, thread_fold.CommandSummary | None] = dict.fromkeys(required.command_ids)
-    for row in rows:
-        if row.entity_kind == EntityKind.ITEM:
-            items[row.entity_id] = _fold_item(ThreadItemEntityView.model_validate(row, from_attributes=True))
-        elif row.entity_kind == EntityKind.COMMAND:
-            commands[row.entity_id] = _command_summary(
-                ThreadCommandEntityView.model_validate(row, from_attributes=True)
-            )
-    return thread_fold.PriorEntities(items, commands)
-
-
-def _fold_item(view: ThreadItemEntityView) -> thread_fold.Item:
-    return thread_fold.Item(
-        view.projection_epoch,
-        view.entity_id,
-        view.cursor,
-        view.revision_cursor,
-        kind=view.state.kind,
-        tool_name=view.state.tool_name,
-        turn_id=view.turn_id,
-        text=_fold_ref(view.text_ref),
-        arguments=_fold_ref(view.arguments_ref),
-        output=_fold_ref(view.output_ref),
-        completion=_fold_completion(view.state),
-    )
-
-
-def _fold_completion(state: ThreadItemState) -> thread_fold.Completion | None:
-    match state.completion, state.tool_succeeded:
-        case None, None:
-            return None
-        case "text", None:
-            return thread_fold.TextCompletion()
-        case "tool", bool(succeeded):
-            return thread_fold.ToolCompletion(succeeded)
-    raise ValueError(f"invalid item completion: {state.completion=} {state.tool_succeeded=}")
-
-
-def _command_summary(view: ThreadCommandEntityView) -> thread_fold.CommandSummary:
-    return thread_fold.CommandSummary(
-        view.projection_epoch,
-        view.entity_id,
-        view.cursor,
-        view.state.operation,
-        view.state.outcome,
-        None if view.state.outcome_cursor is None else int(view.state.outcome_cursor),
-        view.state.outcome_reason,
-        _fold_ref(view.input_ref),
-    )
-
-
-def _fold_ref(reference: ThreadPayloadReference | None) -> thread_fold.PayloadRef | None:
-    if reference is None:
-        return None
-    return thread_fold.PayloadRef(
-        reference.projection_epoch,
-        int(reference.owner_cursor),
-        reference.owner_id,
-        reference.field,
-        int(reference.revision_cursor),
-        int(reference.generation),
-    )
-
-
-@dataclass
-class _PayloadPlan:
-    reference: thread_fold.PayloadRef
-    prefix_chunks: int
-    prefix_bytes: int
-    fragments: list[str]
-    replaced: bool
-
-
-async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequence[thread_fold.PayloadWrite]) -> None:
-    plans_by_reference: dict[thread_fold.PayloadRef, _PayloadPlan] = {}
-    final_plans: dict[tuple[int, str, thread_fold.PayloadField], _PayloadPlan] = {}
-    for write in writes:
-        if isinstance(write, thread_fold.ReplacePayload):
-            plan = _PayloadPlan(write.reference, 0, 0, [write.text], True)
-        else:
-            prior = plans_by_reference.get(write.base) if write.base is not None else None
-            if prior is None:
-                if write.base is None:
-                    prior_chunks = 0
-                    prior_bytes = 0
-                else:
-                    manifest = await session.get(ThreadPayloadManifest, _payload_manifest_key(thread_id, write.base))
-                    if manifest is None:
-                        raise ValueError("append references a missing payload manifest")
-                    prior_chunks = manifest.chunk_count
-                    prior_bytes = manifest.content_bytes
-                plan = _PayloadPlan(write.reference, prior_chunks, prior_bytes, [write.text], False)
-            else:
-                prior.fragments.append(write.text)
-                plan = _PayloadPlan(
-                    write.reference, prior.prefix_chunks, prior.prefix_bytes, prior.fragments, prior.replaced
-                )
-        plans_by_reference[plan.reference] = plan
-        final_plans[(plan.reference.owner_cursor, plan.reference.owner_id, plan.reference.field)] = plan
-    for plan in final_plans.values():
-        text = "".join(plan.fragments)
-        text_bytes = len(text.encode())
-        chunk_count = plan.prefix_chunks if not text else plan.prefix_chunks + 1
-        await session.execute(
-            insert(ThreadPayloadManifest).values(
-                thread_id=thread_id,
-                projection_epoch=plan.reference.projection_epoch,
-                owner_cursor=plan.reference.owner_cursor,
-                owner_id=plan.reference.owner_id,
-                field=plan.reference.field,
-                generation=plan.reference.generation,
-                revision_cursor=plan.reference.revision_cursor,
-                chunk_count=chunk_count,
-                content_bytes=text_bytes if plan.replaced else plan.prefix_bytes + text_bytes,
-            )
-        )
-        if chunk_count > plan.prefix_chunks:
-            session.add(
-                ThreadPayloadChunk(
-                    thread_id=thread_id,
-                    projection_epoch=plan.reference.projection_epoch,
-                    owner_cursor=plan.reference.owner_cursor,
-                    owner_id=plan.reference.owner_id,
-                    field=plan.reference.field,
-                    generation=plan.reference.generation,
-                    chunk_index=plan.prefix_chunks,
-                    text=text,
-                )
-            )
-
-
-def _payload_manifest_key(
-    thread_id: UUID, reference: thread_fold.PayloadRef
-) -> tuple[UUID, str, int, str, str, int, int]:
-    return (
-        thread_id,
-        reference.projection_epoch,
-        reference.owner_cursor,
-        reference.owner_id,
-        reference.field,
-        reference.generation,
-        reference.revision_cursor,
-    )
-
-
-async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: thread_fold.Position) -> int:
-    """The scope's next free index, read once so a batch numbers its rows without a query apiece."""
-    highest = await session.scalar(
-        select(func.max(ThreadEntity.entity_index)).where(
-            ThreadEntity.thread_id == thread_id, ThreadEntity.projection_epoch == scope.projection_epoch
-        )
-    )
-    return 0 if highest is None else highest + 1
-
-
-def _ordered_entity_rows(
-    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
-) -> list[dict[str, object]]:
-    """A batch's rows in thread order, which is the order they are numbered.
-
-    `_next_entity_index` reads back what the statements before it wrote, so a batch inserting in
-    upsert order would number its rows in that order rather than the reader's. Kind and identity
-    break a tie, so a batch numbers the same rows the same way however it was assembled.
-    """
-    return sorted(
-        _entity_rows(thread_id, result, operational),
-        key=lambda row: (row["cursor"], row["entity_kind"], row["entity_id"]),
-    )
-
-
-def _entity_rows(
-    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
-) -> list[dict[str, object]]:
-    entities: list[ThreadEntityView] = [_view_state_entity(thread_id, result.state, operational)]
-    entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
-    entities.extend(_confirmed_input_entity(thread_id, value) for value in result.confirmed_input_upserts)
-    entities.extend(_lifecycle_entity(thread_id, value) for value in result.lifecycle_upserts)
-    entities.extend(_command_entity(thread_id, value) for value in result.command_upserts)
-    return [entity.model_dump(mode="json") for entity in entities]
-
-
-def _view_state_entity(
-    thread_id: UUID, state: thread_fold.ViewState, operational: ThreadOperationalState | None = None
-) -> ThreadViewStateEntityView:
-    return ThreadViewStateEntityView(
-        thread_id=thread_id,
-        projection_epoch=state.position.projection_epoch,
-        entity_kind=EntityKind.VIEW_STATE,
-        entity_id="current",
-        cursor=state.position.through_cursor,
-        revision_cursor=state.position.through_cursor,
-        pending=False,
-        turn_id=None,
-        state=ThreadViewState(
-            controls=ThreadControlsState(
-                applied_model=state.controls.applied_model,
-                active_turn_id=state.controls.active_turn_id,
-                harness_state=state.controls.harness_state,
-            ),
-            operational=operational
-            or ThreadOperationalState(
-                status="active", last_verified_cursor=str(state.position.through_cursor), feed_error=None
-            ),
-        ),
-        text_ref=None,
-        arguments_ref=None,
-        output_ref=None,
-        input_ref=None,
-    )
-
-
-def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityView:
-    tool = item.completion if isinstance(item.completion, thread_fold.ToolCompletion) else None
-    return ThreadItemEntityView(
-        thread_id=thread_id,
-        projection_epoch=item.projection_epoch,
-        entity_kind=EntityKind.ITEM,
-        entity_id=item.item_id,
-        cursor=item.cursor,
-        revision_cursor=item.revision_cursor,
-        pending=False,
-        turn_id=item.turn_id,
-        state=ThreadItemState(
-            kind=item.kind,
-            tool_name=item.tool_name,
-            completion=None if item.completion is None else "tool" if tool is not None else "text",
-            tool_succeeded=None if tool is None else tool.succeeded,
-        ),
-        text_ref=_reference(item.text),
-        arguments_ref=_reference(item.arguments),
-        output_ref=_reference(item.output),
-        input_ref=None,
-    )
-
-
-def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
-    return ThreadConfirmedInputEntityView(
-        thread_id=thread_id,
-        projection_epoch=value.projection_epoch,
-        entity_kind=EntityKind.CONFIRMED_INPUT,
-        entity_id=str(value.cursor),
-        cursor=value.cursor,
-        revision_cursor=value.revision_cursor,
-        pending=False,
-        turn_id=value.turn_id,
-        state=ThreadConfirmedInputState(
-            harness_message_id=value.harness_message_id, origin_command_ids=list(value.origin_command_ids)
-        ),
-        text_ref=None,
-        arguments_ref=None,
-        output_ref=None,
-        input_ref=_reference(value.text),
-    )
-
-
-def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> ThreadLifecycleEntityView:
-    return ThreadLifecycleEntityView(
-        thread_id=thread_id,
-        projection_epoch=value.projection_epoch,
-        entity_kind=EntityKind.LIFECYCLE,
-        entity_id=str(value.cursor),
-        cursor=value.cursor,
-        revision_cursor=value.revision_cursor,
-        pending=False,
-        turn_id=None,
-        state=ThreadLifecycleState(observation=value.observation, event=MessageToDict(value.event)),
-        text_ref=None,
-        arguments_ref=None,
-        output_ref=None,
-        input_ref=None,
-    )
-
-
-def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> ThreadCommandEntityView:
-    return ThreadCommandEntityView(
-        thread_id=thread_id,
-        projection_epoch=value.projection_epoch,
-        entity_kind=EntityKind.COMMAND,
-        entity_id=value.command_id,
-        cursor=value.admission_cursor,
-        revision_cursor=value.outcome_cursor or value.admission_cursor,
-        pending=value.outcome is thread_fold.CommandOutcome.PENDING,
-        turn_id=None,
-        state=ThreadCommandState(
-            operation=value.operation,
-            outcome=value.outcome,
-            outcome_cursor=None if value.outcome_cursor is None else str(value.outcome_cursor),
-            outcome_reason=value.outcome_reason,
-        ),
-        text_ref=None,
-        arguments_ref=None,
-        output_ref=None,
-        input_ref=_reference(value.input),
-    )
-
-
-def _reference(reference: thread_fold.PayloadRef | None) -> ThreadPayloadReference | None:
-    if reference is None:
-        return None
-    return ThreadPayloadReference(
-        projection_epoch=reference.projection_epoch,
-        owner_cursor=str(reference.owner_cursor),
-        owner_id=reference.owner_id,
-        field=reference.field,
-        revision_cursor=str(reference.revision_cursor),
-        generation=str(reference.generation),
-    )
 
 
 async def _evidence_entity_cursor(
@@ -1571,11 +763,6 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
     sandbox = await session.scalar(select(Thread.sandbox).where(Thread.id == thread_id))
     if sandbox != lease.sandbox:
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
-
-
-async def _notify(session: AsyncSession) -> None:
-    # PostgreSQL delivers NOTIFY only on commit; payloads carry no trajectory or identity data.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
 
 
 def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:

@@ -53,10 +53,13 @@ bbr test //agentplane/app/...
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `trajectory.py`: the PostgreSQL store of threads, events, feed state, leases, materialized
+- `trajectory/`: the PostgreSQL store of threads, events, feed state, leases, materialized
   thread entities, and immutable content chunks/manifests. Each ingestion transaction
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
+  Layered bottom-up: `models.py` (the tables) and `views.py` (the rows' client contract); `rows.py`
+  (fold records to and from entity rows) and `payloads.py` (insert-only bodies); `recording.py`
+  (the fold write path); `store.py` (`TrajectoryStore`, the API over all of it). `updates.py` turns
+  committed PostgreSQL notifications into replica-local wakeups.
 - `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
@@ -65,7 +68,7 @@ bbr test //agentplane/app/...
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
-  in `operator_sessions.py` and reused by `trajectory.py`'s tables. Migrations run separately through
+  in `operator_sessions.py` and reused by `trajectory/models.py`'s tables. Migrations run separately through
   `:migrate`; the server itself never creates or checks tables at startup. `:image` and
   `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual

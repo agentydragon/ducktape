@@ -22,8 +22,8 @@ from agentplane.app.ingestion import event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.trajectory import (
-    EventReplicationError,
+from agentplane.app.trajectory.recording import EventReplicationError
+from agentplane.app.trajectory.store import (
     FeedEnd,
     FeedError,
     IngestionLease,

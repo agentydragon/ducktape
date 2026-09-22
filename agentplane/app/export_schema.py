@@ -22,7 +22,8 @@ from agentplane.app.electric import EntityInterestResponse, PayloadInterestRespo
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import ThreadEntityView, TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
+from agentplane.app.trajectory.views import ThreadEntityView
 
 
 async def _unreachable(name: str) -> str:

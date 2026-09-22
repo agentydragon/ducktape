@@ -69,7 +69,7 @@ from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,

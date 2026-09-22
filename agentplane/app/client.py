@@ -24,7 +24,7 @@ from agentplane.app.decisions import Decision
 from agentplane.app.egress import BindingView, PolicyView
 from agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
 from agentplane.app.presets import Harness, SandboxPresetView
-from agentplane.app.trajectory import ThreadView
+from agentplane.app.trajectory.views import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 

@@ -35,7 +35,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair

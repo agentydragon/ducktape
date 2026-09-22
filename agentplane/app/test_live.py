@@ -51,7 +51,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.runner import protocol_pb2
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL

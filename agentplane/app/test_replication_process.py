@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from agentplane.app.trajectory.models import SandboxIngestion
+from agentplane.app.trajectory.store import TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

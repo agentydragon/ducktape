@@ -64,7 +64,8 @@ from agentplane.app.inventory import (
     sandbox_views,
 )
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.trajectory import ThreadView, TrajectoryStore
+from agentplane.app.trajectory.store import TrajectoryStore
+from agentplane.app.trajectory.views import ThreadView
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient

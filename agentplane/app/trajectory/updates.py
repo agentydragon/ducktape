@@ -8,7 +8,9 @@ from contextlib import suppress
 from typing import Any
 
 import asyncpg
+from sqlalchemy import func, select
 from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.changes import Changes
 
@@ -89,3 +91,8 @@ class TrajectoryUpdates:
     def _terminated(self, _connection: object) -> None:
         self._lost.set()
         self._changes.notify()
+
+
+async def notify(session: AsyncSession) -> None:
+    # PostgreSQL delivers NOTIFY only on commit; payloads carry no trajectory or identity data.
+    await session.execute(select(func.pg_notify(CHANNEL, "")))

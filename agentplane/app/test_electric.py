@@ -28,7 +28,8 @@ from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.thread_fold import PayloadField
-from agentplane.app.trajectory import EntityKind, ThreadEntityInterest, ThreadPayloadSelection, TrajectoryStore
+from agentplane.app.trajectory.store import ThreadEntityInterest, ThreadPayloadSelection, TrajectoryStore
+from agentplane.app.trajectory.views import EntityKind
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

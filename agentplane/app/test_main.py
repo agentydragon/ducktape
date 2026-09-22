@@ -31,7 +31,8 @@ from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_in
 from agentplane.app.oidc import load_settings
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from agentplane.app.trajectory.models import SandboxIngestion
+from agentplane.app.trajectory.store import TrajectoryStore
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
