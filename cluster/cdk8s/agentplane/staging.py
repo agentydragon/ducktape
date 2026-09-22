@@ -1,6 +1,6 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana MCP action
-groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/Grocy SF/SSH/Home Assistant/Tana MCP
+action groups.
 """
 
 from __future__ import annotations
@@ -60,6 +60,16 @@ _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
+_GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
+# grocy-mcp-sf's OIDCProxy authorization server (mcp_infra/authentik_auth) only advertises
+# `none`/`private_key_jwt` in `token_endpoint_auth_methods_supported` -- no client_secret_post
+# or client_secret_basic -- so this is a public, PKCE-only client (RFC 7591 dynamic client
+# registration against https://grocy-mcp-sf.allegedly.works/register, redirect_uri
+# https://agentplane-staging.allegedly.works/mcp-linkage/callback), the same shape as
+# `kubernetes` below. No client secret exists to rotate or leak. If the registration is ever
+# lost (e.g. the server's Valkey-backed client store is wiped), re-run the DCR POST and update
+# this literal; nothing else changes.
+_GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # The same ESO-delivered Secrets haku-console's own home_assistant/tana servers read
@@ -111,6 +121,13 @@ _ACTIONS_SETTINGS = {
             "client_id": "kubectl-passthrough-mcp",
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
         },
+        "grocy_sf": {
+            "server_id": "grocy_sf",
+            "provider": "grocy_sf",
+            "server_url": _GROCY_SF_MCP_URL,
+            "client_id": _GROCY_SF_MCP_CLIENT_ID,
+            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
+        },
     },
     "action_groups": {
         "github": {
@@ -137,6 +154,20 @@ _ACTIONS_SETTINGS = {
                     "transport": "streamable-http",
                     "url": _KUBERNETES_MCP_URL,
                     "server_id": "kubernetes",
+                    "auth": "oauth",
+                },
+            },
+        },
+        "grocy_sf": {
+            "title": "Grocy SF MCP",
+            "description": "Grocy SF household MCP tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Grocy SF MCP executed with the linked operator Grocy account.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _GROCY_SF_MCP_URL,
+                    "server_id": "grocy_sf",
                     "auth": "oauth",
                 },
             },
@@ -283,6 +314,9 @@ ENV = Environment(
             cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+            # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
+            # same public Gateway path.
+            cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
             cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
