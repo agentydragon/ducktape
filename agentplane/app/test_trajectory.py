@@ -21,6 +21,7 @@ from agentplane.app import trajectory
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
+    EntityKind,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -1042,6 +1043,41 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
         ("tool-a", 7, 0),
         ("tool-b", 5, 1),
     ]
+
+
+async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(
+        thread,
+        [
+            _event(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
+            _event(
+                2,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool", tool=event_pb2.ToolResult(output="out", succeeded=False)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    await store.record(
+        thread,
+        [
+            _event(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
+            _event(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="late")),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        rows = await session.scalars(
+            select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM)
+        )
+        completions = {
+            row.entity_id: (row.revision_cursor, row.state["completion"], row.state["tool_succeeded"]) for row in rows
+        }
+    assert completions == {"answer": (3, "text", None), "tool": (4, "tool", False)}
 
 
 if __name__ == "__main__":

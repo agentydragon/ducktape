@@ -70,9 +70,9 @@ from agentplane.app.thread_debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
+from agentplane.app.thread_fold import CommandOutcome
 from agentplane.app.trajectory import (
     CommandIdConflictError,
-    CommandOutcomeValue,
     ThreadNotFoundError,
     ThreadScopeResetError,
     ThreadView,
@@ -511,7 +511,7 @@ class CommandReconciliationEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command_id: str
-    outcome: CommandOutcomeValue | None
+    outcome: CommandOutcome | None
 
 
 class CommandReconciliationResponse(BaseModel):

@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
 from agentplane.app.trajectory import (
+    SEGMENT_KINDS,
+    EntityKind,
     ThreadEntityInterest,
     ThreadInterestExpiredError,
     ThreadPayloadSelection,
@@ -25,7 +27,7 @@ from agentplane.app.trajectory import (
 logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 30
-_SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
+_SEGMENT_KINDS = ",".join(f"'{kind}'" for kind in SEGMENT_KINDS)
 _ENTITY_COLUMNS = (
     "thread_id,source_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,pending,turn_id,state,"
     "text_ref,arguments_ref,output_ref,input_ref"
@@ -131,7 +133,7 @@ class ElectricProxy:
             columns=_ENTITY_COLUMNS,
             where=(
                 "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
-                f"entity_kind = 'command' AND entity_id IN ({placeholders})"
+                f"entity_kind = '{EntityKind.COMMAND}' AND entity_id IN ({placeholders})"
             ),
             params=params,
         )
@@ -215,8 +217,8 @@ class ElectricProxy:
             params.update({"5": str(window_from), "6": str(window_before)})
         where = (
             "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND ("
-            f"{segment} OR entity_kind = 'view_state' OR "
-            "(entity_kind = 'command' AND pending = TRUE))"
+            f"{segment} OR entity_kind = '{EntityKind.VIEW_STATE}' OR "
+            f"(entity_kind = '{EntityKind.COMMAND}' AND pending = TRUE))"
         )
         return await self._forward(request, table="thread_entity", columns=_ENTITY_COLUMNS, where=where, params=params)
 
