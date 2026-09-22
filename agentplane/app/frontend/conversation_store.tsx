@@ -477,7 +477,13 @@ export function ConversationCollection({
   );
 }
 
-function bodyUrl(threadId: string, reference: PayloadRef): string {
+/** What a single-body shape is made of: a generation, and no revision within it. */
+type BodyIdentity = Pick<
+  PayloadRef,
+  "source_id" | "projection_epoch" | "owner_cursor" | "owner_item_id" | "field" | "generation"
+>;
+
+function bodyUrl(threadId: string, reference: BodyIdentity): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-chunks`, window.location.href);
   url.searchParams.set("source_id", reference.source_id);
   url.searchParams.set("projection_epoch", reference.projection_epoch);
@@ -488,7 +494,7 @@ function bodyUrl(threadId: string, reference: PayloadRef): string {
   return url.toString();
 }
 
-function bodyCollection(threadId: string, reference: PayloadRef, onError: (error: unknown) => void) {
+function bodyCollection(threadId: string, reference: BodyIdentity, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
       id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}`,
@@ -500,6 +506,8 @@ function bodyCollection(threadId: string, reference: PayloadRef, onError: (error
     })
   );
 }
+
+const encoder = new TextEncoder();
 
 /**
  * The contiguous prefix of `generation` that `contentBytes` covers.
@@ -518,7 +526,7 @@ function assemble(chunks: readonly PayloadChunk[], generation: bigint, contentBy
   for (let index = 0n; bytes < contentBytes; index++) {
     const text = byIndex.get(index);
     if (text === undefined) break;
-    const next = bytes + BigInt(new TextEncoder().encode(text).byteLength);
+    const next = bytes + BigInt(encoder.encode(text).byteLength);
     if (next > contentBytes) break;
     parts.push(text);
     bytes = next;
@@ -607,8 +615,25 @@ function RequestedPayloadBody({
     setStreamError(null);
     setAttempt((value) => value + 1);
   }, []);
-  const key = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}`;
-  const stable = useMemo<PayloadRef>(() => ({ ...reference }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The shape names a generation, so a re-render at a later revision of one must reuse it.
+  const stable = useMemo<BodyIdentity>(
+    () => ({
+      source_id: reference.source_id,
+      projection_epoch: reference.projection_epoch,
+      owner_cursor: reference.owner_cursor,
+      owner_item_id: reference.owner_item_id,
+      field: reference.field,
+      generation: reference.generation,
+    }),
+    [
+      reference.field,
+      reference.generation,
+      reference.owner_cursor,
+      reference.owner_item_id,
+      reference.projection_epoch,
+      reference.source_id,
+    ]
+  );
   const collection = useMemo(() => {
     let next: ReturnType<typeof bodyCollection>;
     next = bodyCollection(threadId, stable, (reason) => {

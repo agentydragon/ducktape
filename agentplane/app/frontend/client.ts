@@ -33,7 +33,6 @@ export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type EntityInterest = components["schemas"]["EntityInterestResponse"];
-export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
 export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
