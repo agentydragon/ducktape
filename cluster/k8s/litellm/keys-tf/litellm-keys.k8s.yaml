@@ -92,7 +92,6 @@ spec:
           - chatgpt/ant-messages/gpt-5.6-sol
           - chatgpt/ant-messages/gpt-5.6-terra
           - chatgpt/ant-messages/gpt-5.6-luna
-          - chatgpt/ant-messages/gpt-5.3-codex-spark
         embedding_client_models:
           - gemini-embedding-2
           - google/goog-embed/gemini-embedding-2
@@ -108,7 +107,6 @@ spec:
           - chatgpt/oai-responses/gpt-5.6-sol
           - chatgpt/oai-responses/gpt-5.6-terra
           - chatgpt/oai-responses/gpt-5.6-luna
-          - chatgpt/oai-responses/gpt-5.3-codex-spark
         tana_client_models:
           - tana/ant-messages/claude-sonnet-4-6
           - tana/ant-messages/claude-opus-4-6

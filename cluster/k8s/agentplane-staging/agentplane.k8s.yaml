@@ -68,7 +68,6 @@ data:
         - chatgpt/oai-responses/gpt-5.6-sol
         - chatgpt/oai-responses/gpt-5.6-terra
         - chatgpt/oai-responses/gpt-5.6-luna
-        - chatgpt/oai-responses/gpt-5.3-codex-spark
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
