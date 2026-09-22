@@ -4,20 +4,17 @@ without a runner."""
 from __future__ import annotations
 
 import asyncio
-import gc
-import tracemalloc
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from uuid import UUID
 
 import pytest
 import pytest_bazel
-from google.protobuf.timestamp_pb2 import Timestamp
-from sqlalchemy import event, func, select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.app import trajectory
+from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
@@ -39,32 +36,11 @@ from agentplane.app.trajectory import (
     ThreadPayloadManifest,
     TrajectoryStore,
 )
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-SPEC = protocol_pb2.SessionSpec(
-    harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
-)
-
-
-@pytest.fixture
-async def lease(store: TrajectoryStore) -> IngestionLease:
-    lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
-    assert lease is not None
-    return lease
-
-
-def _event(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
-    at = Timestamp()
-    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
-    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
-    return event_log_pb2.EventEntry(
-        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
-    )
 
 
 async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
@@ -78,16 +54,19 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     await store.record(
         thread,
         [
-            _event(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7)),
-            _event(2, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"x"}')),
-            _event(3, turn_started=event_pb2.TurnStarted(turn_id="t1")),
+            event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7)),
+            event_entry(2, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"x"}')),
+            event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="t1")),
         ],
         lease=lease,
     )
     # A replay after a reconnect brings sequences already stored: they are not written twice.
     await store.record(
         thread,
-        [_event(3, turn_started=event_pb2.TurnStarted(turn_id="t1")), _event(4, harness_lost=event_pb2.HarnessLost())],
+        [
+            event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="t1")),
+            event_entry(4, harness_lost=event_pb2.HarnessLost()),
+        ],
         lease=lease,
     )
 
@@ -106,7 +85,7 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
     command = command_pb2.Command(
         command_id="submit-1", submit_input=command_pb2.SubmitInput(text="persist this exact input")
     )
-    admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
+    admitted = event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command))
     await store.record(thread, [admitted], lease=lease)
 
     # The saved runner Event is the retry receipt, including its runner origin/cursor; it is not
@@ -120,194 +99,13 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
         await store.admitted_command(UUID(int=0), command)
 
 
-@pytest.mark.parametrize(
-    ("history_size", "materialized_item_count"),
-    [(200, 100), (4_000, 2_000), (40_000, 20_000)],
-    ids=["one-hundred-items", "two-thousand-items", "twenty-thousand-items"],
-)
-async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
-    store: TrajectoryStore,
-    lease: IngestionLease,
-    history_size: int,
-    materialized_item_count: int,
-    request: pytest.FixtureRequest,
-) -> None:
-    """A real old-item update only preloads its touched rows after large frame and entity histories."""
-    # This test deliberately creates 20,000 materialized entities in bounded record batches.
-    # Keep the writer fence valid for that workload; this does not change the test timeout.
-    assert await store.renew_ingestion(lease, timedelta(minutes=10))
-    thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
-    command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
-    admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
-    await store.record(
-        thread,
-        [admitted, _event(2, text_delta=event_pb2.TextDelta(item_id="old-item", text="before history"))],
-        lease=lease,
-    )
-    for start in range(3, history_size + 3, 100):
-        stop = min(start + 100, history_size + 3)
-        await store.record(
-            thread, [_history_event(cursor, materialized_item_count) for cursor in range(start, stop)], lease=lease
-        )
-
-    scope = await store.current_scope(thread)
-    assert scope is not None
-    # Warm the driver, typed codec, and Python caches before taking its allocation profile.
-    assert await store.admitted_command(thread, command) == admitted
-    assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
-        "admission": "pending",
-        "absent": None,
-    }
-    captured: list[tuple[str, Any]] = []
-
-    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and ("thread_entity" in statement or " FROM event" in statement):
-            captured.append((statement, parameters))
-
-    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
-    gc.collect()
-    tracemalloc.start()
-    try:
-        before = tracemalloc.take_snapshot()
-        await store.record(
-            thread,
-            [_event(history_size + 3, text_delta=event_pb2.TextDelta(item_id="old-item", text=" after history"))],
-            lease=lease,
-        )
-        assert await store.admitted_command(thread, command) == admitted
-        assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
-            "admission": "pending",
-            "absent": None,
-        }
-        current, peak = tracemalloc.get_traced_memory()
-        after = tracemalloc.take_snapshot()
-    finally:
-        tracemalloc.stop()
-        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
-    assert peak < 1_000_000, f"bounded record/read path allocated {peak} bytes for {history_size} historical rows"
-    async with store._sessions() as session:
-        item = await session.get(ThreadEntity, (thread, scope.projection_epoch, "item", "old-item"))
-    assert item is not None
-    assert item.revision_cursor == history_size + 3
-
-    plans: list[str] = []
-    async with store._engine.connect() as connection:
-        # Use normal planner statistics after the actual write workload.  The artifact below is
-        # deliberately the captured production statements, not a hand-written query with planner
-        # switches, so its buffers compare point lookups across entity cardinalities.
-        await connection.exec_driver_sql("ANALYZE thread_entity")
-        for statement, parameters in captured:
-            result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
-            plans.extend(row[0] for row in result)
-            plans.append("")
-    assert captured
-    profile = [
-        f"history_size={history_size}",
-        f"materialized_item_count={materialized_item_count}",
-        f"tracemalloc_current={current}",
-        f"tracemalloc_peak={peak}",
-        "retained_allocations:",
-        *(str(stat) for stat in after.compare_to(before, "lineno")[:20]),
-        "captured_query_plans:",
-        *plans,
-    ]
-    (undeclared_outputs_dir() / f"{request.node.name}-projection-profile.txt").write_text("\n".join(profile))
-
-
-def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.EventEntry:
-    index = cursor - 3
-    if index < materialized_item_count * 2:
-        item_id = f"history-{index // 2}"
-        if index % 2 == 0:
-            return _event(
-                cursor, item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-            )
-        return _event(cursor, text_delta=event_pb2.TextDelta(item_id=item_id, text="materialized"))
-    return _event(cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}'))
-
-
-async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
-    store: TrajectoryStore, lease: IngestionLease, request: pytest.FixtureRequest
-) -> None:
-    """Tail-window bounds do not walk settled commands that sort after the last segment."""
-    assert await store.renew_ingestion(lease, timedelta(minutes=10))
-    thread = await store.thread("sb-1", "command-dense-tail", SPEC)
-    await store.record(
-        thread,
-        [
-            _event(
-                1, item_started=event_pb2.ItemStarted(item_id="only-segment", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-            )
-        ],
-        lease=lease,
-    )
-    cursor = 2
-    for batch_start in range(0, 10_000, 50):
-        batch: list[event_log_pb2.EventEntry] = []
-        for command_index in range(batch_start, batch_start + 50):
-            command_id = f"settled-{command_index}"
-            batch.append(
-                _event(
-                    cursor,
-                    command_admitted=event_pb2.CommandAdmitted(
-                        command=command_pb2.Command(
-                            command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
-                        )
-                    ),
-                )
-            )
-            cursor += 1
-            batch.append(_event(cursor, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")))
-            cursor += 1
-        await store.record(thread, batch, lease=lease)
-
-    scope = await store.current_scope(thread)
-    assert scope is not None
-    captured: list[tuple[str, Any]] = []
-
-    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and "thread_entity" in statement:
-            captured.append((statement, parameters))
-
-    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
-    try:
-        async with store._sessions() as session:
-            cursors = list(
-                await session.scalars(
-                    select(ThreadEntity.cursor)
-                    .where(
-                        ThreadEntity.thread_id == thread,
-                        ThreadEntity.projection_epoch == scope.projection_epoch,
-                        ThreadEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
-                        ThreadEntity.cursor < scope.through_cursor + 1,
-                    )
-                    .order_by(ThreadEntity.cursor.desc())
-                    .limit(30)
-                )
-            )
-    finally:
-        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
-    assert cursors == [1]
-    assert len(captured) == 1
-    async with store._engine.connect() as connection:
-        await connection.exec_driver_sql("ANALYZE thread_entity")
-        statement, parameters = captured[0]
-        result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
-        plan = "\n".join(row[0] for row in result)
-    assert "ix_thread_entity_scope_segment_cursor" in plan
-    assert "Rows Removed by Filter" not in plan
-    (undeclared_outputs_dir() / f"{request.node.name}-segment-tail-profile.txt").write_text(
-        f"settled_command_count=10000\n{plan}\n"
-    )
-
-
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     empty = await store.thread(
         "sb-2", "s-9", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, cwd="/w", model="m")
     )
-    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
-    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = event_entry(2, harness_lost=event_pb2.HarnessLost())
     second.event.at.FromDatetime(datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC))
     await store.record(thread, [first, second], lease=lease)
 
@@ -351,7 +149,7 @@ async def test_gapped_batches_leave_no_archived_prefix(
     thread = await store.thread("sb-1", "s-1", SPEC)
     with pytest.raises(EventReplicationError, match="expected runner cursor"):
         await store.record(
-            thread, [_event(cursor, harness_lost=event_pb2.HarnessLost()) for cursor in cursors], lease=lease
+            thread, [event_entry(cursor, harness_lost=event_pb2.HarnessLost()) for cursor in cursors], lease=lease
         )
     assert await replica.events(thread, limit=10) == []
     assert await replica.last_cursor(thread) == 0
@@ -363,15 +161,15 @@ async def test_conflicting_replay_rolls_back_the_whole_batch(
     thread = await store.thread("sb-1", "s-1", SPEC)
     attached = protocol_pb2.Attached(session_id="s-1", spec=SPEC)
     await store.set_attached(thread, attached, lease=lease)
-    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
     await store.record(thread, [first], lease=lease)
     before = await replica.feed_state(thread)
     with pytest.raises(EventReplicationError, match="conflicting runner entry"):
         await store.record(
             thread,
             [
-                _event(2, model_changed=event_pb2.ModelChanged(model="test-rejected-model")),
-                _event(1, harness_started=event_pb2.HarnessStarted(pid=2)),
+                event_entry(2, model_changed=event_pb2.ModelChanged(model="test-rejected-model")),
+                event_entry(1, harness_started=event_pb2.HarnessStarted(pid=2)),
             ],
             lease=lease,
         )
@@ -391,9 +189,9 @@ async def test_origin_must_match_the_original_runner_log(
     store: TrajectoryStore, lease: IngestionLease, cursor: int, source_id: str, sequence: int
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted())
     await store.record(thread, [first], lease=lease)
-    wrong = _event(cursor, harness_lost=event_pb2.HarnessLost())
+    wrong = event_entry(cursor, harness_lost=event_pb2.HarnessLost())
     wrong.origin.source_id = source_id
     wrong.origin.sequence = sequence
     with pytest.raises(EventReplicationError):
@@ -403,10 +201,12 @@ async def test_origin_must_match_the_original_runner_log(
 
 async def test_same_batch_duplicates_require_identical_payloads(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
-    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = event_entry(2, harness_lost=event_pb2.HarnessLost())
     with pytest.raises(EventReplicationError, match="conflicting runner entry"):
-        await store.record(thread, [first, _event(1, harness_started=event_pb2.HarnessStarted(pid=2))], lease=lease)
+        await store.record(
+            thread, [first, event_entry(1, harness_started=event_pb2.HarnessStarted(pid=2))], lease=lease
+        )
     assert await store.events(thread, limit=10) == []
     await store.record(thread, [first, first, second, second], lease=lease)
     assert await store.events(thread, limit=10) == [first, second]
@@ -416,10 +216,10 @@ async def test_competing_copies_cannot_replace_an_archived_entry(
     store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted())
     await asyncio.gather(store.record(thread, [first], lease=lease), replica.record(thread, [first], lease=lease))
     contenders = [
-        _event(2, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line))
+        event_entry(2, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line))
         for line in ["test-frame-A", "test-frame-B"]
     ]
     results = await asyncio.gather(
@@ -443,10 +243,10 @@ async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     await store.set_attached(thread, protocol_pb2.Attached(session_id="s-1", spec=SPEC), lease=lease)
-    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    first = event_entry(1, harness_started=event_pb2.HarnessStarted())
     await store.record(thread, [first], lease=lease)
     before = await replica.feed_state(thread)
-    second = _event(2, model_changed=event_pb2.ModelChanged(model="test-committed-model"))
+    second = event_entry(2, model_changed=event_pb2.ModelChanged(model="test-committed-model"))
     engine = create_async_engine(db_url)
     notify = trajectory._notify
 
@@ -507,7 +307,7 @@ async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
     store: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
+    await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
     (unnamed,) = await store.list_threads()
     assert unnamed.name is None
 
@@ -524,7 +324,7 @@ async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
     store: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
+    await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
     (unarchived,) = await store.list_threads()
     assert unarchived.archived is False
 
@@ -571,7 +371,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         assert view is not None
         assert view.name == "cross-replica rename"
         changed.clear()
-        await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+        await store.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert [entry.cursor for entry in await replica.events(thread, limit=10)] == [1]
 
@@ -598,11 +398,11 @@ async def test_only_current_lease_can_write_or_renew(
         await store.release_ingestion(lease)
         assert await replica.renew_ingestion(successor, timedelta(minutes=1))
         with pytest.raises(IngestionLeaseLostError):
-            await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
-        await replica.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=successor)
+            await store.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+        await replica.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=successor)
         wrong_thread = await store.thread("sb-2", "s-2", SPEC)
         with pytest.raises(IngestionLeaseLostError):
-            await replica.record(wrong_thread, [_event(2, harness_lost=event_pb2.HarnessLost())], lease=successor)
+            await replica.record(wrong_thread, [event_entry(2, harness_lost=event_pb2.HarnessLost())], lease=successor)
         assert await store.last_cursor(wrong_thread) == 0
         await replica.release_ingestion(successor)
         assert await store.acquire_ingestion("sb-1", timedelta(minutes=1)) is not None
@@ -643,7 +443,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     thread = await store.thread("sb-1", "s-operational", SPEC)
     attached = protocol_pb2.Attached(session_id="s-operational", spec=SPEC)
     await store.set_attached(thread, attached, lease=lease)
-    await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
+    await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
     async with replica._sessions() as session:
         checkpoint_before = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_before is not None
@@ -705,15 +505,15 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 
 async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-invalid-origin", SPEC)
-    rejected = _event(2, harness_started=event_pb2.HarnessStarted())
+    rejected = event_entry(2, harness_started=event_pb2.HarnessStarted())
     rejected.origin.sequence = 3
     with pytest.raises(EventReplicationError, match="invalid runner origin at cursor 2") as raised:
         await store.record(
             thread,
             [
-                _event(1, harness_started=event_pb2.HarnessStarted()),
+                event_entry(1, harness_started=event_pb2.HarnessStarted()),
                 rejected,
-                _event(3, harness_started=event_pb2.HarnessStarted()),
+                event_entry(3, harness_started=event_pb2.HarnessStarted()),
             ],
             lease=lease,
         )
@@ -731,9 +531,11 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     await store.record(
         thread,
         [
-            _event(1, harness_started=event_pb2.HarnessStarted(resumed=True)),
-            _event(2, turn_started=event_pb2.TurnStarted(turn_id="test-turn", model=SPEC.model)),
-            _event(3, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line="test native frame")),
+            event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=True)),
+            event_entry(2, turn_started=event_pb2.TurnStarted(turn_id="test-turn", model=SPEC.model)),
+            event_entry(
+                3, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line="test native frame")
+            ),
         ],
         lease=lease,
     )
@@ -747,7 +549,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     await store.record(
         thread,
         [
-            _event(
+            event_entry(
                 4,
                 command_admitted=event_pb2.CommandAdmitted(
                     command=command_pb2.Command(
@@ -755,12 +557,12 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
                     )
                 ),
             ),
-            _event(
+            event_entry(
                 5, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
-            _event(6, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
-            _event(7, model_changed=event_pb2.ModelChanged(model="test-next-model")),
-            _event(8, harness_exited=event_pb2.HarnessExited()),
+            event_entry(6, command_failed=event_pb2.CommandFailed(command_id="test-failed", reason="no")),
+            event_entry(7, model_changed=event_pb2.ModelChanged(model="test-next-model")),
+            event_entry(8, harness_exited=event_pb2.HarnessExited()),
         ],
         lease=lease,
     )
@@ -777,17 +579,17 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     assert view is not None
     assert view.model == "test-next-model"
     with pytest.raises(EventReplicationError, match="conflicting runner entry"):
-        await store.record(thread, [_event(8, harness_started=event_pb2.HarnessStarted())], lease=lease)
+        await store.record(thread, [event_entry(8, harness_started=event_pb2.HarnessStarted())], lease=lease)
     assert await replica.feed_state(thread) == stopped
     with pytest.raises(ValueError, match="older"):
         await store.set_attached(thread, attached, lease=lease)
     assert await replica.feed_state(thread) == stopped
-    await store.record(thread, [_event(9, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
+    await store.record(thread, [event_entry(9, harness_started=event_pb2.HarnessStarted(resumed=True))], lease=lease)
     resumed = await replica.feed_state(thread)
     assert resumed is not None
     assert resumed.end is None
     assert resumed.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    await store.record(thread, [_event(10, harness_lost=event_pb2.HarnessLost())], lease=lease)
+    await store.record(thread, [event_entry(10, harness_lost=event_pb2.HarnessLost())], lease=lease)
     lost = await replica.feed_state(thread)
     assert lost is not None
     assert lost.attached.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
@@ -803,7 +605,7 @@ async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
     )
     await store.set_attached(thread, attached, lease=lease)
     await store.end_feed(thread, lease=lease, error=None)
-    await store.record(thread, [_event(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
+    await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
     caught_up = await replica.feed_state(thread)
     assert caught_up is not None
     assert caught_up.attached == attached
@@ -823,7 +625,7 @@ async def test_record_rechecks_expiry_after_waiting_for_the_lease_row(
                 select(SandboxIngestion).where(SandboxIngestion.sandbox == lease.sandbox).with_for_update()
             )
             write = asyncio.create_task(
-                store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+                store.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
             )
             async with asyncio.timeout(5):
                 while True:
@@ -873,7 +675,7 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
             await asyncio.wait_for(replica._updates.wait_until_disconnected(), timeout=5)
             assert not replica.updates_connected
             changed.clear()
-            await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+            await store.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
             await asyncio.wait_for(changed.wait(), timeout=5)
             assert replica.updates_connected
             assert [entry.cursor for entry in await replica.events(thread, limit=10)] == [1]
@@ -889,12 +691,12 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     store: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    first = _event(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
+    first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
     first.event.source_sequences.append(9007)
     await store.record(
-        thread, [first, _event(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
+        thread, [first, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
     )
-    await store.record(thread, [_event(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
+    await store.record(thread, [event_entry(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
     async with store._sessions() as session:
         item = await session.scalar(
             select(ThreadEntity).where(
@@ -936,7 +738,9 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert {(row.entity_cursor, row.observation_cursor) for row in evidence} == {(1, 1), (1, 2), (1, 3)}
     assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
-    await store.record(thread, [_event(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease)
+    await store.record(
+        thread, [event_entry(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease
+    )
     async with store._sessions() as session:
         replacement = await session.scalar(
             select(ThreadPayloadManifest).where(
@@ -956,7 +760,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
 
     with pytest.raises(ThreadFoldError, match="cursor 5"):
-        await store.record(thread, [_event(5)], lease=lease)
+        await store.record(thread, [event_entry(5)], lease=lease)
     assert await store.last_cursor(thread) == 4
 
 
@@ -965,7 +769,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
-    confirmed = _event(
+    confirmed = event_entry(
         2,
         harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
             harness_message_id="message", text="question", origin_command_ids=["input"], turn_id="turn"
@@ -975,29 +779,29 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
     await store.record(
         thread,
         [
-            _event(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
             confirmed,
-            _event(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
+            event_entry(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
         ],
         lease=lease,
     )
     await store.record(
         thread,
         [
-            _event(
+            event_entry(
                 4,
                 item_started=event_pb2.ItemStarted(
                     item_id="tool-b", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="later"
                 ),
             ),
-            _event(
+            event_entry(
                 5,
                 item_completed=event_pb2.ItemCompleted(
                     item_id="tool-b", tool=event_pb2.ToolResult(output="B", succeeded=True)
                 ),
             ),
-            _event(6, tool_arguments=event_pb2.ToolArguments(item_id="tool-a", arguments_json='{"path":"x"}')),
-            _event(
+            event_entry(6, tool_arguments=event_pb2.ToolArguments(item_id="tool-a", arguments_json='{"path":"x"}')),
+            event_entry(
                 7,
                 item_completed=event_pb2.ItemCompleted(
                     item_id="tool-a", tool=event_pb2.ToolResult(output="", succeeded=False)

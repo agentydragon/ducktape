@@ -146,10 +146,14 @@ py_library(
         ":trajectory",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:kubernetes",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
         "//agentplane/runner:conftest",
+        "//agentplane/runner:protocol_pb2",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -460,10 +464,8 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
-        "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -1117,5 +1119,26 @@ py_test(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_trajectory_indexing",
+    # Three history sizes up to 40,000 events folded into 20,000 materialized entities: minutes of
+    # bounded work, measured at ~217s for the four cases together.
+    size = "large",
+    srcs = ["test_trajectory_indexing.py"],
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

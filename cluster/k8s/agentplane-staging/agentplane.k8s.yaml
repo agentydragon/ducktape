@@ -1250,21 +1250,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
-  source:
-    secretRef:
-      name: haku-forgejo-git
-      key: password
-  targets:
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
@@ -1272,22 +1257,6 @@ spec:
   source:
     projectedWorkloadToken:
       audience: https://localhost:7445
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
-  source:
-    secretRef:
-      name: google-access-token
-      key: access_token
   targets:
     - header: Authorization
       method: schemeToken
@@ -1351,19 +1320,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
   name: packages
   namespace: agentplane-staging
 spec:
@@ -1407,44 +1363,6 @@ spec:
         - POST
       credentialRef:
         name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - gmail.googleapis.com
-        - tasks.googleapis.com
-        - people.googleapis.com
-        - docs.googleapis.com
-        - sheets.googleapis.com
-        - slides.googleapis.com
-        - youtube.googleapis.com
-      methods:
-        - GET
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - www.googleapis.com
-      methods:
-        - GET
-      paths:
-        - /calendar/v3/**
-        - /drive/v3/**
-        - /youtube/v3/**
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - driveactivity.googleapis.com
-      methods:
-        - POST
-      paths:
-        - /v2/activity:query
-      credentialRef:
-        name: google-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -3432,13 +3350,6 @@ metadata:
   name: agentplane-staging-egress-credentials
 spec: {}
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-creds-reader
-  namespace: agentplane-staging-egress-credentials
-automountServiceAccountToken: false
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -3468,6 +3379,33 @@ subjects:
     kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agentplane-github-pat
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: agentplane-github-pat
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging-egress-credentials
+automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -3523,26 +3461,6 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: agentplane-github-pat
-  namespace: agentplane-staging-egress-credentials
-spec:
-  data:
-    - remoteRef:
-        key: github-agentydragon-agent
-        property: token
-      secretKey: token
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-external-creds-secret-store
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: agentplane-github-pat
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
   name: haku-forgejo-git
   namespace: agentplane-staging-egress-credentials
 spec:
@@ -3559,3 +3477,85 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: haku-forgejo-git
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
+  source:
+    secretRef:
+      name: haku-forgejo-git
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - forgejo-http.forgejo.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
+  source:
+    secretRef:
+      name: google-access-token
+      key: access_token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - gmail.googleapis.com
+        - tasks.googleapis.com
+        - people.googleapis.com
+        - docs.googleapis.com
+        - sheets.googleapis.com
+        - slides.googleapis.com
+        - youtube.googleapis.com
+      methods:
+        - GET
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - www.googleapis.com
+      methods:
+        - GET
+      paths:
+        - /calendar/v3/**
+        - /drive/v3/**
+        - /youtube/v3/**
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - driveactivity.googleapis.com
+      methods:
+        - POST
+      paths:
+        - /v2/activity:query
+      credentialRef:
+        name: google-readonly

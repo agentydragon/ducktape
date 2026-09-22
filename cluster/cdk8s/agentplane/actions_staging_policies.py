@@ -337,7 +337,8 @@ def add_staging_action_policies(scope: Construct) -> None:
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
     # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
-    # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads (egress.py).
+    # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
+    # (egress_staging_credentials.py).
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
