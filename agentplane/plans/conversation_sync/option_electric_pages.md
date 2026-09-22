@@ -11,10 +11,19 @@ the opposite. Pages never overlap and their bounds never move, so scrolling up s
 the client does not hold and re-sends nothing. What it pays for that is subscription count — seven
 shapes at the tail — which D1, as finally stated, does not charge for.
 
-What it structurally cannot do is **P8/D2**: the content selection lives in a server-side shape
-predicate, where a client cannot express it and the server cannot vary it per reader. P8 is in
-<../../docs/thread_view_sync.md>, so that is this option's one hard problem, and it is called out
-where it arises below.
+It can also satisfy **P8/D2**, which an earlier draft of this file denied. The field set as written
+below is fixed in the predicate, but nothing forces that: give each payload field its own content
+shape per page and the client subscribes to the ones it wants — always `text`, `reasoning` only if
+it wants reasoning, `output` when a disclosure opens or from the start if it wants it streamed.
+That is the client choosing, and every content shape is live, so it composes with streaming.
+
+The cost is shape count — pages × fields in use rather than pages — which lands on **O1** against
+`ELECTRIC_MAX_SHAPES`. Per-field shapes share better than per-selection ones: two readers wanting
+`{text}` and `{text, reasoning}` share the `text` shape, where `field IN (…)` predicates would give
+them two overlapping shapes.
+
+So this option has no hard blocker. Its case against is cumulative: shape count, the page boundary
+and its landing pad, a composite catch-up signal, and no per-card readiness signal.
 
 **Note on numbering:** `W1`…`W9` in this file are _work items_ from the draft this grew out of, and
 have nothing to do with the `D` wants in <requirements.md>. Requirement citations here are `P`, `S`,

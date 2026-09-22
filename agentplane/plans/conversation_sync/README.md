@@ -44,33 +44,33 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 `+` meets it, `~` meets it with work or a caveat, `−` fails it, `?` unknown without investigation.
 Cells are judgements from the option files, not measurements.
 
-| Req                          | A0 poll all | A1 poll delta | Moving window | SSE push | Electric today | Electric pages |
-| ---------------------------- | ----------- | ------------- | ------------- | -------- | -------------- | -------------- |
-| P1 tail-first open           | −           | +             | +             | +        | +              | +              |
-| P2 live updates              | ~ (1 s)     | +             | +             | +        | +              | +              |
-| P3 history can change        | +           | +             | +             | +        | +              | +              |
-| P4 scroll back               | + (free)    | +             | +             | +        | ~              | +              |
-| **P5 place survives**        | +           | +             | +             | +        | **−**          | +              |
-| P6 disconnect resumes        | +           | +             | +             | ~        | **−**          | +              |
-| P7 epoch replacement         | +           | +             | +             | +        | +              | +              |
-| **P8 client picks content**  | +           | +             | +             | +        | **−**          | **−**          |
-| P9 command reconcile         | +           | +             | +             | +        | +              | +              |
-| S1 body ≤ its own revision   | +           | +             | +             | +        | ~              | +              |
-| S2 ordering                  | +           | +             | +             | +        | +              | +              |
-| S3 caught-up signal          | +           | +             | +             | +        | +              | ~              |
-| S4 no lost update            | +           | +             | +             | +        | +              | +              |
-| **E1 O(1) requests on open** | +           | +             | +             | +        | **−**          | +              |
-| E2 bytes bounded             | −           | +             | +             | +        | +              | +              |
-| E3 streaming ≈0 requests     | +           | +             | +             | +        | +              | +              |
-| **E4 scroll loads only new** | n/a         | −             | **+**         | +        | −              | +              |
-| E5 no re-transfer            | −           | ~             | +             | +        | −              | +              |
-| O1 bounded/shared state      | +           | +             | +             | −        | −              | ~              |
-| O2 horizontal scale          | +           | +             | +             | ~        | +              | +              |
-| O3 debuggable                | +           | +             | +             | +        | ~              | ~              |
-| **O4 few moving parts**      | +           | +             | +             | ~        | −              | **−**          |
-| **D1 no overlap re-sent**    | −           | −             | **+**         | +        | **−**          | **+**          |
-| D2 no windowed/lazy seam     | +           | +             | +             | +        | −              | −              |
-| D3 incrementally reachable   | +           | +             | +             | ~        | n/a            | −              |
+| Req                          | A0 poll all | A1 poll delta | Moving window | SSE push | Electric today | Electric pages  |
+| ---------------------------- | ----------- | ------------- | ------------- | -------- | -------------- | --------------- |
+| P1 tail-first open           | −           | +             | +             | +        | +              | +               |
+| P2 live updates              | ~ (1 s)     | +             | +             | +        | +              | +               |
+| P3 history can change        | +           | +             | +             | +        | +              | +               |
+| P4 scroll back               | + (free)    | +             | +             | +        | ~              | +               |
+| **P5 place survives**        | +           | +             | +             | +        | **−**          | +               |
+| P6 disconnect resumes        | +           | +             | +             | ~        | **−**          | +               |
+| P7 epoch replacement         | +           | +             | +             | +        | +              | +               |
+| **P8 client picks content**  | +           | +             | +             | +        | **−**          | ~ (shape/field) |
+| P9 command reconcile         | +           | +             | +             | +        | +              | +               |
+| S1 body ≤ its own revision   | +           | +             | +             | +        | ~              | +               |
+| S2 ordering                  | +           | +             | +             | +        | +              | +               |
+| S3 caught-up signal          | +           | +             | +             | +        | +              | ~               |
+| S4 no lost update            | +           | +             | +             | +        | +              | +               |
+| **E1 O(1) requests on open** | +           | +             | +             | +        | **−**          | +               |
+| E2 bytes bounded             | −           | +             | +             | +        | +              | +               |
+| E3 streaming ≈0 requests     | +           | +             | +             | +        | +              | +               |
+| **E4 scroll loads only new** | n/a         | −             | **+**         | +        | −              | +               |
+| E5 no re-transfer            | −           | ~             | +             | +        | −              | +               |
+| O1 bounded/shared state      | +           | +             | +             | −        | −              | ~               |
+| O2 horizontal scale          | +           | +             | +             | ~        | +              | +               |
+| O3 debuggable                | +           | +             | +             | +        | ~              | ~               |
+| **O4 few moving parts**      | +           | +             | +             | ~        | −              | **−**           |
+| **D1 no overlap re-sent**    | −           | −             | **+**         | +        | **−**          | **+**           |
+| D2 no windowed/lazy seam     | +           | +             | +             | +        | −              | −               |
+| D3 incrementally reachable   | +           | +             | +             | ~        | n/a            | −               |
 
 ### What the matrix says
 
@@ -82,9 +82,16 @@ Cells are judgements from the option files, not measurements.
   without `have`.
 - **A0 fails D1 hardest**, which is easy to miss because it has no window to move: it re-sends the
   whole conversation on every poll, held or not.
-- **P8 is the only hard failure left on the Electric columns**, because it is in
-  <../../docs/thread_view_sync.md> rather than in anyone's preferences. An Electric design that
-  wants to stay in contention has to answer it or argue the spec should change.
+- **Nothing here is disqualified.** Two earlier readings of this matrix said otherwise — first that
+  D1 eliminated the Electric family, then that P8 did — and both were wrong. P8 is satisfiable with
+  Electric by giving each payload field its own content shape and letting the client subscribe to
+  the ones it wants; that is the client choosing, and it composes with streaming. It costs shape
+  count (pages × fields in use), which is an **O1** problem rather than a P8 one.
+- **So the case against the Electric family is cumulative, not structural.** Shape count, the page
+  boundary and its landing pad, a catch-up signal that becomes composite, no per-card readiness
+  signal, and the browser cache being the only place the overlap is avoided. Each is affordable;
+  the question is whether the pile is worth what shapes buy, which is a server-side cache shared
+  between readers of one conversation.
 - **The moving window is the only column that is all `+`.** That is not a claim that it is right —
   it is the option written _from_ these requirements, so it ought to score well, and the honest
   reading is that the requirements have not yet been stress-tested against it. Its costs are real
@@ -102,9 +109,10 @@ Cells are judgements from the option files, not measurements.
 
 ## What to settle next, in order
 
-1. **Settle P8.** It is the only hard blocker on the Electric family, it is in the spec, and the
-   deployed code violates it. Either it holds — and an Electric design owes an answer — or the spec
-   line should change, which is a decision available rather than a door closed.
+1. **Decide whether shapes are worth their complexity**, now that neither D1 nor P8 rules them
+   out. What they buy is a cache shared between readers of one conversation; what they cost is
+   everything in option_electric_pages.md that is not about conversations. With few concurrent
+   readers per conversation, that trade looks bad — but it is a judgement, not a derivation.
 2. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
    `revision_cursor > $since` for the overlap — and **pin with a test that every mutation advances
    an entity's `revision_cursor`, including a body change.** That single assumption carries the

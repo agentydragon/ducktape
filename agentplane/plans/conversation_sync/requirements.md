@@ -26,11 +26,31 @@ requirement nobody can source is a preference and should be argued as one.
 | P8  | **The client chooses its content selection** — text, reasoning, tool arguments, output — and that choice composes with streaming. Selecting nothing still returns metadata and references. | <../../docs/thread_view_sync.md> § Queries              |
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Deployed behaviour                                      |
 
-**P8 is the one the deployed design breaks.** The spec makes content selection a client query
-parameter; the Electric implementation put the field set in a server-side shape predicate, where the
-client cannot express it and the server cannot vary it per reader. Any option that bakes "reasoning
-is lazy, text is eager" into the protocol fails P8 — that is an **optimisation**, and it belongs on
-the client's side of the wire.
+**P8 is what the deployed design breaks, and it is not hard to satisfy.** The spec makes content
+selection the client's; the deployed implementation has no parameter for it, and the page design
+put a fixed field set in a shape predicate. Baking "reasoning is lazy, text is eager" into the
+protocol is an **optimisation** on the wrong side of the wire.
+
+An earlier draft of this file said P8 **disqualifies** the Electric family. That was wrong. `field`
+is a column of the chunk table, so a field selection is a `where` predicate and therefore part of a
+shape's identity — but that means **one shape per field**, not no shape at all, and the client
+chooses P8-style by choosing which of them to subscribe to:
+
+- A reader always holds the entity shapes, which carry metadata and references. "Selecting nothing
+  still returns metadata and references" holds by default.
+- It subscribes to the `text` content shape because it always renders text; to `reasoning` only if
+  it wants reasoning; to `output` when a disclosure opens, or from the start if it wants it
+  streamed. **That is the client choosing, and it composes with streaming** — every content shape is
+  live like any other.
+- Per-**field** shapes share better than per-selection ones: a reader wanting `{text}` and one
+  wanting `{text, reasoning}` share the `text` shape, where `field IN ('text')` and
+  `field IN ('text','reasoning')` would be two shapes with overlapping contents.
+
+What it costs is shape count: pages × fields in use, rather than pages. That is an **O1** problem
+against `ELECTRIC_MAX_SHAPES`, not a P8 problem.
+
+So no option on the matrix is disqualified by P8. It separates designs that have a parameter for it
+from designs that do not, and every design here can grow one.
 
 ## Sync semantics
 

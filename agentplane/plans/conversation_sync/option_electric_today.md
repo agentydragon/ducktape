@@ -24,7 +24,8 @@ selection syncs in a hidden subtree and swaps only once caught up, so the visibl
   `ConversationInterestExpiredError` at the same count both rebuild the selection. With a history
   page open the count sits at 59, so streaming trips it every couple of segments and opens a hole in
   the middle of the view (see option_electric_pages.md § flow 4).
-- **P8** — the content selection is not the client's. There is no parameter for it.
+- **P8** — the content selection is not the client's. There is no parameter for it, and unlike the
+  page design this one has no obvious place to put one.
 - **D1** — every change of window is a new shape replaying from `offset=-1`, so paging up re-sends
   the part of the window the reader already has. The page partition fixes this; moving the interest
   predicate is what breaks it.
