@@ -215,7 +215,7 @@ class ElectricProxy:
             params.update({"5": str(window_from), "6": str(window_before)})
         where = (
             "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND ("
-            f"{segment} OR entity_kind IN ('view_state','controls') OR "
+            f"{segment} OR entity_kind = 'view_state' OR "
             "(entity_kind = 'command' AND pending = TRUE))"
         )
         return await self._forward(
