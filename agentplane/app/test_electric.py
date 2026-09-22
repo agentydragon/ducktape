@@ -9,10 +9,12 @@ returns are exactly what the shape's identity is made of.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import get_args
 from uuid import UUID, uuid4
 
 import httpx
@@ -27,7 +29,12 @@ from agentplane.app.conftest import migrated_database
 from agentplane.app.conversation_projection import PayloadField
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, TrajectoryStore
+from agentplane.app.trajectory import (
+    ConversationEntityInterest,
+    ConversationPayloadSelection,
+    ConversationStoredEntity,
+    TrajectoryStore,
+)
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -123,6 +130,30 @@ def payload_query(seeded: Seeded) -> dict[str, str]:
         "generation": str(selection.generation),
         "revision_cursor": str(selection.revision_cursor),
     }
+
+
+async def test_entity_shape_names_only_kinds_the_projection_writes(store: TrajectoryStore, seeded: Seeded) -> None:
+    """A kind in the predicate that nothing writes is dead, and rides in every shape's cache key."""
+    seen: httpx.Request | None = None
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        nonlocal seen
+        seen = request
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
+
+    app, electric = make_app(httpx.MockTransport(upstream), store)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.get(
+            f"/threads/{seeded.thread}/sync/entities", params=entity_query(seeded) | {"offset": "-1"}
+        )
+    await electric.aclose()
+
+    assert response.status_code == 200
+    assert seen is not None
+    named = set(re.findall(r"'([a-z_]+)'", httpx.QueryParams(seen.url.query)["where"]))
+    written = set(get_args(ConversationStoredEntity.model_fields["entity_kind"].annotation))
+    assert named
+    assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
 
 
 async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStore, seeded: Seeded) -> None:
