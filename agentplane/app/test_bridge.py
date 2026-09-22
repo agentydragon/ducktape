@@ -1,6 +1,6 @@
 """One browser-shaped script over the bridge against a local runner, run for both harnesses: open a
 session, stream it, send an input while streaming, open a second tab on the same session, reconnect
-from the last event id, shut down; and the trajectory the store kept of all of it."""
+from the last event id, shut down; and the thread the store kept of all of it."""
 
 from __future__ import annotations
 
@@ -33,9 +33,9 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory.models import ThreadCheckpoint, ThreadEntity
-from agentplane.app.trajectory.store import FeedError, TrajectoryStore
-from agentplane.app.trajectory.views import ThreadOperationalState
+from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
+from agentplane.app.thread.store import FeedError, ThreadStore
+from agentplane.app.thread.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -120,7 +120,7 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 async def app_url(
     runner: RunnerHandle,
     inventory: SandboxInventory,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -263,7 +263,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             "stopRunnerSession": {},
         }
 
-        # The store kept the whole trajectory, readable without the runner: both turns, the raw
+        # The store kept the whole thread, readable without the runner: both turns, the raw
         # frames, and the exit the shutdown caused.
         (thread,) = (await http.get("/threads")).json()
         assert thread["id"] == thread_id
@@ -333,11 +333,7 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str,
-    runner: RunnerHandle,
-    store: TrajectoryStore,
-    spec: protocol_pb2.SessionSpec,
-    failed_native_journal: None,
+    app_url: str, runner: RunnerHandle, store: ThreadStore, spec: protocol_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     thread = await store.thread(SANDBOX, SESSION, spec)
@@ -491,7 +487,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
-    store: TrajectoryStore, monkeypatch: pytest.MonkeyPatch
+    store: ThreadStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     thread = await store.thread(
         SANDBOX,
@@ -531,7 +527,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
     monkeypatch.setattr(store, "admitted_command", observed_lookup)
-    monkeypatch.setattr("agentplane.app.trajectory.store.notify", drop_notification)
+    monkeypatch.setattr("agentplane.app.thread.store.notify", drop_notification)
     monkeypatch.setattr("agentplane.app.bridge.RECONCILE_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
@@ -554,12 +550,12 @@ class Replicas:
 
 
 @pytest.fixture
-async def replicas(runner: RunnerHandle, store: TrajectoryStore, db_url: str) -> AsyncIterator[Replicas]:
+async def replicas(runner: RunnerHandle, store: ThreadStore, db_url: str) -> AsyncIterator[Replicas]:
     async def address_of(name: str) -> str:
         assert name == SANDBOX
         return runner.target
 
-    replica_store = TrajectoryStore.connect(db_url)
+    replica_store = ThreadStore.connect(db_url)
     await replica_store.start_updates()
     owner = RunnerBridge(address_of=address_of, store=store)
     survivor = RunnerBridge(address_of=address_of, store=replica_store)
@@ -580,7 +576,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 
 
 async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
-    runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
+    runner: RunnerHandle, store: ThreadStore, spec: protocol_pb2.SessionSpec
 ) -> None:
     client = RunnerClient(runner.target, capture_history=True)
     try:
@@ -610,7 +606,7 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
 
 async def test_semantic_feed_failure_survives_replica_reconcile(
     runner: RunnerHandle,
-    store: TrajectoryStore,
+    store: ThreadStore,
     db_url: str,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
@@ -622,7 +618,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
         return runner.target
 
     client = RunnerClient(runner.target, capture_history=True)
-    replica_store = TrajectoryStore.connect(db_url)
+    replica_store = ThreadStore.connect(db_url)
     await replica_store.start_updates()
     try:
         attachment = await client.attach(SESSION, spec=spec)
@@ -696,7 +692,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
 
 
 async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
-    runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+    runner: RunnerHandle, store: ThreadStore, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = RunnerClient(runner.target, capture_history=True)
     try:
@@ -728,7 +724,7 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
 
 
 async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
-    replicas: Replicas, store: TrajectoryStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    replicas: Replicas, store: ThreadStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await store.thread(SANDBOX, SESSION, spec)
@@ -770,7 +766,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
 
 async def test_inventory_change_discovers_existing_runner_session_without_browser_open(
     runner: RunnerHandle,
-    store: TrajectoryStore,
+    store: ThreadStore,
     model: ScriptedModel,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
@@ -818,7 +814,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
-    replicas: Replicas, store: TrajectoryStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    replicas: Replicas, store: ThreadStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await store.thread(SANDBOX, SESSION, spec)
@@ -864,7 +860,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 
 
 async def test_stored_thread_stream_does_not_require_reachable_runner(
-    replicas: Replicas, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
+    replicas: Replicas, store: ThreadStore, spec: protocol_pb2.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await store.thread(SANDBOX, SESSION, spec)

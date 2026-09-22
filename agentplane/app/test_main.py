@@ -31,8 +31,8 @@ from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_in
 from agentplane.app.oidc import load_settings
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
-from agentplane.app.trajectory.models import SandboxIngestion
-from agentplane.app.trajectory.store import TrajectoryStore
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.store import ThreadStore
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -164,7 +164,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_and_store(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,

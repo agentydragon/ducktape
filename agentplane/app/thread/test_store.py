@@ -15,18 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory.models import SandboxIngestion
-from agentplane.app.trajectory.recording import EventReplicationError
-from agentplane.app.trajectory.store import (
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.recording import EventReplicationError
+from agentplane.app.thread.store import (
     CommandIdConflictError,
     FeedEnd,
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
     ThreadNotFoundError,
-    TrajectoryStore,
+    ThreadStore,
 )
-from agentplane.app.trajectory.updates import notify
+from agentplane.app.thread.updates import notify
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -35,7 +35,7 @@ from agentplane.runner import protocol_pb2
 
 
 async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     assert await store.thread("sb-1", "s-1", SPEC) == thread
@@ -71,7 +71,7 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert await store.last_cursor(other) == 0
 
 
-async def test_archived_command_admission_is_an_exact_retry_key(store: TrajectoryStore, lease: IngestionLease) -> None:
+async def test_archived_command_admission_is_an_exact_retry_key(store: ThreadStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     command = command_pb2.Command(
         command_id="submit-1", submit_input=command_pb2.SubmitInput(text="persist this exact input")
@@ -90,7 +90,7 @@ async def test_archived_command_admission_is_an_exact_retry_key(store: Trajector
         await store.admitted_command(UUID(int=0), command)
 
 
-async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
+async def test_threads_list_with_their_progress(store: ThreadStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     empty = await store.thread(
         "sb-2", "s-9", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, cwd="/w", model="m")
@@ -135,7 +135,7 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
 
 @pytest.mark.parametrize("cursors", [pytest.param([2], id="initial-gap"), pytest.param([1, 3], id="batch-gap"), [2, 1]])
 async def test_gapped_batches_leave_no_archived_prefix(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease, cursors: list[int]
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease, cursors: list[int]
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     with pytest.raises(EventReplicationError, match="expected runner cursor"):
@@ -147,7 +147,7 @@ async def test_gapped_batches_leave_no_archived_prefix(
 
 
 async def test_conflicting_replay_rolls_back_the_whole_batch(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     attached = protocol_pb2.Attached(session_id="s-1", spec=SPEC)
@@ -177,7 +177,7 @@ async def test_conflicting_replay_rolls_back_the_whole_batch(
     [(0, "test-runner", 0), (2, "", 2), (2, "test-runner", 1), (2, "test-replacement-source", 2)],
 )
 async def test_origin_must_match_the_original_runner_log(
-    store: TrajectoryStore, lease: IngestionLease, cursor: int, source_id: str, sequence: int
+    store: ThreadStore, lease: IngestionLease, cursor: int, source_id: str, sequence: int
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     first = event_entry(1, harness_started=event_pb2.HarnessStarted())
@@ -190,7 +190,7 @@ async def test_origin_must_match_the_original_runner_log(
     assert await store.events(thread, limit=10) == [first]
 
 
-async def test_same_batch_duplicates_require_identical_payloads(store: TrajectoryStore, lease: IngestionLease) -> None:
+async def test_same_batch_duplicates_require_identical_payloads(store: ThreadStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
     second = event_entry(2, harness_lost=event_pb2.HarnessLost())
@@ -204,7 +204,7 @@ async def test_same_batch_duplicates_require_identical_payloads(store: Trajector
 
 
 async def test_competing_copies_cannot_replace_an_archived_entry(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     first = event_entry(1, harness_started=event_pb2.HarnessStarted())
@@ -226,11 +226,7 @@ async def test_competing_copies_cannot_replace_an_archived_entry(
 
 
 async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_atomic(
-    store: TrajectoryStore,
-    replica: TrajectoryStore,
-    lease: IngestionLease,
-    db_url: str,
-    monkeypatch: pytest.MonkeyPatch,
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease, db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     await store.set_attached(thread, protocol_pb2.Attached(session_id="s-1", spec=SPEC), lease=lease)
@@ -251,7 +247,7 @@ async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_
 
     try:
         with monkeypatch.context() as patch:
-            patch.setattr("agentplane.app.trajectory.store.notify", disconnect_before_commit)
+            patch.setattr("agentplane.app.thread.store.notify", disconnect_before_commit)
             with pytest.raises(DBAPIError):
                 await store.record(thread, [second], lease=lease)
         assert await replica.events(thread, limit=10) == [first]
@@ -268,7 +264,7 @@ async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_
 
 
 async def test_threads_list_reflects_the_attached_feed_s_harness_state(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     """`list_threads`/`get_thread` expose `FeedState.attached.harness_state` per thread — the live
     running/idle signal the sidebar's per-thread status dot reads (`agentplane/plans/task_dag.md`
@@ -294,7 +290,7 @@ async def test_threads_list_reflects_the_attached_feed_s_harness_state(
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
@@ -311,7 +307,7 @@ async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
 
 
 async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))], lease=lease)
@@ -332,13 +328,13 @@ async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
         await store.archive(UUID(int=0))
 
 
-async def test_concurrent_replicas_create_one_thread(store: TrajectoryStore, replica: TrajectoryStore) -> None:
+async def test_concurrent_replicas_create_one_thread(store: ThreadStore, replica: ThreadStore) -> None:
     first, second = await asyncio.gather(store.thread("sb-1", "s-1", SPEC), replica.thread("sb-1", "s-1", SPEC))
     assert first == second
     assert len(await replica.list_threads()) == 1
 
 
-async def test_concurrent_replicas_choose_one_ingester(store: TrajectoryStore, replica: TrajectoryStore) -> None:
+async def test_concurrent_replicas_choose_one_ingester(store: ThreadStore, replica: ThreadStore) -> None:
     first, second = await asyncio.gather(
         store.acquire_ingestion("test-racing-sandbox", timedelta(minutes=1)),
         replica.acquire_ingestion("test-racing-sandbox", timedelta(minutes=1)),
@@ -347,7 +343,7 @@ async def test_concurrent_replicas_choose_one_ingester(store: TrajectoryStore, r
 
 
 async def test_commits_wake_another_replica_and_leave_durable_replay(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     changed = asyncio.Event()
     with replica.changes.subscribe(changed):
@@ -367,7 +363,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
 
 
 async def test_only_current_lease_can_write_or_renew(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease, db_url: str
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease, db_url: str
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     assert await replica.acquire_ingestion("sb-1", timedelta(minutes=1)) is None
@@ -401,7 +397,7 @@ async def test_only_current_lease_can_write_or_renew(
 
 
 async def test_feed_attachment_and_terminal_state_survive_the_owner(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     assert await replica.feed_state(thread) is None
@@ -427,7 +423,7 @@ async def test_feed_attachment_and_terminal_state_survive_the_owner(
         await store.end_feed(thread, lease=lease, error=None)
 
 
-async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: TrajectoryStore, lease: IngestionLease) -> None:
+async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: ThreadStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-invalid-origin", SPEC)
     rejected = event_entry(2, harness_started=event_pb2.HarnessStarted())
     rejected.origin.sequence = 3
@@ -446,7 +442,7 @@ async def test_rejected_entry_inside_a_batch_carries_its_cursor(store: Trajector
 
 
 async def test_ingested_events_project_the_durable_attachment_without_replay_regression(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     attached = protocol_pb2.Attached(session_id="s-1", spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_STOPPED)
@@ -521,7 +517,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
 
 
 async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     attached = protocol_pb2.Attached(
@@ -538,7 +534,7 @@ async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
 
 
 async def test_record_rechecks_expiry_after_waiting_for_the_lease_row(
-    store: TrajectoryStore, lease: IngestionLease, db_url: str
+    store: ThreadStore, lease: IngestionLease, db_url: str
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     engine = create_async_engine(db_url)
@@ -580,7 +576,7 @@ async def test_record_rechecks_expiry_after_waiting_for_the_lease_row(
 
 
 async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease, db_url: str
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease, db_url: str
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     engine = create_async_engine(db_url)
@@ -591,7 +587,7 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
                 await connection.execute(
                     text(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = current_database() AND application_name = 'agentplane-trajectory-updates'"
+                        "WHERE datname = current_database() AND application_name = 'agentplane-thread-updates'"
                     )
                 )
             # Wait on the termination callback itself, rather than an untagged Changes wakeup:

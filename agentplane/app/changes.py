@@ -3,7 +3,7 @@
 A reader clears its waiter, reads the current state, and waits again, so a burst of changes
 coalesces into one read instead of a backlog of readings that are already out of date. One waiter
 can be registered with several `Changes`, which is how the live stream waits on the cluster index
-and the trajectory store at once.
+and the thread store at once.
 """
 
 from __future__ import annotations

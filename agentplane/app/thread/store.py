@@ -1,4 +1,4 @@
-"""Trajectories outlive sandboxes: every runner event, `Native` frames included, copied into
+"""Threads outlive sandboxes: every runner event, `Native` frames included, copied into
 PostgreSQL as it arrives.
 
 A thread is one runner session, keyed by the sandbox and the client-chosen session id; its entries
@@ -22,6 +22,20 @@ from agentplane.app import thread_fold
 from agentplane.app.changes import Changes
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
+from agentplane.app.thread.models import (
+    Event,
+    FeedState,
+    SandboxIngestion,
+    Thread,
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadManifest,
+)
+from agentplane.app.thread.recording import EventReplicationError, ThreadFoldError, record_thread_fold, set_operational
+from agentplane.app.thread.updates import ThreadUpdates, notify
+from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind, ThreadCommandState, ThreadView
 from agentplane.app.thread_debug import (
     ArchivedObservation,
     ArchivedObservationEntry,
@@ -33,25 +47,6 @@ from agentplane.app.thread_debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
-from agentplane.app.trajectory.models import (
-    Event,
-    FeedState,
-    SandboxIngestion,
-    Thread,
-    ThreadCheckpoint,
-    ThreadEntity,
-    ThreadEvidence,
-    ThreadNativeLink,
-    ThreadPayloadManifest,
-)
-from agentplane.app.trajectory.recording import (
-    EventReplicationError,
-    ThreadFoldError,
-    record_thread_fold,
-    set_operational,
-)
-from agentplane.app.trajectory.updates import TrajectoryUpdates, notify
-from agentplane.app.trajectory.views import SEGMENT_KINDS, EntityKind, ThreadCommandState, ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 
@@ -131,16 +126,16 @@ class ThreadNotFoundError(Exception):
         super().__init__(f"no thread {thread_id}")
 
 
-class TrajectoryStore:
+class ThreadStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self.operator_sessions = OperatorSessionStore(engine)
         self.changes = Changes()
-        self._updates = TrajectoryUpdates(engine.url, self.changes)
+        self._updates = ThreadUpdates(engine.url, self.changes)
 
     @classmethod
-    def connect(cls, database_url: str) -> TrajectoryStore:
+    def connect(cls, database_url: str) -> ThreadStore:
         return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
 
     async def close(self) -> None:

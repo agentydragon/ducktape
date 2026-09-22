@@ -1,6 +1,6 @@
 """Store a Thread's runner source once, on its checkpoint.
 
-`TrajectoryStore.record` admits one `origin.source_id` per Thread and `thread_checkpoint` is keyed
+`ThreadStore.record` admits one `origin.source_id` per Thread and `thread_checkpoint` is keyed
 by `thread_id` alone, so the column repeated across five composite keys, the stored payload
 references and the archive partitioned nothing. The fold's scope is `(thread_id, projection_epoch)`.
 """

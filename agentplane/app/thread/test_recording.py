@@ -8,7 +8,7 @@ import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.conftest import SPEC, event_entry
-from agentplane.app.trajectory.models import (
+from agentplane.app.thread.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -16,9 +16,9 @@ from agentplane.app.trajectory.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.trajectory.recording import ThreadFoldError
-from agentplane.app.trajectory.store import IngestionLease, TrajectoryStore
-from agentplane.app.trajectory.views import EntityKind, ThreadOperationalState
+from agentplane.app.thread.recording import ThreadFoldError
+from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -27,7 +27,7 @@ from agentplane.runner import protocol_pb2
 
 
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
-    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-operational", SPEC)
     attached = protocol_pb2.Attached(session_id="s-operational", spec=SPEC)
@@ -86,7 +86,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 
 
 async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
@@ -162,7 +162,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
 
 
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
@@ -242,7 +242,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 
 
 async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     await store.record(
@@ -277,7 +277,7 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
 
 
 async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
-    store: TrajectoryStore, lease: IngestionLease
+    store: ThreadStore, lease: IngestionLease
 ) -> None:
     """The index is a position in the thread, so it is dense, ordered and fixed once given."""
     thread = await store.thread("sb-1", "s-1", SPEC)

@@ -69,7 +69,7 @@ from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
-from agentplane.app.trajectory.store import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -124,7 +124,7 @@ async def review(
     db_url: str,
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -302,7 +302,7 @@ async def review(
         )
         browser.headers["Origin"] = app_url
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
-        replica_store = TrajectoryStore.connect(db_url)
+        replica_store = ThreadStore.connect(db_url)
         stack.push_async_callback(replica_store.close)
         replica = create_app(
             inventory,

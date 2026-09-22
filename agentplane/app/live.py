@@ -64,8 +64,8 @@ from agentplane.app.inventory import (
     sandbox_views,
 )
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.trajectory.store import TrajectoryStore
-from agentplane.app.trajectory.views import ThreadView
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.views import ThreadView
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
@@ -357,15 +357,15 @@ def _action_policy(request: Request) -> ActionPolicyInventory:
     return inventory
 
 
-def _store(request: Request) -> TrajectoryStore:
+def _store(request: Request) -> ThreadStore:
     store = request.app.state.store
-    if not isinstance(store, TrajectoryStore):
-        raise TypeError(f"app.state.store is {type(store).__name__}, not TrajectoryStore")
+    if not isinstance(store, ThreadStore):
+        raise TypeError(f"app.state.store is {type(store).__name__}, not ThreadStore")
     return store
 
 
 Index = Annotated[LiveIndex, Depends(_index)]
-Store = Annotated[TrajectoryStore, Depends(_store)]
+Store = Annotated[ThreadStore, Depends(_store)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
 

@@ -35,7 +35,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
-from agentplane.app.trajectory.store import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -57,7 +57,7 @@ class ServeApp(Protocol):
 def serve(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     authentication: FakeAuthenticationV1Api,
@@ -227,7 +227,7 @@ async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeA
     assert (refused.status_code, allowed.status_code) == (403, 200), refused.text
 
 
-async def test_session_expiry_and_server_side_oauth_state(browser: httpx.AsyncClient, store: TrajectoryStore) -> None:
+async def test_session_expiry_and_server_side_oauth_state(browser: httpx.AsyncClient, store: ThreadStore) -> None:
     response = await browser.get("/auth/login", follow_redirects=False)
     async with store.operator_sessions.sessions() as db:
         row = (await db.scalars(select(BrowserSession))).one()
@@ -295,7 +295,7 @@ async def test_callback_rotates_handle_and_cannot_be_replayed(browser: httpx.Asy
     assert (await browser.get("/auth/me")).status_code == 200
 
 
-async def test_expired_pending_login_cannot_finish(browser: httpx.AsyncClient, store: TrajectoryStore) -> None:
+async def test_expired_pending_login_cannot_finish(browser: httpx.AsyncClient, store: ThreadStore) -> None:
     login = await browser.get("/auth/login", follow_redirects=False)
     async with store.operator_sessions.sessions.begin() as db:
         await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))

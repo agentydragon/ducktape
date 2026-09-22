@@ -9,7 +9,7 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app import thread_fold
-from agentplane.app.trajectory.views import (
+from agentplane.app.thread.views import (
     EntityKind,
     ThreadCommandEntityView,
     ThreadCommandState,

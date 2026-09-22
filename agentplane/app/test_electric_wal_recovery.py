@@ -16,7 +16,7 @@ import pytest_bazel
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory.store import IngestionLease, TrajectoryStore
+from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -34,7 +34,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
             electric_storage_dir=Path(state_dir),
         ) as service:
-            store = TrajectoryStore.connect(service.database_url)
+            store = ThreadStore.connect(service.database_url)
             try:
                 thread, source, lease = await _project_initial_item(store)
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
@@ -129,7 +129,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                 await store.close()
 
 
-async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
+async def _project_initial_item(store: ThreadStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))

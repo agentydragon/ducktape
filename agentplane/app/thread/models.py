@@ -80,7 +80,7 @@ class FeedState(Base):
 class ThreadCheckpoint(Base):
     """One source/epoch-owned materialized prefix for a Thread.
 
-    `thread_id` alone keys this row, and `TrajectoryStore.record` refuses an entry whose
+    `thread_id` alone keys this row, and `ThreadStore.record` refuses an entry whose
     `origin.source_id` disagrees with the prefix, so this is the one place a Thread's runner
     source is stored: every other fold table is scoped by `(thread_id, projection_epoch)` and
     reads its source from here.

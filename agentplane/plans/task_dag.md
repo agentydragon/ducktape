@@ -70,7 +70,7 @@ flowchart TB
     RETIRE_APPROVAL_QUEUE["Deferred migration<br/>retire Haku Console's tool-call approval queue<br/>once Decisions and the approval UI cover it"]:::future
     RETIRE_TOOLS["Capstone<br/>Haku Console owns no tool call<br/>catalog and approval queue both gone"]:::milestone
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
-    T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
+    T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
     ACTIONS_SA_CALLER["Planned identity<br/>Action Service accepts a labelled workload ServiceAccount<br/>today: only a Sandbox workload or an OAuth grant"]:::future
     PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's six substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
@@ -706,9 +706,9 @@ evaluated like any other, once per subsequent Action at admission. Prove: a Sand
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
 
-### `T3` — trajectory search and lookup
+### `T3` — thread search and lookup
 
-**Deferred product work:** search and look up stored trajectories at a later product-planning point.
+**Deferred product work:** search and look up stored threads at a later product-planning point.
 This is technically independent of the MCP facade, but it is intentionally not in the current work
 sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
 reclassified as search implementation by this deferral.

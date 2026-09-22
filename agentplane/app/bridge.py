@@ -22,14 +22,14 @@ from agentplane.app.ingestion import event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.trajectory.recording import EventReplicationError
-from agentplane.app.trajectory.store import (
+from agentplane.app.thread.recording import EventReplicationError
+from agentplane.app.thread.store import (
     FeedEnd,
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
     ThreadNotFoundError,
-    TrajectoryStore,
+    ThreadStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -88,7 +88,7 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(self, *, session_id: str, client: RunnerClient, store: ThreadStore, lease: IngestionLease):
         self.session_id = session_id
         self.client = client
         self.store = store
@@ -157,7 +157,7 @@ class RunnerBridge:
         self,
         *,
         address_of: AddressOf,
-        store: TrajectoryStore,
+        store: ThreadStore,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
     ) -> None:

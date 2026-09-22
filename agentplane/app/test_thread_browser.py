@@ -31,7 +31,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.trajectory.models import (
+from agentplane.app.thread.models import (
     FeedState,
     ThreadCheckpoint,
     ThreadEntity,
@@ -40,8 +40,8 @@ from agentplane.app.trajectory.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.trajectory.store import TrajectoryStore
-from agentplane.app.trajectory.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -86,7 +86,7 @@ async def page(
 class ThreadBrowser:
     page: Page
     source: ReplicationSource
-    store: TrajectoryStore
+    store: ThreadStore
     opened: Opened
     app: AppProcess
     browser_url: str
@@ -133,7 +133,7 @@ def thread_source() -> ReplicationSource:
 async def thread_browser(
     page: Page,
     db_url: str,
-    store: TrajectoryStore,
+    store: ThreadStore,
     thread_source: ReplicationSource,
     replay_after: int | None,
     electric: ElectricService,
@@ -158,7 +158,7 @@ async def thread_browser(
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
-    store: TrajectoryStore,
+    store: ThreadStore,
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -203,7 +203,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
 
 
 async def test_switching_threads_starts_at_each_threads_tail(
-    page: Page, db_url: str, store: TrajectoryStore, electric: ElectricService, certificate: BrowserCertificate
+    page: Page, db_url: str, store: ThreadStore, electric: ElectricService, certificate: BrowserCertificate
 ) -> None:
     lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
     assert lease is not None
@@ -389,7 +389,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page.on("request", lambda request: requests.append(request.url))
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with electric_service() as service:
-        store = TrajectoryStore.connect(service.database_url)
+        store = ThreadStore.connect(service.database_url)
         try:
             thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
             async with (
