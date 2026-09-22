@@ -248,6 +248,20 @@ export const mcpLinkageService: McpLinkageService = {
   },
 };
 
+export type ActionGroupHealthView = components["schemas"]["ActionGroupHealthView"];
+
+export interface ActionGroupHealthService {
+  list(): Promise<ActionGroupHealthView[]>;
+}
+
+export const actionGroupHealthService: ActionGroupHealthService = {
+  async list() {
+    const { data, error, response } = await api.GET("/mcp-servers/health");
+    if (error) throw new Error(httpError(response, error));
+    return data;
+  },
+};
+
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
   decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
