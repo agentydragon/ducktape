@@ -27,6 +27,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     delete,
+    exists,
     func,
     select,
     text,
@@ -605,18 +606,21 @@ class TrajectoryStore:
             )
             if checkpoint is None:
                 return None
+            # A generation has one manifest row per revision of it, so this asks whether any exists.
             materialized = await session.scalar(
-                select(ConversationPayloadManifest.present).where(
-                    ConversationPayloadManifest.thread_id == thread_id,
-                    ConversationPayloadManifest.source_id == checkpoint.source_id,
-                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
-                    ConversationPayloadManifest.owner_cursor == owner_cursor,
-                    ConversationPayloadManifest.owner_id == owner_id,
-                    ConversationPayloadManifest.field == field,
-                    ConversationPayloadManifest.generation == generation,
+                select(
+                    exists().where(
+                        ConversationPayloadManifest.thread_id == thread_id,
+                        ConversationPayloadManifest.source_id == checkpoint.source_id,
+                        ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                        ConversationPayloadManifest.owner_cursor == owner_cursor,
+                        ConversationPayloadManifest.owner_id == owner_id,
+                        ConversationPayloadManifest.field == field,
+                        ConversationPayloadManifest.generation == generation,
+                    )
                 )
             )
-            if materialized is None:
+            if not materialized:
                 return None
             return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
 

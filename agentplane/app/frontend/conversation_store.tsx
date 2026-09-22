@@ -594,8 +594,8 @@ function WindowedPayloadBody({
     () => (query.data ?? []).filter((chunk) => chunk.ownerId === owner && chunk.field === field),
     [field, owner, query.data]
   );
-  const body = assemble(chunks, BigInt(reference.generation), BigInt(reference.content_bytes));
-  return children(useRetained(reference, body));
+  const body = useRetained(reference, assemble(chunks, BigInt(reference.generation), BigInt(reference.content_bytes)));
+  return children(body);
 }
 
 function RequestedPayloadBody({
