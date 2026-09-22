@@ -13,10 +13,11 @@ The useful axis is not "which library" but **who decides what is synced, and in 
 | A client-declared query          | **Client**            | **Zero**, Convex, InstantDB, Triplit, LiveStore |
 | A server-computed per-reader set | Server, per reader    | Replicache, Phoenix Channels, our SSE routes    |
 
-**P8 points at row three.** A client-declared query is where the client says what it is looking at,
-including which fields — which is why this axis, rather than the feature lists, should drive the
-comparison. D1 cuts across it instead: rows two and three can both satisfy it, by never overlapping
-or by stating what is held.
+**Neither P8 nor D1 picks a row.** Row three makes both natural — the client declares what it wants,
+fields included — but row two reaches them too: give each field its own partition and let the client
+subscribe selectively (P8), and never overlap two partitions (D1). The axis is still the useful one
+for reading these systems; it just does not decide anything by itself. What it does predict is how
+much of the mechanism you build versus configure.
 
 ## Worth actually investigating
 
