@@ -92,7 +92,31 @@ fresh shape on every open**, and rotation at `segmentCount > 60` defines another
 each of those is a cold creation on the slow volume, which matches a report of delays clustered
 around an active conversation rather than a dormant one.
 
-The fix has to make the bound stable without unbounding the window:
+The framing matters more than the arithmetic. **An Electric shape is a partition, not a viewport.**
+It is a server-side cache with a log, maintained from the replication stream, shared by every reader
+whose interest matches it and meant to outlive any one of them — which is why the pinned deployment
+caps how many may exist at once and evicts by use. A predicate that embeds a continuously moving
+bound gives up all of that: no reuse between two readers of the same conversation, no reuse between
+two opens by the same reader, and an eviction queue churning behind both. A shape _per conversation_
+is an ordinary Electric pattern; a shape per _view of_ a conversation is not, and that is what
+`cursor >= <30th-last>` builds.
+
+Two ways to stop treating it as a viewport:
+
+- **One shape per thread.** Predicate `thread_id = $1`, the whole conversation's metadata, stable
+  forever and shared by every reader and every open, with Electric syncing it incrementally as
+  designed. Bodies stay separately selected, which is where the bytes are. The requirement that
+  opening a Thread must not replay its history was written against **raw events** — the inspection
+  behind it measured 3,091 events and 1.79 MB of SSE for eight turns — and a projected entity row
+  is not that: one row per segment, no payload. What makes this a real question rather than an
+  obvious win is that a lifecycle row embeds its whole event as JSON, so the rows are not uniformly
+  small, and a conversation's row count still grows without bound. Measure rows and bytes per
+  conversation before ruling it in or out.
+- **One shape per page of a thread.** Keep a bound, but make it a partition many opens share, which
+  is the scheme below.
+
+If the arithmetic below is needed at all, it has to make the bound stable without unbounding the
+window:
 
 - **Cursor quantization is not it.** Rounding `tail_from` down to a multiple of `G` is stable, but
   how many segments that admits depends on how densely cursors fall, which varies per turn — a
@@ -106,6 +130,10 @@ The fix has to make the bound stable without unbounding the window:
   and two pages by construction and is redefined once per page rather than once per segment. The
   history window converts its `before_cursor` to an index with one indexed lookup. It costs a
   column, a projector change and an epoch bump, and no tuning constant.
+
+Whichever it is, **the payload shapes want the same answer**: W9's window-scoped chunk shape carries
+the same bound, so a viewport predicate there would churn for the same reason. One partitioning
+scheme should serve both, which is an argument for settling this before building W9.
 
 **Commands** are a separate, much smaller case: that shape binds a sorted `entity_id IN (...)`
 list, so every change to the selected set defines a new one. It is by-ID reconciliation of terminal
