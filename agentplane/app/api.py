@@ -12,10 +12,10 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
@@ -628,6 +628,25 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
+# A conversation cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
+# string -- the representation every conversation response model already publishes it in. Declaring
+# it `int` here would put `integer` in the schema and make every browser caller cast past it. The
+# range check the string form loses is restored here: the column is a signed 64-bit integer, and a
+# value past it must be refused as a bad request rather than reaching the driver as one.
+_DECIMAL = r"^\d+$"
+_INT64_MAX = 2**63 - 1
+
+
+def _within_int64(value: str) -> str:
+    if int(value) > _INT64_MAX:
+        raise ValueError(f"cursor is outside the signed 64-bit range: {value}")
+    return value
+
+
+DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_int64)]
+DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
+
+
 @threads.get("/{thread_id}/conversation/evidence")
 async def conversation_evidence(
     thread_id: UUID,
@@ -636,7 +655,7 @@ async def conversation_evidence(
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_cursor: Annotated[int, Query(ge=0)] = 0,
+    after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
     return await store.conversation_evidence(
@@ -645,7 +664,7 @@ async def conversation_evidence(
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        after_cursor=after_cursor,
+        after_cursor=int(after_cursor),
         limit=limit,
     )
 
@@ -653,13 +672,13 @@ async def conversation_evidence(
 @threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
 async def conversation_native_frames(
     thread_id: UUID,
-    observation_cursor: int,
+    observation_cursor: DecimalCursorPath,
     store: Store,
     source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
     return await store.conversation_native_frames(
@@ -668,8 +687,8 @@ async def conversation_native_frames(
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        observation_cursor=observation_cursor,
-        after_sequence=after_sequence,
+        observation_cursor=int(observation_cursor),
+        after_sequence=int(after_sequence),
         limit=limit,
     )
 
@@ -678,8 +697,8 @@ async def conversation_native_frames(
 async def conversation_observations(
     thread_id: UUID,
     store: Store,
-    before_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
-    after_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    before_cursor: DecimalCursor | None = None,
+    after_cursor: DecimalCursor | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> ObservationPage:
     """Original chronological observations; default to the tail, including unlinked debug data."""
@@ -690,7 +709,10 @@ async def conversation_observations(
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
     return await store.conversation_observations(
-        thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+        thread_id,
+        before_cursor=None if before_cursor is None else int(before_cursor),
+        after_cursor=None if after_cursor is None else int(after_cursor),
+        limit=limit,
     )
 
 
