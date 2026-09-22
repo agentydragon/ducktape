@@ -79,6 +79,7 @@ py_library(
         ":shutdown",
         ":trajectory",
         "//agentplane:subjects",
+        "//agentplane/action_service:catalog",
         "//agentplane/action_service:client",
         "//agentplane/action_service:connections",
         "//agentplane/action_service:enrollments",

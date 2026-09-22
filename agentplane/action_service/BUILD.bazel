@@ -148,6 +148,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":catalog",
         ":connections",
         ":enrollments",
         ":mcp_linkage",

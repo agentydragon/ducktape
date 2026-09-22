@@ -22,6 +22,7 @@ from agentplane.action_service.auth import OperatorAuthenticator
 from agentplane.action_service.caller_auth import CallerTokenVerifier
 from agentplane.action_service.catalog import (
     ActionCatalog,
+    ActionGroupHealthView,
     ActionGroupView,
     ActionUnavailableError,
     ActionView,
@@ -338,6 +339,18 @@ def create_app(
     ) -> list[ActionGroupView]:
         del principal
         return action_catalog.group_views()
+
+    # Operator-facing live-health projection of every mcp-kind group, distinct from the workload
+    # view above: it carries the oauth join key that ActionGroupView deliberately never exposes to
+    # an Agent. Registered unconditionally (not inside _mcp_linkage_routes/_connection_routes,
+    # which are gated behind their own optional dependency) since ActionCatalog is always present.
+    @app.get("/v1/operator/mcp-servers/health", response_model=list[ActionGroupHealthView])
+    async def mcp_group_health(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
+    ) -> list[ActionGroupHealthView]:
+        del principal
+        return action_catalog.mcp_group_health_views()
 
     @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
     async def get_action(

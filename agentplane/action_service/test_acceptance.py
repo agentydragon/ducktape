@@ -504,7 +504,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 executor=McpExecutorBinding(
                     kind="mcp",
                     description="Connected as Rai's GitHub account.",
-                    config={"account_secret_ref": "github-mcp-account"},
+                    config={"account_secret_ref": "github-mcp-account", "server_id": "github"},
                 ),
                 actions={
                     "get_file": ActionDefinition(
@@ -542,6 +542,23 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             }
         ]
         assert "github-mcp-account" not in groups.text
+
+        health = await client.get("/v1/operator/mcp-servers/health", headers=_operator())
+        assert health.status_code == 200
+        assert health.json() == [
+            {
+                "key": "github",
+                "title": "GitHub",
+                "executor_description": "Connected as Rai's GitHub account.",
+                "available": True,
+                "health": None,
+                "oauth_server_id": "github",
+            }
+        ]
+        assert "github-mcp-account" not in health.text
+
+        unauthenticated_health = await client.get("/v1/operator/mcp-servers/health")
+        assert unauthenticated_health.status_code == 401
 
         unauthenticated = await client.get("/v1/action-groups")
         assert unauthenticated.status_code == 401

@@ -9,7 +9,12 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
+from agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionGroupHealthView,
+    McpExecutorBinding,
+    UnknownActionError,
+)
 
 # A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
 # YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
@@ -24,6 +29,7 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
         config:
           server_url: https://github-mcp.internal.example
           account_secret_ref: github-mcp-account
+          server_id: github
       actions:
         get_file:
           description: Read one file's contents from a public repository.
@@ -75,6 +81,20 @@ def test_executor_backend_configuration_never_reaches_a_view() -> None:
 
     rendered = "\n".join(view.model_dump_json() for view in catalog.group_views())
 
+    assert "github-mcp-account" not in rendered
+    assert "github-mcp.internal.example" not in rendered
+
+
+def test_mcp_group_health_view_carries_oauth_join_key_and_never_leaks_config() -> None:
+    catalog = _catalog()
+
+    views: dict[str, ActionGroupHealthView] = {view.key: view for view in catalog.mcp_group_health_views()}
+
+    assert views.keys() == {"github", "calendar"}
+    assert views["github"].oauth_server_id == "github"
+    assert views["calendar"].oauth_server_id is None
+
+    rendered = "\n".join(view.model_dump_json() for view in views.values())
     assert "github-mcp-account" not in rendered
     assert "github-mcp.internal.example" not in rendered
 

@@ -637,7 +637,7 @@ async def test_provider_availability_is_not_operator_rejection(
 ) -> None:
     await review.browser.get("/auth/login")
     caplog.set_level(logging.WARNING, logger="agentplane.app.action_federation")
-    for path in ("/actions", "/mcp-servers", "/push/config"):
+    for path in ("/actions", "/mcp-servers", "/mcp-servers/health", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
         detail = response.json()["detail"]
@@ -656,10 +656,23 @@ async def test_provider_availability_is_not_operator_rejection(
         assert SUBJECT_A not in response.text
     # Every failure leaves a cause in the log, and the log leaks no more than the response does.
     federation_warnings = [r for r in caplog.records if r.name == "agentplane.app.action_federation"]
-    assert len(federation_warnings) == 3
+    assert len(federation_warnings) == 4
     assert "test-private" not in caplog.text
     assert "access_token" not in caplog.text
     assert SUBJECT_A not in caplog.text
+
+
+async def test_operator_observes_mcp_group_health_without_a_real_tool_call_failing_first(review: Review) -> None:
+    await review.browser.get("/auth/login")
+    async with asyncio.timeout(10):
+        while True:
+            groups = (await review.browser.get("/mcp-servers/health")).json()
+            test_review = next(group for group in groups if group["key"] == "test_review")
+            if test_review["health"] is not None and test_review["health"]["state"] == "available":
+                break
+            # Each read awaits the executor's own connection supervisor; no fixed delay.
+    assert test_review["oauth_server_id"] is None
+    assert test_review["available"] is True
 
 
 async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operators_distinct(review: Review) -> None:
