@@ -2673,23 +2673,18 @@ spec:
             secretName: haku-console-github-mcp-client-credentials
         - name: secret-ssh-mcp-bearer
           secret:
-            defaultMode: 288
             items:
               - key: bearer-token
                 path: bearer-token
-            optional: false
             secretName: ssh-mcp-bearer
         - name: secret-ha-mcp-bearer
           secret:
-            defaultMode: 288
             items:
               - key: bearer-token
                 path: bearer-token
-            optional: false
             secretName: ha-mcp-bearer
         - name: secret-tana-agentydragon-gmail-com-account-pat
           secret:
-            defaultMode: 288
             items:
               - key: token
                 path: bearer-token

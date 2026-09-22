@@ -277,14 +277,15 @@ class Actions(Construct):
             deployment.containers[0].mount("/etc/agentplane-github", github_volume, read_only=True)
         for mount in self.env.actions.bearer_mcp_mounts:
             bearer_secret = Secret.from_secret_name(self, f"{mount.name}-bearer-secret", mount.secret_name)
-            bearer_volume = Volume.from_secret(
-                self,
-                f"{mount.name}-bearer-volume",
-                bearer_secret,
-                default_mode=0o440,
-                items={mount.secret_key: PathMapping(path=mount.file_name)},
-                optional=mount.optional,
-            )
+            bearer_items = {mount.secret_key: PathMapping(path=mount.file_name)}
+            if mount.optional:
+                bearer_volume = Volume.from_secret(
+                    self, f"{mount.name}-bearer-volume", bearer_secret, items=bearer_items, optional=True
+                )
+            else:
+                bearer_volume = Volume.from_secret(
+                    self, f"{mount.name}-bearer-volume", bearer_secret, items=bearer_items
+                )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
             deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
