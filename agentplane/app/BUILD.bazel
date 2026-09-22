@@ -1000,17 +1000,23 @@ py_library(
 
 py_test(
     name = "test_electric",
+    size = "medium",
     srcs = ["test_electric.py"],
     deps = [
         ":conftest",
+        ":conversation_projection",
         ":electric",
         ":trajectory",
         "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+        "@pypi//testcontainers",
     ],
 )
 

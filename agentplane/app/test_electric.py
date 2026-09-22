@@ -1,9 +1,19 @@
+"""The proxy's forwarding and validation, over the real projection it reads its bounds from.
+
+Electric itself is a `MockTransport`, because what these assert is the query the proxy builds and
+what it refuses to build. The interest, scope and payload revision behind it are real: a faked
+resolver can drift from `conversation_entity_interest` without any test noticing, and the bounds it
+returns are exactly what the shape's identity is made of.
+"""
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
-from uuid import UUID
+from dataclasses import dataclass
+from datetime import timedelta
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -11,49 +21,111 @@ import pytest_bazel
 from fastapi import FastAPI, Request
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
+from testcontainers.postgres import PostgresContainer
 
+from agentplane.app.conftest import migrated_database
+from agentplane.app.conversation_projection import PayloadField
 from agentplane.app.electric import ElectricProxy, router
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, ConversationScope
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, TrajectoryStore
+from agentplane.protocol import event_pb2
 
-THREAD = UUID("00000000-0000-0000-0000-000000000123")
-SCOPE = ConversationScope(source_id="runner/source", projection_epoch="epoch-4", through_cursor=99)
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
+# Enough items that a latest-30 interest has segments on both sides of its bound.
+_ITEMS = 35
 
 
-async def entities(
-    thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None, page_size: int
-) -> ConversationEntityInterest | None:
-    assert thread_id == THREAD
-    assert page_size == 30
-    return ConversationEntityInterest(
-        SCOPE,
-        99 if anchor_cursor is None else anchor_cursor,
-        70,
-        10 if before_cursor is not None else None,
-        before_cursor,
+@dataclass(frozen=True)
+class Seeded:
+    """One projected conversation, and the identities the proxy's routes take as parameters."""
+
+    thread: UUID
+    interest: ConversationEntityInterest
+    selection: ConversationPayloadSelection
+
+
+# Every case here reads: the proxy builds a query and forwards or refuses it, and none writes. The
+# expensive part of a per-test database is creating and migrating it, and that helper is
+# synchronous, so the module can share one without a module-scoped event loop the async fixtures
+# would then need. Each case still seeds its own sandbox, so they share no thread and no lease.
+@pytest.fixture(scope="module")
+def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+    yield from migrated_database(postgres_container, "test_electric")
+
+
+@pytest.fixture
+async def seeded(store: TrajectoryStore) -> Seeded:
+    sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
+    source = ReplicationSource()
+    started: dict[str, int] = {}
+    for index in range(_ITEMS):
+        item_id = f"item-{index}"
+        started[item_id] = source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        ).cursor
+        for part in ("first ", f"body {index}"):
+            source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=part)))
+    thread = await store.thread(sandbox, SESSION, source.attached.spec)
+    lease = await store.acquire_ingestion(sandbox, timedelta(minutes=2))
+    assert lease is not None
+    await store.set_attached(thread, source.attached, lease=lease)
+    await store.record(thread, source.entries, lease=lease)
+
+    interest = await store.conversation_entity_interest(thread)
+    assert interest is not None
+    # Two deltas, so the generation the chain opened and the revision it has reached are different
+    # cursors and a route cannot pass one where it means the other. Resolving them here makes the
+    # projector's rule a checked fact: if it changes, this fixture fails instead of a case below.
+    owner_id = f"item-{_ITEMS - 1}"
+    owner_cursor = started[owner_id]
+    selection = await store.conversation_payload_selection(
+        thread,
+        owner_cursor=owner_cursor,
+        owner_id=owner_id,
+        field=PayloadField.TEXT,
+        generation=owner_cursor + 1,
+        revision_cursor=owner_cursor + 2,
     )
+    assert selection is not None
+    assert selection.chunk_count > 0
+    return Seeded(thread, interest, selection)
 
 
-async def payload(
-    thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-) -> ConversationPayloadSelection | None:
-    if (thread_id, owner_cursor, owner_id, field, generation, revision_cursor) != (THREAD, 12, "item-1", "text", 2, 18):
-        return None
-    return ConversationPayloadSelection(SCOPE, 12, "item-1", "text", 2, 18, True, 3, 17)
-
-
-async def current_scope(thread_id: UUID) -> ConversationScope | None:
-    return SCOPE if thread_id == THREAD else None
-
-
-def make_app(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
+def make_app(upstream: httpx.MockTransport, store: TrajectoryStore) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, entities, payload, current_scope)
+    app.state.electric = ElectricProxy(electric, store)
     app.include_router(router)
     return app, electric
 
 
-async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
+def entity_query(seeded: Seeded) -> dict[str, str]:
+    return {
+        "source_id": seeded.interest.scope.source_id,
+        "projection_epoch": seeded.interest.scope.projection_epoch,
+        "anchor_cursor": str(seeded.interest.anchor_cursor),
+        "tail_from": str(seeded.interest.tail_from),
+    }
+
+
+def payload_query(seeded: Seeded) -> dict[str, str]:
+    selection = seeded.selection
+    return {
+        "source_id": selection.scope.source_id,
+        "projection_epoch": selection.scope.projection_epoch,
+        "owner_cursor": str(selection.owner_cursor),
+        "owner_id": selection.owner_id,
+        "field": selection.field,
+        "generation": str(selection.generation),
+        "revision_cursor": str(selection.revision_cursor),
+    }
+
+
+async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStore, seeded: Seeded) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -65,10 +137,11 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
             headers={"electric-offset": "7_0", "electric-up-to-date": "true", "x-private": "no"},
         )
 
-    app, electric = make_app(httpx.MockTransport(upstream))
+    app, electric = make_app(httpx.MockTransport(upstream), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&offset=now&live=false&cursor=cache&log=changes_only"
+            f"/threads/{seeded.thread}/sync/entities",
+            params=entity_query(seeded) | {"offset": "now", "live": "false", "cursor": "cache", "log": "changes_only"},
         )
     await electric.aclose()
 
@@ -84,15 +157,17 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
     assert "cursor >= $4" in query["where"]
+    # The shape's lower bound is the interest's, verbatim: the proxy owns the predicate and a
+    # browser cannot widen it, and the value is whatever the real resolver computed.
     assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
-        "1": str(THREAD),
-        "2": "runner/source",
-        "3": "epoch-4",
-        "4": "70",
+        "1": str(seeded.thread),
+        "2": seeded.interest.scope.source_id,
+        "3": seeded.interest.scope.projection_epoch,
+        "4": str(seeded.interest.tail_from),
     }
 
 
-async def test_a_re_read_revalidates_and_relays_electric_s_not_modified() -> None:
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: TrajectoryStore, seeded: Seeded) -> None:
     """Immutable history is cached and revalidated, never re-transferred and never served unchecked."""
     seen: list[httpx.Request] = []
 
@@ -102,12 +177,12 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified() -> Non
             return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
 
-    app, electric = make_app(httpx.MockTransport(upstream))
-    query = "source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&offset=-1"
+    app, electric = make_app(httpx.MockTransport(upstream), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        first = await client.get(f"/threads/{THREAD}/sync/entities?{query}")
+        path = f"/threads/{seeded.thread}/sync/entities"
+        first = await client.get(path, params=entity_query(seeded) | {"offset": "-1"})
         again = await client.get(
-            f"/threads/{THREAD}/sync/entities?{query}", headers={"if-none-match": first.headers["etag"]}
+            path, params=entity_query(seeded) | {"offset": "-1"}, headers={"if-none-match": first.headers["etag"]}
         )
     await electric.aclose()
 
@@ -121,21 +196,16 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified() -> Non
     assert [request.headers.get("if-none-match") for request in seen] == [None, '"shape-7_0"']
 
 
-async def test_stale_or_client_widened_interest_is_rejected() -> None:
+async def test_stale_or_client_widened_interest_is_rejected(store: TrajectoryStore, seeded: Seeded) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected requests must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected))
+    app, electric = make_app(httpx.MockTransport(unexpected), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        stale_tail = await client.get(
-            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=0&offset=-1"
-        )
-        arbitrary = await client.get(
-            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&table=event"
-        )
-        bad_log = await client.get(
-            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&log=full"
-        )
+        path = f"/threads/{seeded.thread}/sync/entities"
+        stale_tail = await client.get(path, params=entity_query(seeded) | {"tail_from": "0", "offset": "-1"})
+        arbitrary = await client.get(path, params=entity_query(seeded) | {"table": "event"})
+        bad_log = await client.get(path, params=entity_query(seeded) | {"log": "full"})
     await electric.aclose()
 
     assert stale_tail.status_code == 410
@@ -144,20 +214,17 @@ async def test_stale_or_client_widened_interest_is_rejected() -> None:
 
 
 @pytest.mark.parametrize("field", ["source_id", "projection_epoch"])
-async def test_old_entity_scope_is_rejected_before_forwarding(field: str) -> None:
+async def test_old_entity_scope_is_rejected_before_forwarding(
+    field: str, store: TrajectoryStore, seeded: Seeded
+) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("retired scopes must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected))
-    params = {
-        "source_id": SCOPE.source_id,
-        "projection_epoch": SCOPE.projection_epoch,
-        "anchor_cursor": "99",
-        "tail_from": "70",
-        field: "retired-scope",
-    }
+    app, electric = make_app(httpx.MockTransport(unexpected), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(f"/threads/{THREAD}/sync/entities", params=params)
+        response = await client.get(
+            f"/threads/{seeded.thread}/sync/entities", params=entity_query(seeded) | {field: "retired-scope"}
+        )
     await electric.aclose()
     assert response.status_code == 410
 
@@ -170,26 +237,20 @@ async def test_old_entity_scope_is_rejected_before_forwarding(field: str) -> Non
         {"subset__where": "true = true", "subset__params": "[]"},
     ],
 )
-async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]) -> None:
+async def test_current_snapshot_cannot_change_fixed_shape(
+    subset: dict[str, str], store: TrajectoryStore, seeded: Seeded
+) -> None:
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream))
+    app, electric = make_app(httpx.MockTransport(upstream), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/entities",
-            params={
-                "source_id": SCOPE.source_id,
-                "projection_epoch": SCOPE.projection_epoch,
-                "anchor_cursor": "99",
-                "tail_from": "70",
-                "offset": "0_0",
-                "handle": "fixed",
-                **subset,
-            },
+            f"/threads/{seeded.thread}/sync/entities",
+            params=entity_query(seeded) | {"offset": "0_0", "handle": "fixed", **subset},
             headers={"electric-protocol-version": "1.0"},
         )
     await electric.aclose()
@@ -197,7 +258,7 @@ async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]
     forwarded = seen[0].url.params
     assert forwarded["log"] == "changes_only"
     assert "cursor >= $4" in forwarded["where"]
-    assert forwarded["params[4]"] == "70"
+    assert forwarded["params[4]"] == str(seeded.interest.tail_from)
     assert seen[0].headers["electric-protocol-version"] == "1.0"
     for key, value in subset.items():
         assert forwarded[key] == value
@@ -218,20 +279,21 @@ async def test_current_snapshot_cannot_change_fixed_shape(subset: dict[str, str]
         "queryable_columns=state",
     ],
 )
-async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(query: str) -> None:
+async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
+    query: str, store: TrajectoryStore, seeded: Seeded
+) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected snapshots must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected))
+    app, electric = make_app(httpx.MockTransport(unexpected), store)
+    fixed = httpx.QueryParams(entity_query(seeded))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(
-            f"/threads/{THREAD}/sync/entities?source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&{query}"
-        )
+        response = await client.get(f"/threads/{seeded.thread}/sync/entities?{fixed}&{query}")
     await electric.aclose()
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision() -> None:
+async def test_payload_shape_uses_server_verified_exact_revision(store: TrajectoryStore, seeded: Seeded) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -239,42 +301,49 @@ async def test_payload_shape_uses_server_verified_exact_revision() -> None:
         seen = request
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream))
-    query = (
-        "source_id=runner%2Fsource&projection_epoch=epoch-4&owner_cursor=12&owner_id=item-1&field=text"
-        "&generation=2&revision_cursor=18&offset=-1"
-    )
+    app, electric = make_app(httpx.MockTransport(upstream), store)
+    selection = seeded.selection
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        interest = await client.get(f"/threads/{THREAD}/sync/payload-interest?{query}")
-        chunks = await client.get(f"/threads/{THREAD}/sync/payload-chunks?{query}")
+        interest = await client.get(f"/threads/{seeded.thread}/sync/payload-interest", params=payload_query(seeded))
+        chunks = await client.get(
+            f"/threads/{seeded.thread}/sync/payload-chunks", params=payload_query(seeded) | {"offset": "-1"}
+        )
         missing = await client.get(
-            f"/threads/{THREAD}/sync/payload-interest?source_id=runner%2Fsource&projection_epoch=epoch-4"
-            "&owner_cursor=12&owner_id=item-1&field=text&generation=2&revision_cursor=19"
+            f"/threads/{seeded.thread}/sync/payload-interest",
+            params=payload_query(seeded) | {"revision_cursor": str(selection.revision_cursor + 1)},
         )
     await electric.aclose()
 
-    assert interest.json()["chunk_count"] == "3"
+    # The interest is the manifest's, so a reader's extent comes from the row the projector wrote.
+    assert interest.json()["chunk_count"] == str(selection.chunk_count)
+    assert interest.json()["content_bytes"] == str(selection.content_bytes)
     assert chunks.status_code == 200
     assert missing.status_code == 410
     assert seen is not None
     forwarded = httpx.QueryParams(seen.url.query)
     assert forwarded["table"] == "conversation_payload_chunk"
+    # The shape stops at the revision's own extent: a later append to the same generation is a
+    # different shape, and this one never grows past what its metadata named.
     assert "chunk_index < $8" in forwarded["where"]
-    assert forwarded["params[8]"] == "3"
+    assert forwarded["params[7]"] == str(selection.generation)
+    assert forwarded["params[8]"] == str(selection.chunk_count)
 
 
-async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids() -> None:
+async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(
+    store: TrajectoryStore, seeded: Seeded
+) -> None:
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream))
-    params = [("source_id", SCOPE.source_id), ("projection_epoch", SCOPE.projection_epoch), ("offset", "-1")]
+    app, electric = make_app(httpx.MockTransport(upstream), store)
+    scope = seeded.interest.scope
+    params = [("source_id", scope.source_id), ("projection_epoch", scope.projection_epoch), ("offset", "-1")]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{THREAD}/sync/commands",
+            f"/threads/{seeded.thread}/sync/commands",
             params=[*params, ("command_id", "future"), ("command_id", "failed"), ("command_id", "failed")],
         )
         assert response.status_code == 200
@@ -283,10 +352,11 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
             [*params, ("command_id", "")],
             [*params, *[("command_id", str(n)) for n in range(129)]],
         ]:
-            assert (await client.get(f"/threads/{THREAD}/sync/commands", params=tuple(invalid))).status_code == 422
+            invalid_response = await client.get(f"/threads/{seeded.thread}/sync/commands", params=tuple(invalid))
+            assert invalid_response.status_code == 422
         stale = [(key, "old" if key == "projection_epoch" else value) for key, value in params]
         assert (
-            await client.get(f"/threads/{THREAD}/sync/commands", params=[*stale, ("command_id", "failed")])
+            await client.get(f"/threads/{seeded.thread}/sync/commands", params=[*stale, ("command_id", "failed")])
         ).status_code == 410
         assert (
             await client.get(f"/threads/{UUID(int=0)}/sync/commands", params=[*params, ("command_id", "failed")])
@@ -298,16 +368,18 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
         "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
         "entity_kind = 'command' AND entity_id IN ($4,$5)"
     )
-    assert query["params[1]"] == str(THREAD)
-    assert query["params[2]"] == SCOPE.source_id
-    assert query["params[3]"] == SCOPE.projection_epoch
+    assert query["params[1]"] == str(seeded.thread)
+    assert query["params[2]"] == scope.source_id
+    assert query["params[3]"] == scope.projection_epoch
     assert query["params[4]"] == "failed"
     assert query["params[5]"] == "future"
     assert "command_id" not in query
 
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
-async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(disconnect: str) -> None:
+async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(
+    disconnect: str, store: TrajectoryStore, seeded: Seeded
+) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
             self.reads = 0
@@ -326,7 +398,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     async def upstream(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, stream=chunks)
 
-    app, electric = make_app(httpx.MockTransport(upstream))
+    app, electric = make_app(httpx.MockTransport(upstream), store)
     scope = {
         "type": "http",
         "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},
@@ -335,11 +407,11 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     }
     response = await app.state.electric.entities(
         Request(scope),
-        thread_id=THREAD,
-        source_id=SCOPE.source_id,
-        projection_epoch=SCOPE.projection_epoch,
-        anchor_cursor=99,
-        tail_from=70,
+        thread_id=seeded.thread,
+        source_id=seeded.interest.scope.source_id,
+        projection_epoch=seeded.interest.scope.projection_epoch,
+        anchor_cursor=seeded.interest.anchor_cursor,
+        tail_from=seeded.interest.tail_from,
         window_from=None,
         window_before=None,
     )

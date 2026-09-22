@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -20,7 +19,7 @@ from agentplane.app.trajectory import (
     ConversationEntityInterest,
     ConversationInterestExpiredError,
     ConversationPayloadSelection,
-    ConversationScope,
+    TrajectoryStore,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,10 +69,6 @@ _RESPONSE_HEADERS = frozenset(
     }
 )
 
-EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
-PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
-ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
-
 
 class EntityInterestResponse(BaseModel):
     source_id: str
@@ -114,24 +109,16 @@ class ElectricStreamingResponse(StreamingResponse):
 
 
 class ElectricProxy:
-    def __init__(
-        self,
-        client: httpx.AsyncClient,
-        resolve_entities: EntityInterestResolver,
-        resolve_payload: PayloadResolver,
-        resolve_scope: ScopeResolver,
-    ) -> None:
+    def __init__(self, client: httpx.AsyncClient, store: TrajectoryStore) -> None:
         self._client = client
-        self._resolve_entities = resolve_entities
-        self._resolve_payload = resolve_payload
-        self._resolve_scope = resolve_scope
+        self._store = store
 
     async def commands(
         self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
     ) -> StreamingResponse:
         if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
-        scope = await self._resolve_scope(thread_id)
+        scope = await self._store.current_conversation_scope(thread_id)
         if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
             raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
         params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
@@ -153,7 +140,9 @@ class ElectricProxy:
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
     ) -> ConversationEntityInterest:
         try:
-            interest = await self._resolve_entities(thread_id, anchor_cursor, before_cursor, _PAGE_SIZE)
+            interest = await self._store.conversation_entity_interest(
+                thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=_PAGE_SIZE
+            )
         except ConversationInterestExpiredError as error:
             # Electric owns 409/must-refetch; an expired app interest needs new bounds.
             raise HTTPException(status.HTTP_410_GONE, str(error)) from error
@@ -174,7 +163,14 @@ class ElectricProxy:
         generation: int,
         revision_cursor: int,
     ) -> ConversationPayloadSelection:
-        selection = await self._resolve_payload(thread_id, owner_cursor, owner_id, field, generation, revision_cursor)
+        selection = await self._store.conversation_payload_selection(
+            thread_id,
+            owner_cursor=owner_cursor,
+            owner_id=owner_id,
+            field=field,
+            generation=generation,
+            revision_cursor=revision_cursor,
+        )
         if (
             selection is None
             or selection.scope.source_id != source_id
@@ -195,7 +191,7 @@ class ElectricProxy:
         window_from: int | None,
         window_before: int | None,
     ) -> StreamingResponse:
-        current_scope = await self._resolve_scope(thread_id)
+        current_scope = await self._store.current_conversation_scope(thread_id)
         if current_scope is None or (current_scope.source_id, current_scope.projection_epoch) != (
             source_id,
             projection_epoch,
