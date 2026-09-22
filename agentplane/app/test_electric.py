@@ -13,7 +13,7 @@ from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
 from agentplane.app.electric import ElectricProxy, router
-from agentplane.app.trajectory import ConversationEntityInterest, ConversationPayloadSelection, ConversationScope
+from agentplane.app.trajectory import ConversationEntityInterest, ConversationScope
 
 THREAD = UUID("00000000-0000-0000-0000-000000000123")
 SCOPE = ConversationScope(source_id="runner/source", projection_epoch="epoch-4", through_cursor=99)
@@ -34,11 +34,11 @@ async def entities(
 
 
 async def payload(
-    thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-) -> ConversationPayloadSelection | None:
-    if (thread_id, owner_cursor, owner_id, field, generation, revision_cursor) != (THREAD, 12, "item-1", "text", 2, 18):
+    thread_id: UUID, owner_cursor: int, owner_id: str, field: str, generation: int
+) -> ConversationScope | None:
+    if (thread_id, owner_cursor, owner_id, field, generation) != (THREAD, 12, "item-1", "text", 2):
         return None
-    return ConversationPayloadSelection(SCOPE, 12, "item-1", "text", 2, 18, True, 3, 17)
+    return SCOPE
 
 
 async def current_scope(thread_id: UUID) -> ConversationScope | None:
@@ -202,36 +202,34 @@ async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(query:
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision() -> None:
-    seen: httpx.Request | None = None
+async def test_payload_shape_selects_a_whole_generation_and_no_revision_within_it() -> None:
+    """A revision-bounded prefix would define a distinct shape per revision; the route refuses one."""
+    seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
-        nonlocal seen
-        seen = request
+        seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
     app, electric = make_app(httpx.MockTransport(upstream))
-    query = (
-        "source_id=runner%2Fsource&projection_epoch=epoch-4&owner_cursor=12&owner_id=item-1&field=text"
-        "&generation=2&revision_cursor=18&offset=-1"
+    generation = (
+        "source_id=runner%2Fsource&projection_epoch=epoch-4&owner_cursor=12&owner_id=item-1&field=text&generation=2"
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        interest = await client.get(f"/threads/{THREAD}/sync/payload-interest?{query}")
-        chunks = await client.get(f"/threads/{THREAD}/sync/payload-chunks?{query}")
+        chunks = await client.get(f"/threads/{THREAD}/sync/payload-chunks?{generation}&offset=-1")
+        narrowed = await client.get(f"/threads/{THREAD}/sync/payload-chunks?{generation}&offset=-1&revision_cursor=18")
         missing = await client.get(
-            f"/threads/{THREAD}/sync/payload-interest?source_id=runner%2Fsource&projection_epoch=epoch-4"
-            "&owner_cursor=12&owner_id=item-1&field=text&generation=2&revision_cursor=19"
+            f"/threads/{THREAD}/sync/payload-chunks?{generation.replace('generation=2', 'generation=3')}"
         )
     await electric.aclose()
 
-    assert interest.json()["chunk_count"] == "3"
     assert chunks.status_code == 200
+    assert narrowed.status_code == 400
     assert missing.status_code == 410
-    assert seen is not None
-    forwarded = httpx.QueryParams(seen.url.query)
+    forwarded = httpx.QueryParams(seen[0].url.query)
+    assert [request.url for request in seen] == [seen[0].url]
     assert forwarded["table"] == "conversation_payload_chunk"
-    assert "chunk_index < $8" in forwarded["where"]
-    assert forwarded["params[8]"] == "3"
+    assert "chunk_index" not in forwarded["where"]
+    assert "params[8]" not in forwarded
 
 
 async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids() -> None:

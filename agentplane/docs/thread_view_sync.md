@@ -148,9 +148,19 @@ snapshot reconciliation. Indexed predicates fix each shape to the selected tail,
 reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
 current snapshot of that entire bounded shape; it does not replay earlier item revisions.
 The proxy accepts only a whole-shape subset query and owns all selection predicates.
-Payload shapes select one content field and generation. A pinned reference limits its
-chunk prefix; a following selection receives later chunks in that generation. A generation
-replacement selects a new shape. There is no persistent browser cache initially.
+A payload shape selects one content field and generation and nothing narrower. Chunks are
+append-only within a generation, so a shape bounded to a revision's prefix would define a
+distinct shape per revision: the engine would pay a cold shape creation for bytes its own
+following stream had already delivered, and a completing item would be the worst case. A
+generation replacement selects a new shape.
+
+Only a still-producing field reads that way. A completed revision is immutable, so it reads
+whole over a bounded HTTP request that names the reference, carries its identity as an entity
+tag, and revalidates rather than retransfers. A reader holds the contiguous chunk prefix across
+that handoff: arrived text is never withdrawn to load the value already on screen. Completeness
+needs no separate extent query — a completed body arrives whole, and a following one is complete
+at its current revision by contiguity from the first chunk. There is no persistent browser cache
+initially.
 
 Acceptance must still establish:
 

@@ -40,7 +40,12 @@ from agentplane.app import conversation_projection
 from agentplane.app.changes import Changes
 from agentplane.app.conversation_debug import (
     ArchivedObservation,
+    ArchivedObservationEntry,
     ConversationEvidenceNotFoundError,
+    ConversationPayloadBody,
+    ConversationPayloadIncompleteError,
+    ConversationPayloadPresent,
+    ConversationPayloadUnavailable,
     ConversationScopeChangedError,
     EvidenceObservation,
     EvidencePage,
@@ -323,19 +328,6 @@ class ConversationEntityInterest:
     window_before: int | None = None
 
 
-@dataclass(frozen=True)
-class ConversationPayloadSelection:
-    scope: ConversationScope
-    owner_cursor: int
-    owner_id: str
-    field: str
-    generation: int
-    revision_cursor: int
-    present: bool
-    chunk_count: int
-    content_bytes: int
-
-
 class ConversationPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -602,41 +594,6 @@ class TrajectoryStore:
                 raise ValueError("before cursor cannot be negative")
             return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
 
-    async def conversation_payload_selection(
-        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-    ) -> ConversationPayloadSelection | None:
-        async with self._sessions() as session:
-            checkpoint = await session.scalar(
-                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
-            )
-            if checkpoint is None:
-                return None
-            manifest = await session.scalar(
-                select(ConversationPayloadManifest).where(
-                    ConversationPayloadManifest.thread_id == thread_id,
-                    ConversationPayloadManifest.source_id == checkpoint.source_id,
-                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
-                    ConversationPayloadManifest.owner_cursor == owner_cursor,
-                    ConversationPayloadManifest.owner_id == owner_id,
-                    ConversationPayloadManifest.field == field,
-                    ConversationPayloadManifest.generation == generation,
-                    ConversationPayloadManifest.revision_cursor == revision_cursor,
-                )
-            )
-            if manifest is None:
-                return None
-            return ConversationPayloadSelection(
-                ConversationScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
-                owner_cursor,
-                owner_id,
-                field,
-                generation,
-                revision_cursor,
-                manifest.present,
-                manifest.chunk_count,
-                manifest.content_bytes,
-            )
-
     async def conversation_evidence(
         self,
         thread_id: UUID,
@@ -763,14 +720,16 @@ class TrajectoryStore:
         ):
             raise ValueError("invalid chronological observation page bounds")
         async with self._sessions() as session:
-            query = select(Event).where(Event.thread_id == thread_id)
+            query = select(Event.cursor, Event.origin_source_id, Event.origin_sequence, Event.kind).where(
+                Event.thread_id == thread_id
+            )
             if after_cursor is not None:
                 query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
             else:
                 if before_cursor is not None:
                     query = query.where(Event.cursor < before_cursor)
                 query = query.order_by(Event.cursor.desc())
-            rows = list(await session.scalars(query.limit(limit)))
+            rows = list(await session.execute(query.limit(limit)))
             if after_cursor is None:
                 rows.reverse()
             if not rows:
@@ -785,20 +744,107 @@ class TrajectoryStore:
             )
             return ObservationPage(
                 observations=[
-                    ArchivedObservation.model_validate(
-                        {
-                            "cursor": str(row.cursor),
-                            "source_id": row.origin_source_id,
-                            "source_sequence": str(row.origin_sequence),
-                            "kind": row.kind,
-                            "entry": row.payload,
-                        }
+                    ArchivedObservation(
+                        cursor=str(row.cursor),
+                        source_id=row.origin_source_id,
+                        source_sequence=str(row.origin_sequence),
+                        kind=row.kind,
                     )
                     for row in rows
                 ],
                 next_before_cursor=str(rows[0].cursor) if has_older else None,
                 next_after_cursor=str(rows[-1].cursor) if has_newer else None,
             )
+
+    async def conversation_observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
+        """One raw archive entry, read only when a reader expands that observation."""
+        async with self._sessions() as session:
+            payload = await session.scalar(
+                select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == cursor)
+            )
+            return None if payload is None else ArchivedObservationEntry(cursor=str(cursor), entry=payload)
+
+    async def conversation_payload_generation(
+        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int
+    ) -> ConversationScope | None:
+        """The current scope of a payload generation, for authorizing a shape over its whole chunk set."""
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            exists = await session.scalar(
+                select(ConversationPayloadManifest.revision_cursor)
+                .where(
+                    ConversationPayloadManifest.thread_id == thread_id,
+                    ConversationPayloadManifest.source_id == checkpoint.source_id,
+                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                    ConversationPayloadManifest.owner_cursor == owner_cursor,
+                    ConversationPayloadManifest.owner_id == owner_id,
+                    ConversationPayloadManifest.field == field,
+                    ConversationPayloadManifest.generation == generation,
+                )
+                .limit(1)
+            )
+            if exists is None:
+                return None
+            return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+
+    async def conversation_payload_body(
+        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
+    ) -> ConversationPayloadBody | None:
+        """The whole immutable value at one field revision, assembled from its generation's chunks.
+
+        Chunks are append-only within a generation (a replacement mints a new one), so the revision's
+        manifest count names an immutable prefix that no later revision rewrites.
+        """
+        async with self._sessions() as session:
+            checkpoint = await session.scalar(
+                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
+            )
+            if checkpoint is None:
+                return None
+            manifest = await session.scalar(
+                select(ConversationPayloadManifest).where(
+                    ConversationPayloadManifest.thread_id == thread_id,
+                    ConversationPayloadManifest.source_id == checkpoint.source_id,
+                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                    ConversationPayloadManifest.owner_cursor == owner_cursor,
+                    ConversationPayloadManifest.owner_id == owner_id,
+                    ConversationPayloadManifest.field == field,
+                    ConversationPayloadManifest.generation == generation,
+                    ConversationPayloadManifest.revision_cursor == revision_cursor,
+                )
+            )
+            if manifest is None:
+                return None
+            if not manifest.present:
+                return ConversationPayloadUnavailable(availability="unavailable")
+            chunks = list(
+                await session.scalars(
+                    select(ConversationPayloadChunk.text)
+                    .where(
+                        ConversationPayloadChunk.thread_id == thread_id,
+                        ConversationPayloadChunk.source_id == checkpoint.source_id,
+                        ConversationPayloadChunk.projection_epoch == checkpoint.projection_epoch,
+                        ConversationPayloadChunk.owner_cursor == owner_cursor,
+                        ConversationPayloadChunk.owner_id == owner_id,
+                        ConversationPayloadChunk.field == field,
+                        ConversationPayloadChunk.generation == generation,
+                        ConversationPayloadChunk.chunk_index < manifest.chunk_count,
+                    )
+                    .order_by(ConversationPayloadChunk.chunk_index)
+                )
+            )
+            # Only non-empty text produces a chunk, so a short assembly means a missing row
+            # rather than a legitimately empty one: a truncated body must not read as complete.
+            body = "".join(chunks)
+            if len(body.encode()) != manifest.content_bytes:
+                raise ConversationPayloadIncompleteError(
+                    f"assembled payload does not match its manifest: {manifest.content_bytes=} {len(chunks)=}"
+                )
+            return ConversationPayloadPresent(availability="present", body=body)
 
     async def command_outcomes(
         self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]

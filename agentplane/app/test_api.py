@@ -107,13 +107,8 @@ async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
             lambda thread_id, anchor, before, size: store.conversation_entity_interest(
                 thread_id, anchor_cursor=anchor, before_cursor=before, page_size=size
             ),
-            lambda thread_id, owner_cursor, owner_id, field, generation, revision: store.conversation_payload_selection(
-                thread_id,
-                owner_cursor=owner_cursor,
-                owner_id=owner_id,
-                field=field,
-                generation=generation,
-                revision_cursor=revision,
+            lambda thread_id, owner_cursor, owner_id, field, generation: store.conversation_payload_generation(
+                thread_id, owner_cursor=owner_cursor, owner_id=owner_id, field=field, generation=generation
             ),
             store.current_conversation_scope,
         )
@@ -637,7 +632,7 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
-@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
+@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-chunks", "commands"])
 def test_conversation_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
     path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
     for credentials in (

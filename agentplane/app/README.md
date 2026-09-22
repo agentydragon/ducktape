@@ -58,9 +58,12 @@ bbr test //agentplane/app/...
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
   `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
 - `conversation_projection.py`: typed deterministic event fold with independent item revisions.
-- `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
-  The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener conversation copies.
+- `electric.py`: authenticated, scope-checked metadata, selected-command, and streaming-payload
+  shape proxy. The private Electric service reads PostgreSQL logical replication; app replicas do
+  not retain per-listener conversation copies. A payload shape is bound to its generation and not
+  to a selected revision, so appends extend one shape instead of defining a new one per revision.
+  Completed revisions are immutable and bypass Electric entirely, over
+  `GET /threads/{id}/conversation/payload`.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
@@ -112,9 +115,12 @@ are hints and the database cursor remains authoritative.
 `/#/threads/{id}` loads metadata and a bounded latest-30 conversation interest independently
 of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
 live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
-arguments follow their referenced revisions, while reasoning, tool output and associated debug
-frames are selected on demand. A command-ID subscription retains outcomes after the command
-leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
+arguments follow their generation's chunk stream while the item is still producing them, and read
+their completed revision whole over HTTP once it is; the contiguous chunk prefix stays on screen
+across that handoff, so arrived text is never withdrawn to load the value it is already showing.
+Reasoning, tool output and associated debug frames are selected on demand, as is each raw
+observation entry behind the chronological debug list. A command-ID subscription retains outcomes
+after the command leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
 remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
 for query, revision and memory contracts and the remaining acceptance gates.
 

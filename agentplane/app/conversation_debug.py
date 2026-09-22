@@ -13,6 +13,10 @@ class ConversationEvidenceNotFoundError(LookupError):
     """The selected entity or observation has no association in this conversation."""
 
 
+class ConversationPayloadIncompleteError(LookupError):
+    """Stored chunks do not assemble to the byte count their manifest revision records."""
+
+
 class EvidenceObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -43,13 +47,14 @@ class NativeFramePage(BaseModel):
 
 
 class ArchivedObservation(BaseModel):
+    """Identity and kind only; the raw entry is fetched per observation on expansion."""
+
     model_config = ConfigDict(extra="forbid")
 
     cursor: str
     source_id: str
     source_sequence: str
     kind: str
-    entry: dict[str, JsonValue]
 
 
 class ObservationPage(BaseModel):
@@ -60,3 +65,28 @@ class ObservationPage(BaseModel):
     observations: list[ArchivedObservation]
     next_before_cursor: str | None
     next_after_cursor: str | None
+
+
+class ArchivedObservationEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str
+    entry: dict[str, JsonValue]
+
+
+class ConversationPayloadPresent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    availability: Literal["present"]
+    body: str
+
+
+class ConversationPayloadUnavailable(BaseModel):
+    """The manifest records the revision but holds no content for it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    availability: Literal["unavailable"]
+
+
+ConversationPayloadBody = ConversationPayloadPresent | ConversationPayloadUnavailable

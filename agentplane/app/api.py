@@ -38,7 +38,9 @@ from agentplane.app.consent import (
     preview_enrollment,
 )
 from agentplane.app.conversation_debug import (
+    ArchivedObservationEntry,
     ConversationEvidenceNotFoundError,
+    ConversationPayloadBody,
     ConversationScopeChangedError,
     EvidencePage,
     NativeFramePage,
@@ -672,6 +674,51 @@ async def conversation_native_frames(
         after_sequence=after_sequence,
         limit=limit,
     )
+
+
+@threads.get("/{thread_id}/conversation/payload", response_model=ConversationPayloadBody)
+async def conversation_payload(
+    thread_id: UUID,
+    store: Store,
+    source_id: str,
+    projection_epoch: str,
+    owner_cursor: Annotated[int, Query(ge=0)],
+    owner_id: str,
+    field: str,
+    generation: Annotated[int, Query(ge=0)],
+    revision_cursor: Annotated[int, Query(ge=0)],
+    if_none_match: Annotated[str | None, Header()] = None,
+) -> Response:
+    """One completed field revision, whole, without an Electric shape for immutable content."""
+    scope = await store.current_conversation_scope(thread_id)
+    if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
+        raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+    # The reference names immutable content, so its identity is a complete validator. The response
+    # stays caller-scoped: revalidating every read keeps a cached body from outliving authorization.
+    etag = f'"{source_id}:{projection_epoch}:{owner_cursor}:{owner_id}:{field}:{generation}:{revision_cursor}"'
+    headers = {"cache-control": "private, no-cache", "etag": etag}
+    if if_none_match == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    body = await store.conversation_payload_body(
+        thread_id,
+        owner_cursor=owner_cursor,
+        owner_id=owner_id,
+        field=field,
+        generation=generation,
+        revision_cursor=revision_cursor,
+    )
+    if body is None:
+        raise HTTPException(status.HTTP_410_GONE, "the selected payload revision is unavailable")
+    return JSONResponse(body.model_dump(mode="json"), headers=headers)
+
+
+@threads.get("/{thread_id}/conversation/observations/{cursor}")
+async def conversation_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+    """The raw entry behind one listed observation, read only when a reader expands it."""
+    entry = await store.conversation_observation_entry(thread_id, cursor)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
+    return entry
 
 
 @threads.get("/{thread_id}/conversation/observations")

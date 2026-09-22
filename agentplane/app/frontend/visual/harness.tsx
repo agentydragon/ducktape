@@ -627,6 +627,8 @@ const ACTIONS: ActionRequestView[] = [
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
+// The chunk shape selects a generation, so the fixture answers it with that generation's latest body.
+const generationBodies = new Map<string, string>();
 
 function payloadKey(
   ownerCursor: string,
@@ -655,6 +657,7 @@ function payload(
     revision_cursor: String(revisionCursor),
   };
   payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  generationBodies.set(`${reference.owner_cursor}:${ownerId}:${field}:1`, body);
   return reference;
 }
 
@@ -1153,23 +1156,16 @@ function archivedCompletion(cursor: number): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
+  "31": () => archivedStderr(31),
+  "34": () => archivedCompletion(34),
+};
+
 function observationPage(threadId: string) {
   return {
     observations: [
-      {
-        cursor: "31",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "31",
-        kind: "harness_stderr",
-        entry: archivedStderr(31),
-      },
-      {
-        cursor: "34",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "34",
-        kind: "item_completed",
-        entry: archivedCompletion(34),
-      },
+      { cursor: "31", source_id: CONVERSATION_SOURCE, source_sequence: "31", kind: "harness_stderr" },
+      { cursor: "34", source_id: CONVERSATION_SOURCE, source_sequence: "34", kind: "item_completed" },
     ],
     next_before_cursor: null,
     next_after_cursor: null,
@@ -1230,26 +1226,18 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
+    /^\/threads\/([0-9a-f-]+)\/conversation\/payload$/,
     (_match, query) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      return {
-        source_id: CONVERSATION_SOURCE,
-        projection_epoch: CONVERSATION_EPOCH,
-        owner_cursor: ownerCursor,
-        owner_id: ownerId,
-        field,
-        generation,
-        revision_cursor: revisionCursor,
-        present: body !== undefined,
-        chunk_count: body === undefined ? "0" : "1",
-        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
-      };
+      const body = payloadBodies.get(
+        payloadKey(
+          query.get("owner_cursor") ?? "0",
+          query.get("owner_id") ?? "",
+          query.get("field") ?? "",
+          query.get("generation") ?? "0",
+          query.get("revision_cursor") ?? "0"
+        )
+      );
+      return body === undefined ? { availability: "unavailable" } : { availability: "present", body };
     },
   ],
   [
@@ -1260,8 +1248,7 @@ routes.push(
       const ownerId = query.get("owner_id") ?? "";
       const field = query.get("field") ?? "";
       const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      const body = generationBodies.get(`${ownerCursor}:${ownerId}:${field}:${generation}`);
       const rows =
         query.get("offset") !== null && query.get("offset") !== "-1"
           ? []
@@ -1308,7 +1295,12 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])]
+  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/conversation\/observations\/([0-9]+)$/,
+    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
+  ]
 );
 
 const FRESH: WatchHealth = {

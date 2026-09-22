@@ -4,7 +4,13 @@ import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
-import { conversationInterest, displayableError, type ConversationStoredEntity, type EntityInterest } from "./client";
+import {
+  conversationInterest,
+  conversationPayload,
+  displayableError,
+  type ConversationStoredEntity,
+  type EntityInterest,
+} from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 const RefreshConversation = createContext<() => void>(() => undefined);
@@ -104,8 +110,6 @@ const chunkSchema = z.object({
   chunkIndex: decimal,
   text: z.string(),
 });
-type PayloadChunk = z.output<typeof chunkSchema>;
-
 function entityUrl(threadId: string, interest: EntityInterest): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
   url.searchParams.set("source_id", interest.source_id);
@@ -427,7 +431,20 @@ export function ConversationCollection({
   );
 }
 
-function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
+interface PayloadGeneration {
+  source_id: string;
+  projection_epoch: string;
+  owner_cursor: string;
+  owner_item_id: string;
+  field: string;
+  generation: string;
+}
+
+function generationKey(reference: PayloadGeneration): string {
+  return `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}`;
+}
+
+function chunkUrl(threadId: string, reference: PayloadGeneration): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-chunks`, window.location.href);
   url.searchParams.set("source_id", reference.source_id);
   url.searchParams.set("projection_epoch", reference.projection_epoch);
@@ -435,23 +452,21 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
   url.searchParams.set("owner_id", reference.owner_item_id);
   url.searchParams.set("field", reference.field);
   url.searchParams.set("generation", reference.generation);
-  url.searchParams.set("revision_cursor", reference.revision_cursor);
-  if (follow) url.searchParams.set("follow", "true");
   return url.toString();
 }
 
-function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean, onError: (error: unknown) => void) {
+function chunkCollection(threadId: string, reference: PayloadGeneration, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
+      id: `agentplane-payload:${threadId}:${generationKey(reference)}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
       syncMode: "eager",
       shapeOptions: {
-        url: chunkUrl(threadId, reference, follow),
+        url: chunkUrl(threadId, reference),
         columnMapper: snakeCamelMapper(),
-        subscribe: follow,
+        subscribe: true,
         onError,
       },
     })
@@ -469,8 +484,6 @@ export function PayloadBody({
   follow: boolean;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
-  const refreshConversation = useContext(RefreshConversation);
-  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_item_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
   const stableReference = useMemo<PayloadRef>(
     () => ({
       source_id: reference.source_id,
@@ -491,51 +504,81 @@ export function PayloadBody({
       reference.source_id,
     ]
   );
-  const [selection, setSelection] = useState<{
-    key: string;
-    reference: PayloadRef;
-    follow: boolean;
-    chunkCount: string;
-    contentBytes: string;
-  } | null>(null);
+  // A generation only ever grows, so an earlier revision's value is a prefix of the newer one.
+  // Carrying it into the completed read keeps arrived text on screen while that read is in flight,
+  // instead of blanking what the reader is already reading. It stands in for nothing else: an
+  // unavailable revision is a fact about the content, not a slower way of loading it.
+  const retained = useRef<{ generation: string; body: string } | null>(null);
+  const generation = generationKey(stableReference);
+  if (retained.current !== null && retained.current.generation !== generation) retained.current = null;
+  const remember = useCallback(
+    (body: string | null): JSX.Element => {
+      if (body !== null) retained.current = { generation, body };
+      return children(body);
+    },
+    [children, generation]
+  );
+  return follow ? (
+    <StreamingPayloadBody
+      threadId={threadId}
+      sourceId={stableReference.source_id}
+      projectionEpoch={stableReference.projection_epoch}
+      ownerCursor={stableReference.owner_cursor}
+      ownerItemId={stableReference.owner_item_id}
+      field={stableReference.field}
+      generation={stableReference.generation}
+    >
+      {remember}
+    </StreamingPayloadBody>
+  ) : (
+    <CompletedPayloadBody threadId={threadId} reference={stableReference} pending={retained.current?.body ?? null}>
+      {children}
+    </CompletedPayloadBody>
+  );
+}
+
+function CompletedPayloadBody({
+  threadId,
+  reference,
+  pending,
+  children,
+}: {
+  threadId: string;
+  reference: PayloadRef;
+  /** What the follow stream had already shown for this generation, held until the read lands. */
+  pending: string | null;
+  children: (body: string | null) => JSX.Element;
+}): JSX.Element {
+  const refreshConversation = useContext(RefreshConversation);
+  const [body, setBody] = useState<{ key: string; value: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshGeneration, setRefreshGeneration] = useState(0);
-  const refreshPayload = useCallback(() => {
-    setRefreshGeneration((value) => value + 1);
-  }, []);
+  const [attempt, setAttempt] = useState(0);
+  const key = `${generationKey(reference)}:${reference.revision_cursor}`;
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
-    const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-interest`, window.location.href);
-    url.search = new URL(chunkUrl(threadId, stableReference, false)).search;
     let retry: number | undefined;
-    let attempt = 0;
+    let backoff = 0;
     const load = (): void => {
-      if (retry !== undefined) window.clearTimeout(retry);
-      void fetch(url, { signal: controller.signal })
-        .then(async (response) => {
-          if (response.status === 410) {
-            refreshConversation();
-            throw new Error("Payload revision is unavailable after conversation reset");
-          }
-          if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
-          const value = (await response.json()) as { chunk_count: string; content_bytes: string };
-          if (!controller.signal.aborted) {
-            setSelection({
-              key: referenceKey,
-              reference: stableReference,
-              follow,
-              chunkCount: value.chunk_count,
-              contentBytes: value.content_bytes,
-            });
-            setError(null);
-          }
-        })
-        .catch((reason: unknown) => {
+      void conversationPayload(threadId, reference, controller.signal).then(
+        (value) => {
           if (controller.signal.aborted) return;
-          setError(displayableError(reason));
-          retry = window.setTimeout(load, Math.min(5_000, 250 * 2 ** attempt++));
-        });
+          setBody({ key, value: value.availability === "present" ? value.body : null });
+          setError(value.availability === "present" ? null : "This revision has no stored body.");
+        },
+        (reason: unknown) => {
+          if (controller.signal.aborted) return;
+          const message = displayableError(reason);
+          // A retired projection epoch cannot be recovered by retrying this reference.
+          if (message.includes("410")) {
+            setError(message);
+            refreshConversation();
+            return;
+          }
+          setError(message);
+          retry = window.setTimeout(load, Math.min(5_000, 250 * 2 ** backoff++));
+        }
+      );
     };
     const online = (): void => {
       if (!controller.signal.aborted) load();
@@ -547,84 +590,60 @@ export function PayloadBody({
       if (retry !== undefined) window.clearTimeout(retry);
       window.removeEventListener("online", online);
     };
-  }, [follow, referenceKey, refreshConversation, refreshGeneration, stableReference, threadId]);
-  const sameScope =
-    selection?.reference.source_id === reference.source_id &&
-    selection.reference.projection_epoch === reference.projection_epoch;
-  if (!selection || !sameScope) return error ? <p role="alert">{error}</p> : children(null);
+  }, [attempt, key, reference, refreshConversation, threadId]);
   return (
     <>
-      {selection.key !== referenceKey && <p role="status">Loading newer revision; showing previous revision.</p>}
-      {error && <p role="alert">{error}; retrying.</p>}
-      <ActivePayloadBody
-        threadId={threadId}
-        reference={selection.reference}
-        extent={selection}
-        follow={selection.follow}
-        refreshGeneration={refreshGeneration}
-        onRetry={refreshPayload}
-      >
-        {children}
-      </ActivePayloadBody>
+      {error && (
+        <p role="alert">
+          {error} <button onClick={() => setAttempt((value) => value + 1)}>Retry payload</button>
+        </p>
+      )}
+      {children(body?.key === key ? body.value : pending)}
     </>
   );
 }
 
-function ActivePayloadBody({
+function StreamingPayloadBody({
   threadId,
-  reference,
-  extent,
-  follow,
-  refreshGeneration,
-  onRetry,
+  sourceId,
+  projectionEpoch,
+  ownerCursor,
+  ownerItemId,
+  field,
+  generation,
   children,
 }: {
   threadId: string;
-  reference: PayloadRef;
-  extent: { chunkCount: string; contentBytes: string } | null;
-  follow: boolean;
-  refreshGeneration: number;
-  onRetry: () => void;
+  sourceId: string;
+  projectionEpoch: string;
+  ownerCursor: string;
+  ownerItemId: string;
+  field: string;
+  generation: string;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
-  const selectedRevision = follow ? "follow" : reference.revision_cursor;
+  const [attempt, setAttempt] = useState(0);
   const currentCollection = useRef<ReturnType<typeof chunkCollection> | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const retry = useCallback(() => {
-    setStreamError(null);
-    onRetry();
-  }, [onRetry]);
+  // Every input is a generation field, so an advancing revision cannot rebuild this collection.
   const collection = useMemo(() => {
     let next: ReturnType<typeof chunkCollection>;
     next = chunkCollection(
       threadId,
       {
-        source_id: reference.source_id,
-        projection_epoch: reference.projection_epoch,
-        owner_cursor: reference.owner_cursor,
-        owner_item_id: reference.owner_item_id,
-        field: reference.field,
-        generation: reference.generation,
-        revision_cursor: follow ? reference.revision_cursor : selectedRevision,
+        source_id: sourceId,
+        projection_epoch: projectionEpoch,
+        owner_cursor: ownerCursor,
+        owner_item_id: ownerItemId,
+        field,
+        generation,
       },
-      follow,
       (reason) => {
         if (currentCollection.current === next) setStreamError(displayableError(reason));
       }
     );
     return next;
-  }, [
-    follow,
-    reference.field,
-    reference.generation,
-    reference.owner_cursor,
-    reference.owner_item_id,
-    reference.projection_epoch,
-    reference.source_id,
-    refreshGeneration,
-    selectedRevision,
-    threadId,
-  ]);
+  }, [attempt, field, generation, ownerCursor, ownerItemId, projectionEpoch, sourceId, threadId]);
   useEffect(() => {
     currentCollection.current = collection;
     setStreamError(null);
@@ -634,30 +653,20 @@ function ActivePayloadBody({
   }, [collection]);
   const query = useLiveQuery((q) => q.from({ chunk: collection }), [collection]);
   const stopped = streamError ?? (query.isError ? "The payload query entered an error state." : null);
-  if (!extent) return children(null);
-  const expected = BigInt(extent.chunkCount);
-  const chunks = (query.data ?? [])
-    .filter((chunk) => decimalBigInt(chunk.chunkIndex) < expected)
-    .sort((left, right) =>
-      decimalBigInt(left.chunkIndex) < decimalBigInt(right.chunkIndex)
-        ? -1
-        : decimalBigInt(left.chunkIndex) > decimalBigInt(right.chunkIndex)
-          ? 1
-          : 0
-    );
-  const contiguous =
-    chunks.length === Number(expected) &&
-    chunks.every((chunk, index) => decimalBigInt(chunk.chunkIndex) === BigInt(index));
-  const body = contiguous ? chunks.map((chunk: PayloadChunk) => chunk.text).join("") : null;
-  const complete = body !== null && BigInt(new TextEncoder().encode(body).byteLength) === BigInt(extent.contentBytes);
+  // Chunks are append-only within a generation, so the contiguous run from index 0 is the whole
+  // value at some revision of it. A gap means a chunk is still in flight, not a shorter value.
+  const byIndex = new Map((query.data ?? []).map((chunk) => [decimalBigInt(chunk.chunkIndex), chunk.text]));
+  const prefix: string[] = [];
+  for (let index = 0n; byIndex.has(index); index++) prefix.push(byIndex.get(index) as string);
   return (
     <>
       {stopped && (
         <p role="alert">
-          Payload synchronization stopped: {stopped} <button onClick={retry}>Retry payload synchronization</button>
+          Payload synchronization stopped: {stopped}{" "}
+          <button onClick={() => setAttempt((value) => value + 1)}>Retry payload synchronization</button>
         </p>
       )}
-      {children(complete ? body : null)}
+      {children(prefix.length > 0 ? prefix.join("") : null)}
     </>
   );
 }

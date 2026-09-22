@@ -130,11 +130,9 @@ async def _cross_replica_sync(
             "owner_id": reference["owner_item_id"],
             "field": reference["field"],
             "generation": reference["generation"],
-            "revision_cursor": reference["revision_cursor"],
         }
-        body_before = await client_one.get(
-            f"{path}/payload-chunks", params=payload_params | {"offset": "-1", "follow": "true"}
-        )
+        body_params = payload_params | {"revision_cursor": reference["revision_cursor"]}
+        body_before = await client_one.get(f"{path}/payload-chunks", params=payload_params | {"offset": "-1"})
         body_before.raise_for_status()
         before_chunks = [message["value"] for message in body_before.json() if "value" in message]
         assert (
@@ -164,12 +162,7 @@ async def _cross_replica_sync(
             changed_body = await client_two.get(
                 f"{path}/payload-chunks",
                 params=payload_params
-                | {
-                    "offset": offset,
-                    "handle": body_before.headers["electric-handle"],
-                    "live": "true",
-                    "follow": "true",
-                },
+                | {"offset": offset, "handle": body_before.headers["electric-handle"], "live": "true"},
             )
             changed_body.raise_for_status()
             offset = changed_body.headers["electric-offset"]
@@ -177,15 +170,37 @@ async def _cross_replica_sync(
             if chunks:
                 assert [row["text"] for row in chunks] == ["!"]
                 break
-        # A pinned R read made after R+1 committed reconstructs exactly the old whole body.
-        pinned = await client_two.get(f"{path}/payload-chunks", params=payload_params | {"offset": "-1"})
+        # The same shape served both reads: an appended revision extends it rather than defining
+        # another, so resuming its handle is what delivered "!" above and no second handle exists.
+        resumed = await client_two.get(f"{path}/payload-chunks", params=payload_params | {"offset": "-1"})
+        resumed.raise_for_status()
+        assert resumed.headers["electric-handle"] == body_before.headers["electric-handle"]
+
+        # A pinned R read made after R+1 committed still reconstructs exactly the old whole body,
+        # now over the bounded HTTP route rather than a shape narrowed to that revision's prefix.
+        pinned = await client_two.get(f"/threads/{thread}/conversation/payload", params=body_params)
         pinned.raise_for_status()
-        old_chunks = [message["value"] for message in pinned.json() if "value" in message]
-        assert (
-            "".join(row["text"] for row in sorted(old_chunks, key=lambda row: int(row["chunk_index"]))) == "Hello world"
+        assert pinned.json() == {"availability": "present", "body": "Hello world"}
+        assert pinned.headers["cache-control"] == "private, no-cache"
+        revalidated = await client_two.get(
+            f"/threads/{thread}/conversation/payload",
+            params=body_params,
+            headers={"if-none-match": pinned.headers["etag"]},
         )
-        stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
+        assert (revalidated.status_code, revalidated.content) == (304, b"")
+
+        current = await client_two.get(
+            f"/threads/{thread}/conversation/payload", params=payload_params | {"revision_cursor": str(entry.cursor)}
+        )
+        current.raise_for_status()
+        assert current.json()["body"] == "Hello world!"
+
+        stale = await client_two.get(f"{path}/payload-chunks", params=payload_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
+        stale_body = await client_two.get(
+            f"/threads/{thread}/conversation/payload", params=body_params | {"projection_epoch": "stale"}
+        )
+        assert stale_body.status_code == 410
         await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
         await _selected_command_outcome(client_one, client_two, path, store, source, thread, lease)
 

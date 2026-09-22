@@ -33,7 +33,9 @@ export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type EntityInterest = components["schemas"]["EntityInterestResponse"];
-export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
+export type ConversationPayloadBody =
+  components["schemas"]["ConversationPayloadPresent"] | components["schemas"]["ConversationPayloadUnavailable"];
+export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
@@ -68,6 +70,52 @@ export async function reconcileCommands(
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
     body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationPayload(
+  threadId: string,
+  reference: {
+    source_id: string;
+    projection_epoch: string;
+    owner_cursor: string;
+    owner_item_id: string;
+    field: string;
+    generation: string;
+    revision_cursor: string;
+  },
+  signal?: AbortSignal
+): Promise<ConversationPayloadBody> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/payload", {
+    params: {
+      path: { thread_id: threadId },
+      // openapi-fetch serializes query values without converting them to JS numbers.
+      query: {
+        source_id: reference.source_id,
+        projection_epoch: reference.projection_epoch,
+        owner_cursor: reference.owner_cursor as unknown as number,
+        owner_id: reference.owner_item_id,
+        field: reference.field,
+        generation: reference.generation as unknown as number,
+        revision_cursor: reference.revision_cursor as unknown as number,
+      },
+    },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function conversationObservationEntry(
+  threadId: string,
+  cursor: string,
+  signal?: AbortSignal
+): Promise<ArchivedObservationEntry> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations/{cursor}", {
+    params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
     signal,
   });
   if (error) throw new Error(displayableError(error));

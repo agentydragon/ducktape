@@ -275,15 +275,8 @@ async def _serve(
                 lambda thread_id, anchor, before, page_size: store.conversation_entity_interest(
                     thread_id, anchor_cursor=anchor, before_cursor=before, page_size=page_size
                 ),
-                lambda thread_id, owner_cursor, owner_id, field, generation, revision: (
-                    store.conversation_payload_selection(
-                        thread_id,
-                        owner_cursor=owner_cursor,
-                        owner_id=owner_id,
-                        field=field,
-                        generation=generation,
-                        revision_cursor=revision,
-                    )
+                lambda thread_id, owner_cursor, owner_id, field, generation: store.conversation_payload_generation(
+                    thread_id, owner_cursor=owner_cursor, owner_id=owner_id, field=field, generation=generation
                 ),
                 store.current_conversation_scope,
             )

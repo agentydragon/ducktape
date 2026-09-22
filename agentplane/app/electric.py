@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
@@ -14,12 +16,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.trajectory import (
-    ConversationEntityInterest,
-    ConversationInterestExpiredError,
-    ConversationPayloadSelection,
-    ConversationScope,
-)
+from agentplane.app.trajectory import ConversationEntityInterest, ConversationInterestExpiredError, ConversationScope
+
+logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 30
 _SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
@@ -42,8 +41,6 @@ _INTEREST_QUERY = frozenset(
         "owner_id",
         "field",
         "generation",
-        "revision_cursor",
-        "follow",
         "command_id",
     }
 )
@@ -67,7 +64,7 @@ _RESPONSE_HEADERS = frozenset(
 )
 
 EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
-PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
+PayloadGenerationResolver = Callable[[UUID, int, str, str, int], Awaitable[ConversationScope | None]]
 ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
 
 
@@ -79,19 +76,6 @@ class EntityInterestResponse(BaseModel):
     tail_from: str
     window_from: str | None
     window_before: str | None
-
-
-class PayloadInterestResponse(BaseModel):
-    source_id: str
-    projection_epoch: str
-    owner_cursor: str
-    owner_id: str
-    field: str
-    generation: str
-    revision_cursor: str
-    present: bool
-    chunk_count: str
-    content_bytes: str
 
 
 class ElectricStreamingResponse(StreamingResponse):
@@ -114,12 +98,12 @@ class ElectricProxy:
         self,
         client: httpx.AsyncClient,
         resolve_entities: EntityInterestResolver,
-        resolve_payload: PayloadResolver,
+        resolve_payload_generation: PayloadGenerationResolver,
         resolve_scope: ScopeResolver,
     ) -> None:
         self._client = client
         self._resolve_entities = resolve_entities
-        self._resolve_payload = resolve_payload
+        self._resolve_payload_generation = resolve_payload_generation
         self._resolve_scope = resolve_scope
 
     async def commands(
@@ -159,7 +143,7 @@ class ElectricProxy:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"no conversation for thread {thread_id}")
         return interest
 
-    async def payload_selection(
+    async def payload_generation(
         self,
         thread_id: UUID,
         source_id: str,
@@ -168,16 +152,11 @@ class ElectricProxy:
         owner_id: str,
         field: str,
         generation: int,
-        revision_cursor: int,
-    ) -> ConversationPayloadSelection:
-        selection = await self._resolve_payload(thread_id, owner_cursor, owner_id, field, generation, revision_cursor)
-        if (
-            selection is None
-            or selection.scope.source_id != source_id
-            or selection.scope.projection_epoch != projection_epoch
-        ):
-            raise HTTPException(status.HTTP_410_GONE, "the selected payload revision is unavailable")
-        return selection
+    ) -> ConversationScope:
+        scope = await self._resolve_payload_generation(thread_id, owner_cursor, owner_id, field, generation)
+        if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
+            raise HTTPException(status.HTTP_410_GONE, "the selected payload generation is unavailable")
+        return scope
 
     async def entities(
         self,
@@ -233,34 +212,31 @@ class ElectricProxy:
         owner_id: str,
         field: str,
         generation: int,
-        revision_cursor: int,
-        follow: bool,
     ) -> StreamingResponse:
-        selection = await self.payload_selection(
-            thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
-        )
-        params = {
-            "1": str(thread_id),
-            "2": source_id,
-            "3": projection_epoch,
-            "4": str(owner_cursor),
-            "5": owner_id,
-            "6": field,
-            "7": str(generation),
-        }
-        chunk_bound = ""
-        if not follow:
-            chunk_bound = " AND chunk_index < $8"
-            params["8"] = str(selection.chunk_count)
+        """Follow one streaming generation. Completed revisions read whole over the payload route.
+
+        The shape names a generation and no revision within it: chunks are append-only there, so a
+        revision-bounded prefix would define a distinct shape per revision and make every completing
+        item pay a cold shape creation for bytes its own follow stream had already delivered.
+        """
+        await self.payload_generation(thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation)
         return await self._forward(
             request,
             table="conversation_payload_chunk",
             columns=_CHUNK_COLUMNS,
             where=(
                 "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor = $4 AND "
-                f"owner_id = $5 AND field = $6 AND generation = $7{chunk_bound}"
+                "owner_id = $5 AND field = $6 AND generation = $7"
             ),
-            params=params,
+            params={
+                "1": str(thread_id),
+                "2": source_id,
+                "3": projection_epoch,
+                "4": str(owner_cursor),
+                "5": owner_id,
+                "6": field,
+                "7": str(generation),
+            },
         )
 
     async def _forward(
@@ -306,10 +282,19 @@ class ElectricProxy:
                 **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
             },
         )
+        # Electric answers headers once the shape exists, so this separates creating a shape from
+        # transferring it: a cold creation and a warm snapshot are indistinguishable in a HAR.
+        started = time.monotonic()
         try:
             response = await self._client.send(upstream, stream=True)
         except httpx.RequestError as error:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
+        upstream_seconds = time.monotonic() - started
+        logger.info(
+            "electric shape response: %s",
+            f"{table=} {upstream_seconds=:.3f} status={response.status_code} "
+            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')}",
+        )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
         headers["cache-control"] = "private, no-store"
@@ -371,35 +356,6 @@ async def get_entities(
     )
 
 
-@router.get("/payload-interest")
-async def get_payload_interest(
-    request: Request,
-    thread_id: UUID,
-    source_id: str,
-    projection_epoch: str,
-    owner_cursor: Annotated[int, Query(ge=0)],
-    owner_id: str,
-    field: str,
-    generation: Annotated[int, Query(ge=0)],
-    revision_cursor: Annotated[int, Query(ge=0)],
-) -> PayloadInterestResponse:
-    selection = await _proxy(request).payload_selection(
-        thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
-    )
-    return PayloadInterestResponse(
-        source_id=selection.scope.source_id,
-        projection_epoch=selection.scope.projection_epoch,
-        owner_cursor=str(selection.owner_cursor),
-        owner_id=selection.owner_id,
-        field=selection.field,
-        generation=str(selection.generation),
-        revision_cursor=str(selection.revision_cursor),
-        present=selection.present,
-        chunk_count=str(selection.chunk_count),
-        content_bytes=str(selection.content_bytes),
-    )
-
-
 @router.get("/commands")
 async def get_commands(
     request: Request,
@@ -421,8 +377,6 @@ async def get_payload_chunks(
     owner_id: str,
     field: str,
     generation: Annotated[int, Query(ge=0)],
-    revision_cursor: Annotated[int, Query(ge=0)],
-    follow: bool = False,
     offset: Annotated[str | None, Query()] = None,
     handle: Annotated[str | None, Query()] = None,
     live: Annotated[bool | None, Query()] = None,
@@ -437,6 +391,4 @@ async def get_payload_chunks(
         owner_id=owner_id,
         field=field,
         generation=generation,
-        revision_cursor=revision_cursor,
-        follow=follow,
     )
