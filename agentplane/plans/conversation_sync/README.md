@@ -68,18 +68,21 @@ Cells are judgements from the option files, not measurements.
 | O2 horizontal scale          | +           | +             | +             | ~        | +              | +              |
 | O3 debuggable                | +           | +             | +             | +        | ~              | ~              |
 | **O4 few moving parts**      | +           | +             | +             | ~        | −              | **−**          |
-| **D1 one moving watch**      | +           | ~             | **+**         | +        | −              | −              |
+| **D1 no overlap re-sent**    | −           | −             | **+**         | +        | **−**          | **+**          |
 | D2 no windowed/lazy seam     | +           | +             | +             | +        | −              | −              |
 | D3 incrementally reachable   | +           | +             | +             | ~        | n/a            | −              |
 
 ### What the matrix says
 
-- **D1 is the sharpest axis, and it is a desire.** A shape's predicate is fixed at creation, so a
-  moved window is a different shape whose log replays from `offset=-1`; the page partition dodges
-  that only by holding `N` immovable shapes. Electric therefore cannot do D1 at all — but D1 does
-  not eliminate it, and how heavily to weight it is the judgement to make rather than one this
-  matrix makes.
-- **P8 is the only hard failure on the Electric columns**, because it is in
+- **D1 does not split the options by family.** It asks that moving the window never re-send what
+  the client holds, and says nothing about subscription count. Two very different designs pass —
+  the page partition, because non-overlapping partitions never overlap by construction, and the
+  moving window, because the client states what it has. Two fail for the same reason: a viewport
+  that is one changing predicate replays itself, which is Electric-as-deployed and a delta poll
+  without `have`.
+- **A0 fails D1 hardest**, which is easy to miss because it has no window to move: it re-sends the
+  whole conversation on every poll, held or not.
+- **P8 is the only hard failure left on the Electric columns**, because it is in
   <../../docs/thread_view_sync.md> rather than in anyone's preferences. An Electric design that
   wants to stay in contention has to answer it or argue the spec should change.
 - **The moving window is the only column that is all `+`.** That is not a claim that it is right —
@@ -99,9 +102,9 @@ Cells are judgements from the option files, not measurements.
 
 ## What to settle next, in order
 
-1. **Decide what D1 is worth.** It is a desire, not a gate — but it is the axis the families differ
-   most on, and no Electric design can meet it. P8 is separately binding as written, since it is in
-   the spec; whether that spec line should hold is itself a decision available.
+1. **Settle P8.** It is the only hard blocker on the Electric family, it is in the spec, and the
+   deployed code violates it. Either it holds — and an Electric design owes an answer — or the spec
+   line should change, which is a decision available rather than a door closed.
 2. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
    `revision_cursor > $since` for the overlap — and **pin with a test that every mutation advances
    an entity's `revision_cursor`, including a body change.** That single assumption carries the

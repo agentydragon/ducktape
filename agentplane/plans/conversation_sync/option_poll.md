@@ -38,9 +38,8 @@ than fixed interval, so the server holds the request open until something change
 - **P8/D2 fall out naturally.** `since` and the content selection are _query parameters_. "Give me
   text now and reasoning only when I ask" is two values of one parameter, not two mechanisms. This
   is what the spec's `ContentSelection` was always describing.
-- **D1, partly.** One subscription, and the client says what it is looking at in one request — but
-  A1 as written has no `have`, so moving the window re-downloads its overlap. The fix is one
-  parameter and is written up as its own option (<option_moving_window.md>); A1 is the step before
+- **D1: no.** A1 as written has no `have`, so moving the window re-downloads its overlap. The fix
+  is one parameter, written up as its own option (<option_moving_window.md>); A1 is the step before
   it, not a destination.
 - **P4/E4**: scrolling back is `GET …?before={cursor}&limit=30`, and the reader keeps what it has.
   Nothing is redefined, so **P5** holds.

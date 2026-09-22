@@ -1,6 +1,7 @@
 # Option: one watch over a moving range
 
-The protocol **D1** describes, written out. The client states what range it wants and what it
+One of the two ways to satisfy **D1**, written out — the other being non-overlapping partitions
+(§ option_electric_pages). The client states what range it wants and what it
 already holds; the server sends the difference and keeps it informed of that range. There is one
 subscription and it moves.
 
@@ -39,7 +40,8 @@ server has nothing per-reader to keep in step with it.
 
 ## Against the requirements
 
-- **D1** by construction. `want`, `have` and `since` are the whole mechanism.
+- **D1** by construction: `have` is what lets the server skip the overlap rather than the client
+  discard it.
 - **P8 / D2** by construction. `content` is a parameter of the same request. "Text now, reasoning
   when I expand it" is two values of one parameter, and a reader that wants everything streamed says
   so. Nothing about laziness is in the protocol.

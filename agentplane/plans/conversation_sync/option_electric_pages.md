@@ -6,11 +6,15 @@ out to the point where its costs are visible, kept whole so it can be compared r
 half-remembered.
 
 It is the deployed stack, so it starts ahead on familiarity and behind on nothing except the two
-things it structurally cannot do: **D1** (a reader holds seven subscriptions at the tail and cannot
-move any of them — a moved range is a different shape, which replays from `offset=-1`) and **P8/D2**
-(the content selection lives in a server-side shape predicate, where a client cannot express it).
-D1 is a desire, so it counts against this option without ending it; P8 is in the spec. Both are
-called out where they arise below.
+It **satisfies D1**, which is worth stating up front because an earlier draft of this file claimed
+the opposite. Pages never overlap and their bounds never move, so scrolling up subscribes to a page
+the client does not hold and re-sends nothing. What it pays for that is subscription count — seven
+shapes at the tail — which D1, as finally stated, does not charge for.
+
+What it structurally cannot do is **P8/D2**: the content selection lives in a server-side shape
+predicate, where a client cannot express it and the server cannot vary it per reader. P8 is in
+<../../docs/thread_view_sync.md>, so that is this option's one hard problem, and it is called out
+where it arises below.
 
 **Note on numbering:** `W1`…`W9` in this file are _work items_ from the draft this grew out of, and
 have nothing to do with the `D` wants in <requirements.md>. Requirement citations here are `P`, `S`,

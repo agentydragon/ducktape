@@ -69,30 +69,37 @@ mean the wrong thing.
 **These do not disqualify anything.** An option that fails a desire owes an argument that what it
 wins elsewhere is worth more — not an exit from the comparison.
 
-### D1 — one watch, moved in place
+### D1 — moving the window never re-sends what the client holds
 
-A reader holds a single subscription over the range it cares about, and moving that range costs only
-the difference. Stated by the owner as a protocol, which is why it is worth writing out even as a
-desire:
+The invariant, in the owner's words: closing the previous watch and opening `O(1)` new ones is
+fine — **the new watch must not send the client data it already has.**
 
-A client holds segments 100–200 at revision 9932. The reader scrolls up, so the client now wants
-50–150. It should:
+The worked case. A client holds segments 100–200 at revision 9932. The reader scrolls up, so the
+client now wants 50–150. It should fetch **50–99**, learn of any change to **100–150 since revision
+9932**, and drop 151–200. What it must not do is receive 100–150 again.
 
-1. fetch **50–99 only** — the part it does not have;
-2. learn of any change to **100–150 since revision 9932** — the part it has, which may be stale;
-3. **move its existing watch** to 50–150, without re-downloading 100–150 and without opening a
-   second one;
-4. drop 151–200.
+Note what this is _not_: a cap on subscriptions. An earlier draft of this file read "one watch, and
+move it", and that turned an implementation shape into the requirement. The count is free; the
+re-transfer is the cost.
 
-**No Electric design can do this**, and the reason is mechanical rather than aesthetic: a shape's
-predicate is fixed when the shape is created, so 50–150 is a different shape from 100–200 and its
-log replays from `offset=-1` — the overlap is re-transferred. The page partition
-(§ option_electric_pages) avoids that re-transfer the only other way available, by holding `N`
-immovable shapes.
+**This splits the options cleanly, and not where the earlier version did:**
 
-So D1 is the sharpest axis between the families, **and it is a preference**. Electric scores badly
-on it and stays in contention; how badly it should count is exactly the judgement to make, not one
-this document can make for anybody.
+- **Overlapping windows re-send.** Any design where the viewport is one predicate that changes —
+  Electric as deployed, or a delta poll without a `have` parameter — replays the new window whole.
+  Electric has no choice about it: a shape's predicate is fixed at creation, so a moved range is a
+  different shape and a fresh shape's log starts at `offset=-1`.
+- **Non-overlapping partitions do not.** The page partition (§ option_electric_pages) never moves a
+  bound, so scrolling up subscribes to a page the client does not hold and re-sends nothing. It pays
+  for this in subscription count, which D1 no longer charges for.
+- **A stated `have` does not either.** § option_moving_window sends the difference because the
+  client says what it holds.
+
+So D1 readmits the page partition, and leaves **P8** as the only hard thing standing against the
+Electric family.
+
+One honest edge: a reader that unsubscribes from a page, scrolls back to it and re-subscribes does
+re-download it. That is not a D1 violation — the client dropped the data — but it is the cost of
+bounding held pages, and a client that keeps them cached avoids it.
 
 - **D2 — no seam between windowed and on-demand content.** Whether a body streams or is fetched
   should be one mechanism with a parameter, not two code paths that behave differently. P8's

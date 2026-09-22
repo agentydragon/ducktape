@@ -13,9 +13,10 @@ The useful axis is not "which library" but **who decides what is synced, and in 
 | A client-declared query          | **Client**            | **Zero**, Convex, InstantDB, Triplit, LiveStore |
 | A server-computed per-reader set | Server, per reader    | Replicache, Phoenix Channels, our SSE routes    |
 
-**P8 and D1 both point at row three.** A client-declared query is exactly "the client says what it
-is looking at, once" — which is why this axis, rather than the feature lists, is what should drive
-the comparison.
+**P8 points at row three.** A client-declared query is where the client says what it is looking at,
+including which fields — which is why this axis, rather than the feature lists, should drive the
+comparison. D1 cuts across it instead: rows two and three can both satisfy it, by never overlapping
+or by stating what is held.
 
 ## Worth actually investigating
 
@@ -25,11 +26,13 @@ the comparison.
   (P8), whether a live query's range can be **moved** without re-delivering the overlap (D1), how
   deep history paging behaves, and self-hosting.
 - **Replicache (Rocicorp, earlier).** Client pulls a delta against a cookie; the **server** computes
-  what changed for that client. Nothing to subscribe to, so D1 holds by construction, and the pull
+  what changed for that client. Nothing to subscribe to and the client states its position, so D1
+  holds by construction, and the pull
   endpoint is essentially option_poll.md § A1 with a well-specified protocol and a client cache. The
   closest prior art to the cheapest option here, and the one to read for how it handles P6 and S3.
 - **PowerSync.** Postgres → SQLite, with server-side **sync rules** defining per-user buckets.
-  Partition model like Electric's, so likely inherits the Electric problem with D1; worth checking whether bucket membership
+  Partition model like Electric's, so likely satisfies D1 the same way — by never overlapping —
+  and inherits P8. Worth checking whether bucket membership
   can be parameterised per reader at subscribe time.
 - **Phoenix Channels / LiveView.** The reference implementation of option_app_push.md, with a
   decade of operational experience. Read for failure modes and scaling limits, not adoption.
@@ -53,6 +56,6 @@ the comparison.
    inventing.
 3. **Electric's `subset__where`** — our proxy pins it to `true = true`. If Electric can snapshot a
    _narrow_ subset of a _wide_ shape, then one stable shape per conversation with a tail-only
-   snapshot may satisfy P1 and O1 together. It still would not reach **D1** — the live log of a wide shape
-   carries the whole conversation, so a reader receives changes for rows it is not showing — but it
-   is cheap to check and would materially improve the Electric option on P1 and O1.
+   snapshot may satisfy P1 and O1 together with far fewer shapes than the page partition needs. It
+   would still carry changes for the whole conversation in its live log, which is wasteful rather
+   than wrong, and it does not touch **P8**. Cheap to check.
