@@ -92,8 +92,7 @@ Haku spin up its own compute _inside_ the perimeter:
   `resources_create_or_update`s a pod in `haku-sandbox` (a trivial tools image —
   git/kubectl/psql/curl/cacert, **no `ant`, no systemd**) with the `haku` SA + git
   creds, `exec`s the scan into it, then `delete`s it. A pod in `haku-sandbox` has
-  **full in-cluster reach** — Plaid, the in-cluster MCP servers, the
-  `google-access-token` secret, internal Forgejo — so we **don't** expose each
+  **full in-cluster reach** — Plaid, the in-cluster MCP servers, internal Forgejo — so we **don't** expose each
   data-source MCP separately. Kyverno injects the `haku-egress-proxy` egress + RBAC +
   quota **by namespace**, so agent-created pods inherit the same fence (and PSS
   constrains what the agent can create — no privileged, runAsNonRoot).
