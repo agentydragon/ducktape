@@ -927,6 +927,9 @@ py_test(
 
 py_test(
     name = "test_mcp_linkage_callback",
+    # Postgres testcontainer + OAuth callback assertions genuinely take 37-47s
+    # (bbapi target history across ~30 recent devel commits); too close to small's 60s.
+    size = "medium",
     srcs = ["test_mcp_linkage_callback.py"],
     requires_docker = True,
     deps = [
