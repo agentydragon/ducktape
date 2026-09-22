@@ -851,8 +851,8 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
     await store.record(
         thread,
         [
-            _event(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
-            _event(
+            event_entry(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
+            event_entry(
                 2,
                 item_completed=event_pb2.ItemCompleted(
                     item_id="tool", tool=event_pb2.ToolResult(output="out", succeeded=False)
@@ -864,8 +864,8 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
     await store.record(
         thread,
         [
-            _event(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
-            _event(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="late")),
+            event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
+            event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="late")),
         ],
         lease=lease,
     )
