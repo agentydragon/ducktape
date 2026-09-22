@@ -96,7 +96,7 @@ function LazyBody({
   follow: boolean;
   plain?: boolean;
 }): JSX.Element {
-  const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_item_id}:${body.reference.field}`;
+  const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
       <Body {...body} />

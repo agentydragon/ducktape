@@ -32,16 +32,16 @@ from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certi
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.trajectory import (
-    ConversationEntity,
-    ConversationFeedErrorState,
-    ConversationOperationalState,
-    ConversationPayloadChunk,
-    ConversationPayloadManifest,
-    ConversationProjectionCheckpoint,
-    ConversationProjectionEvidence,
-    ConversationProjectionNativeLink,
-    ConversationViewState,
     FeedState,
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadFeedErrorState,
+    ThreadNativeLink,
+    ThreadOperationalState,
+    ThreadPayloadChunk,
+    ThreadPayloadManifest,
+    ThreadViewState,
     TrajectoryStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -299,7 +299,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         # This touches only the disposable test database; the live app and Electric
         # must detect replacement without a page reload or a custom client reset.
         async with store._sessions() as session, session.begin():
-            rows = list(await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread)))
+            rows = list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
             for row in rows:
                 row.projection_epoch = "test-rebuilt-epoch"
                 row.text_ref = rebuilt_reference(row.text_ref)
@@ -307,21 +307,18 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
                 row.output_ref = rebuilt_reference(row.output_ref)
                 row.input_ref = rebuilt_reference(row.input_ref)
             for model in (
-                ConversationProjectionCheckpoint,
-                ConversationPayloadManifest,
-                ConversationPayloadChunk,
-                ConversationProjectionEvidence,
-                ConversationProjectionNativeLink,
+                ThreadCheckpoint,
+                ThreadPayloadManifest,
+                ThreadPayloadChunk,
+                ThreadEvidence,
+                ThreadNativeLink,
             ):
                 await session.execute(
                     update(model).where(model.thread_id == thread).values(projection_epoch="test-rebuilt-epoch")
                 )
             await session.execute(
-                update(ConversationPayloadChunk)
-                .where(
-                    ConversationPayloadChunk.thread_id == thread,
-                    ConversationPayloadChunk.owner_id == "test-browser-item",
-                )
+                update(ThreadPayloadChunk)
+                .where(ThreadPayloadChunk.thread_id == thread, ThreadPayloadChunk.owner_id == "test-browser-item")
                 .values(text="Test replaced prefix")
             )
 
@@ -485,7 +482,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
                     while True:
-                        scope = await store.current_conversation_scope(thread)
+                        scope = await store.current_scope(thread)
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
@@ -1476,24 +1473,22 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
     (thread,) = await store.list_threads(sandbox=SANDBOX)
     async with store._sessions() as session, session.begin():
-        checkpoint = await session.get(ConversationProjectionCheckpoint, thread.id)
+        checkpoint = await session.get(ThreadCheckpoint, thread.id)
         assert checkpoint is not None
         view = await session.get(
-            ConversationEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
+            ThreadEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
         )
         assert view is not None
         feed = await session.get(FeedState, thread.id)
         assert feed is not None
-        state = ConversationViewState.model_validate(view.state)
+        state = ThreadViewState.model_validate(view.state)
         view.state = state.model_copy(
             update={
-                "operational": ConversationOperationalState(
+                "operational": ThreadOperationalState(
                     operational_version=str(int(state.operational.operational_version) + 1),
                     status="failed",
                     last_verified_cursor=str(checkpoint.through_cursor),
-                    feed_error=ConversationFeedErrorState(
-                        cursor=None, message="batch-wide projection invariant failed"
-                    ),
+                    feed_error=ThreadFeedErrorState(cursor=None, message="batch-wide projection invariant failed"),
                 )
             }
         ).model_dump(mode="json")

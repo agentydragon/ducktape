@@ -36,21 +36,21 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, mapped_column
 
-from agentplane.app import conversation_projection
+from agentplane.app import thread_fold
 from agentplane.app.changes import Changes
-from agentplane.app.conversation_debug import (
+from agentplane.app.operator_sessions import Base, OperatorSessionStore
+from agentplane.app.presets import Harness
+from agentplane.app.thread_debug import (
     ArchivedObservation,
     ArchivedObservationEntry,
-    ConversationEvidenceNotFoundError,
-    ConversationScopeChangedError,
     EvidenceObservation,
     EvidencePage,
     NativeFrame,
     NativeFramePage,
     ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
 )
-from agentplane.app.operator_sessions import Base, OperatorSessionStore
-from agentplane.app.presets import Harness
 from agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -61,7 +61,7 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//asyncpg
 
 
-CONVERSATION_PROJECTION_EPOCH = "v1"
+THREAD_FOLD_EPOCH = "v1"
 
 
 class Thread(Base):
@@ -126,10 +126,10 @@ class FeedState(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
-class ConversationProjectionCheckpoint(Base):
+class ThreadCheckpoint(Base):
     """One source/epoch-owned materialized prefix for a Thread."""
 
-    __tablename__ = "conversation_projection_checkpoint"
+    __tablename__ = "thread_checkpoint"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -139,14 +139,14 @@ class ConversationProjectionCheckpoint(Base):
     through_cursor: Mapped[int] = mapped_column(BigInteger)
 
 
-class ConversationEntity(Base):
-    """The mutable, tagged current row consumed by the conversation view shape."""
+class ThreadEntity(Base):
+    """The mutable, tagged current row consumed by the thread view shape."""
 
-    __tablename__ = "conversation_entity"
+    __tablename__ = "thread_entity"
     __table_args__ = (
-        Index("ix_conversation_entity_scope_revision", "thread_id", "source_id", "projection_epoch", "revision_cursor"),
+        Index("ix_thread_entity_scope_revision", "thread_id", "source_id", "projection_epoch", "revision_cursor"),
         Index(
-            "ix_conversation_entity_scope_cursor",
+            "ix_thread_entity_scope_cursor",
             "thread_id",
             "source_id",
             "projection_epoch",
@@ -155,7 +155,7 @@ class ConversationEntity(Base):
             "entity_id",
         ),
         Index(
-            "ix_conversation_entity_scope_pending_cursor",
+            "ix_thread_entity_scope_pending_cursor",
             "thread_id",
             "source_id",
             "projection_epoch",
@@ -165,7 +165,7 @@ class ConversationEntity(Base):
             postgresql_where=text("pending"),
         ),
         Index(
-            "ix_conversation_entity_scope_segment_cursor",
+            "ix_thread_entity_scope_segment_cursor",
             "thread_id",
             "source_id",
             "projection_epoch",
@@ -192,10 +192,10 @@ class ConversationEntity(Base):
     input_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
 
 
-class ConversationPayloadManifest(Base):
+class ThreadPayloadManifest(Base):
     """An immutable exact field revision; chunks are owned by its generation."""
 
-    __tablename__ = "conversation_payload_manifest"
+    __tablename__ = "thread_payload_manifest"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -212,10 +212,10 @@ class ConversationPayloadManifest(Base):
     content_bytes: Mapped[int] = mapped_column(BigInteger)
 
 
-class ConversationPayloadChunk(Base):
+class ThreadPayloadChunk(Base):
     """A UTF-8 fragment, immutable within a payload generation."""
 
-    __tablename__ = "conversation_payload_chunk"
+    __tablename__ = "thread_payload_chunk"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -230,8 +230,8 @@ class ConversationPayloadChunk(Base):
     text: Mapped[str] = mapped_column(Text)
 
 
-class ConversationProjectionEvidence(Base):
-    __tablename__ = "conversation_projection_evidence"
+class ThreadEvidence(Base):
+    __tablename__ = "thread_evidence"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -242,8 +242,8 @@ class ConversationProjectionEvidence(Base):
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
 
-class ConversationProjectionNativeLink(Base):
-    __tablename__ = "conversation_projection_native_link"
+class ThreadNativeLink(Base):
+    __tablename__ = "thread_native_link"
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
@@ -273,18 +273,18 @@ class EventReplicationError(ValueError):
         self.cursor = cursor
 
 
-class ConversationProjectionError(EventReplicationError):
-    """A semantic observation could not advance the durable conversation projection."""
+class ThreadFoldError(EventReplicationError):
+    """A semantic observation could not advance the durable thread fold."""
 
 
-class ConversationInterestExpiredError(ValueError):
+class ThreadInterestExpiredError(ValueError):
     """A bounded browser interest must be resolved again at the current projection position."""
 
 
 CommandOutcomeValue = Literal["pending", "effected", "failed", "noop"]
 
 
-class ConversationScopeResetError(ValueError):
+class ThreadScopeResetError(ValueError):
     """A browser's retained projection source or epoch is no longer current."""
 
 
@@ -309,15 +309,15 @@ class FeedSnapshot:
 
 
 @dataclass(frozen=True)
-class ConversationScope:
+class ThreadScope:
     source_id: str
     projection_epoch: str
     through_cursor: int
 
 
 @dataclass(frozen=True)
-class ConversationEntityInterest:
-    scope: ConversationScope
+class ThreadEntityInterest:
+    scope: ThreadScope
     anchor_cursor: int
     tail_from: int
     window_from: int | None = None
@@ -325,8 +325,8 @@ class ConversationEntityInterest:
 
 
 @dataclass(frozen=True)
-class ConversationPayloadSelection:
-    scope: ConversationScope
+class ThreadPayloadSelection:
+    scope: ThreadScope
     owner_cursor: int
     owner_id: str
     field: str
@@ -337,19 +337,19 @@ class ConversationPayloadSelection:
     content_bytes: int
 
 
-class ConversationPayloadReference(BaseModel):
+class ThreadPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_id: str
     projection_epoch: str
     owner_cursor: str
-    owner_item_id: str
+    owner_id: str
     field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
     revision_cursor: str
     generation: str
 
 
-class ConversationControlsState(BaseModel):
+class ThreadControlsState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     applied_model: str | None
@@ -357,14 +357,14 @@ class ConversationControlsState(BaseModel):
     harness_state: str | None
 
 
-class ConversationFeedErrorState(BaseModel):
+class ThreadFeedErrorState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cursor: str | None
     message: str
 
 
-class ConversationOperationalState(BaseModel):
+class ThreadOperationalState(BaseModel):
     """Feed lifecycle state with an independent version, never a fabricated runner cursor."""
 
     model_config = ConfigDict(extra="forbid")
@@ -372,18 +372,18 @@ class ConversationOperationalState(BaseModel):
     operational_version: str
     status: Literal["active", "ended", "failed"]
     last_verified_cursor: str
-    feed_error: ConversationFeedErrorState | None
+    feed_error: ThreadFeedErrorState | None
 
 
-class ConversationViewState(BaseModel):
+class ThreadViewState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    controls: ConversationControlsState
+    controls: ThreadControlsState
     unresolved_count: int
-    operational: ConversationOperationalState
+    operational: ThreadOperationalState
 
 
-class ConversationItemState(BaseModel):
+class ThreadItemState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: int
@@ -392,21 +392,21 @@ class ConversationItemState(BaseModel):
     tool_succeeded: bool | None
 
 
-class ConversationConfirmedInputState(BaseModel):
+class ThreadConfirmedInputState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     harness_message_id: str
     origin_command_ids: list[str]
 
 
-class ConversationLifecycleState(BaseModel):
+class ThreadLifecycleState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observation: str
     event: JsonValue
 
 
-class ConversationCommandState(BaseModel):
+class ThreadCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
@@ -415,8 +415,8 @@ class ConversationCommandState(BaseModel):
     outcome_reason: str | None
 
 
-class ConversationStoredEntity(BaseModel):
-    """The generated client contract for a synchronized current conversation row."""
+class ThreadEntityView(BaseModel):
+    """The generated client contract for a synchronized current thread entity row."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -429,29 +429,23 @@ class ConversationStoredEntity(BaseModel):
     revision_cursor: int
     pending: bool
     turn_id: str | None
-    state: (
-        ConversationViewState
-        | ConversationItemState
-        | ConversationConfirmedInputState
-        | ConversationLifecycleState
-        | ConversationCommandState
-    )
-    text_ref: ConversationPayloadReference | None
-    arguments_ref: ConversationPayloadReference | None
-    output_ref: ConversationPayloadReference | None
-    input_ref: ConversationPayloadReference | None
+    state: ThreadViewState | ThreadItemState | ThreadConfirmedInputState | ThreadLifecycleState | ThreadCommandState
+    text_ref: ThreadPayloadReference | None
+    arguments_ref: ThreadPayloadReference | None
+    output_ref: ThreadPayloadReference | None
+    input_ref: ThreadPayloadReference | None
 
     @model_validator(mode="after")
     def _state_matches_kind(self) -> Self:
         expected = {
-            "view_state": ConversationViewState,
-            "item": ConversationItemState,
-            "confirmed_input": ConversationConfirmedInputState,
-            "lifecycle": ConversationLifecycleState,
-            "command": ConversationCommandState,
+            "view_state": ThreadViewState,
+            "item": ThreadItemState,
+            "confirmed_input": ThreadConfirmedInputState,
+            "lifecycle": ThreadLifecycleState,
+            "command": ThreadCommandState,
         }[self.entity_kind]
         if not isinstance(self.state, expected):
-            raise ValueError(f"conversation state does not match {self.entity_kind}")
+            raise ValueError(f"entity state does not match {self.entity_kind}")
         return self
 
 
@@ -536,61 +530,57 @@ class TrajectoryStore:
                 or 0
             )
 
-    async def current_conversation_scope(self, thread_id: UUID) -> ConversationScope | None:
+    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
         """The sole source/epoch scope currently materialized for a Thread."""
         async with self._sessions() as session:
-            checkpoint = await session.scalar(
-                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
-            )
+            checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
                 return None
-            return ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            return ThreadScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
 
-    async def conversation_entity_interest(
+    async def entity_interest(
         self,
         thread_id: UUID,
         *,
         anchor_cursor: int | None = None,
         before_cursor: int | None = None,
         page_size: int = 30,
-    ) -> ConversationEntityInterest | None:
+    ) -> ThreadEntityInterest | None:
         if not 1 <= page_size <= 100:
-            raise ValueError("conversation page size must be between 1 and 100")
+            raise ValueError("entity page size must be between 1 and 100")
         segment_kinds = ("item", "confirmed_input", "lifecycle")
         async with self._sessions() as session:
-            checkpoint = await session.scalar(
-                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
-            )
+            checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
                 return None
-            scope = ConversationScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            scope = ThreadScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
             anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
             if anchor < 0 or anchor > scope.through_cursor:
-                raise ValueError("conversation anchor is outside the projected prefix")
+                raise ValueError("anchor is outside the projected prefix")
             common = (
-                ConversationEntity.thread_id == thread_id,
-                ConversationEntity.source_id == scope.source_id,
-                ConversationEntity.projection_epoch == scope.projection_epoch,
-                ConversationEntity.entity_kind.in_(segment_kinds),
+                ThreadEntity.thread_id == thread_id,
+                ThreadEntity.source_id == scope.source_id,
+                ThreadEntity.projection_epoch == scope.projection_epoch,
+                ThreadEntity.entity_kind.in_(segment_kinds),
             )
             if anchor_cursor is not None:
                 newer = list(
                     await session.scalars(
-                        select(ConversationEntity.cursor)
-                        .where(*common, ConversationEntity.cursor > anchor)
-                        .order_by(ConversationEntity.cursor)
+                        select(ThreadEntity.cursor)
+                        .where(*common, ThreadEntity.cursor > anchor)
+                        .order_by(ThreadEntity.cursor)
                         .limit(page_size * 2 + 1)
                     )
                 )
                 if len(newer) > page_size * 2:
-                    raise ConversationInterestExpiredError("conversation interest must rotate")
+                    raise ThreadInterestExpiredError("entity interest must rotate")
 
             async def lower(before: int) -> int:
                 cursors = list(
                     await session.scalars(
-                        select(ConversationEntity.cursor)
-                        .where(*common, ConversationEntity.cursor < before)
-                        .order_by(ConversationEntity.cursor.desc())
+                        select(ThreadEntity.cursor)
+                        .where(*common, ThreadEntity.cursor < before)
+                        .order_by(ThreadEntity.cursor.desc())
                         .limit(page_size)
                     )
                 )
@@ -598,36 +588,34 @@ class TrajectoryStore:
 
             tail_from = await lower(anchor + 1)
             if before_cursor is None:
-                return ConversationEntityInterest(scope, anchor, tail_from)
+                return ThreadEntityInterest(scope, anchor, tail_from)
             if before_cursor < 0:
                 raise ValueError("before cursor cannot be negative")
-            return ConversationEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
+            return ThreadEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
 
-    async def conversation_payload_selection(
+    async def payload_selection(
         self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-    ) -> ConversationPayloadSelection | None:
+    ) -> ThreadPayloadSelection | None:
         async with self._sessions() as session:
-            checkpoint = await session.scalar(
-                select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
-            )
+            checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
                 return None
             manifest = await session.scalar(
-                select(ConversationPayloadManifest).where(
-                    ConversationPayloadManifest.thread_id == thread_id,
-                    ConversationPayloadManifest.source_id == checkpoint.source_id,
-                    ConversationPayloadManifest.projection_epoch == checkpoint.projection_epoch,
-                    ConversationPayloadManifest.owner_cursor == owner_cursor,
-                    ConversationPayloadManifest.owner_id == owner_id,
-                    ConversationPayloadManifest.field == field,
-                    ConversationPayloadManifest.generation == generation,
-                    ConversationPayloadManifest.revision_cursor == revision_cursor,
+                select(ThreadPayloadManifest).where(
+                    ThreadPayloadManifest.thread_id == thread_id,
+                    ThreadPayloadManifest.source_id == checkpoint.source_id,
+                    ThreadPayloadManifest.projection_epoch == checkpoint.projection_epoch,
+                    ThreadPayloadManifest.owner_cursor == owner_cursor,
+                    ThreadPayloadManifest.owner_id == owner_id,
+                    ThreadPayloadManifest.field == field,
+                    ThreadPayloadManifest.generation == generation,
+                    ThreadPayloadManifest.revision_cursor == revision_cursor,
                 )
             )
             if manifest is None:
                 return None
-            return ConversationPayloadSelection(
-                ConversationScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
+            return ThreadPayloadSelection(
+                ThreadScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
                 owner_cursor,
                 owner_id,
                 field,
@@ -638,7 +626,7 @@ class TrajectoryStore:
                 manifest.content_bytes,
             )
 
-    async def conversation_evidence(
+    async def evidence(
         self,
         thread_id: UUID,
         *,
@@ -656,29 +644,27 @@ class TrajectoryStore:
                 session, thread_id, source_id, projection_epoch, entity_kind, entity_id
             )
             native_exists = (
-                select(ConversationProjectionNativeLink.source_sequence)
+                select(ThreadNativeLink.source_sequence)
                 .where(
-                    ConversationProjectionNativeLink.thread_id == ConversationProjectionEvidence.thread_id,
-                    ConversationProjectionNativeLink.source_id == ConversationProjectionEvidence.source_id,
-                    ConversationProjectionNativeLink.projection_epoch
-                    == ConversationProjectionEvidence.projection_epoch,
-                    ConversationProjectionNativeLink.entity_cursor == ConversationProjectionEvidence.entity_cursor,
-                    ConversationProjectionNativeLink.observation_cursor
-                    == ConversationProjectionEvidence.observation_cursor,
+                    ThreadNativeLink.thread_id == ThreadEvidence.thread_id,
+                    ThreadNativeLink.source_id == ThreadEvidence.source_id,
+                    ThreadNativeLink.projection_epoch == ThreadEvidence.projection_epoch,
+                    ThreadNativeLink.entity_cursor == ThreadEvidence.entity_cursor,
+                    ThreadNativeLink.observation_cursor == ThreadEvidence.observation_cursor,
                 )
                 .exists()
             )
             rows = list(
                 await session.execute(
-                    select(ConversationProjectionEvidence.observation_cursor, native_exists)
+                    select(ThreadEvidence.observation_cursor, native_exists)
                     .where(
-                        ConversationProjectionEvidence.thread_id == thread_id,
-                        ConversationProjectionEvidence.source_id == source_id,
-                        ConversationProjectionEvidence.projection_epoch == projection_epoch,
-                        ConversationProjectionEvidence.entity_cursor == entity_cursor,
-                        ConversationProjectionEvidence.observation_cursor > after_cursor,
+                        ThreadEvidence.thread_id == thread_id,
+                        ThreadEvidence.source_id == source_id,
+                        ThreadEvidence.projection_epoch == projection_epoch,
+                        ThreadEvidence.entity_cursor == entity_cursor,
+                        ThreadEvidence.observation_cursor > after_cursor,
                     )
-                    .order_by(ConversationProjectionEvidence.observation_cursor)
+                    .order_by(ThreadEvidence.observation_cursor)
                     .limit(limit + 1)
                 )
             )
@@ -690,7 +676,7 @@ class TrajectoryStore:
                 next_after_cursor=str(rows[limit - 1][0]) if len(rows) > limit else None,
             )
 
-    async def conversation_native_frames(
+    async def native_frames(
         self,
         thread_id: UUID,
         *,
@@ -709,32 +695,31 @@ class TrajectoryStore:
                 session, thread_id, source_id, projection_epoch, entity_kind, entity_id
             )
             association = await session.get(
-                ConversationProjectionEvidence,
-                (thread_id, source_id, projection_epoch, entity_cursor, observation_cursor),
+                ThreadEvidence, (thread_id, source_id, projection_epoch, entity_cursor, observation_cursor)
             )
             if association is None:
-                raise ConversationEvidenceNotFoundError("no evidence association for the selected observation")
+                raise ThreadEvidenceNotFoundError("no evidence association for the selected observation")
             rows = list(
                 await session.execute(
-                    select(ConversationProjectionNativeLink.source_sequence, Event.payload)
+                    select(ThreadNativeLink.source_sequence, Event.payload)
                     .outerjoin(
                         Event,
                         (
-                            (Event.thread_id == ConversationProjectionNativeLink.thread_id)
-                            & (Event.origin_source_id == ConversationProjectionNativeLink.source_id)
-                            & (Event.origin_sequence == ConversationProjectionNativeLink.source_sequence)
+                            (Event.thread_id == ThreadNativeLink.thread_id)
+                            & (Event.origin_source_id == ThreadNativeLink.source_id)
+                            & (Event.origin_sequence == ThreadNativeLink.source_sequence)
                             & (Event.kind == "native")
                         ),
                     )
                     .where(
-                        ConversationProjectionNativeLink.thread_id == thread_id,
-                        ConversationProjectionNativeLink.source_id == source_id,
-                        ConversationProjectionNativeLink.projection_epoch == projection_epoch,
-                        ConversationProjectionNativeLink.entity_cursor == entity_cursor,
-                        ConversationProjectionNativeLink.observation_cursor == observation_cursor,
-                        ConversationProjectionNativeLink.source_sequence > after_sequence,
+                        ThreadNativeLink.thread_id == thread_id,
+                        ThreadNativeLink.source_id == source_id,
+                        ThreadNativeLink.projection_epoch == projection_epoch,
+                        ThreadNativeLink.entity_cursor == entity_cursor,
+                        ThreadNativeLink.observation_cursor == observation_cursor,
+                        ThreadNativeLink.source_sequence > after_sequence,
                     )
-                    .order_by(ConversationProjectionNativeLink.source_sequence)
+                    .order_by(ThreadNativeLink.source_sequence)
                     .limit(limit + 1)
                 )
             )
@@ -752,7 +737,7 @@ class TrajectoryStore:
                 next_after_sequence=str(rows[limit - 1][0]) if len(rows) > limit else None,
             )
 
-    async def conversation_observations(
+    async def observations(
         self, thread_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
     ) -> ObservationPage:
         """Seek directly into the immutable archive; never fold or load intervening history."""
@@ -800,7 +785,7 @@ class TrajectoryStore:
                 next_after_cursor=str(rows[-1].cursor) if has_newer else None,
             )
 
-    async def conversation_observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
+    async def observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
         """One raw archive entry, read only when a reader expands that observation."""
         async with self._sessions() as session:
             payload = await session.scalar(
@@ -816,22 +801,22 @@ class TrajectoryStore:
         async with self._sessions() as session:
             if await session.get(Thread, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
-            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            checkpoint = await session.get(ThreadCheckpoint, thread_id)
             if checkpoint is None or (checkpoint.source_id, checkpoint.projection_epoch) != (
                 source_id,
                 projection_epoch,
             ):
-                raise ConversationScopeResetError("conversation projection scope was reset")
+                raise ThreadScopeResetError("thread fold scope was reset")
             rows = await session.scalars(
-                select(ConversationEntity).where(
-                    ConversationEntity.thread_id == thread_id,
-                    ConversationEntity.source_id == source_id,
-                    ConversationEntity.projection_epoch == projection_epoch,
-                    ConversationEntity.entity_kind == "command",
-                    ConversationEntity.entity_id.in_(requested),
+                select(ThreadEntity).where(
+                    ThreadEntity.thread_id == thread_id,
+                    ThreadEntity.source_id == source_id,
+                    ThreadEntity.projection_epoch == projection_epoch,
+                    ThreadEntity.entity_kind == "command",
+                    ThreadEntity.entity_id.in_(requested),
                 )
             )
-            outcomes = {row.entity_id: ConversationCommandState.model_validate(row.state).outcome for row in rows}
+            outcomes = {row.entity_id: ThreadCommandState.model_validate(row.state).outcome for row in rows}
             return {command_id: outcomes.get(command_id) for command_id in requested}
 
     async def record(
@@ -896,19 +881,17 @@ class TrajectoryStore:
             if not inserted:
                 return
             try:
-                await _record_conversation_projection(session, thread_id, inserted[0].origin.source_id, inserted)
+                await _record_thread_fold(session, thread_id, inserted[0].origin.source_id, inserted)
             except EventReplicationError:
                 raise
             except ValueError as error:
-                error_cursor = (
-                    error.cursor if isinstance(error, conversation_projection.ObservationNotUnderstoodError) else None
-                )
+                error_cursor = error.cursor if isinstance(error, thread_fold.ObservationNotUnderstoodError) else None
                 message = (
-                    f"conversation projection failed at cursor {error_cursor}: {error}"
+                    f"thread fold failed at cursor {error_cursor}: {error}"
                     if error_cursor is not None
-                    else f"conversation projection failed: {error}"
+                    else f"thread fold failed: {error}"
                 )
-                raise ConversationProjectionError(message, cursor=error_cursor) from error
+                raise ThreadFoldError(message, cursor=error_cursor) from error
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
@@ -986,7 +969,7 @@ class TrajectoryStore:
                 .on_conflict_do_update(index_elements=[FeedState.thread_id], set_=values)
             )
             await session.execute(update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model))
-            await _set_conversation_operational(session, thread_id, status="active", error=None)
+            await _set_operational(session, thread_id, status="active", error=None)
             await _notify(session)
 
     async def end_feed(
@@ -998,7 +981,7 @@ class TrajectoryStore:
             if state is None:
                 raise ValueError("cannot end a feed before persisting its attachment")
             state.end = {} if error is None else {"message": error}
-            await _set_conversation_operational(
+            await _set_operational(
                 session,
                 thread_id,
                 status="ended" if error is None else "failed",
@@ -1065,11 +1048,11 @@ class TrajectoryStore:
         async with self._sessions() as session:
             if await session.get(Thread, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
-            checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+            checkpoint = await session.get(ThreadCheckpoint, thread_id)
             if checkpoint is None:
                 return None
             summary = await session.get(
-                ConversationEntity,
+                ThreadEntity,
                 (thread_id, checkpoint.source_id, checkpoint.projection_epoch, "command", command.command_id),
             )
             if summary is None:
@@ -1132,45 +1115,40 @@ class TrajectoryStore:
             return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
 
 
-async def _record_conversation_projection(
+async def _record_thread_fold(
     session: AsyncSession, thread_id: UUID, source_id: str, entries: Sequence[event_log_pb2.EventEntry]
 ) -> None:
     checkpoint = await session.scalar(
-        select(ConversationProjectionCheckpoint)
-        .where(ConversationProjectionCheckpoint.thread_id == thread_id)
-        .with_for_update()
+        select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id).with_for_update()
     )
     if checkpoint is None:
-        state = conversation_projection.initial(source_id, CONVERSATION_PROJECTION_EPOCH)
+        state = thread_fold.initial(source_id, THREAD_FOLD_EPOCH)
         operational = None
     else:
         if checkpoint.source_id != source_id:
             raise EventReplicationError(
-                f"conversation source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
+                f"thread fold source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
             )
-        if checkpoint.projection_epoch != CONVERSATION_PROJECTION_EPOCH:
-            raise ConversationProjectionError(
-                f"conversation projection epoch {checkpoint.projection_epoch!r} must be reset for "
-                f"{CONVERSATION_PROJECTION_EPOCH!r}",
+        if checkpoint.projection_epoch != THREAD_FOLD_EPOCH:
+            raise ThreadFoldError(
+                f"thread fold epoch {checkpoint.projection_epoch!r} must be reset for {THREAD_FOLD_EPOCH!r}",
                 cursor=entries[0].cursor,
             )
-        state, operational = await _conversation_state(session, checkpoint)
-    batch = conversation_projection.EventBatch(source_id, state.position.through_cursor, tuple(entries))
-    result = conversation_projection.advance(
-        state, batch, await _prior_conversation_entities(session, thread_id, batch)
-    )
-    await _write_conversation_payloads(session, thread_id, result.payload_writes)
-    for values in _conversation_entities(thread_id, result, operational):
+        state, operational = await _fold_state(session, checkpoint)
+    batch = thread_fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
+    result = thread_fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
+    await _write_payloads(session, thread_id, result.payload_writes)
+    for values in _entity_rows(thread_id, result, operational):
         await session.execute(
-            insert(ConversationEntity)
+            insert(ThreadEntity)
             .values(**values)
             .on_conflict_do_update(
                 index_elements=[
-                    ConversationEntity.thread_id,
-                    ConversationEntity.source_id,
-                    ConversationEntity.projection_epoch,
-                    ConversationEntity.entity_kind,
-                    ConversationEntity.entity_id,
+                    ThreadEntity.thread_id,
+                    ThreadEntity.source_id,
+                    ThreadEntity.projection_epoch,
+                    ThreadEntity.entity_kind,
+                    ThreadEntity.entity_id,
                 ],
                 set_=values,
             )
@@ -1183,12 +1161,10 @@ async def _record_conversation_projection(
             "entity_cursor": evidence.entity_cursor,
             "observation_cursor": evidence.observation_cursor,
         }
-        await session.execute(insert(ConversationProjectionEvidence).values(**values).on_conflict_do_nothing())
+        await session.execute(insert(ThreadEvidence).values(**values).on_conflict_do_nothing())
         for source_sequence in evidence.source_sequences:
             await session.execute(
-                insert(ConversationProjectionNativeLink)
-                .values(**values, source_sequence=source_sequence)
-                .on_conflict_do_nothing()
+                insert(ThreadNativeLink).values(**values, source_sequence=source_sequence).on_conflict_do_nothing()
             )
     checkpoint_values = {
         "source_id": result.state.position.source_id,
@@ -1196,30 +1172,30 @@ async def _record_conversation_projection(
         "through_cursor": result.state.position.through_cursor,
     }
     await session.execute(
-        insert(ConversationProjectionCheckpoint)
+        insert(ThreadCheckpoint)
         .values(thread_id=thread_id, **checkpoint_values)
-        .on_conflict_do_update(index_elements=[ConversationProjectionCheckpoint.thread_id], set_=checkpoint_values)
+        .on_conflict_do_update(index_elements=[ThreadCheckpoint.thread_id], set_=checkpoint_values)
     )
 
 
-async def _conversation_state(
-    session: AsyncSession, checkpoint: ConversationProjectionCheckpoint
-) -> tuple[conversation_projection.ViewState, ConversationOperationalState]:
+async def _fold_state(
+    session: AsyncSession, checkpoint: ThreadCheckpoint
+) -> tuple[thread_fold.ViewState, ThreadOperationalState]:
     row = await session.scalar(
-        select(ConversationEntity).where(
-            ConversationEntity.thread_id == checkpoint.thread_id,
-            ConversationEntity.source_id == checkpoint.source_id,
-            ConversationEntity.projection_epoch == checkpoint.projection_epoch,
-            ConversationEntity.entity_kind == "view_state",
-            ConversationEntity.entity_id == "current",
+        select(ThreadEntity).where(
+            ThreadEntity.thread_id == checkpoint.thread_id,
+            ThreadEntity.source_id == checkpoint.source_id,
+            ThreadEntity.projection_epoch == checkpoint.projection_epoch,
+            ThreadEntity.entity_kind == "view_state",
+            ThreadEntity.entity_id == "current",
         )
     )
     if row is None:
-        raise ValueError("conversation checkpoint has no current controls")
-    view = ConversationViewState.model_validate(row.state)
-    return conversation_projection.ViewState(
-        conversation_projection.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
-        conversation_projection.Controls(
+        raise ValueError("thread checkpoint has no current controls")
+    view = ThreadViewState.model_validate(row.state)
+    return thread_fold.ViewState(
+        thread_fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
+        thread_fold.Controls(
             applied_model=view.controls.applied_model,
             active_turn_id=view.controls.active_turn_id,
             harness_state=view.controls.harness_state,
@@ -1228,7 +1204,7 @@ async def _conversation_state(
     ), view.operational
 
 
-async def _set_conversation_operational(
+async def _set_operational(
     session: AsyncSession,
     thread_id: UUID,
     *,
@@ -1236,68 +1212,61 @@ async def _set_conversation_operational(
     error: str | None,
     error_cursor: int | None = None,
 ) -> None:
-    checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+    checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
         return
     row = await session.get(
-        ConversationEntity, (thread_id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
+        ThreadEntity, (thread_id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
     )
     if row is None:
-        raise ValueError("conversation checkpoint has no current controls")
-    view = ConversationViewState.model_validate(row.state)
+        raise ValueError("thread checkpoint has no current controls")
+    view = ThreadViewState.model_validate(row.state)
     row.state = view.model_copy(
         update={
-            "operational": ConversationOperationalState(
+            "operational": ThreadOperationalState(
                 operational_version=str(int(view.operational.operational_version) + 1),
                 status=status,
                 last_verified_cursor=str(checkpoint.through_cursor),
                 feed_error=(
                     None
                     if error is None
-                    else ConversationFeedErrorState(
-                        cursor=None if error_cursor is None else str(error_cursor), message=error
-                    )
+                    else ThreadFeedErrorState(cursor=None if error_cursor is None else str(error_cursor), message=error)
                 ),
             )
         }
     ).model_dump(mode="json")
 
 
-async def _prior_conversation_entities(
-    session: AsyncSession, thread_id: UUID, batch: conversation_projection.EventBatch
-) -> conversation_projection.PriorEntities:
-    required = conversation_projection.touched_keys(batch)
-    checkpoint = await session.scalar(
-        select(ConversationProjectionCheckpoint).where(ConversationProjectionCheckpoint.thread_id == thread_id)
-    )
+async def _prior_entities(
+    session: AsyncSession, thread_id: UUID, batch: thread_fold.EventBatch
+) -> thread_fold.PriorEntities:
+    required = thread_fold.touched_keys(batch)
+    checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
     if checkpoint is None:
-        return conversation_projection.PriorEntities(
-            dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids)
-        )
+        return thread_fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
     rows = await session.scalars(
-        select(ConversationEntity).where(
-            ConversationEntity.thread_id == thread_id,
-            ConversationEntity.source_id == checkpoint.source_id,
-            ConversationEntity.projection_epoch == checkpoint.projection_epoch,
+        select(ThreadEntity).where(
+            ThreadEntity.thread_id == thread_id,
+            ThreadEntity.source_id == checkpoint.source_id,
+            ThreadEntity.projection_epoch == checkpoint.projection_epoch,
             (
-                (ConversationEntity.entity_kind == "item") & (ConversationEntity.entity_id.in_(required.item_ids))
-                | (ConversationEntity.entity_kind == "command")
-                & (ConversationEntity.entity_id.in_(required.command_ids))
+                (ThreadEntity.entity_kind == "item") & (ThreadEntity.entity_id.in_(required.item_ids))
+                | (ThreadEntity.entity_kind == "command") & (ThreadEntity.entity_id.in_(required.command_ids))
             ),
         )
     )
-    items: dict[str, conversation_projection.ConversationItem | None] = dict.fromkeys(required.item_ids)
-    commands: dict[str, conversation_projection.CommandSummary | None] = dict.fromkeys(required.command_ids)
+    items: dict[str, thread_fold.Item | None] = dict.fromkeys(required.item_ids)
+    commands: dict[str, thread_fold.CommandSummary | None] = dict.fromkeys(required.command_ids)
     for row in rows:
         if row.entity_kind == "item":
-            items[row.entity_id] = _conversation_item(row)
+            items[row.entity_id] = _fold_item(row)
         elif row.entity_kind == "command":
             commands[row.entity_id] = _command_summary(row)
-    return conversation_projection.PriorEntities(items, commands)
+    return thread_fold.PriorEntities(items, commands)
 
 
-def _conversation_item(row: ConversationEntity) -> conversation_projection.ConversationItem:
-    return conversation_projection.ConversationItem(
+def _fold_item(row: ThreadEntity) -> thread_fold.Item:
+    return thread_fold.Item(
         row.source_id,
         row.projection_epoch,
         row.entity_id,
@@ -1314,32 +1283,32 @@ def _conversation_item(row: ConversationEntity) -> conversation_projection.Conve
     )
 
 
-def _command_summary(row: ConversationEntity) -> conversation_projection.CommandSummary:
+def _command_summary(row: ThreadEntity) -> thread_fold.CommandSummary:
     outcome = _json_str(row.state, "outcome")
-    return conversation_projection.CommandSummary(
+    return thread_fold.CommandSummary(
         row.source_id,
         row.projection_epoch,
         row.entity_id,
         row.cursor,
         _json_str(row.state, "operation"),
-        conversation_projection.CommandOutcome(outcome),
+        thread_fold.CommandOutcome(outcome),
         _optional_json_int(row.state, "outcome_cursor"),
         _optional_str(row.state, "outcome_reason"),
         _field_value(row.input_ref),
     )
 
 
-def _field_value(value: dict[str, object] | None) -> conversation_projection.FieldValue | None:
-    return conversation_projection.FieldValue(_payload_ref_from_json(value)) if value is not None else None
+def _field_value(value: dict[str, object] | None) -> thread_fold.FieldValue | None:
+    return thread_fold.FieldValue(_payload_ref_from_json(value)) if value is not None else None
 
 
-def _payload_ref_from_json(value: dict[str, object]) -> conversation_projection.PayloadRef:
-    return conversation_projection.PayloadRef(
+def _payload_ref_from_json(value: dict[str, object]) -> thread_fold.PayloadRef:
+    return thread_fold.PayloadRef(
         _json_str(value, "source_id"),
         _json_str(value, "projection_epoch"),
         _json_int(value, "owner_cursor"),
-        _json_str(value, "owner_item_id"),
-        conversation_projection.PayloadField(_json_str(value, "field")),
+        _json_str(value, "owner_id"),
+        thread_fold.PayloadField(_json_str(value, "field")),
         _json_int(value, "revision_cursor"),
         _json_int(value, "generation"),
     )
@@ -1348,28 +1317,28 @@ def _payload_ref_from_json(value: dict[str, object]) -> conversation_projection.
 def _json_str(value: dict[str, object], key: str) -> str:
     item = value[key]
     if not isinstance(item, str):
-        raise ValueError(f"conversation JSON {key} is not a string")
+        raise ValueError(f"thread entity JSON {key} is not a string")
     return item
 
 
 def _optional_str(value: dict[str, object], key: str) -> str | None:
     item = value[key]
     if item is not None and not isinstance(item, str):
-        raise ValueError(f"conversation JSON {key} is not a string")
+        raise ValueError(f"thread entity JSON {key} is not a string")
     return item
 
 
 def _optional_bool(value: dict[str, object], key: str) -> bool | None:
     item = value[key]
     if item is not None and not isinstance(item, bool):
-        raise ValueError(f"conversation JSON {key} is not a boolean")
+        raise ValueError(f"thread entity JSON {key} is not a boolean")
     return item
 
 
 def _json_int(value: dict[str, object], key: str) -> int:
     item = value[key]
     if isinstance(item, bool) or not isinstance(item, (int, str)):
-        raise ValueError(f"conversation JSON {key} is not an integer")
+        raise ValueError(f"thread entity JSON {key} is not an integer")
     return int(item)
 
 
@@ -1378,26 +1347,24 @@ def _optional_json_int(value: dict[str, object], key: str) -> int | None:
     if item is None:
         return None
     if isinstance(item, bool) or not isinstance(item, (int, str)):
-        raise ValueError(f"conversation JSON {key} is not an integer")
+        raise ValueError(f"thread entity JSON {key} is not an integer")
     return int(item)
 
 
 @dataclass
 class _PayloadPlan:
-    reference: conversation_projection.PayloadRef
+    reference: thread_fold.PayloadRef
     prefix_chunks: int
     prefix_bytes: int
     fragments: list[str]
     replaced: bool
 
 
-async def _write_conversation_payloads(
-    session: AsyncSession, thread_id: UUID, writes: Sequence[conversation_projection.PayloadWrite]
-) -> None:
-    plans_by_reference: dict[conversation_projection.PayloadRef, _PayloadPlan] = {}
-    final_plans: dict[tuple[int, str, conversation_projection.PayloadField], _PayloadPlan] = {}
+async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequence[thread_fold.PayloadWrite]) -> None:
+    plans_by_reference: dict[thread_fold.PayloadRef, _PayloadPlan] = {}
+    final_plans: dict[tuple[int, str, thread_fold.PayloadField], _PayloadPlan] = {}
     for write in writes:
-        if isinstance(write, conversation_projection.ReplacePayload):
+        if isinstance(write, thread_fold.ReplacePayload):
             plan = _PayloadPlan(write.reference, 0, 0, [write.text], True)
         else:
             prior = plans_by_reference.get(write.base) if write.base is not None else None
@@ -1406,9 +1373,7 @@ async def _write_conversation_payloads(
                     prior_chunks = 0
                     prior_bytes = 0
                 else:
-                    manifest = await session.get(
-                        ConversationPayloadManifest, _payload_manifest_key(thread_id, write.base)
-                    )
+                    manifest = await session.get(ThreadPayloadManifest, _payload_manifest_key(thread_id, write.base))
                     if manifest is None:
                         raise ValueError("append references a missing payload manifest")
                     prior_chunks = manifest.chunk_count
@@ -1420,18 +1385,18 @@ async def _write_conversation_payloads(
                     write.reference, prior.prefix_chunks, prior.prefix_bytes, prior.fragments, prior.replaced
                 )
         plans_by_reference[plan.reference] = plan
-        final_plans[(plan.reference.owner_cursor, plan.reference.owner_item_id, plan.reference.field)] = plan
+        final_plans[(plan.reference.owner_cursor, plan.reference.owner_id, plan.reference.field)] = plan
     for plan in final_plans.values():
         text = "".join(plan.fragments)
         text_bytes = len(text.encode())
         chunk_count = plan.prefix_chunks if not text else plan.prefix_chunks + 1
         await session.execute(
-            insert(ConversationPayloadManifest).values(
+            insert(ThreadPayloadManifest).values(
                 thread_id=thread_id,
                 source_id=plan.reference.source_id,
                 projection_epoch=plan.reference.projection_epoch,
                 owner_cursor=plan.reference.owner_cursor,
-                owner_id=plan.reference.owner_item_id,
+                owner_id=plan.reference.owner_id,
                 field=plan.reference.field,
                 generation=plan.reference.generation,
                 revision_cursor=plan.reference.revision_cursor,
@@ -1442,12 +1407,12 @@ async def _write_conversation_payloads(
         )
         if chunk_count > plan.prefix_chunks:
             session.add(
-                ConversationPayloadChunk(
+                ThreadPayloadChunk(
                     thread_id=thread_id,
                     source_id=plan.reference.source_id,
                     projection_epoch=plan.reference.projection_epoch,
                     owner_cursor=plan.reference.owner_cursor,
-                    owner_id=plan.reference.owner_item_id,
+                    owner_id=plan.reference.owner_id,
                     field=plan.reference.field,
                     generation=plan.reference.generation,
                     chunk_index=plan.prefix_chunks,
@@ -1457,24 +1422,22 @@ async def _write_conversation_payloads(
 
 
 def _payload_manifest_key(
-    thread_id: UUID, reference: conversation_projection.PayloadRef
+    thread_id: UUID, reference: thread_fold.PayloadRef
 ) -> tuple[UUID, str, str, int, str, str, int, int]:
     return (
         thread_id,
         reference.source_id,
         reference.projection_epoch,
         reference.owner_cursor,
-        reference.owner_item_id,
+        reference.owner_id,
         reference.field,
         reference.generation,
         reference.revision_cursor,
     )
 
 
-def _conversation_entities(
-    thread_id: UUID,
-    result: conversation_projection.ProjectionBatch,
-    operational: ConversationOperationalState | None = None,
+def _entity_rows(
+    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
 ) -> list[dict[str, object]]:
     entities = [_view_state_entity(thread_id, result.state, operational)]
     entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
@@ -1496,12 +1459,12 @@ def _entity_values(
     *,
     pending: bool = False,
     turn_id: str | None = None,
-    text_ref: conversation_projection.FieldValue | None = None,
-    arguments_ref: conversation_projection.FieldValue | None = None,
-    output_ref: conversation_projection.FieldValue | None = None,
-    input_ref: conversation_projection.FieldValue | None = None,
+    text_ref: thread_fold.FieldValue | None = None,
+    arguments_ref: thread_fold.FieldValue | None = None,
+    output_ref: thread_fold.FieldValue | None = None,
+    input_ref: thread_fold.FieldValue | None = None,
 ) -> dict[str, object]:
-    return ConversationStoredEntity(
+    return ThreadEntityView(
         thread_id=thread_id,
         source_id=source_id,
         projection_epoch=projection_epoch,
@@ -1520,7 +1483,7 @@ def _entity_values(
 
 
 def _view_state_entity(
-    thread_id: UUID, state: conversation_projection.ViewState, operational: ConversationOperationalState | None = None
+    thread_id: UUID, state: thread_fold.ViewState, operational: ThreadOperationalState | None = None
 ) -> dict[str, object]:
     return _entity_values(
         thread_id,
@@ -1538,7 +1501,7 @@ def _view_state_entity(
             },
             "unresolved_count": state.unresolved_count,
             "operational": operational
-            or ConversationOperationalState(
+            or ThreadOperationalState(
                 operational_version="0",
                 status="active",
                 last_verified_cursor=str(state.position.through_cursor),
@@ -1548,7 +1511,7 @@ def _view_state_entity(
     )
 
 
-def _item_entity(thread_id: UUID, item: conversation_projection.ConversationItem) -> dict[str, object]:
+def _item_entity(thread_id: UUID, item: thread_fold.Item) -> dict[str, object]:
     return _entity_values(
         thread_id,
         item.source_id,
@@ -1570,7 +1533,7 @@ def _item_entity(thread_id: UUID, item: conversation_projection.ConversationItem
     )
 
 
-def _confirmed_input_entity(thread_id: UUID, value: conversation_projection.ConfirmedInput) -> dict[str, object]:
+def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> dict[str, object]:
     return _entity_values(
         thread_id,
         value.source_id,
@@ -1585,7 +1548,7 @@ def _confirmed_input_entity(thread_id: UUID, value: conversation_projection.Conf
     )
 
 
-def _lifecycle_entity(thread_id: UUID, value: conversation_projection.LifecycleSegment) -> dict[str, object]:
+def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> dict[str, object]:
     return _entity_values(
         thread_id,
         value.source_id,
@@ -1598,7 +1561,7 @@ def _lifecycle_entity(thread_id: UUID, value: conversation_projection.LifecycleS
     )
 
 
-def _command_entity(thread_id: UUID, value: conversation_projection.CommandSummary) -> dict[str, object]:
+def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> dict[str, object]:
     return _entity_values(
         thread_id,
         value.source_id,
@@ -1613,12 +1576,12 @@ def _command_entity(thread_id: UUID, value: conversation_projection.CommandSumma
             "outcome_cursor": str(value.outcome_cursor) if value.outcome_cursor is not None else None,
             "outcome_reason": value.outcome_reason,
         },
-        pending=value.outcome is conversation_projection.CommandOutcome.PENDING,
+        pending=value.outcome is thread_fold.CommandOutcome.PENDING,
         input_ref=value.input,
     )
 
 
-def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[str, str] | None:
+def _payload_ref_json(value: thread_fold.FieldValue | None) -> dict[str, str] | None:
     if value is None:
         return None
     reference = value.reference
@@ -1626,7 +1589,7 @@ def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[
         "source_id": reference.source_id,
         "projection_epoch": reference.projection_epoch,
         "owner_cursor": str(reference.owner_cursor),
-        "owner_item_id": reference.owner_item_id,
+        "owner_id": reference.owner_id,
         "field": reference.field,
         "revision_cursor": str(reference.revision_cursor),
         "generation": str(reference.generation),
@@ -1636,14 +1599,14 @@ def _payload_ref_json(value: conversation_projection.FieldValue | None) -> dict[
 async def _evidence_entity_cursor(
     session: AsyncSession, thread_id: UUID, source_id: str, projection_epoch: str, entity_kind: str, entity_id: str
 ) -> int:
-    checkpoint = await session.get(ConversationProjectionCheckpoint, thread_id)
+    checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
-        raise ConversationEvidenceNotFoundError("no materialized conversation")
+        raise ThreadEvidenceNotFoundError("no materialized thread fold")
     if (checkpoint.source_id, checkpoint.projection_epoch) != (source_id, projection_epoch):
-        raise ConversationScopeChangedError("the conversation source or projection epoch has changed")
-    entity = await session.get(ConversationEntity, (thread_id, source_id, projection_epoch, entity_kind, entity_id))
+        raise ThreadScopeChangedError("the thread fold source or projection epoch has changed")
+    entity = await session.get(ThreadEntity, (thread_id, source_id, projection_epoch, entity_kind, entity_id))
     if entity is None:
-        raise ConversationEvidenceNotFoundError("no selected conversation entity")
+        raise ThreadEvidenceNotFoundError("no selected thread entity")
     return entity.cursor
 
 

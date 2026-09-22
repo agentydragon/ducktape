@@ -2,7 +2,7 @@
 
 Electric itself is a `MockTransport`, because what these assert is the query the proxy builds and
 what it refuses to build. The interest, scope and payload revision behind it are real: a faked
-resolver can drift from `conversation_entity_interest` without any test noticing, and the bounds it
+resolver can drift from `entity_interest` without any test noticing, and the bounds it
 returns are exactly what the shape's identity is made of.
 """
 
@@ -26,15 +26,10 @@ from starlette.types import Message
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.conftest import migrated_database
-from agentplane.app.conversation_projection import PayloadField
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import (
-    ConversationEntityInterest,
-    ConversationPayloadSelection,
-    ConversationStoredEntity,
-    TrajectoryStore,
-)
+from agentplane.app.thread_fold import PayloadField
+from agentplane.app.trajectory import ThreadEntityInterest, ThreadEntityView, ThreadPayloadSelection, TrajectoryStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -49,8 +44,8 @@ class Seeded:
     """One projected conversation, and the identities the proxy's routes take as parameters."""
 
     thread: UUID
-    interest: ConversationEntityInterest
-    selection: ConversationPayloadSelection
+    interest: ThreadEntityInterest
+    selection: ThreadPayloadSelection
 
 
 # Every case here reads: the proxy builds a query and forwards or refuses it, and none writes. The
@@ -82,14 +77,14 @@ async def seeded(store: TrajectoryStore) -> Seeded:
     await store.set_attached(thread, source.attached, lease=lease)
     await store.record(thread, source.entries, lease=lease)
 
-    interest = await store.conversation_entity_interest(thread)
+    interest = await store.entity_interest(thread)
     assert interest is not None
     # Two deltas, so the generation the chain opened and the revision it has reached are different
     # cursors and a route cannot pass one where it means the other. Resolving them here makes the
     # projector's rule a checked fact: if it changes, this fixture fails instead of a case below.
     owner_id = f"item-{_ITEMS - 1}"
     owner_cursor = started[owner_id]
-    selection = await store.conversation_payload_selection(
+    selection = await store.payload_selection(
         thread,
         owner_cursor=owner_cursor,
         owner_id=owner_id,
@@ -151,7 +146,7 @@ async def test_entity_shape_names_only_kinds_the_projection_writes(store: Trajec
     assert response.status_code == 200
     assert seen is not None
     named = set(re.findall(r"'([a-z_]+)'", httpx.QueryParams(seen.url.query)["where"]))
-    written = set(get_args(ConversationStoredEntity.model_fields["entity_kind"].annotation))
+    written = set(get_args(ThreadEntityView.model_fields["entity_kind"].annotation))
     assert named
     assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
 
@@ -183,7 +178,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStor
     assert "x-private" not in response.headers
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
-    assert query["table"] == "conversation_entity"
+    assert query["table"] == "thread_entity"
     assert query["log"] == "changes_only"
     assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
@@ -352,7 +347,7 @@ async def test_payload_shape_uses_server_verified_exact_revision(store: Trajecto
     assert missing.status_code == 410
     assert seen is not None
     forwarded = httpx.QueryParams(seen.url.query)
-    assert forwarded["table"] == "conversation_payload_chunk"
+    assert forwarded["table"] == "thread_payload_chunk"
     # The shape stops at the revision's own extent: a later append to the same generation is a
     # different shape, and this one never grows past what its metadata named.
     assert "chunk_index < $8" in forwarded["where"]

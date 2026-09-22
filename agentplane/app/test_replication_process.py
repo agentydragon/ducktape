@@ -98,7 +98,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
             committed = 3 if boundary is CommitBoundary.BEFORE else 4
             # Independent PostgreSQL reads, while the app is paused at a real commit boundary.
             assert await store.events(thread.id, limit=100) == source.entries[:committed]
-            projection = await store.current_conversation_scope(thread.id)
+            projection = await store.current_scope(thread.id)
             assert projection is not None
             assert projection.through_cursor == committed
             before_death = await store.feed_state(thread.id)
@@ -193,7 +193,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 view = await store.get_thread(thread.id)
                 assert view is not None
                 assert (view.last_cursor, view.model) == (8, "test-model-after")
-                projection = await store.current_conversation_scope(thread.id)
+                projection = await store.current_scope(thread.id)
                 assert projection is not None
                 assert projection.through_cursor == view.last_cursor
         finally:
