@@ -5,12 +5,22 @@ requirement nobody can source is a preference and should be argued as one.
 
 ## Constraints — not traded away, assumed by every option
 
-| ID  | Constraint                                                                                                                               | Source                                   |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| C1  | The conversation fold is **materialized in Postgres**. Options differ in how a browser learns about it, not in whether it exists.        | Owner, 2026-09-22; already built         |
-| C2  | Every read is **authorized by the app**. No browser reaches a sync engine directly, and no bound a browser sends can widen what it sees. | `electric.py`; the proxy exists for this |
-| C3  | Deployed state is **disposable** — a schema or epoch change resets staging and testing rather than migrating.                            | <../../../AGENTS.md> § Refactoring       |
-| C4  | The runner event log is the source of truth; the fold is derived and rebuildable under a new `projection_epoch`.                         | <../../docs/thread_view_sync.md>         |
+| ID  | Constraint                                                                                                                          | Source                                   |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| C1  | The conversation fold is **materialized in Postgres**. Options differ in how a browser learns about it, not in whether it exists.   | Owner, 2026-09-22; already built         |
+| C2  | Every read is **authorized by the app**, and no browser reaches a sync engine directly. About auth, not about who picks the window. | `electric.py`; the proxy exists for this |
+| C3  | Deployed state is **disposable** — a schema or epoch change resets staging and testing rather than migrating.                       | <../../../AGENTS.md> § Refactoring       |
+| C4  | The runner event log is the source of truth; the fold is derived and rebuildable under a new `projection_epoch`.                    | <../../docs/thread_view_sync.md>         |
+
+**C2 is narrower than the deployed code treats it as.** The app must ensure a reader only reads
+threads it is entitled to, and must keep a browser from talking to Electric directly. It does _not_
+require the server to dictate the reader's window. The deployed proxy resolves the interest
+server-side and refuses a client's bounds if they disagree — stricter than auth needs, and not an
+argument against a client-declared window (**D1**, **P8**). A client asking for segments 50–150 of a
+thread it may read is asking for nothing it is not entitled to.
+
+What C2 does still forbid: a bound reaching **outside the authorized thread**, an unbounded request
+letting one reader pull arbitrary volume, and any path that skips the app.
 
 ## Product behaviour
 
@@ -22,7 +32,7 @@ requirement nobody can source is a preference and should be argued as one.
 | P4  | A reader can scroll back **arbitrarily far**, incrementally, bounded work per step.                                                                                                        | Deployed behaviour                                      |
 | P5  | The reader's **place survives every sync event**: no DOM teardown, no scroll jump, nothing already shown withdrawn.                                                                        | Owner, 2026-09-22                                       |
 | P6  | A **transient disconnect** keeps what is on screen and resumes without refetching it.                                                                                                      | Owner, 2026-09-22; `test_projected_browser…` asserts it |
-| P7  | An **epoch replacement** is invisible past a catch-up state — no reload, draft preserved.                                                                                                  | <../../debug/conversation_acceptance.md>                |
+| P7  | A **rebuilt projection** swaps in with no page reload and no loss of reader state. Spelled out below.                                                                                      | <../../debug/conversation_acceptance.md>                |
 | P8  | **The client chooses its content selection** — text, reasoning, tool arguments, output — and that choice composes with streaming. Selecting nothing still returns metadata and references. | <../../docs/thread_view_sync.md> § Queries              |
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Deployed behaviour                                      |
 
@@ -50,6 +60,26 @@ against `ELECTRIC_MAX_SHAPES`, not a P8 problem.
 
 So P8 separates designs that have a parameter for it from designs that do not, and every design
 here can grow one.
+
+**P7, spelled out**, since "epoch replacement" says nothing to a reader of this file. The fold can
+be **rebuilt** — reprojected from the event log under a new `projection_epoch`, which is part of the
+identity of every entity, chunk and payload reference. Old and new cannot be mixed: cursors and
+references do not correspond across a rebuild, so a reader has to move between epochs atomically
+rather than merge them.
+
+What the reader is entitled to while that happens:
+
+- **No page reload, and no blank.** The deployed implementation syncs the new epoch in a hidden
+  subtree and swaps it in only once its `view_state` has caught up, so the visible tree is never
+  empty.
+- **An unsent draft in the composer survives** — it lives in the same JavaScript document
+  throughout.
+- **UI state survives**: an evidence disclosure the reader had collapsed stays collapsed.
+- **A stale read is refused, not served.** A request carrying the old epoch gets 410 rather than
+  data from the new one.
+
+The one artifact a reader may legitimately see is a transient _Catching up conversation…_ status.
+Covered end to end by `test_projection_epoch_replacement_retires_old_requests_and_preserves_draft`.
 
 ## Sync semantics
 
