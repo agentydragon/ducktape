@@ -5,16 +5,13 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def study_casino(chart: Chart, cnpg: Kustomization, external_secrets_operator: Kustomization) -> Kustomization:
@@ -33,10 +30,7 @@ def study_casino(chart: Chart, cnpg: Kustomization, external_secrets_operator: K
             path="./cluster/k8s/study-casino",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(

@@ -55,9 +55,6 @@ from external_secrets_crds.io.external_secrets import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -72,6 +69,7 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     NAMESPACE as FLUX_NAMESPACE,
+    SOPS_DECRYPTION,
     ConfigMapArgs,
     flux_kustomization,
     flux_kustomization_depends_on_many,
@@ -369,10 +367,7 @@ def aiquota(
             prune=True,
             wait=True,
             # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 external_secrets_config,
                 forgejo_images,

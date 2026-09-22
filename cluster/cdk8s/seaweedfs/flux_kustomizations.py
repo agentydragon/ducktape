@@ -5,15 +5,13 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 
 from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -70,10 +68,7 @@ def seaweedfs_filer_db(chart: Chart, seaweedfs_namespace: Kustomization, cnpg: K
             wait=True,
             # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
             # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
         ),
     )
@@ -122,10 +117,7 @@ def seaweedfs_external_credentials(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
             wait=True,
             timeout="5m",
@@ -342,10 +334,7 @@ def seaweedfs_public_s3(
             ),
             wait=True,
             timeout="5m",
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="public-s3", namespace="seaweedfs"
@@ -446,10 +435,7 @@ def seaweedfs_secrets(
             interval="10m",
             path="./cluster/k8s/seaweedfs/secrets",
             prune=True,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
