@@ -38,14 +38,6 @@ from agentplane.app.consent import (
     decide_enrollment,
     preview_enrollment,
 )
-from agentplane.app.conversation_debug import (
-    ArchivedObservationEntry,
-    ConversationEvidenceNotFoundError,
-    ConversationScopeChangedError,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
-)
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
     BindingNotFoundError,
@@ -70,11 +62,19 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
+from agentplane.app.thread_debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
 from agentplane.app.trajectory import (
     CommandIdConflictError,
     CommandOutcomeValue,
-    ConversationScopeResetError,
     ThreadNotFoundError,
+    ThreadScopeResetError,
     ThreadView,
     TrajectoryStore,
 )
@@ -570,7 +570,7 @@ async def reconcile_commands(
 ) -> CommandReconciliationResponse:
     try:
         outcomes = await store.command_outcomes(thread_id, body.source_id, body.projection_epoch, body.command_ids)
-    except ConversationScopeResetError as error:
+    except ThreadScopeResetError as error:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
     return CommandReconciliationResponse(
         source_id=body.source_id,
@@ -655,7 +655,7 @@ DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_withi
 
 
 @threads.get("/{thread_id}/conversation/evidence")
-async def conversation_evidence(
+async def thread_evidence(
     thread_id: UUID,
     store: Store,
     source_id: str,
@@ -665,7 +665,7 @@ async def conversation_evidence(
     after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
-    return await store.conversation_evidence(
+    return await store.evidence(
         thread_id,
         source_id=source_id,
         projection_epoch=projection_epoch,
@@ -677,7 +677,7 @@ async def conversation_evidence(
 
 
 @threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
-async def conversation_native_frames(
+async def thread_native_frames(
     thread_id: UUID,
     observation_cursor: DecimalCursorPath,
     store: Store,
@@ -688,7 +688,7 @@ async def conversation_native_frames(
     after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
-    return await store.conversation_native_frames(
+    return await store.native_frames(
         thread_id,
         source_id=source_id,
         projection_epoch=projection_epoch,
@@ -701,16 +701,16 @@ async def conversation_native_frames(
 
 
 @threads.get("/{thread_id}/conversation/observations/{cursor}")
-async def conversation_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
     """The raw entry behind one listed observation, read only when a reader expands it."""
-    entry = await store.conversation_observation_entry(thread_id, cursor)
+    entry = await store.observation_entry(thread_id, cursor)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
     return entry
 
 
 @threads.get("/{thread_id}/conversation/observations")
-async def conversation_observations(
+async def thread_observations(
     thread_id: UUID,
     store: Store,
     before_cursor: DecimalCursor | None = None,
@@ -724,7 +724,7 @@ async def conversation_observations(
         )
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return await store.conversation_observations(
+    return await store.observations(
         thread_id,
         before_cursor=None if before_cursor is None else int(before_cursor),
         after_cursor=None if after_cursor is None else int(after_cursor),
@@ -840,14 +840,12 @@ def create_app(
     # Outermost, so a request the drain refuses touches nothing below it.
     app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
 
-    @app.exception_handler(ConversationScopeChangedError)
-    async def _conversation_scope_changed(_request: Request, error: ConversationScopeChangedError) -> JSONResponse:
+    @app.exception_handler(ThreadScopeChangedError)
+    async def _thread_scope_changed(_request: Request, error: ThreadScopeChangedError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_410_GONE)
 
-    @app.exception_handler(ConversationEvidenceNotFoundError)
-    async def _conversation_evidence_missing(
-        _request: Request, error: ConversationEvidenceNotFoundError
-    ) -> JSONResponse:
+    @app.exception_handler(ThreadEvidenceNotFoundError)
+    async def _evidence_missing(_request: Request, error: ThreadEvidenceNotFoundError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
 
     @app.exception_handler(ThreadNotFoundError)

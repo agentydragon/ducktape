@@ -1,4 +1,4 @@
-"""Behavioral coverage for the bounded conversation-projection fold."""
+"""Behavioral coverage for the bounded thread fold."""
 
 from dataclasses import dataclass, field
 
@@ -6,14 +6,14 @@ import pytest
 import pytest_bazel
 from google.protobuf import json_format
 
-from agentplane.app.conversation_projection import (
+from agentplane.app.thread_fold import (
     AppendPayload,
     CommandOutcome,
     CommandSummary,
-    ConversationItem,
     EventBatch,
     EvidenceAssociation,
     FieldValue,
+    Item,
     ObservationNotUnderstoodError,
     PayloadField,
     PayloadRef,
@@ -56,7 +56,7 @@ def admitted(
 @dataclass
 class Store:
     state: ViewState = field(default_factory=lambda: initial(SOURCE, EPOCH))
-    items: dict[str, ConversationItem] = field(default_factory=dict)
+    items: dict[str, Item] = field(default_factory=dict)
     commands: dict[str, CommandSummary] = field(default_factory=dict)
     payloads: dict[PayloadRef, str] = field(default_factory=dict)
     evidence: list[EvidenceAssociation] = field(default_factory=list)
@@ -286,7 +286,7 @@ def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_ba
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
     with pytest.raises(ValueError, match="preload"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}))
-    future = ConversationItem(SOURCE, EPOCH, "item", 1, 2)
+    future = Item(SOURCE, EPOCH, "item", 1, 2)
     with pytest.raises(ValueError, match="prior item"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}))
 
@@ -295,7 +295,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     store = Store()
     store.apply([entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))])
     prior = store.items["item"]
-    invalid = ConversationItem(
+    invalid = Item(
         SOURCE,
         EPOCH,
         "item",

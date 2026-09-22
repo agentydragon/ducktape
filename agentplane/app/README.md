@@ -54,10 +54,10 @@ bbr test //agentplane/app/...
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads, events, feed state, leases, materialized
-  conversation entities, and immutable content chunks/manifests. Each ingestion transaction
+  thread entities, and immutable content chunks/manifests. Each ingestion transaction
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
   `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
-- `conversation_projection.py`: typed deterministic event fold with independent item revisions.
+- `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener conversation copies.
@@ -146,8 +146,8 @@ proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.m
 The new projection schema is incompatible with populated pre-projection staging/testing
 archives: reset the disposable trajectory data before applying it. There is no implicit
 backfill, tolerant old-row reader, or on-open replay. Migration `0005_conversation_projection`
-creates the materialized tables, grants and publication; the managed `electric` database role
-must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
+creates the materialized tables, grants and publication, which `0006_thread_fold_rename` renames
+to the `thread_*` family; the managed `electric` database role must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
 mixing incompatible state. No instance reset is performed by this implementation work.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new

@@ -34,7 +34,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import CONVERSATION_PROJECTION_EPOCH, TrajectoryStore
+from agentplane.app.trajectory import THREAD_FOLD_EPOCH, TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -756,7 +756,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     )
     body = {
         "source_id": "test-runner",
-        "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
+        "projection_epoch": THREAD_FOLD_EPOCH,
         "command_ids": ["failed", "pending", "absent", "failed"],
     }
     async with httpx.AsyncClient(
@@ -766,7 +766,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         assert first.status_code == 200, first.text
         assert first.json() == {
             "source_id": "test-runner",
-            "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
+            "projection_epoch": THREAD_FOLD_EPOCH,
             "commands": [
                 {"command_id": "failed", "outcome": "failed"},
                 {"command_id": "pending", "outcome": "pending"},

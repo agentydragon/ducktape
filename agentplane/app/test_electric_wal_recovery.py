@@ -37,7 +37,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             store = TrajectoryStore.connect(service.database_url)
             try:
                 thread, source, lease = await _project_initial_item(store)
-                params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'"}
+                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
                 # Do not retain this client across service.stop()/start(): Docker can assign a
                 # different host port when it recreates the published listener.
                 async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:

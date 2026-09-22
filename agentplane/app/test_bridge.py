@@ -34,13 +34,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import (
-    ConversationEntity,
-    ConversationOperationalState,
-    ConversationProjectionCheckpoint,
-    FeedError,
-    TrajectoryStore,
-)
+from agentplane.app.trajectory import FeedError, ThreadCheckpoint, ThreadEntity, ThreadOperationalState, TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -645,14 +639,13 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             assert failed is not None
             assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
             async with replica_store._sessions() as session:
-                checkpoint = await session.get(ConversationProjectionCheckpoint, thread)
+                checkpoint = await session.get(ThreadCheckpoint, thread)
                 assert checkpoint is not None
                 view = await session.get(
-                    ConversationEntity,
-                    (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current"),
+                    ThreadEntity, (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
                 )
                 assert view is not None
-                operational = ConversationOperationalState.model_validate(view.state["operational"])
+                operational = ThreadOperationalState.model_validate(view.state["operational"])
             assert operational.feed_error is not None
             assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
             await store.release_ingestion(lease)

@@ -7,6 +7,7 @@ exports_files(
         "0003_thread_harness.py",
         "0004_followable_event_entries.py",
         "0005_conversation_projection_storage.py",
+        "0006_thread_fold_rename.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -51,4 +52,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0006_thread_fold_rename",
+    srcs = ["0006_thread_fold_rename.py"],
+    deps = ["@pypi//alembic"],
 )

@@ -649,7 +649,7 @@ function payload(
     source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     owner_cursor: String(ownerCursor),
-    owner_item_id: ownerId,
+    owner_id: ownerId,
     field,
     generation: "1",
     revision_cursor: String(revisionCursor),
@@ -1104,7 +1104,7 @@ function currentSubset(query: URLSearchParams): boolean {
 
 function shapeRow(relation: string, value: Record<string, unknown>) {
   const identity =
-    relation === "conversation_entity"
+    relation === "thread_entity"
       ? [value.thread_id, value.source_id, value.projection_epoch, value.entity_kind, value.entity_id]
       : [
           value.thread_id,
@@ -1196,7 +1196,7 @@ routes.push(
         return { ...row, revision_cursor: "8" };
       });
       return electricSubset(
-        rows.map((row) => shapeRow("conversation_entity", row)),
+        rows.map((row) => shapeRow("thread_entity", row)),
         `visual-entities-${match[1]}`
       );
     },
@@ -1216,7 +1216,7 @@ routes.push(
         (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
       );
       return electricSubset(
-        rows.map((row) => shapeRow("conversation_entity", row)),
+        rows.map((row) => shapeRow("thread_entity", row)),
         `visual-commands-${match[1]}`
       );
     },
@@ -1261,7 +1261,7 @@ routes.push(
           : body === undefined
             ? []
             : [
-                shapeRow("conversation_payload_chunk", {
+                shapeRow("thread_payload_chunk", {
                   thread_id: match[1],
                   source_id: CONVERSATION_SOURCE,
                   projection_epoch: CONVERSATION_EPOCH,
@@ -1274,11 +1274,7 @@ routes.push(
                 }),
               ];
       if (query.get("live") === "true" && query.get("offset") !== "-1")
-        return electricLongPoll(
-          `visual-payload-${ownerCursor}-${ownerId}-${field}`,
-          "conversation_payload_chunk",
-          signal
-        );
+        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "thread_payload_chunk", signal);
       return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
     },
   ],

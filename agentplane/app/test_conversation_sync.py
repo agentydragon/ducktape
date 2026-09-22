@@ -36,7 +36,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
             await store.set_attached(thread, source.attached, lease=lease)
             await store.record(thread, source.entries, lease=lease)
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
+                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
                 initial = await client.get("/v1/shape", params=params)
                 assert initial.status_code == 200, initial.text
                 entities = [message["value"] for message in initial.json() if "value" in message]
@@ -66,7 +66,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                 chunks = await client.get(
                     "/v1/shape",
                     params={
-                        "table": "conversation_payload_chunk",
+                        "table": "thread_payload_chunk",
                         "where": f"thread_id = '{thread}' AND owner_id = 'first'",
                         "offset": "-1",
                     },
@@ -127,7 +127,7 @@ async def _cross_replica_sync(
             "source_id": reference["source_id"],
             "projection_epoch": reference["projection_epoch"],
             "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
+            "owner_id": reference["owner_id"],
             "field": reference["field"],
             "generation": reference["generation"],
             "revision_cursor": reference["revision_cursor"],
@@ -199,7 +199,7 @@ async def _selected_command_outcome(
     thread: UUID,
     lease: IngestionLease,
 ) -> None:
-    scope = await store.current_conversation_scope(thread)
+    scope = await store.current_scope(thread)
     assert scope is not None
     params = {
         "source_id": scope.source_id,
@@ -363,7 +363,7 @@ async def _history_windows(
             "source_id": reference["source_id"],
             "projection_epoch": reference["projection_epoch"],
             "owner_cursor": reference["owner_cursor"],
-            "owner_id": reference["owner_item_id"],
+            "owner_id": reference["owner_id"],
             "field": reference["field"],
             "generation": reference["generation"],
             "revision_cursor": reference["revision_cursor"],

@@ -1,4 +1,4 @@
-"""Pure incremental fold for Agentplane's proposed conversation read model.
+"""Pure incremental fold of a Thread's event log into its read model.
 
 The module has no database, browser, or runtime integration.  It returns typed domain
 records and logical payload write intents for a later transactional storage worker.
@@ -45,7 +45,7 @@ class PayloadRef:
     source_id: str
     projection_epoch: str
     owner_cursor: int
-    owner_item_id: str
+    owner_id: str
     field: PayloadField
     revision_cursor: int
     generation: int
@@ -68,7 +68,7 @@ class PayloadOwner:
 
 
 @dataclass(frozen=True)
-class ConversationItem:
+class Item:
     source_id: str
     projection_epoch: str
     item_id: str
@@ -162,7 +162,7 @@ PayloadWrite = AppendPayload | ReplacePayload
 class PriorEntities:
     """Rows preloaded only for ``touched_keys``; missing differs from proved absence."""
 
-    items: dict[str, ConversationItem | None]
+    items: dict[str, Item | None]
     commands: dict[str, CommandSummary | None]
 
 
@@ -182,7 +182,7 @@ class TouchedKeys:
 @dataclass(frozen=True)
 class ProjectionBatch:
     state: ViewState
-    item_upserts: tuple[ConversationItem, ...]
+    item_upserts: tuple[Item, ...]
     confirmed_input_upserts: tuple[ConfirmedInput, ...]
     lifecycle_upserts: tuple[LifecycleSegment, ...]
     command_upserts: tuple[CommandSummary, ...]
@@ -244,7 +244,7 @@ class _Fold:
         self.state = replace(state, position=replace(state.position), controls=replace(state.controls))
         self.initial_through_cursor = state.position.through_cursor
         self.prior = prior
-        self.items: dict[str, ConversationItem] = {}
+        self.items: dict[str, Item] = {}
         self.commands: dict[str, CommandSummary] = {}
         self.confirmed: dict[int, ConfirmedInput] = {}
         self.lifecycle: dict[int, LifecycleSegment] = {}
@@ -252,7 +252,7 @@ class _Fold:
         self.payload_writes: list[PayloadWrite] = []
 
     @staticmethod
-    def _item_owner(item: ConversationItem) -> PayloadOwner:
+    def _item_owner(item: Item) -> PayloadOwner:
         return PayloadOwner(item.source_id, item.projection_epoch, item.cursor, item.item_id, item.revision_cursor)
 
     def _validate_ref(
@@ -263,14 +263,14 @@ class _Fold:
             reference.source_id != position.source_id
             or reference.projection_epoch != position.projection_epoch
             or reference.owner_cursor != owner.cursor
-            or reference.owner_item_id != owner.owner_id
+            or reference.owner_id != owner.owner_id
             or reference.field is not field
             or not owner.cursor <= reference.generation <= reference.revision_cursor <= owner.revision_cursor
             or (preloaded and reference.revision_cursor > self.initial_through_cursor)
         ):
             raise ValueError("payload reference does not belong to its owner revision")
 
-    def _item(self, cursor: int, item_id: str) -> ConversationItem:
+    def _item(self, cursor: int, item_id: str) -> Item:
         if not item_id:
             raise ValueError("empty item identity")
         if item_id in self.items:
@@ -280,7 +280,7 @@ class _Fold:
         prior = self.prior.items[item_id]
         position = self.state.position
         if prior is None:
-            item = ConversationItem(
+            item = Item(
                 position.source_id,
                 position.projection_epoch,
                 item_id,
@@ -308,7 +308,7 @@ class _Fold:
         self.items[item_id] = item
         return item
 
-    def _save_item(self, item: ConversationItem, cursor: int) -> ConversationItem:
+    def _save_item(self, item: Item, cursor: int) -> Item:
         item = replace(item, revision_cursor=cursor)
         self.items[item.item_id] = item
         return item
@@ -338,9 +338,7 @@ class _Fold:
         self.payload_writes.append(AppendPayload(base, reference, text) if append else ReplacePayload(reference, text))
         return FieldValue(reference)
 
-    def _item_write(
-        self, cursor: int, item_id: str, field: PayloadField, text: str, *, append: bool
-    ) -> ConversationItem:
+    def _item_write(self, cursor: int, item_id: str, field: PayloadField, text: str, *, append: bool) -> Item:
         item = self._item(cursor, item_id)
         match field:
             case PayloadField.TEXT:
@@ -353,15 +351,15 @@ class _Fold:
                 value = self._write(self._item_owner(item), item.output, cursor, field, text, append=append)
                 item = replace(item, output=value)
             case _:
-                raise ValueError(f"field {field} does not belong to a conversation item")
+                raise ValueError(f"field {field} does not belong to a thread item")
         return self._save_item(item, cursor)
 
-    def _evidence(self, item: ConversationItem | int, entry: event_log_pb2.EventEntry) -> None:
+    def _evidence(self, item: Item | int, entry: event_log_pb2.EventEntry) -> None:
         self.evidence.append(
             EvidenceAssociation(
                 self.state.position.source_id,
                 self.state.position.projection_epoch,
-                item.cursor if isinstance(item, ConversationItem) else item,
+                item.cursor if isinstance(item, Item) else item,
                 entry.cursor,
                 tuple(entry.event.source_sequences),
             )
