@@ -25,6 +25,23 @@ requirement nobody can source is a preference and should be argued as one.
 | P7  | An **epoch replacement** is invisible past a catch-up state — no reload, draft preserved.                                                                                                  | <../../debug/conversation_acceptance.md>                |
 | P8  | **The client chooses its content selection** — text, reasoning, tool arguments, output — and that choice composes with streaming. Selecting nothing still returns metadata and references. | <../../docs/thread_view_sync.md> § Queries              |
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Deployed behaviour                                      |
+| P10 | **One watch, moved in place.** A reader holds a single subscription over the range it cares about, and moving that range costs only the difference.                                        | Owner, 2026-09-22                                       |
+
+**P10, as the owner stated it.** A client holds segments 100–200 at revision 9932. The reader
+scrolls up, so the client now wants 50–150. It should:
+
+1. fetch **50–99 only** — the part it does not have;
+2. learn of any change to **100–150 since revision 9932** — the part it has, which may be stale;
+3. **move its existing watch** to 50–150, without re-downloading 100–150 and without opening a
+   second one;
+4. drop 151–200.
+
+This decides between whole families of option rather than between tidier and less tidy versions of
+one. **No Electric design can satisfy it.** A shape's predicate is fixed when the shape is created,
+so 50–150 is a different shape from 100–200 and its log replays from `offset=-1`; the overlap is
+re-transferred by construction. The page partition (§ option_electric_pages) avoids the
+re-transfer the only other way available — hold `N` shapes and never move any of them — which is
+exactly what P10 rules out.
 
 **P8 is the one the deployed design breaks.** The spec makes content selection a client query
 parameter; the Electric implementation put the field set in a server-side shape predicate, where the
@@ -62,13 +79,12 @@ the client's side of the wire.
 
 ## Wants, not requirements
 
-Stated so they are weighed rather than smuggled in as needs.
+Stated so they are weighed rather than smuggled in as needs. Lettered `D` because
+option_electric_pages.md uses `W1`…`W9` for the work items of an earlier draft, and two numbering
+schemes in one directory is how a citation comes to mean the wrong thing.
 
-- **W1 — one subscription, not `N`.** A reader should express "this is what I am looking at" once,
-  rather than holding a set of server objects it has to juggle, top up and expire. The page
-  partition (§ option_electric_pages) fails this by construction: seven shapes at the tail.
-- **W2 — no seam between windowed and on-demand content.** Whether a body streams or is fetched
-  should be one mechanism with a parameter, not two code paths that behave differently. This is P8's
+- **D1 — no seam between windowed and on-demand content.** Whether a body streams or is fetched
+  should be one mechanism with a parameter, not two code paths that behave differently. P8's
   implementation-side twin.
-- **W3 — incrementally reachable.** A design we can get to in steps, each of which is shippable and
-  better than the last, beats one that has to land whole.
+- **D2 — incrementally reachable.** A design we can get to in steps, each shippable and better than
+  the last, beats one that has to land whole.

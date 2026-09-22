@@ -23,7 +23,7 @@ A conditional `If-None-Match` makes the idle case free and changes none of that.
 **What it is for:** a floor. Any option that costs more complexity than this owes the difference in
 requirements it satisfies that this does not — which for a long conversation is E2 and E5, and not
 much else. It is also the fastest thing to build if the current implementation needs to be replaced
-before its replacement is designed (**W3**).
+before its replacement is designed (**D2**).
 
 ## A1 — poll a delta
 
@@ -35,11 +35,13 @@ than fixed interval, so the server holds the request open until something change
   still one request for the tail plus its bodies.
 - **E3**: a long poll that returns and is re-issued is the same shape as a live shape subscription —
   ~0 requests per item, one connection held.
-- **P8/W2 fall out naturally.** `since` and the content selection are _query parameters_. "Give me
+- **P8/D1 fall out naturally.** `since` and the content selection are _query parameters_. "Give me
   text now and reasoning only when I ask" is two values of one parameter, not two mechanisms. This
   is what the spec's `ContentSelection` was always describing.
-- **W1**: one subscription. The client says what it is looking at — a cursor range and a content
-  selection — in one request.
+- **P10, partly.** One subscription, and the client says what it is looking at in one request — but
+  A1 as written has no `have`, so moving the window re-downloads its overlap. The fix is one
+  parameter and is written up as its own option (<option_moving_window.md>); A1 is the step before
+  it, not a destination.
 - **P4/E4**: scrolling back is `GET …?before={cursor}&limit=30`, and the reader keeps what it has.
   Nothing is redefined, so **P5** holds.
 - **P6**: a reconnect re-issues the long poll with the last position. Nothing on screen is touched.

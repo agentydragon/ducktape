@@ -6,9 +6,14 @@ out to the point where its costs are visible, kept whole so it can be compared r
 half-remembered.
 
 It is the deployed stack, so it starts ahead on familiarity and behind on nothing except the two
-things it structurally cannot do: **W1** (a reader holds seven subscriptions at the tail, not one)
-and **P8/W2** (the content selection lives in a server-side shape predicate, where a client cannot
-express it). Both are called out where they arise below.
+things it structurally cannot do: **P10** (a reader holds seven subscriptions at the tail and cannot
+move any of them — a moved range is a different shape, which replays from `offset=-1`) and **P8/D1**
+(the content selection lives in a server-side shape predicate, where a client cannot express it).
+Both are called out where they arise below.
+
+**Note on numbering:** `W1`…`W9` in this file are _work items_ from the draft this grew out of, and
+have nothing to do with the `D` wants in <requirements.md>. Requirement citations here are `P`, `S`,
+`E` and `O`.
 
 The measurement that opens this file is the grounding fact for **every** option, not just this one.
 
