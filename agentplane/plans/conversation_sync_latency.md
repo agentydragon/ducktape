@@ -73,6 +73,12 @@ cost is that a node drain loses it and clients take one refetch round.
 **Deferred by the owner for now; the storage class stays as it is.** The fixes above cut the open
 path from ~31 shape creations to one, which is what makes deferring it tolerable.
 
+A node-local volume also pins Electric to one replica, which it already is. If a backing store
+Electric can share — its own tables in PostgreSQL, or anything else that several instances can read
+— turns out to exist in the pinned version, that answers both this and horizontal replication at
+once and is the better shape to aim at. Which of its storage backends allow that is unchecked here;
+settle it before spending the PVC change.
+
 ### W5 — the entity shape is redefined by every appended segment
 
 This was written as a minor follow-up gated on W1's measurement. Reading the resolver closely says

@@ -259,8 +259,13 @@ py_test(
     name = "test_conversation_latency",
     timeout = "eternal",
     srcs = ["test_conversation_latency.py"],
+    # A supplied token needs no kubeconfig, which is what lets this run on a remote runner (`bbr`)
+    # rather than only from a workstation: `bb remote --env=AGENTPLANE_ACCEPTANCE_TOKEN` forwards
+    # one minted here. Without it the suite falls back to minting through the caller's kubectl.
     env_inherit = [
         "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
         "HOME",
         "KUBECONFIG",
     ],

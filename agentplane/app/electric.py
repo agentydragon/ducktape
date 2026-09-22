@@ -275,7 +275,13 @@ class ElectricProxy:
             params=httpx.QueryParams(query),
             headers={
                 "accept": request.headers.get("accept", "application/json"),
-                **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
+                **{
+                    key: request.headers[key]
+                    # if-none-match is what lets Electric answer a re-read of an offset it has
+                    # already served with 304 and no body; without it its entity tag is inert.
+                    for key in ("electric-protocol-version", "if-none-match")
+                    if key in request.headers
+                },
             },
         )
         # Electric answers headers once the shape exists, so this separates creating a shape from
@@ -293,7 +299,13 @@ class ElectricProxy:
         )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
-        headers["cache-control"] = "private, no-store"
+        # Electric serves an immutable log segment per offset and marks it publicly cacheable for a
+        # long time, which is how the protocol avoids re-transferring history. These responses are
+        # caller-scoped, so `public` cannot stand and neither can a `max-age`: a browser's HTTP
+        # cache outlives a logout and offers no way to clear it, so a stored body must never be
+        # served without a request this proxy authorizes. `no-cache` keeps the body in that cache
+        # and forces exactly such a request, and Electric's own entity tag then answers it 304.
+        headers["cache-control"] = "private, no-cache"
         return ElectricStreamingResponse(response, headers)
 
 
