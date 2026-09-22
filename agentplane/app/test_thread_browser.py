@@ -1477,7 +1477,6 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
         view.state = state.model_copy(
             update={
                 "operational": ThreadOperationalState(
-                    operational_version=str(int(state.operational.operational_version) + 1),
                     status="failed",
                     last_verified_cursor=str(checkpoint.through_cursor),
                     feed_error=ThreadFeedErrorState(cursor=None, message="batch-wide projection invariant failed"),

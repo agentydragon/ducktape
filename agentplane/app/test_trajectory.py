@@ -465,7 +465,6 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
     assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
     assert operational.model_dump() == {
-        "operational_version": "1",
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
@@ -481,12 +480,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_reset is not None
         reset = ThreadOperationalState.model_validate(view_reset.state["operational"])
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
-    assert reset.model_dump() == {
-        "operational_version": "2",
-        "status": "active",
-        "last_verified_cursor": "1",
-        "feed_error": None,
-    }
+    assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
     await store.end_feed(thread, lease=lease, error="projection invariant failed")
     async with replica._sessions() as session:
@@ -496,7 +490,6 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert unknown_failure is not None
         operational = ThreadOperationalState.model_validate(unknown_failure.state["operational"])
     assert operational.model_dump() == {
-        "operational_version": "3",
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": None, "message": "projection invariant failed"},
@@ -753,7 +746,6 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
             )
         )
     assert replacement is not None
-    assert replacement.present
     assert replacement.chunk_count == replacement.content_bytes == 0
     assert item is not None
     assert item.text_ref is not None

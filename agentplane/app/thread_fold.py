@@ -141,7 +141,6 @@ class Controls:
 class ViewState:
     position: Position
     controls: Controls = Controls()
-    unresolved_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -401,7 +400,6 @@ class _Fold:
                 ),
             )
         self.commands[command_id] = summary
-        self.state = replace(self.state, unresolved_count=self.state.unresolved_count + 1)
 
     def _settle(
         self, entry: event_log_pb2.EventEntry, command_id: str, outcome: CommandOutcome, reason: str | None = None
@@ -410,10 +408,7 @@ class _Fold:
         summary = self._command(command_id)
         if summary.outcome is not CommandOutcome.PENDING:
             raise ValueError(f"command already settled: {command_id}")
-        if self.state.unresolved_count == 0:
-            raise ValueError("unresolved command count underflow")
         self.commands[command_id] = replace(summary, outcome=outcome, outcome_cursor=cursor, outcome_reason=reason)
-        self.state = replace(self.state, unresolved_count=self.state.unresolved_count - 1)
         self._evidence(summary.admission_cursor, entry)
 
     def _lifecycle(self, entry: event_log_pb2.EventEntry, observation: str) -> None:

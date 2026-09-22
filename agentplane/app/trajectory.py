@@ -218,7 +218,6 @@ class ThreadPayloadManifest(Base):
     field: Mapped[str] = mapped_column(Text, primary_key=True)
     generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     revision_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    present: Mapped[bool] = mapped_column(Boolean)
     chunk_count: Mapped[int] = mapped_column(BigInteger)
     content_bytes: Mapped[int] = mapped_column(BigInteger)
 
@@ -336,7 +335,6 @@ class ThreadPayloadSelection:
     field: str
     generation: int
     revision_cursor: int
-    present: bool
     chunk_count: int
     content_bytes: int
 
@@ -372,7 +370,6 @@ class ThreadOperationalState(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    operational_version: str
     status: Literal["active", "ended", "failed"]
     last_verified_cursor: str
     feed_error: ThreadFeedErrorState | None
@@ -382,7 +379,6 @@ class ThreadViewState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     controls: ThreadControlsState
-    unresolved_count: int
     operational: ThreadOperationalState
 
 
@@ -639,7 +635,6 @@ class TrajectoryStore:
                 field,
                 generation,
                 revision_cursor,
-                manifest.present,
                 manifest.chunk_count,
                 manifest.content_bytes,
             )
@@ -1185,7 +1180,6 @@ async def _fold_state(
             active_turn_id=view.controls.active_turn_id,
             harness_state=view.controls.harness_state,
         ),
-        view.unresolved_count,
     ), view.operational
 
 
@@ -1207,7 +1201,6 @@ async def _set_operational(
     row.state = view.model_copy(
         update={
             "operational": ThreadOperationalState(
-                operational_version=str(int(view.operational.operational_version) + 1),
                 status=status,
                 last_verified_cursor=str(checkpoint.through_cursor),
                 feed_error=(
@@ -1350,7 +1343,6 @@ async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequen
                 field=plan.reference.field,
                 generation=plan.reference.generation,
                 revision_cursor=plan.reference.revision_cursor,
-                present=True,
                 chunk_count=chunk_count,
                 content_bytes=text_bytes if plan.replaced else plan.prefix_bytes + text_bytes,
             )
@@ -1438,13 +1430,9 @@ def _view_state_entity(
                 active_turn_id=state.controls.active_turn_id,
                 harness_state=state.controls.harness_state,
             ),
-            unresolved_count=state.unresolved_count,
             operational=operational
             or ThreadOperationalState(
-                operational_version="0",
-                status="active",
-                last_verified_cursor=str(state.position.through_cursor),
-                feed_error=None,
+                status="active", last_verified_cursor=str(state.position.through_cursor), feed_error=None
             ),
         ),
         text_ref=None,

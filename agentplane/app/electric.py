@@ -87,7 +87,6 @@ class PayloadInterestResponse(BaseModel):
     field: str
     generation: str
     revision_cursor: str
-    present: bool
     chunk_count: str
     content_bytes: str
 
@@ -391,7 +390,6 @@ async def get_payload_interest(
         field=selection.field,
         generation=str(selection.generation),
         revision_cursor=str(selection.revision_cursor),
-        present=selection.present,
         chunk_count=str(selection.chunk_count),
         content_bytes=str(selection.content_bytes),
     )
