@@ -34,7 +34,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import CONVERSATION_PROJECTION_EPOCH, TrajectoryStore
+from agentplane.app.trajectory import THREAD_FOLD_EPOCH, TrajectoryStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -102,21 +102,7 @@ async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(
-            client,
-            lambda thread_id, anchor, before, size: store.conversation_entity_interest(
-                thread_id, anchor_cursor=anchor, before_cursor=before, page_size=size
-            ),
-            lambda thread_id, owner_cursor, owner_id, field, generation, revision: store.conversation_payload_selection(
-                thread_id,
-                owner_cursor=owner_cursor,
-                owner_id=owner_id,
-                field=field,
-                generation=generation,
-                revision_cursor=revision,
-            ),
-            store.current_conversation_scope,
-        )
+        yield ElectricProxy(client, store)
 
 
 @pytest.fixture
@@ -638,7 +624,7 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
 
 
 @pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
-def test_conversation_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
+def test_thread_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
     path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
     for credentials in (
         {"Authorization": ""},
@@ -768,19 +754,14 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     app = create_app(
         inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
     )
-    body = {
-        "source_id": "test-runner",
-        "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
-        "command_ids": ["failed", "pending", "absent", "failed"],
-    }
+    body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
         first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
         assert first.status_code == 200, first.text
         assert first.json() == {
-            "source_id": "test-runner",
-            "projection_epoch": CONVERSATION_PROJECTION_EPOCH,
+            "projection_epoch": THREAD_FOLD_EPOCH,
             "commands": [
                 {"command_id": "failed", "outcome": "failed"},
                 {"command_id": "pending", "outcome": "pending"},

@@ -12,11 +12,12 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
+from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
@@ -36,13 +37,6 @@ from agentplane.app.consent import (
     EnrollmentHandle,
     decide_enrollment,
     preview_enrollment,
-)
-from agentplane.app.conversation_debug import (
-    ConversationEvidenceNotFoundError,
-    ConversationScopeChangedError,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
 )
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
@@ -68,11 +62,19 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
+from agentplane.app.thread_debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
 from agentplane.app.trajectory import (
     CommandIdConflictError,
     CommandOutcomeValue,
-    ConversationScopeResetError,
     ThreadNotFoundError,
+    ThreadScopeResetError,
     ThreadView,
     TrajectoryStore,
 )
@@ -359,6 +361,11 @@ async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
     return await client.mcp_linkages()
 
 
+@connections_router.get("/action-groups")
+async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
+    return await client.action_groups()
+
+
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")
 async def start_mcp_linkage(server_id: str, body: McpLinkageStart, client: OperatorActions) -> McpLinkageStartView:
     return await client.start_mcp_linkage(server_id, body.scopes)
@@ -495,7 +502,6 @@ class ThreadRename(BaseModel):
 class CommandReconciliationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     command_ids: list[str] = Field(max_length=128)
 
@@ -510,7 +516,6 @@ class CommandReconciliationEntry(BaseModel):
 class CommandReconciliationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     commands: list[CommandReconciliationEntry]
 
@@ -562,11 +567,10 @@ async def reconcile_commands(
     store: Store, thread_id: UUID, body: CommandReconciliationRequest
 ) -> CommandReconciliationResponse:
     try:
-        outcomes = await store.command_outcomes(thread_id, body.source_id, body.projection_epoch, body.command_ids)
-    except ConversationScopeResetError as error:
+        outcomes = await store.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
+    except ThreadScopeResetError as error:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
     return CommandReconciliationResponse(
-        source_id=body.source_id,
         projection_epoch=body.projection_epoch,
         commands=[
             CommandReconciliationEntry(command_id=command_id, outcome=outcome)
@@ -628,58 +632,82 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
-@threads.get("/{thread_id}/conversation/evidence")
-async def conversation_evidence(
+# A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
+# string -- the representation every fold response model already publishes it in. Declaring
+# it `int` here would put `integer` in the schema and make every browser caller cast past it. The
+# range check the string form loses is restored here: the column is a signed 64-bit integer, and a
+# value past it must be refused as a bad request rather than reaching the driver as one.
+_DECIMAL = r"^\d+$"
+_INT64_MAX = 2**63 - 1
+
+
+def _within_int64(value: str) -> str:
+    if int(value) > _INT64_MAX:
+        raise ValueError(f"cursor is outside the signed 64-bit range: {value}")
+    return value
+
+
+DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_int64)]
+DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
+
+
+@threads.get("/{thread_id}/evidence")
+async def thread_evidence(
     thread_id: UUID,
     store: Store,
-    source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_cursor: Annotated[int, Query(ge=0)] = 0,
+    after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
-    return await store.conversation_evidence(
+    return await store.evidence(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        after_cursor=after_cursor,
+        after_cursor=int(after_cursor),
         limit=limit,
     )
 
 
-@threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
-async def conversation_native_frames(
+@threads.get("/{thread_id}/evidence/{observation_cursor}/frames")
+async def thread_native_frames(
     thread_id: UUID,
-    observation_cursor: int,
+    observation_cursor: DecimalCursorPath,
     store: Store,
-    source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
-    return await store.conversation_native_frames(
+    return await store.native_frames(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        observation_cursor=observation_cursor,
-        after_sequence=after_sequence,
+        observation_cursor=int(observation_cursor),
+        after_sequence=int(after_sequence),
         limit=limit,
     )
 
 
-@threads.get("/{thread_id}/conversation/observations")
-async def conversation_observations(
+@threads.get("/{thread_id}/observations/{cursor}")
+async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+    """The raw entry behind one listed observation, read only when a reader expands it."""
+    entry = await store.observation_entry(thread_id, cursor)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
+    return entry
+
+
+@threads.get("/{thread_id}/observations")
+async def thread_observations(
     thread_id: UUID,
     store: Store,
-    before_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
-    after_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    before_cursor: DecimalCursor | None = None,
+    after_cursor: DecimalCursor | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> ObservationPage:
     """Original chronological observations; default to the tail, including unlinked debug data."""
@@ -689,8 +717,11 @@ async def conversation_observations(
         )
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return await store.conversation_observations(
-        thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+    return await store.observations(
+        thread_id,
+        before_cursor=None if before_cursor is None else int(before_cursor),
+        after_cursor=None if after_cursor is None else int(after_cursor),
+        limit=limit,
     )
 
 
@@ -802,14 +833,12 @@ def create_app(
     # Outermost, so a request the drain refuses touches nothing below it.
     app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
 
-    @app.exception_handler(ConversationScopeChangedError)
-    async def _conversation_scope_changed(_request: Request, error: ConversationScopeChangedError) -> JSONResponse:
+    @app.exception_handler(ThreadScopeChangedError)
+    async def _thread_scope_changed(_request: Request, error: ThreadScopeChangedError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_410_GONE)
 
-    @app.exception_handler(ConversationEvidenceNotFoundError)
-    async def _conversation_evidence_missing(
-        _request: Request, error: ConversationEvidenceNotFoundError
-    ) -> JSONResponse:
+    @app.exception_handler(ThreadEvidenceNotFoundError)
+    async def _evidence_missing(_request: Request, error: ThreadEvidenceNotFoundError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
 
     @app.exception_handler(ThreadNotFoundError)

@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-db", () => ({
 
 import { FetchError } from "@electric-sql/client";
 
-import { CommandSelection, ConversationCollection, PayloadBody, type PayloadRef } from "./conversation_store";
+import { CommandSelection, ThreadCollection, PayloadBody, type PayloadRef } from "./thread_store";
 
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -57,7 +57,7 @@ function option(prefix: string) {
 
 it("wires command terminal callbacks to the current collection and ignores retired callbacks", async () => {
   const container = await render(
-    <CommandSelection threadId="thread" sourceId="source" projectionEpoch="epoch" commandIds={["command"]}>
+    <CommandSelection threadId="thread" projectionEpoch="epoch" commandIds={["command"]}>
       {(rows) => <p>{rows.length} commands retained</p>}
     </CommandSelection>
   );
@@ -71,7 +71,7 @@ it("wires command terminal callbacks to the current collection and ignores retir
   expect(captured.options.filter((value) => value.id.startsWith("agentplane-commands:")).length).toBe(2);
 
   await rerender(
-    <CommandSelection threadId="thread" sourceId="source" projectionEpoch="epoch" commandIds={["other-command"]}>
+    <CommandSelection threadId="thread" projectionEpoch="epoch" commandIds={["other-command"]}>
       {(rows) => <p>{rows.length} commands retained</p>}
     </CommandSelection>
   );
@@ -85,10 +85,9 @@ it("keeps a payload callback error through a follow revision and replaces it on 
   const fetch = vi.fn().mockResolvedValue(Response.json({ chunk_count: "1", content_bytes: "4" }));
   vi.stubGlobal("fetch", fetch);
   const reference: PayloadRef = {
-    source_id: "source",
     projection_epoch: "epoch",
     owner_cursor: "1",
-    owner_item_id: "item",
+    owner_id: "item",
     field: "text",
     generation: "1",
     revision_cursor: "1",
@@ -132,9 +131,8 @@ it("keeps a payload callback error through a follow revision and replaces it on 
   expect(container.textContent).not.toContain("retired callback");
 });
 
-it("refreshes the active conversation selection after a disconnected ready stream", async () => {
+it("refreshes the active thread selection after a disconnected ready stream", async () => {
   const interest = {
-    source_id: "source",
     projection_epoch: "epoch",
     anchor_cursor: "1",
     tail_from: "1",
@@ -144,24 +142,23 @@ it("refreshes the active conversation selection after a disconnected ready strea
   };
   const fetch = vi.fn(() => Promise.resolve(Response.json(interest)));
   vi.stubGlobal("fetch", fetch);
-  await render(<ConversationCollection threadId="thread">{() => <p>retained conversation</p>}</ConversationCollection>);
+  await render(<ThreadCollection threadId="thread">{() => <p>retained thread</p>}</ThreadCollection>);
   await vi.waitFor(() =>
-    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1)
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-thread:"))).toHaveLength(1)
   );
 
-  const active = option("agentplane-conversation:");
+  const active = option("agentplane-thread:");
   await act(async () =>
     active.shapeOptions.onError?.(new FetchError(0, "stream disconnected", undefined, {}, "", "stream disconnected"))
   );
   await vi.waitFor(() =>
-    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(2)
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-thread:"))).toHaveLength(2)
   );
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
-it("keeps native Electric stream errors visible instead of rotating the active conversation", async () => {
+it("keeps native Electric stream errors visible instead of rotating the active thread", async () => {
   const interest = {
-    source_id: "source",
     projection_epoch: "epoch",
     anchor_cursor: "1",
     tail_from: "1",
@@ -171,19 +168,17 @@ it("keeps native Electric stream errors visible instead of rotating the active c
   };
   const fetch = vi.fn().mockResolvedValue(Response.json(interest));
   vi.stubGlobal("fetch", fetch);
-  const container = await render(
-    <ConversationCollection threadId="thread">{() => <p>retained conversation</p>}</ConversationCollection>
-  );
+  const container = await render(<ThreadCollection threadId="thread">{() => <p>retained thread</p>}</ThreadCollection>);
   await vi.waitFor(() =>
-    expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1)
+    expect(captured.options.filter((value) => value.id.startsWith("agentplane-thread:"))).toHaveLength(1)
   );
 
-  const active = option("agentplane-conversation:");
+  const active = option("agentplane-thread:");
   await act(async () =>
     active.shapeOptions.onError?.(new FetchError(409, "must refetch", undefined, {}, "", "must refetch"))
   );
 
-  expect(container.textContent).toContain("Conversation synchronization stopped: must refetch");
-  expect(captured.options.filter((value) => value.id.startsWith("agentplane-conversation:"))).toHaveLength(1);
+  expect(container.textContent).toContain("Thread synchronization stopped: must refetch");
+  expect(captured.options.filter((value) => value.id.startsWith("agentplane-thread:"))).toHaveLength(1);
   expect(fetch).toHaveBeenCalledTimes(1);
 });

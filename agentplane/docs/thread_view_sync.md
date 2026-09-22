@@ -1,7 +1,7 @@
 # Thread view synchronization
 
 Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
-`agentplane/app/conversation_projection.py` is connected to PostgreSQL through the
+`agentplane/app/thread_fold.py` is connected to PostgreSQL through the
 transactional writer. The integration uses Electric and its TanStack DB collection adapter;
 the browser consumes bounded metadata interests and explicitly selected payloads.
 See [app implementation notes](../app/README.md) for endpoints and storage details.

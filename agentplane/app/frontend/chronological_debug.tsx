@@ -1,13 +1,51 @@
 import { Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 
-import { conversationObservations, displayableError, type ObservationPage } from "./client";
+import {
+  threadObservationEntry,
+  threadObservations,
+  displayableError,
+  type ArchivedObservationEntry,
+  type ObservationPage,
+} from "./client";
 import { JsonView } from "./json_view";
 
 type PageRequest = { before?: string; after?: string };
 const OpenDebug = createContext<((cursor?: string) => void) | null>(null);
 
-function Observation({ observation }: { observation: ObservationPage["observations"][number] }): JSX.Element {
+function ObservationEntry({ threadId, cursor }: { threadId: string; cursor: string }): JSX.Element {
+  const [entry, setEntry] = useState<ArchivedObservationEntry | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setEntry(null);
+    setError(null);
+    void threadObservationEntry(threadId, cursor, controller.signal).then(
+      (value) => {
+        if (!controller.signal.aborted) setEntry(value);
+      },
+      (reason: unknown) => {
+        if (!controller.signal.aborted) setError(displayableError(reason));
+      }
+    );
+    return () => controller.abort();
+  }, [cursor, threadId]);
+  if (error)
+    return (
+      <Text role="alert" c="red">
+        {error}
+      </Text>
+    );
+  return entry === null ? <Text role="status">Loading entry…</Text> : <JsonView value={entry.entry} />;
+}
+
+function Observation({
+  threadId,
+  observation,
+}: {
+  threadId: string;
+  observation: ObservationPage["observations"][number];
+}): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
     <details
@@ -18,10 +56,7 @@ function Observation({ observation }: { observation: ObservationPage["observatio
       <summary>
         Observation {observation.cursor} · {observation.kind}
       </summary>
-      <Text size="xs" style={{ overflowWrap: "anywhere" }}>
-        Source {observation.source_id}, sequence {observation.source_sequence}
-      </Text>
-      {expanded && <JsonView value={observation.entry} />}
+      {expanded && <ObservationEntry threadId={threadId} cursor={observation.cursor} />}
     </details>
   );
 }
@@ -41,7 +76,7 @@ function ObservationHistory({
     const controller = new AbortController();
     setPage(null);
     setError(null);
-    void conversationObservations(threadId, request, controller.signal).then(
+    void threadObservations(threadId, request, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) setPage(value);
       },
@@ -86,7 +121,7 @@ function ObservationHistory({
           </Group>
           {page.observations.length === 0 && <Text>No observations in this page.</Text>}
           {page.observations.map((observation) => (
-            <Observation key={observation.cursor} observation={observation} />
+            <Observation key={observation.cursor} threadId={threadId} observation={observation} />
           ))}
         </>
       )}

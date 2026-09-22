@@ -166,6 +166,7 @@ _DUCKTAPE_ARTIFACTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("github-exporter", ("cluster/k8s/github-exporter",)),
     ("github-secrets-sync", ("cluster/k8s/github-secrets-sync",)),
     ("goldilocks", ("cluster/k8s/goldilocks",)),
+    ("google-mcp", ("cluster/k8s/google-mcp",)),
     (
         "grocy-mcp-sf",
         ("cluster/k8s/grocy/sf/mcp", "cluster/k8s/grocy/mcp-base", "cluster/k8s/grocy/mcp-servicemonitor-base"),

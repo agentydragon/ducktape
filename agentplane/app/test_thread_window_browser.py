@@ -1,4 +1,4 @@
-"""Real-browser acceptance for bounded projected conversation window rotation."""
+"""Real-browser acceptance for bounded projected thread window rotation."""
 
 import asyncio
 import json
@@ -31,7 +31,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
             interest_seen.set()
 
     page.on("request", observe_request)
-    await page.evaluate("() => { window.__agentplaneConversationCollectionTrace = []; }")
+    await page.evaluate("() => { window.__agentplaneThreadCollectionTrace = []; }")
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
@@ -65,7 +65,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     session = page.locator(f'[data-projection-cursor="{latest.cursor}"]')
     await expect(session).to_have_count(1, timeout=30_000)
     await expect(composer).to_have_value("Draft retained across shape rotation")
-    await expect(page.get_by_text("Conversation synchronization stopped.", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Thread synchronization stopped.", exact=True)).to_have_count(0)
     await expect(page.get_by_text("Window message 069", exact=False)).to_be_visible()
 
     # The original fixed shape is now more than two pages behind. Reusing it must yield an
@@ -84,7 +84,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     # The live collection rotates before it retains more than two 30-row pages, while DOM
     # virtualization keeps only the measured viewport and overscan mounted.
     assert len(interest_urls) < 10, interest_urls
-    assert await page.locator("[data-conversation-anchor]").count() < 20
+    assert await page.locator("[data-thread-anchor]").count() < 20
 
     interest_seen.clear()
     await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
@@ -92,7 +92,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
         await interest_seen.wait()
     history = page.get_by_role("region", name="Thread history", exact=True)
     await page.wait_for_function(
-        """() => window.__agentplaneConversationCollectionTrace?.some(event =>
+        """() => window.__agentplaneThreadCollectionTrace?.some(event =>
             event.kind === 'query' && event.role === 'active' && event.ready && !event.id.endsWith(':tail')
         )"""
     )
@@ -109,9 +109,9 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     anchor = await history.evaluate(
         """area => {
             const top = area.getBoundingClientRect().top;
-            const row = [...area.querySelectorAll('[data-conversation-anchor]')]
+            const row = [...area.querySelectorAll('[data-thread-anchor]')]
                 .find(candidate => candidate.getBoundingClientRect().bottom > top);
-            return { cursor: row.dataset.conversationAnchor, top: row.getBoundingClientRect().top };
+            return { cursor: row.dataset.threadAnchor, top: row.getBoundingClientRect().top };
         }"""
     )
     # Advance the live tail by another page while the reader remains in the older
@@ -134,14 +134,14 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     async with asyncio.timeout(10):
         await interest_seen.wait()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    restored = page.locator(f'[data-conversation-anchor="{anchor["cursor"]}"]')
+    restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained across shape rotation")
     try:
         await page.wait_for_function(
             """() => {
-                const trace = window.__agentplaneConversationCollectionTrace ?? [];
+                const trace = window.__agentplaneThreadCollectionTrace ?? [];
                 const active = trace.filter(event => event.kind === 'query' && event.role === 'active').at(-1);
                 const retired = new Set(trace.filter(event => event.kind === 'unsubscribed')
                     .map(event => event.id).filter(id => id !== active?.id));
@@ -151,12 +151,12 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
             }"""
         )
     finally:
-        trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
-        (undeclared_outputs_dir() / "conversation-window-collections.json").write_text(json.dumps(trace, indent=2))
+        trace = await page.evaluate("() => window.__agentplaneThreadCollectionTrace")
+        (undeclared_outputs_dir() / "thread-window-collections.json").write_text(json.dumps(trace, indent=2))
     await cdp.send("HeapProfiler.collectGarbage")
     heap_after = await cdp.send("Runtime.getHeapUsage")
-    trace = await page.evaluate("() => window.__agentplaneConversationCollectionTrace")
-    (undeclared_outputs_dir() / "conversation-window-resources.json").write_text(
+    trace = await page.evaluate("() => window.__agentplaneThreadCollectionTrace")
+    (undeclared_outputs_dir() / "thread-window-resources.json").write_text(
         json.dumps({"collections": trace, "heap_before": heap_before, "heap_after": heap_after}, indent=2)
     )
     ready = [event for event in trace if event["kind"] == "query" and event["ready"]]
@@ -164,7 +164,7 @@ async def test_large_live_tail_rotates_and_preserves_reader_state(thread_browser
     assert all(event["subscriberCount"] >= 1 for event in ready)
     active = [event for event in ready if event["role"] == "active"]
     assert active[-1]["size"] <= 61
-    await page.screenshot(path=undeclared_outputs_dir() / "conversation-window-retained-reader.png")
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
 
 
 async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(thread_browser: ThreadBrowser) -> None:
@@ -192,7 +192,7 @@ async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(
             )
         async with asyncio.timeout(15):
             while True:
-                scope = await store.current_conversation_scope(thread.id)
+                scope = await store.current_scope(thread.id)
                 if scope is not None and scope.through_cursor >= latest.cursor:
                     break
                 await asyncio.sleep(0.01)
@@ -204,7 +204,7 @@ async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
         await expect(composer).to_have_value("Draft retained across a long offline gap")
         assert await document.evaluate("original => original === document")
-        await page.screenshot(path=undeclared_outputs_dir() / "conversation-long-offline-recovery.png")
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-long-offline-recovery.png")
     finally:
         await page.context.set_offline(False)
         await document.dispose()

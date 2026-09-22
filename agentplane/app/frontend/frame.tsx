@@ -30,7 +30,7 @@ function summary(event: Event): string {
 }
 
 /**
- * Administrative evidence, not a conversation card. Every entry has its exact generated envelope
+ * Administrative evidence, not a thread card. Every entry has its exact generated envelope
  * available, including native frames: displaying only Native.line would hide timestamps and
  * causal references. The disclosure keeps Raw additive without making every delta a JSON wall.
  */

@@ -657,8 +657,8 @@ ts_library(
 )
 
 ts_library(
-    name = "conversation_store",
-    srcs = ["conversation_store.tsx"],
+    name = "thread_store",
+    srcs = ["thread_store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -672,12 +672,12 @@ ts_library(
 )
 
 ts_library(
-    name = "conversation_store_test",
+    name = "thread_store_test",
     testonly = True,
-    srcs = ["conversation_store.test.tsx"],
+    srcs = ["thread_store.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":conversation_store",
+        ":thread_store",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -735,11 +735,11 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
-        ":conversation_store",
         ":live",
         ":local_commands",
         ":markdown",
         ":retained_disclosures",
+        ":thread_store",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -862,7 +862,6 @@ vitest_bin.vitest_test(
         ":command_state_test",
         ":connections_test",
         ":consent_test",
-        ":conversation_store_test",
         ":frame_test",
         ":json_view_test",
         ":launch_presets_test",
@@ -876,6 +875,7 @@ vitest_bin.vitest_test(
         ":settings_test",
         ":sidebar_test",
         ":thread_groups_test",
+        ":thread_store_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],

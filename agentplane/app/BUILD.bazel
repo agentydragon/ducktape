@@ -5,34 +5,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-py_library(
-    name = "conversation_projection",
-    srcs = ["conversation_projection.py"],
-    deps = [
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
-    ],
-)
-
-py_test(
-    name = "test_conversation_projection",
-    srcs = ["test_conversation_projection.py"],
-    deps = [
-        ":conftest",
-        ":conversation_projection",
-        "//:conftest",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
@@ -66,7 +38,6 @@ py_library(
         ":auth_routes",
         ":bridge",
         ":consent",
-        ":conversation_debug",
         ":decisions",
         ":egress",
         ":electric",
@@ -77,8 +48,10 @@ py_library(
         ":operator_sessions",
         ":presets",
         ":shutdown",
+        ":thread_debug",
         ":trajectory",
         "//agentplane:subjects",
+        "//agentplane/action_service:catalog",
         "//agentplane/action_service:client",
         "//agentplane/action_service:connections",
         "//agentplane/action_service:enrollments",
@@ -460,10 +433,10 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
-        ":conversation_debug",
-        ":conversation_projection",
         ":operator_sessions",
         ":presets",
+        ":thread_debug",
+        ":thread_fold",
         ":trajectory_updates",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
@@ -942,30 +915,6 @@ py_test(
 )
 
 py_test(
-    name = "test_conversation_window_browser",
-    size = "medium",
-    srcs = ["test_conversation_window_browser.py"],
-    args = ["--ignore=agentplane/app/test_thread_browser.py"],
-    data = [
-        "//agentplane/app/frontend:bundle",
-        "@playwright_browsers//:chromium-headless-shell",
-    ],
-    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
-    main = "test_conversation_window_browser.py",
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":test_thread_browser",
-        "//:conftest",
-        "//agentplane/protocol:event_pb2",
-        "//util/testing:undeclared_outputs",
-        "@pypi//playwright",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_action_federation",
     srcs = ["test_action_federation.py"],
     deps = [
@@ -1000,37 +949,23 @@ py_library(
 
 py_test(
     name = "test_electric",
+    size = "medium",
     srcs = ["test_electric.py"],
     deps = [
         ":conftest",
         ":electric",
+        ":thread_fold",
         ":trajectory",
         "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
-    ],
-)
-
-py_test(
-    name = "test_conversation_sync",
-    size = "medium",
-    srcs = ["test_conversation_sync.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":trajectory",
-        "//:conftest",
-        "//agentplane/app/testing:electric_service",
-        "//agentplane/app/testing:replication_process",
-        "//agentplane/app/testing:replication_source",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -1048,39 +983,6 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "conversation_debug",
-    srcs = ["conversation_debug.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "test_conversation_debug",
-    size = "medium",
-    srcs = ["test_conversation_debug.py"],
-    requires_docker = True,
-    deps = [
-        ":action_policy",
-        ":api",
-        ":bridge",
-        ":conftest",
-        ":decisions",
-        ":egress",
-        ":identity",
-        ":inventory",
-        ":live",
-        ":presets",
-        ":trajectory",
-        "//:conftest",
-        "//agentplane/app/testing:replication_source",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
@@ -1106,6 +1008,111 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "thread_debug",
+    srcs = ["thread_debug.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "thread_fold",
+    srcs = ["thread_fold.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "test_thread_debug",
+    size = "medium",
+    srcs = ["test_thread_debug.py"],
+    requires_docker = True,
+    deps = [
+        ":action_policy",
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
+        ":presets",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_thread_fold",
+    srcs = ["test_thread_fold.py"],
+    deps = [
+        ":conftest",
+        ":thread_fold",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_thread_sync",
+    size = "medium",
+    srcs = ["test_thread_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_thread_window_browser",
+    size = "medium",
+    srcs = ["test_thread_window_browser.py"],
+    args = ["--ignore=agentplane/app/test_thread_browser.py"],
+    data = [
+        "//agentplane/app/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    main = "test_thread_window_browser.py",
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":test_thread_browser",
+        "//:conftest",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],

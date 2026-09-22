@@ -2436,6 +2436,28 @@ data:
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
             auth: static_bearer
             bearer_file: /run/secrets/tana-mcp/bearer-token
+      gmail:
+        title: Gmail
+        description: Gmail read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential separate from haku-console's per-Operator connections.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
+      google_calendar:
+        title: Google Calendar
+        description: Google Calendar read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google credential separate from haku-console's per-Operator connections.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2443,7 +2465,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2585,6 +2607,9 @@ spec:
             - mountPath: /run/secrets/tana-mcp
               name: secret-tana-agentydragon-gmail-com-account-pat
               readOnly: true
+            - mountPath: /run/secrets/google-mcp
+              name: secret-google-mcp-bearer
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2706,6 +2731,12 @@ spec:
                 path: bearer-token
             optional: true
             secretName: tana-agentydragon-gmail-com-account-pat
+        - name: secret-google-mcp-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: google-mcp-bearer
 ---
 apiVersion: v1
 kind: Service
@@ -2846,6 +2877,14 @@ spec:
         - ports:
             - port: "8263"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: google-mcp
+            k8s:io.kubernetes.pod.namespace: google-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEntities:
         - remote-node
         - host
@@ -2969,6 +3008,28 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: tana-agentydragon-gmail-com-account-pat
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of google-mcp's own caller-facing bearer.
+  name: google-mcp-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: google-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-google-mcp-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: google-mcp-bearer
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -3317,10 +3378,48 @@ spec:
           - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
+  name: gmail-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        gmail:
+          - drafts_get
+          - drafts_list
+          - filters_get
+          - filters_list
+          - labels_get
+          - labels_list
+          - messages_get
+          - threads_get
+          - threads_list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
+  name: google-calendar-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        google_calendar:
+          - get_event
+          - list_event_instances
+          - list_events
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-reads
   namespace: agentplane-staging
 spec:
@@ -3332,6 +3431,8 @@ spec:
     - github-identity-reads
     - sandbox-self
     - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
 ---
 apiVersion: v1
 kind: Namespace
