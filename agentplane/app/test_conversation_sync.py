@@ -83,7 +83,9 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
 def _reference_of(entity: dict[str, object]) -> dict[str, str]:
     """An entity's text reference, which arrives over the shape log as JSON text."""
     raw = entity["text_ref"]
-    return json.loads(raw) if isinstance(raw, str) else raw  # type: ignore[arg-type,return-value]
+    decoded = json.loads(raw) if isinstance(raw, str) else raw
+    assert isinstance(decoded, dict)
+    return decoded
 
 
 def _body(chunks: list[dict[str, object]], reference: dict[str, str]) -> str:
