@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -693,9 +694,12 @@ async def conversation_payload(
     scope = await store.current_conversation_scope(thread_id)
     if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
         raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
-    # The reference names immutable content, so its identity is a complete validator. The response
-    # stays caller-scoped: revalidating every read keeps a cached body from outliving authorization.
-    etag = f'"{source_id}:{projection_epoch}:{owner_cursor}:{owner_id}:{field}:{generation}:{revision_cursor}"'
+    # The reference names immutable content, so its identity is a complete validator; it is hashed
+    # because a source or item id is arbitrary text and an entity tag is a quoted header value. The
+    # response stays caller-scoped: revalidating every read keeps a body from outliving its caller's
+    # authorization, which a browser's HTTP cache offers no way to clear on logout.
+    identity = (source_id, projection_epoch, str(owner_cursor), owner_id, field, str(generation), str(revision_cursor))
+    etag = f'"{hashlib.sha256("\0".join(identity).encode()).hexdigest()}"'
     headers = {"cache-control": "private, no-cache", "etag": etag}
     if if_none_match == etag:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
