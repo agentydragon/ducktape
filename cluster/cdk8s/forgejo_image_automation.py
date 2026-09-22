@@ -74,6 +74,7 @@ IMAGES = (
     "forgejo-token-rotation",
     "github-api-proxy",
     "github-graphql-rate-exporter",
+    "google-mcp",
     "grocy-mcp-oidc-server",
     "grocy-user-perms-provisioner",
     "ha-mcp-token-provisioner",

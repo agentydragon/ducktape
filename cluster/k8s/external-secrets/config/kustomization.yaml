@@ -7,3 +7,4 @@ resources:
   - external-creds-secret-store.yaml
   - flux-system-secret-store.yaml
   - forgejo-images-secret-store.yaml
+  - google-mcp-secret-store.yaml
