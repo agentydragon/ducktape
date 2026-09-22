@@ -12,11 +12,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal, Self
+from enum import StrEnum
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -141,6 +142,18 @@ class ThreadCheckpoint(Base):
     source_id: Mapped[str] = mapped_column(Text)
     projection_epoch: Mapped[str] = mapped_column(Text)
     through_cursor: Mapped[int] = mapped_column(BigInteger)
+
+
+class EntityKind(StrEnum):
+    VIEW_STATE = "view_state"
+    ITEM = "item"
+    CONFIRMED_INPUT = "confirmed_input"
+    LIFECYCLE = "lifecycle"
+    COMMAND = "command"
+
+
+# Kinds positioned in the thread and paged by cursor; view state and command rows sync whole.
+SEGMENT_KINDS = (EntityKind.ITEM, EntityKind.CONFIRMED_INPUT, EntityKind.LIFECYCLE)
 
 
 class ThreadEntity(Base):
@@ -270,9 +283,6 @@ class ThreadInterestExpiredError(ValueError):
     """A bounded browser interest must be resolved again at the current projection position."""
 
 
-CommandOutcomeValue = Literal["pending", "effected", "failed", "noop"]
-
-
 class ThreadScopeResetError(ValueError):
     """A browser's retained projection source or epoch is no longer current."""
 
@@ -331,7 +341,7 @@ class ThreadPayloadReference(BaseModel):
     projection_epoch: str
     owner_cursor: str
     owner_id: str
-    field: Literal["text", "arguments", "output", "confirmed_input", "command_input"]
+    field: thread_fold.PayloadField
     revision_cursor: str
     generation: str
 
@@ -397,42 +407,61 @@ class ThreadCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
-    outcome: CommandOutcomeValue
+    outcome: thread_fold.CommandOutcome
     outcome_cursor: str | None
     outcome_reason: str | None
 
 
-class ThreadEntityView(BaseModel):
-    """The generated client contract for a synchronized current thread entity row."""
-
+class _ThreadEntityViewFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_id: UUID
     projection_epoch: str
-    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"]
     entity_id: str
     cursor: int
     revision_cursor: int
     pending: bool
     turn_id: str | None
-    state: ThreadViewState | ThreadItemState | ThreadConfirmedInputState | ThreadLifecycleState | ThreadCommandState
     text_ref: ThreadPayloadReference | None
     arguments_ref: ThreadPayloadReference | None
     output_ref: ThreadPayloadReference | None
     input_ref: ThreadPayloadReference | None
 
-    @model_validator(mode="after")
-    def _state_matches_kind(self) -> Self:
-        expected = {
-            "view_state": ThreadViewState,
-            "item": ThreadItemState,
-            "confirmed_input": ThreadConfirmedInputState,
-            "lifecycle": ThreadLifecycleState,
-            "command": ThreadCommandState,
-        }[self.entity_kind]
-        if not isinstance(self.state, expected):
-            raise ValueError(f"entity state does not match {self.entity_kind}")
-        return self
+
+class ThreadViewStateEntityView(_ThreadEntityViewFields):
+    entity_kind: Literal[EntityKind.VIEW_STATE]
+    state: ThreadViewState
+
+
+class ThreadItemEntityView(_ThreadEntityViewFields):
+    entity_kind: Literal[EntityKind.ITEM]
+    state: ThreadItemState
+
+
+class ThreadConfirmedInputEntityView(_ThreadEntityViewFields):
+    entity_kind: Literal[EntityKind.CONFIRMED_INPUT]
+    state: ThreadConfirmedInputState
+
+
+class ThreadLifecycleEntityView(_ThreadEntityViewFields):
+    entity_kind: Literal[EntityKind.LIFECYCLE]
+    state: ThreadLifecycleState
+
+
+class ThreadCommandEntityView(_ThreadEntityViewFields):
+    entity_kind: Literal[EntityKind.COMMAND]
+    state: ThreadCommandState
+
+
+# The generated client contract for a synchronized current thread entity row.
+ThreadEntityView = Annotated[
+    ThreadViewStateEntityView
+    | ThreadItemEntityView
+    | ThreadConfirmedInputEntityView
+    | ThreadLifecycleEntityView
+    | ThreadCommandEntityView,
+    Field(discriminator="entity_kind"),
+]
 
 
 class ThreadView(BaseModel):
@@ -534,7 +563,6 @@ class TrajectoryStore:
     ) -> ThreadEntityInterest | None:
         if not 1 <= page_size <= 100:
             raise ValueError("entity page size must be between 1 and 100")
-        segment_kinds = ("item", "confirmed_input", "lifecycle")
         async with self._sessions() as session:
             checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
@@ -546,7 +574,7 @@ class TrajectoryStore:
             common = (
                 ThreadEntity.thread_id == thread_id,
                 ThreadEntity.projection_epoch == scope.projection_epoch,
-                ThreadEntity.entity_kind.in_(segment_kinds),
+                ThreadEntity.entity_kind.in_(SEGMENT_KINDS),
             )
             if anchor_cursor is not None:
                 newer = list(
@@ -752,7 +780,7 @@ class TrajectoryStore:
 
     async def command_outcomes(
         self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, CommandOutcomeValue | None]:
+    ) -> dict[str, thread_fold.CommandOutcome | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:
@@ -765,7 +793,7 @@ class TrajectoryStore:
                 select(ThreadEntity).where(
                     ThreadEntity.thread_id == thread_id,
                     ThreadEntity.projection_epoch == projection_epoch,
-                    ThreadEntity.entity_kind == "command",
+                    ThreadEntity.entity_kind == EntityKind.COMMAND,
                     ThreadEntity.entity_id.in_(requested),
                 )
             )
@@ -835,14 +863,12 @@ class TrajectoryStore:
                 await _record_thread_fold(session, thread_id, inserted[0].origin.source_id, inserted)
             except EventReplicationError:
                 raise
+            except (thread_fold.ObservationNotUnderstoodError, thread_fold.FoldContractError) as error:
+                raise ThreadFoldError(
+                    f"thread fold failed at cursor {error.cursor}: {error}", cursor=error.cursor
+                ) from error
             except ValueError as error:
-                error_cursor = error.cursor if isinstance(error, thread_fold.ObservationNotUnderstoodError) else None
-                message = (
-                    f"thread fold failed at cursor {error_cursor}: {error}"
-                    if error_cursor is not None
-                    else f"thread fold failed: {error}"
-                )
-                raise ThreadFoldError(message, cursor=error_cursor) from error
+                raise ThreadFoldError(f"thread fold failed: {error}") from error
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
@@ -1003,7 +1029,7 @@ class TrajectoryStore:
             if checkpoint is None:
                 return None
             summary = await session.get(
-                ThreadEntity, (thread_id, checkpoint.projection_epoch, "command", command.command_id)
+                ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.COMMAND, command.command_id)
             )
             if summary is None:
                 return None
@@ -1133,7 +1159,7 @@ async def _fold_state(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == checkpoint.thread_id,
             ThreadEntity.projection_epoch == checkpoint.projection_epoch,
-            ThreadEntity.entity_kind == "view_state",
+            ThreadEntity.entity_kind == EntityKind.VIEW_STATE,
             ThreadEntity.entity_id == "current",
         )
     )
@@ -1162,7 +1188,7 @@ async def _set_operational(
     checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
         return
-    row = await session.get(ThreadEntity, (thread_id, checkpoint.projection_epoch, "view_state", "current"))
+    row = await session.get(ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current"))
     if row is None:
         raise ValueError("thread checkpoint has no current controls")
     view = ThreadViewState.model_validate(row.state)
@@ -1194,102 +1220,74 @@ async def _prior_entities(
             ThreadEntity.thread_id == thread_id,
             ThreadEntity.projection_epoch == checkpoint.projection_epoch,
             (
-                (ThreadEntity.entity_kind == "item") & (ThreadEntity.entity_id.in_(required.item_ids))
-                | (ThreadEntity.entity_kind == "command") & (ThreadEntity.entity_id.in_(required.command_ids))
+                (ThreadEntity.entity_kind == EntityKind.ITEM) & (ThreadEntity.entity_id.in_(required.item_ids))
+                | (ThreadEntity.entity_kind == EntityKind.COMMAND) & (ThreadEntity.entity_id.in_(required.command_ids))
             ),
         )
     )
     items: dict[str, thread_fold.Item | None] = dict.fromkeys(required.item_ids)
     commands: dict[str, thread_fold.CommandSummary | None] = dict.fromkeys(required.command_ids)
     for row in rows:
-        if row.entity_kind == "item":
-            items[row.entity_id] = _fold_item(row)
-        elif row.entity_kind == "command":
-            commands[row.entity_id] = _command_summary(row)
+        if row.entity_kind == EntityKind.ITEM:
+            items[row.entity_id] = _fold_item(ThreadItemEntityView.model_validate(row, from_attributes=True))
+        elif row.entity_kind == EntityKind.COMMAND:
+            commands[row.entity_id] = _command_summary(
+                ThreadCommandEntityView.model_validate(row, from_attributes=True)
+            )
     return thread_fold.PriorEntities(items, commands)
 
 
-def _fold_item(row: ThreadEntity) -> thread_fold.Item:
+def _fold_item(view: ThreadItemEntityView) -> thread_fold.Item:
     return thread_fold.Item(
-        row.projection_epoch,
-        row.entity_id,
-        row.cursor,
-        row.revision_cursor,
-        kind=_json_int(row.state, "kind"),
-        tool_name=_json_str(row.state, "tool_name"),
-        turn_id=row.turn_id,
-        text=_field_value(row.text_ref),
-        arguments=_field_value(row.arguments_ref),
-        output=_field_value(row.output_ref),
-        completion=_optional_str(row.state, "completion"),
-        tool_succeeded=_optional_bool(row.state, "tool_succeeded"),
+        view.projection_epoch,
+        view.entity_id,
+        view.cursor,
+        view.revision_cursor,
+        kind=view.state.kind,
+        tool_name=view.state.tool_name,
+        turn_id=view.turn_id,
+        text=_fold_ref(view.text_ref),
+        arguments=_fold_ref(view.arguments_ref),
+        output=_fold_ref(view.output_ref),
+        completion=_fold_completion(view.state),
     )
 
 
-def _command_summary(row: ThreadEntity) -> thread_fold.CommandSummary:
-    outcome = _json_str(row.state, "outcome")
+def _fold_completion(state: ThreadItemState) -> thread_fold.Completion | None:
+    match state.completion, state.tool_succeeded:
+        case None, None:
+            return None
+        case "text", None:
+            return thread_fold.TextCompletion()
+        case "tool", bool(succeeded):
+            return thread_fold.ToolCompletion(succeeded)
+    raise ValueError(f"invalid item completion: {state.completion=} {state.tool_succeeded=}")
+
+
+def _command_summary(view: ThreadCommandEntityView) -> thread_fold.CommandSummary:
     return thread_fold.CommandSummary(
-        row.projection_epoch,
-        row.entity_id,
-        row.cursor,
-        _json_str(row.state, "operation"),
-        thread_fold.CommandOutcome(outcome),
-        _optional_json_int(row.state, "outcome_cursor"),
-        _optional_str(row.state, "outcome_reason"),
-        _field_value(row.input_ref),
+        view.projection_epoch,
+        view.entity_id,
+        view.cursor,
+        view.state.operation,
+        view.state.outcome,
+        None if view.state.outcome_cursor is None else int(view.state.outcome_cursor),
+        view.state.outcome_reason,
+        _fold_ref(view.input_ref),
     )
 
 
-def _field_value(value: dict[str, object] | None) -> thread_fold.FieldValue | None:
-    return thread_fold.FieldValue(_payload_ref_from_json(value)) if value is not None else None
-
-
-def _payload_ref_from_json(value: dict[str, object]) -> thread_fold.PayloadRef:
-    return thread_fold.PayloadRef(
-        _json_str(value, "projection_epoch"),
-        _json_int(value, "owner_cursor"),
-        _json_str(value, "owner_id"),
-        thread_fold.PayloadField(_json_str(value, "field")),
-        _json_int(value, "revision_cursor"),
-        _json_int(value, "generation"),
-    )
-
-
-def _json_str(value: dict[str, object], key: str) -> str:
-    item = value[key]
-    if not isinstance(item, str):
-        raise ValueError(f"thread entity JSON {key} is not a string")
-    return item
-
-
-def _optional_str(value: dict[str, object], key: str) -> str | None:
-    item = value[key]
-    if item is not None and not isinstance(item, str):
-        raise ValueError(f"thread entity JSON {key} is not a string")
-    return item
-
-
-def _optional_bool(value: dict[str, object], key: str) -> bool | None:
-    item = value[key]
-    if item is not None and not isinstance(item, bool):
-        raise ValueError(f"thread entity JSON {key} is not a boolean")
-    return item
-
-
-def _json_int(value: dict[str, object], key: str) -> int:
-    item = value[key]
-    if isinstance(item, bool) or not isinstance(item, (int, str)):
-        raise ValueError(f"thread entity JSON {key} is not an integer")
-    return int(item)
-
-
-def _optional_json_int(value: dict[str, object], key: str) -> int | None:
-    item = value[key]
-    if item is None:
+def _fold_ref(reference: ThreadPayloadReference | None) -> thread_fold.PayloadRef | None:
+    if reference is None:
         return None
-    if isinstance(item, bool) or not isinstance(item, (int, str)):
-        raise ValueError(f"thread entity JSON {key} is not an integer")
-    return int(item)
+    return thread_fold.PayloadRef(
+        reference.projection_epoch,
+        int(reference.owner_cursor),
+        reference.owner_id,
+        reference.field,
+        int(reference.revision_cursor),
+        int(reference.generation),
+    )
 
 
 @dataclass
@@ -1377,153 +1375,144 @@ def _payload_manifest_key(
 def _entity_rows(
     thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
 ) -> list[dict[str, object]]:
-    entities = [_view_state_entity(thread_id, result.state, operational)]
+    entities: list[ThreadEntityView] = [_view_state_entity(thread_id, result.state, operational)]
     entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
     entities.extend(_confirmed_input_entity(thread_id, value) for value in result.confirmed_input_upserts)
     entities.extend(_lifecycle_entity(thread_id, value) for value in result.lifecycle_upserts)
     entities.extend(_command_entity(thread_id, value) for value in result.command_upserts)
-    return entities
-
-
-def _entity_values(
-    thread_id: UUID,
-    projection_epoch: str,
-    entity_kind: Literal["view_state", "item", "confirmed_input", "lifecycle", "command"],
-    entity_id: str,
-    cursor: int,
-    revision_cursor: int,
-    state: dict[str, object],
-    *,
-    pending: bool = False,
-    turn_id: str | None = None,
-    text_ref: thread_fold.FieldValue | None = None,
-    arguments_ref: thread_fold.FieldValue | None = None,
-    output_ref: thread_fold.FieldValue | None = None,
-    input_ref: thread_fold.FieldValue | None = None,
-) -> dict[str, object]:
-    return ThreadEntityView(
-        thread_id=thread_id,
-        projection_epoch=projection_epoch,
-        entity_kind=entity_kind,
-        entity_id=entity_id,
-        cursor=cursor,
-        revision_cursor=revision_cursor,
-        pending=pending,
-        turn_id=turn_id,
-        state=state,
-        text_ref=_payload_ref_json(text_ref),
-        arguments_ref=_payload_ref_json(arguments_ref),
-        output_ref=_payload_ref_json(output_ref),
-        input_ref=_payload_ref_json(input_ref),
-    ).model_dump(mode="json")
+    return [entity.model_dump(mode="json") for entity in entities]
 
 
 def _view_state_entity(
     thread_id: UUID, state: thread_fold.ViewState, operational: ThreadOperationalState | None = None
-) -> dict[str, object]:
-    return _entity_values(
-        thread_id,
-        state.position.projection_epoch,
-        "view_state",
-        "current",
-        state.position.through_cursor,
-        state.position.through_cursor,
-        {
-            "controls": {
-                "applied_model": state.controls.applied_model,
-                "active_turn_id": state.controls.active_turn_id,
-                "harness_state": state.controls.harness_state,
-            },
-            "unresolved_count": state.unresolved_count,
-            "operational": operational
+) -> ThreadViewStateEntityView:
+    return ThreadViewStateEntityView(
+        thread_id=thread_id,
+        projection_epoch=state.position.projection_epoch,
+        entity_kind=EntityKind.VIEW_STATE,
+        entity_id="current",
+        cursor=state.position.through_cursor,
+        revision_cursor=state.position.through_cursor,
+        pending=False,
+        turn_id=None,
+        state=ThreadViewState(
+            controls=ThreadControlsState(
+                applied_model=state.controls.applied_model,
+                active_turn_id=state.controls.active_turn_id,
+                harness_state=state.controls.harness_state,
+            ),
+            unresolved_count=state.unresolved_count,
+            operational=operational
             or ThreadOperationalState(
                 operational_version="0",
                 status="active",
                 last_verified_cursor=str(state.position.through_cursor),
                 feed_error=None,
             ),
-        },
+        ),
+        text_ref=None,
+        arguments_ref=None,
+        output_ref=None,
+        input_ref=None,
     )
 
 
-def _item_entity(thread_id: UUID, item: thread_fold.Item) -> dict[str, object]:
-    return _entity_values(
-        thread_id,
-        item.projection_epoch,
-        "item",
-        item.item_id,
-        item.cursor,
-        item.revision_cursor,
-        {
-            "kind": item.kind,
-            "tool_name": item.tool_name,
-            "completion": item.completion,
-            "tool_succeeded": item.tool_succeeded,
-        },
+def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityView:
+    tool = item.completion if isinstance(item.completion, thread_fold.ToolCompletion) else None
+    return ThreadItemEntityView(
+        thread_id=thread_id,
+        projection_epoch=item.projection_epoch,
+        entity_kind=EntityKind.ITEM,
+        entity_id=item.item_id,
+        cursor=item.cursor,
+        revision_cursor=item.revision_cursor,
+        pending=False,
         turn_id=item.turn_id,
-        text_ref=item.text,
-        arguments_ref=item.arguments,
-        output_ref=item.output,
+        state=ThreadItemState(
+            kind=item.kind,
+            tool_name=item.tool_name,
+            completion=None if item.completion is None else "tool" if tool is not None else "text",
+            tool_succeeded=None if tool is None else tool.succeeded,
+        ),
+        text_ref=_reference(item.text),
+        arguments_ref=_reference(item.arguments),
+        output_ref=_reference(item.output),
+        input_ref=None,
     )
 
 
-def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> dict[str, object]:
-    return _entity_values(
-        thread_id,
-        value.projection_epoch,
-        "confirmed_input",
-        str(value.cursor),
-        value.cursor,
-        value.revision_cursor,
-        {"harness_message_id": value.harness_message_id, "origin_command_ids": list(value.origin_command_ids)},
+def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
+    return ThreadConfirmedInputEntityView(
+        thread_id=thread_id,
+        projection_epoch=value.projection_epoch,
+        entity_kind=EntityKind.CONFIRMED_INPUT,
+        entity_id=str(value.cursor),
+        cursor=value.cursor,
+        revision_cursor=value.revision_cursor,
+        pending=False,
         turn_id=value.turn_id,
-        input_ref=value.text,
+        state=ThreadConfirmedInputState(
+            harness_message_id=value.harness_message_id, origin_command_ids=list(value.origin_command_ids)
+        ),
+        text_ref=None,
+        arguments_ref=None,
+        output_ref=None,
+        input_ref=_reference(value.text),
     )
 
 
-def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> dict[str, object]:
-    return _entity_values(
-        thread_id,
-        value.projection_epoch,
-        "lifecycle",
-        str(value.cursor),
-        value.cursor,
-        value.revision_cursor,
-        {"observation": value.observation, "event": MessageToDict(value.event)},
+def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> ThreadLifecycleEntityView:
+    return ThreadLifecycleEntityView(
+        thread_id=thread_id,
+        projection_epoch=value.projection_epoch,
+        entity_kind=EntityKind.LIFECYCLE,
+        entity_id=str(value.cursor),
+        cursor=value.cursor,
+        revision_cursor=value.revision_cursor,
+        pending=False,
+        turn_id=None,
+        state=ThreadLifecycleState(observation=value.observation, event=MessageToDict(value.event)),
+        text_ref=None,
+        arguments_ref=None,
+        output_ref=None,
+        input_ref=None,
     )
 
 
-def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> dict[str, object]:
-    return _entity_values(
-        thread_id,
-        value.projection_epoch,
-        "command",
-        value.command_id,
-        value.admission_cursor,
-        value.outcome_cursor or value.admission_cursor,
-        {
-            "operation": value.operation,
-            "outcome": value.outcome,
-            "outcome_cursor": str(value.outcome_cursor) if value.outcome_cursor is not None else None,
-            "outcome_reason": value.outcome_reason,
-        },
+def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> ThreadCommandEntityView:
+    return ThreadCommandEntityView(
+        thread_id=thread_id,
+        projection_epoch=value.projection_epoch,
+        entity_kind=EntityKind.COMMAND,
+        entity_id=value.command_id,
+        cursor=value.admission_cursor,
+        revision_cursor=value.outcome_cursor or value.admission_cursor,
         pending=value.outcome is thread_fold.CommandOutcome.PENDING,
-        input_ref=value.input,
+        turn_id=None,
+        state=ThreadCommandState(
+            operation=value.operation,
+            outcome=value.outcome,
+            outcome_cursor=None if value.outcome_cursor is None else str(value.outcome_cursor),
+            outcome_reason=value.outcome_reason,
+        ),
+        text_ref=None,
+        arguments_ref=None,
+        output_ref=None,
+        input_ref=_reference(value.input),
     )
 
 
-def _payload_ref_json(value: thread_fold.FieldValue | None) -> dict[str, str] | None:
-    if value is None:
+def _reference(reference: thread_fold.PayloadRef | None) -> ThreadPayloadReference | None:
+    if reference is None:
         return None
-    reference = value.reference
-    return {
-        "projection_epoch": reference.projection_epoch,
-        "owner_cursor": str(reference.owner_cursor),
-        "owner_id": reference.owner_id,
-        "field": reference.field,
-        "revision_cursor": str(reference.revision_cursor),
-        "generation": str(reference.generation),
-    }
+    return ThreadPayloadReference(
+        projection_epoch=reference.projection_epoch,
+        owner_cursor=str(reference.owner_cursor),
+        owner_id=reference.owner_id,
+        field=reference.field,
+        revision_cursor=str(reference.revision_cursor),
+        generation=str(reference.generation),
+    )
 
 
 async def _evidence_entity_cursor(

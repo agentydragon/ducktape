@@ -11,6 +11,7 @@ import json
 from typing import Any, cast
 
 import httpx
+from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
@@ -46,10 +47,14 @@ def openapi_document() -> dict[str, Any]:
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):
         raise ValueError("OpenAPI document has no schema components")
-    for model in (ThreadEntityView, EntityInterestResponse, PayloadInterestResponse):
-        schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
+    for name, adapter in (
+        ("ThreadEntityView", TypeAdapter(ThreadEntityView)),
+        ("EntityInterestResponse", TypeAdapter(EntityInterestResponse)),
+        ("PayloadInterestResponse", TypeAdapter(PayloadInterestResponse)),
+    ):
+        schema = adapter.json_schema(ref_template="#/components/schemas/{model}")
         components["schemas"].update(schema.pop("$defs", {}))
-        components["schemas"][model.__name__] = schema
+        components["schemas"][name] = schema
     return document
 
 

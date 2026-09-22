@@ -12,13 +12,15 @@ from agentplane.app.thread_fold import (
     CommandSummary,
     EventBatch,
     EvidenceAssociation,
-    FieldValue,
+    FoldContractError,
     Item,
     ObservationNotUnderstoodError,
     PayloadField,
     PayloadRef,
     PriorEntities,
     ProjectionBatch,
+    TextCompletion,
+    ToolCompletion,
     ViewState,
     advance,
     initial,
@@ -202,12 +204,12 @@ def test_parallel_old_item_updates_keep_positions_fields_and_evidence(script: li
     assert answer.turn_id == first.turn_id == second.turn_id == "turn-1"
     assert first.arguments is not None
     assert first.output is not None
-    assert store.payloads[first.arguments.reference] == '{"path":"x"}'
-    assert store.payloads[first.output.reference] == ""
-    assert first.output.reference.field is PayloadField.OUTPUT
-    assert first.arguments.reference.field is PayloadField.ARGUMENTS
-    assert first.completion == "tool"
-    assert first.tool_succeeded is False
+    assert store.payloads[first.arguments] == '{"path":"x"}'
+    assert store.payloads[first.output] == ""
+    assert first.output.field is PayloadField.OUTPUT
+    assert first.arguments.field is PayloadField.ARGUMENTS
+    assert first.completion == ToolCompletion(succeeded=False)
+    assert answer.completion == TextCompletion()
     assert {e.observation_cursor for e in store.evidence if e.entity_cursor == first.cursor} == {6, 7, 10, 11, 12}
 
 
@@ -216,9 +218,8 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     store.apply(
         [entry(1, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="streamed")))]
     )
-    output = store.items["tool"].output
-    assert output is not None
-    streamed = output.reference
+    streamed = store.items["tool"].output
+    assert streamed is not None
     store.apply(
         [
             entry(
@@ -231,9 +232,8 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
             )
         ]
     )
-    output = store.items["tool"].output
-    assert output is not None
-    completed = output.reference
+    completed = store.items["tool"].output
+    assert completed is not None
     assert store.payloads[completed] == ""
     assert completed.generation == completed.revision_cursor == 2
     assert completed.generation != streamed.generation
@@ -284,10 +284,10 @@ def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
 
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
-    with pytest.raises(ValueError, match="preload"):
+    with pytest.raises(FoldContractError, match="missing prior item lookup"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}))
     future = Item(EPOCH, "item", 1, 2)
-    with pytest.raises(ValueError, match="prior item"):
+    with pytest.raises(FoldContractError, match="invalid prior item"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}))
 
 
@@ -296,14 +296,10 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     store.apply([entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))])
     prior = store.items["item"]
     invalid = Item(
-        EPOCH,
-        "item",
-        prior.cursor,
-        prior.revision_cursor,
-        text=FieldValue(PayloadRef(EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)),
+        EPOCH, "item", prior.cursor, prior.revision_cursor, text=PayloadRef(EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
-    with pytest.raises(ValueError, match="owner revision"):
+    with pytest.raises(FoldContractError, match="owner revision"):
         advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}))
     unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state

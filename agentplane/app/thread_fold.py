@@ -13,9 +13,19 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 
 
 class ObservationNotUnderstoodError(ValueError):
-    def __init__(self, cursor: int, observation: str | None) -> None:
+    """This fold does not model an observation the runner recorded."""
+
+    def __init__(self, cursor: int, observation: str) -> None:
         self.cursor = cursor
-        super().__init__(f"uninterpreted semantic observation {observation!r} at cursor {cursor}")
+        super().__init__(f"uninterpreted semantic observation {observation!r}")
+
+
+class FoldContractError(ValueError):
+    """The batch, or the rows preloaded for it, break the fold's contract: a caller bug, not a newer runner."""
+
+    def __init__(self, cursor: int, message: str) -> None:
+        self.cursor = cursor
+        super().__init__(message)
 
 
 class PayloadField(StrEnum):
@@ -51,11 +61,6 @@ class PayloadRef:
 
 
 @dataclass(frozen=True)
-class FieldValue:
-    reference: PayloadRef
-
-
-@dataclass(frozen=True)
 class PayloadOwner:
     """Identity shared by an item field, command input, or confirmed input."""
 
@@ -63,6 +68,19 @@ class PayloadOwner:
     cursor: int
     owner_id: str
     revision_cursor: int
+
+
+@dataclass(frozen=True)
+class TextCompletion:
+    pass
+
+
+@dataclass(frozen=True)
+class ToolCompletion:
+    succeeded: bool
+
+
+Completion = TextCompletion | ToolCompletion
 
 
 @dataclass(frozen=True)
@@ -74,11 +92,10 @@ class Item:
     kind: int = event_pb2.ITEM_KIND_UNSPECIFIED
     tool_name: str = ""
     turn_id: str | None = None
-    text: FieldValue | None = None
-    arguments: FieldValue | None = None
-    output: FieldValue | None = None
-    completion: str | None = None
-    tool_succeeded: bool | None = None
+    text: PayloadRef | None = None
+    arguments: PayloadRef | None = None
+    output: PayloadRef | None = None
+    completion: Completion | None = None
 
 
 @dataclass(frozen=True)
@@ -89,7 +106,7 @@ class ConfirmedInput:
     harness_message_id: str
     origin_command_ids: tuple[str, ...]
     turn_id: str | None
-    text: FieldValue
+    text: PayloadRef
 
 
 @dataclass(frozen=True)
@@ -110,7 +127,7 @@ class CommandSummary:
     outcome: CommandOutcome = CommandOutcome.PENDING
     outcome_cursor: int | None = None
     outcome_reason: str | None = None
-    input: FieldValue | None = None
+    input: PayloadRef | None = None
 
 
 @dataclass(frozen=True)
@@ -287,7 +304,7 @@ class _Fold:
                 (PayloadField.OUTPUT, prior.output),
             ):
                 if value is not None:
-                    self._validate_ref(value.reference, owner, field, preloaded=True)
+                    self._validate_ref(value, owner, field, preloaded=True)
             item = replace(prior)
         self.items[item_id] = item
         return item
@@ -298,16 +315,8 @@ class _Fold:
         return item
 
     def _write(
-        self,
-        owner: PayloadOwner,
-        current: FieldValue | None,
-        cursor: int,
-        field: PayloadField,
-        text: str,
-        *,
-        append: bool,
-    ) -> FieldValue:
-        base = current.reference if current is not None else None
+        self, owner: PayloadOwner, base: PayloadRef | None, cursor: int, field: PayloadField, text: str, *, append: bool
+    ) -> PayloadRef:
         if base is not None:
             self._validate_ref(base, owner, field, preloaded=False)
         reference = PayloadRef(
@@ -319,7 +328,7 @@ class _Fold:
             base.generation if append and base else cursor,
         )
         self.payload_writes.append(AppendPayload(base, reference, text) if append else ReplacePayload(reference, text))
-        return FieldValue(reference)
+        return reference
 
     def _item_write(self, cursor: int, item_id: str, field: PayloadField, text: str, *, append: bool) -> Item:
         item = self._item(cursor, item_id)
@@ -362,8 +371,7 @@ class _Fold:
             or not 0 < prior.admission_cursor <= self.initial_through_cursor
         ):
             raise ValueError(f"invalid prior command: {command_id}")
-        if prior.input is not None:
-            reference = prior.input.reference
+        if (reference := prior.input) is not None:
             owner = PayloadOwner(prior.projection_epoch, prior.admission_cursor, command_id, prior.admission_cursor)
             try:
                 self._validate_ref(reference, owner, PayloadField.COMMAND_INPUT, preloaded=True)
@@ -509,13 +517,13 @@ class _Fold:
                         item = self._item_write(
                             cursor, completed.item_id, PayloadField.TEXT, completed.text, append=False
                         )
-                        item = self._save_item(replace(item, completion="text", tool_succeeded=None), cursor)
+                        item = self._save_item(replace(item, completion=TextCompletion()), cursor)
                     case "tool":
                         item = self._item_write(
                             cursor, completed.item_id, PayloadField.OUTPUT, completed.tool.output, append=False
                         )
                         item = self._save_item(
-                            replace(item, completion="tool", tool_succeeded=completed.tool.succeeded), cursor
+                            replace(item, completion=ToolCompletion(completed.tool.succeeded)), cursor
                         )
                     case _:
                         raise ObservationNotUnderstoodError(cursor, "item_completed.outcome")
@@ -567,9 +575,6 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
         raise ValueError("batch source does not match projection")
     if batch.after_cursor != position.through_cursor:
         raise ValueError("batch checkpoint does not match projection")
-    required = touched_keys(batch)
-    if required.item_ids - prior.items.keys() or required.command_ids - prior.commands.keys():
-        raise ValueError("worker did not preload every touched key")
     fold = _Fold(state, PriorEntities(dict(prior.items), dict(prior.commands)))
     for supplied in batch.entries:
         entry = event_log_pb2.EventEntry.FromString(supplied.SerializeToString())
@@ -583,7 +588,7 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
         except ObservationNotUnderstoodError:
             raise
         except ValueError as error:
-            raise ObservationNotUnderstoodError(entry.cursor, str(error)) from error
+            raise FoldContractError(entry.cursor, str(error)) from error
     return ProjectionBatch(
         fold.state,
         tuple(fold.items.values()),

@@ -49,6 +49,7 @@ py_library(
         ":presets",
         ":shutdown",
         ":thread_debug",
+        ":thread_fold",
         ":trajectory",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -355,6 +356,7 @@ py_library(
         ":presets",
         ":trajectory",
         "@pypi//httpx",
+        "@pypi//pydantic",
     ],
 )
 
