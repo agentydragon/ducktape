@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
+from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
@@ -358,6 +359,11 @@ async def mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView
 @connections_router.get("/mcp-servers")
 async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
     return await client.mcp_linkages()
+
+
+@connections_router.get("/action-groups")
+async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
+    return await client.action_groups()
 
 
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")

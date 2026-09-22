@@ -190,6 +190,8 @@ Backend availability is independent of Action Service readiness and HTTP/OAuth a
 Malformed local bindings fail startup; unavailable peers, runtime credentials, linkage, and
 invalid discovered catalogs affect only their group and recover without a service restart.
 Discovery exposes replica-local, credential-safe lifecycle diagnostics, never stale runnable tools.
+The same diagnostics are also available to operators, for every mcp-kind group regardless of
+whether it uses OAuth linkage or a mounted credential.
 
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
