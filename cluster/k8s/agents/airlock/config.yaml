@@ -58,7 +58,7 @@ oauth:
         access_type: offline
         prompt: consent
     # A separate provider, not a widened `google` grant: the `google` access token above is
-    # ESO-mirrored into claude-sandbox/haku-sandbox directly (see google-access-token-eso.yaml),
+    # ESO-mirrored into haku-sandbox directly (see google-access-token-eso.yaml),
     # so adding write scopes to that same token would hand write-capable Gmail/Calendar to every
     # holder of it. This provider's token is instead mirrored only into the google-mcp namespace
     # (google-write-access-token-eso.yaml), which fronts it behind an approval-gated MCP server
