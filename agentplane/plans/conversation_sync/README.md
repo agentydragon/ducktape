@@ -11,12 +11,12 @@ deployed.
 
 Against deployed `agentplane-testing`, on threads whose shapes had never been created:
 
-| Stage                                     | thread A   | thread B   |
-| ----------------------------------------- | ---------- | ---------- |
-| `/sync/interest`                          | 0.54 s     | 0.37 s     |
-| `/sync/entities` (offset=now + snapshot)  | 0.89 s     | 0.81 s     |
-| 3 bodies (`payload-interest` + `-chunks`) | 2.90 s     | 2.53 s     |
-| **total**                                 | **4.33 s** | **3.72 s** |
+| Stage | thread A | thread B |
+| ----------------------------------------- | ---------- | ----------- | ---------- |
+| `/sync/interest` | 0.54 s | 0.37 s |
+| `/sync/entities` (offset=now + snapshot) | 0.89 s | 0.81 s |
+| 3 bodies (`payload-interest` + `-chunks`) | 2.90 s | 2.53 s |
+| **total** | **4.33 s** | **3.72 s** |
 
 A cold entity shape took 0.37–0.62 s and a warm one 0.36–0.53 s — **indistinguishable**, so what is
 measured either way is a round trip, and shape creation was never the cost. The cost is **request
@@ -31,6 +31,9 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 - **<requirements.md>** — what any design has to do, with stable IDs (`P1`, `E4`, `D2`…) that the
   options cite. Read this first; it is the thing to argue with.
 - **<option_poll.md>** — the app answers HTTP; the client polls. `A0` whole conversation, `A1` delta.
+- **<option_window_poll.md>** — the client polls a fixed range of positions and fetches bodies by
+  immutable reference. The rung between `A0` and `A1`, and the simplest thing that meets the
+  must-haves.
 - **<option_moving_window.md>** — one watch over a range the client moves, paying only the
   difference. The protocol D1 describes.
 - **<option_app_push.md>** — the same delta, pushed over SSE, reusing machinery the app already has.
@@ -45,33 +48,33 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 `+` meets it, `~` meets it with work or a caveat, `−` fails it, `?` unknown without investigation.
 Cells are judgements from the option files, not measurements.
 
-| Req                          | A0 poll all | A1 poll delta | Moving window | SSE push | Electric today | Electric pages  |
-| ---------------------------- | ----------- | ------------- | ------------- | -------- | -------------- | --------------- |
-| P1 tail-first open           | −           | +             | +             | +        | +              | +               |
-| P2 live updates              | ~ (1 s)     | +             | +             | +        | +              | +               |
-| P3 history can change        | +           | +             | +             | +        | +              | +               |
-| P4 scroll back               | + (free)    | +             | +             | +        | ~              | +               |
-| **P5 place survives**        | +           | +             | +             | +        | **−**          | +               |
-| P6 disconnect resumes        | +           | +             | +             | ~        | **−**          | +               |
-| P7 stale epoch refused       | +           | +             | +             | +        | +              | +               |
-| **P8 client picks content**  | +           | +             | +             | +        | **−**          | ~ (shape/field) |
-| P9 command reconcile         | +           | +             | +             | +        | +              | +               |
-| S1 body ≤ its own revision   | +           | +             | +             | +        | ~              | +               |
-| S2 ordering                  | +           | +             | +             | +        | +              | +               |
-| S3 caught-up signal          | +           | +             | +             | +        | +              | ~               |
-| S4 no lost update            | +           | +             | +             | +        | +              | +               |
-| **E1 O(1) requests on open** | +           | +             | +             | +        | **−**          | +               |
-| E2 bytes bounded             | −           | +             | +             | +        | +              | +               |
-| E3 streaming ≈0 requests     | +           | +             | +             | +        | +              | +               |
-| **E4 scroll loads only new** | n/a         | −             | **+**         | +        | −              | +               |
-| E5 no re-transfer            | −           | ~             | +             | +        | −              | +               |
-| O1 bounded/shared state      | +           | +             | +             | −        | −              | ~               |
-| O2 horizontal scale          | +           | +             | +             | ~        | +              | +               |
-| O3 debuggable                | +           | +             | +             | +        | ~              | ~               |
-| **O4 few moving parts**      | +           | +             | +             | ~        | −              | **−**           |
-| **D1 no overlap re-sent**    | −           | −             | **+**         | +        | **−**          | **+**           |
-| D2 no windowed/lazy seam     | +           | +             | +             | +        | −              | −               |
-| D3 incrementally reachable   | +           | +             | +             | ~        | n/a            | −               |
+| Req                          | A0 poll all | Window poll | A1 poll delta | Moving window | SSE push | Electric today | Electric pages  |
+| ---------------------------- | ----------- | ----------- | ------------- | ------------- | -------- | -------------- | --------------- |
+| P1 tail-first open           | −           | +           | +             | +             | +        | +              | +               |
+| P2 live updates              | ~ (1 s)     | ~ (1 s)     | +             | +             | +        | +              | +               |
+| P3 history can change        | +           | +           | +             | +             | +        | +              | +               |
+| P4 scroll back               | + (free)    | +           | +             | +             | +        | ~              | +               |
+| **P5 place survives**        | +           | +           | +             | +             | +        | **−**          | +               |
+| P6 disconnect resumes        | +           | +           | +             | +             | ~        | **−**          | +               |
+| P7 stale epoch refused       | +           | +           | +             | +             | +        | +              | +               |
+| **P8 client picks content**  | +           | +           | +             | +             | +        | **−**          | ~ (shape/field) |
+| P9 command reconcile         | +           | +           | +             | +             | +        | +              | +               |
+| S1 body ≤ its own revision   | +           | +           | +             | +             | +        | ~              | +               |
+| S2 ordering                  | +           | +           | +             | +             | +        | +              | +               |
+| S3 caught-up signal          | +           | +           | +             | +             | +        | +              | ~               |
+| S4 no lost update            | +           | **+**       | +             | +             | +        | +              | +               |
+| **E1 O(1) requests on open** | +           | +           | +             | +             | +        | **−**          | +               |
+| E2 bytes bounded             | −           | +           | +             | +             | +        | +              | +               |
+| E3 streaming ≈0 requests     | +           | +           | +             | +             | +        | +              | +               |
+| **E4 scroll loads only new** | n/a         | −           | −             | **+**         | +        | −              | +               |
+| E5 no re-transfer            | −           | −           | ~             | +             | +        | −              | +               |
+| O1 bounded/shared state      | +           | **+**       | +             | +             | −        | −              | ~               |
+| O2 horizontal scale          | +           | +           | +             | +             | ~        | +              | +               |
+| O3 debuggable                | +           | +           | +             | +             | +        | ~              | ~               |
+| **O4 few moving parts**      | +           | **+**       | +             | +             | ~        | −              | **−**           |
+| **D1 no overlap re-sent**    | −           | −           | −             | **+**         | +        | **−**          | **+**           |
+| D2 no windowed/lazy seam     | +           | +           | +             | +             | +        | −              | −               |
+| D3 incrementally reachable   | +           | **+**       | +             | +             | ~        | n/a            | −               |
 
 ### What the matrix says
 
@@ -83,6 +86,11 @@ Cells are judgements from the option files, not measurements.
   without `have`.
 - **A0 fails D1 hardest**, which is easy to miss because it has no window to move: it re-sends the
   whole conversation on every poll, held or not.
+- **The window poll is the cheapest column that clears the must-haves**, and every cell it fails is
+  the same missing idea. `E4`, `E5` and `D1` are one omission — the client never says what it holds
+  — and <option_window_poll.md> makes that omission the next rung rather than a defect. It is also
+  the only option that gets `S4` by construction: it filters by position and has no freshness axis
+  to conflate with one.
 - **Nothing here is disqualified.** No requirement rules out a family; the differences are in what
   each costs to satisfy. P8 in particular is reachable with Electric, by giving each payload field
   its own content shape and letting the client subscribe to the ones it wants — at the price of

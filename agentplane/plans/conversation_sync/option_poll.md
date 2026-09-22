@@ -20,6 +20,10 @@ second is `O(1)`, and streaming costs nothing extra because it is the same reque
 
 A conditional `If-None-Match` makes the idle case free and changes none of that.
 
+A rung sits between A0 and A1 that neither describes: polling a fixed range of **positions**
+wholesale, with bodies fetched by immutable reference. It keeps everything A0 gets for free while
+bounding bytes, and it needs no `since`. See <option_window_poll.md>.
+
 **What it is for:** a floor. Any option that costs more complexity than this owes the difference in
 requirements it satisfies that this does not — which for a long conversation is E2 and E5, and not
 much else. It is also the fastest thing to build if the current implementation needs to be replaced
