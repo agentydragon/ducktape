@@ -158,7 +158,7 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
     async def upstream(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         if request.headers.get("if-none-match") == '"shape-7_0"':
-            return httpx.Response(304, headers={"etag": '"shape-7_0"'})
+            return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
 
     app, electric = make_app(httpx.MockTransport(upstream), store)

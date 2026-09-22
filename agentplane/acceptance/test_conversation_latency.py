@@ -15,6 +15,7 @@ is timed separately so a breach names the stage instead of the total.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -93,11 +94,12 @@ async def _open_conversation(http: httpx.AsyncClient, thread_id: str) -> Convers
     timings.entities_seconds = time.monotonic() - started
 
     rows = [message["value"] for message in snapshot.json()["data"] if "value" in message]
+    # A JSONB column arrives as its own JSON text over the shape log, not as a decoded object.
     references = [
-        reference
+        json.loads(raw) if isinstance(raw, str) else raw
         for row in rows
         for key in ("text_ref", "input_ref", "arguments_ref", "output_ref")
-        if (reference := row.get(key)) is not None
+        if (raw := row.get(key)) is not None
     ]
     started = time.monotonic()
     for reference in references:

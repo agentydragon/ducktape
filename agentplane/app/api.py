@@ -16,7 +16,7 @@ import httpx2
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
@@ -633,10 +633,21 @@ async def thread_command(
 
 # A conversation cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
 # string -- the representation every conversation response model already publishes it in. Declaring
-# it `int` here would put `integer` in the schema and make every browser caller cast past it.
+# it `int` here would put `integer` in the schema and make every browser caller cast past it. The
+# range check the string form loses is restored here: the column is a signed 64-bit integer, and a
+# value past it must be refused as a bad request rather than reaching the driver as one.
 _DECIMAL = r"^\d+$"
-DecimalCursor = Annotated[str, Query(pattern=_DECIMAL)]
-DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL)]
+_INT64_MAX = 2**63 - 1
+
+
+def _within_int64(value: str) -> str:
+    if int(value) > _INT64_MAX:
+        raise ValueError(f"cursor is outside the signed 64-bit range: {value}")
+    return value
+
+
+DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_int64)]
+DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
 
 
 @threads.get("/{thread_id}/conversation/evidence")
