@@ -40,8 +40,9 @@ from agentplane.runner import protocol_pb2
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
-# Staging's seeded policy and the credential it substitutes
-# (cluster/k8s/agentplane-staging/agentplane.k8s.yaml, EgressPolicy "github-public").
+# The seeded policy of the deployment under test, and the credential it substitutes
+# (cluster/k8s/agentplane-testing/agentplane.k8s.yaml, EgressPolicy "github-public"; staging
+# declares its own copy, which is what an explicit AGENTPLANE_ACCEPTANCE_NAMESPACE run exercises).
 GITHUB_PUBLIC = "github-public"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
@@ -55,10 +56,10 @@ ACCEPTANCE_NAMESPACE = os.environ.get("AGENTPLANE_ACCEPTANCE_NAMESPACE", "agentp
 RULES_URL = f"http://agentplane-egress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
-# Named by no policy staging has, so it is refused for want of a rule rather than by one.
+# Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/agentplane.k8s.yaml, EgressPolicy "basic"). It holds
+# (cluster/k8s/agentplane-testing/agentplane.k8s.yaml, EgressPolicy "basic"). It holds
 # the LiteLLM key and is granted by the deployment's `default_policies` rather than by a caller,
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.

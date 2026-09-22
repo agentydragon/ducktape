@@ -102,16 +102,7 @@ async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(
-            client,
-            lambda thread_id, anchor, before, size: store.conversation_entity_interest(
-                thread_id, anchor_cursor=anchor, before_cursor=before, page_size=size
-            ),
-            lambda thread_id, owner_cursor, owner_id, field, generation: store.conversation_payload_generation(
-                thread_id, owner_cursor=owner_cursor, owner_id=owner_id, field=field, generation=generation
-            ),
-            store.current_conversation_scope,
-        )
+        yield ElectricProxy(client, store)
 
 
 @pytest.fixture

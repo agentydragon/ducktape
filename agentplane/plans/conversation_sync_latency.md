@@ -111,6 +111,34 @@ lost-response cases cover, so it stays behind the entity work.
 is not worth a schema change and W1 is the whole story; if it is seconds, this is the fix and it
 does not depend on W1 landing. The measurement below answers that.
 
+### W9 — collapse content back onto one mechanism
+
+`GET /threads/{id}/conversation/payload` exists because a payload shape is scoped to one field of
+one segment, so a 30-item tail wanted 30 shape creations. Leaving Electric was the wrong answer to
+that; **widening the shape** is the right one. The chunk table carries `owner_cursor`, so one shape
+over `owner_cursor >= tail_from AND field IN ('text','confirmed_input')` — the entity interest's own
+bounds — covers every body the page renders, in one shape rather than thirty, and a separately
+selected shape still serves reasoning, arguments and output when a disclosure opens them.
+
+That also removes an assumption this integration should not be making. `projected_session.tsx`
+derives `follow` from `live && completion === null`, so a completed item is treated as final. It is
+not wrong today — a field that gains a revision rewrites its entity row, which arrives over Electric
+and re-triggers the read — but the conversation model says existing items can change anywhere in the
+history, and a design that did not distinguish "streaming" from "complete" would not need to be
+argued about. On the window shape the distinction disappears: a body updates because its chunks did.
+
+Two things block it:
+
+- **Reasoning has no field of its own.** `PayloadField` is `text, arguments, output,
+confirmed_input, command_input`, and a reasoning item writes to `text`, distinguished only by the
+  item's `kind` on its entity row. A window shape on `field = 'text'` would therefore pull every
+  reasoning body, which the requirements say may stay omitted until requested, and which
+  `ContentSelection` already names as its own selectable kind. Adding `PayloadField.REASONING`
+  changes stored rows, so it wants an epoch bump — the same one W5 needs.
+- **It is only a win once a shape is cheap or rare.** Two cold shapes per open is worse than one
+  plus a body read per item while creation costs what it currently costs. So this lands after W1 or
+  W5, not before, and doing it first would be a regression.
+
 ## Measurement gates
 
 None of the landed work is accepted on a passing build.

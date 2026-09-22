@@ -270,18 +270,7 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(
-                electric_http,
-                lambda thread_id, anchor, before, page_size: store.conversation_entity_interest(
-                    thread_id, anchor_cursor=anchor, before_cursor=before, page_size=page_size
-                ),
-                lambda thread_id, owner_cursor, owner_id, field, generation: store.conversation_payload_generation(
-                    thread_id, owner_cursor=owner_cursor, owner_id=owner_id, field=field, generation=generation
-                ),
-                store.current_conversation_scope,
-            )
-            if electric_url is not None
-            else None,
+            electric=ElectricProxy(electric_http, store) if electric_url is not None else None,
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
