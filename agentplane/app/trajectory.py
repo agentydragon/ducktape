@@ -89,17 +89,15 @@ class Thread(Base):
 
 class Event(Base):
     __tablename__ = "event"
-    __table_args__ = (
-        Index("ix_event_thread_at", "thread_id", "at"),
-        Index("ix_event_thread_origin", "thread_id", "origin_source_id", "origin_sequence"),
-    )
+    __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
+    # `record` admits an entry only where `origin.sequence == cursor`, so this key is also the
+    # runner's follow sequence that `ThreadNativeLink.source_sequence` names.
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     origin_source_id: Mapped[str] = mapped_column(Text)
-    origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
@@ -707,7 +705,7 @@ class TrajectoryStore:
                         (
                             (Event.thread_id == ThreadNativeLink.thread_id)
                             & (Event.origin_source_id == ThreadNativeLink.source_id)
-                            & (Event.origin_sequence == ThreadNativeLink.source_sequence)
+                            & (Event.cursor == ThreadNativeLink.source_sequence)
                             & (Event.kind == "native")
                         ),
                     )
@@ -749,9 +747,7 @@ class TrajectoryStore:
         ):
             raise ValueError("invalid chronological observation page bounds")
         async with self._sessions() as session:
-            query = select(Event.cursor, Event.origin_source_id, Event.origin_sequence, Event.kind).where(
-                Event.thread_id == thread_id
-            )
+            query = select(Event.cursor, Event.origin_source_id, Event.kind).where(Event.thread_id == thread_id)
             if after_cursor is not None:
                 query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
             else:
@@ -773,12 +769,7 @@ class TrajectoryStore:
             )
             return ObservationPage(
                 observations=[
-                    ArchivedObservation(
-                        cursor=str(row.cursor),
-                        source_id=row.origin_source_id,
-                        source_sequence=str(row.origin_sequence),
-                        kind=row.kind,
-                    )
+                    ArchivedObservation(cursor=str(row.cursor), source_id=row.origin_source_id, kind=row.kind)
                     for row in rows
                 ],
                 next_before_cursor=str(rows[0].cursor) if has_older else None,
@@ -868,7 +859,6 @@ class TrajectoryStore:
                         thread_id=thread_id,
                         cursor=entry.cursor,
                         origin_source_id=entry.origin.source_id,
-                        origin_sequence=entry.origin.sequence,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
                         payload=payload,

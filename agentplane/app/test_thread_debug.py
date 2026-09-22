@@ -167,7 +167,6 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         rows = debug_tail.json()["observations"]
         assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
         assert [row["cursor"] for row in rows] == ["10", "11", "12"]
-        assert [row["source_sequence"] for row in rows] == ["10", "11", "12"]
         assert all(row["source_id"] == scope.source_id for row in rows)
         assert "entry" not in rows[0]
         assert stderr not in debug_tail.text
