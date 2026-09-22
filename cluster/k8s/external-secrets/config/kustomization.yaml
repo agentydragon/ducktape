@@ -4,7 +4,6 @@ resources:
   - external-secrets-config.yaml
   - activitywatch-secret-store.yaml
   - airlock-secret-store.yaml
-  - claude-sandbox-secret-store.yaml
   - external-creds-secret-store.yaml
   - flux-system-secret-store.yaml
   - forgejo-images-secret-store.yaml

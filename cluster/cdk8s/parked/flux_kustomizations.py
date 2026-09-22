@@ -310,7 +310,7 @@ def haku_dispatch(
 def haku_managed_agent(
     chart: Chart,
     forgejo_images: Kustomization,
-    agent_shared_secrets: Kustomization,
+    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     haku_namespace: Kustomization,
     haku_rbac: Kustomization,
@@ -344,9 +344,9 @@ def haku_managed_agent(
             ],
             depends_on=flux_kustomization_depends_on_many(
                 forgejo_images,
-                # provides ankiweb-credentials in claude-sandbox
-                agent_shared_secrets,
-                # provides the claude-sandbox SecretStore
+                # provides the canonical AnkiWeb credential and source-side grant
+                external_creds,
+                # provides the external-creds ClusterSecretStore
                 external_secrets_config,
                 haku_namespace,
                 haku_rbac,

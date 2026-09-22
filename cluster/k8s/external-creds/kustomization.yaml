@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - external-creds.k8s.yaml
   - analysis-ai.sops.yaml
+  - ankiweb-credentials.sops.yaml
   - anthropic-haku.sops.yaml
   - aws-route53-cert-manager.sops.yaml
   - aws-route53-dns-automation.sops.yaml
