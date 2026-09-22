@@ -502,7 +502,6 @@ class ThreadRename(BaseModel):
 class CommandReconciliationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     command_ids: list[str] = Field(max_length=128)
 
@@ -517,7 +516,6 @@ class CommandReconciliationEntry(BaseModel):
 class CommandReconciliationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     commands: list[CommandReconciliationEntry]
 
@@ -569,11 +567,10 @@ async def reconcile_commands(
     store: Store, thread_id: UUID, body: CommandReconciliationRequest
 ) -> CommandReconciliationResponse:
     try:
-        outcomes = await store.command_outcomes(thread_id, body.source_id, body.projection_epoch, body.command_ids)
+        outcomes = await store.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
     except ThreadScopeResetError as error:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
     return CommandReconciliationResponse(
-        source_id=body.source_id,
         projection_epoch=body.projection_epoch,
         commands=[
             CommandReconciliationEntry(command_id=command_id, outcome=outcome)
@@ -658,7 +655,6 @@ DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_withi
 async def thread_evidence(
     thread_id: UUID,
     store: Store,
-    source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
@@ -667,7 +663,6 @@ async def thread_evidence(
 ) -> EvidencePage:
     return await store.evidence(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
@@ -681,7 +676,6 @@ async def thread_native_frames(
     thread_id: UUID,
     observation_cursor: DecimalCursorPath,
     store: Store,
-    source_id: str,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
@@ -690,7 +684,6 @@ async def thread_native_frames(
 ) -> NativeFramePage:
     return await store.native_frames(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,

@@ -286,7 +286,7 @@ def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_ba
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
     with pytest.raises(ValueError, match="preload"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}))
-    future = Item(SOURCE, EPOCH, "item", 1, 2)
+    future = Item(EPOCH, "item", 1, 2)
     with pytest.raises(ValueError, match="prior item"):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}))
 
@@ -296,12 +296,11 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     store.apply([entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))])
     prior = store.items["item"]
     invalid = Item(
-        SOURCE,
         EPOCH,
         "item",
         prior.cursor,
         prior.revision_cursor,
-        text=FieldValue(PayloadRef(SOURCE, EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)),
+        text=FieldValue(PayloadRef(EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)),
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(ValueError, match="owner revision"):

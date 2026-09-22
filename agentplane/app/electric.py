@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 _PAGE_SIZE = 30
 _SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
 _ENTITY_COLUMNS = (
-    "thread_id,source_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,pending,turn_id,state,"
+    "thread_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,pending,turn_id,state,"
     "text_ref,arguments_ref,output_ref,input_ref"
 )
-_CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
+_CHUNK_COLUMNS = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 _PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log"})
 _SUBSET_QUERY = frozenset({"subset__where", "subset__params"})
 _INTEREST_QUERY = frozenset(
@@ -39,7 +39,6 @@ _INTEREST_QUERY = frozenset(
         "tail_from",
         "window_from",
         "window_before",
-        "source_id",
         "projection_epoch",
         "owner_cursor",
         "owner_id",
@@ -71,7 +70,6 @@ _RESPONSE_HEADERS = frozenset(
 
 
 class EntityInterestResponse(BaseModel):
-    source_id: str
     projection_epoch: str
     through_cursor: str
     anchor_cursor: str
@@ -81,7 +79,6 @@ class EntityInterestResponse(BaseModel):
 
 
 class PayloadInterestResponse(BaseModel):
-    source_id: str
     projection_epoch: str
     owner_cursor: str
     owner_id: str
@@ -114,23 +111,23 @@ class ElectricProxy:
         self._store = store
 
     async def commands(
-        self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
+        self, request: Request, thread_id: UUID, projection_epoch: str, command_ids: list[str]
     ) -> StreamingResponse:
         if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
         scope = await self._store.current_scope(thread_id)
-        if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
+        if scope is None or scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
-        params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
+        params = {"1": str(thread_id), "2": projection_epoch}
         selected = sorted(set(command_ids))
-        params.update({str(index): command_id for index, command_id in enumerate(selected, start=4)})
-        placeholders = ",".join(f"${index}" for index in range(4, 4 + len(selected)))
+        params.update({str(index): command_id for index, command_id in enumerate(selected, start=3)})
+        placeholders = ",".join(f"${index}" for index in range(3, 3 + len(selected)))
         return await self._forward(
             request,
             table="thread_entity",
             columns=_ENTITY_COLUMNS,
             where=(
-                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
+                "thread_id = $1 AND projection_epoch = $2 AND "
                 f"entity_kind = 'command' AND entity_id IN ({placeholders})"
             ),
             params=params,
@@ -155,7 +152,6 @@ class ElectricProxy:
     async def payload_selection(
         self,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         owner_cursor: int,
         owner_id: str,
@@ -171,11 +167,7 @@ class ElectricProxy:
             generation=generation,
             revision_cursor=revision_cursor,
         )
-        if (
-            selection is None
-            or selection.scope.source_id != source_id
-            or selection.scope.projection_epoch != projection_epoch
-        ):
+        if selection is None or selection.scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected payload revision is unavailable")
         return selection
 
@@ -184,7 +176,6 @@ class ElectricProxy:
         request: Request,
         *,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         anchor_cursor: int,
         tail_from: int,
@@ -192,29 +183,21 @@ class ElectricProxy:
         window_before: int | None,
     ) -> StreamingResponse:
         current_scope = await self._store.current_scope(thread_id)
-        if current_scope is None or (current_scope.source_id, current_scope.projection_epoch) != (
-            source_id,
-            projection_epoch,
-        ):
+        if current_scope is None or current_scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         expected = await self.entity_interest(thread_id, anchor_cursor, window_before)
-        if (expected.scope.source_id, expected.scope.projection_epoch) != (source_id, projection_epoch):
+        if expected.scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         if tail_from != expected.tail_from or window_from != expected.window_from:
             raise HTTPException(status.HTTP_410_GONE, "entity interest has changed; resolve it again")
         scope = expected.scope
-        segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND cursor >= $4)"
-        params: dict[str, str] = {
-            "1": str(thread_id),
-            "2": scope.source_id,
-            "3": scope.projection_epoch,
-            "4": str(tail_from),
-        }
+        segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND cursor >= $3)"
+        params: dict[str, str] = {"1": str(thread_id), "2": scope.projection_epoch, "3": str(tail_from)}
         if window_from is not None and window_before is not None:
-            segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND (cursor >= $4 OR (cursor >= $5 AND cursor < $6)))"
-            params.update({"5": str(window_from), "6": str(window_before)})
+            segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND (cursor >= $3 OR (cursor >= $4 AND cursor < $5)))"
+            params.update({"4": str(window_from), "5": str(window_before)})
         where = (
-            "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND ("
+            "thread_id = $1 AND projection_epoch = $2 AND ("
             f"{segment} OR entity_kind = 'view_state' OR "
             "(entity_kind = 'command' AND pending = TRUE))"
         )
@@ -225,7 +208,6 @@ class ElectricProxy:
         request: Request,
         *,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         owner_cursor: int,
         owner_id: str,
@@ -235,28 +217,27 @@ class ElectricProxy:
         follow: bool,
     ) -> StreamingResponse:
         selection = await self.payload_selection(
-            thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
+            thread_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
         )
         params = {
             "1": str(thread_id),
-            "2": source_id,
-            "3": projection_epoch,
-            "4": str(owner_cursor),
-            "5": owner_id,
-            "6": field,
-            "7": str(generation),
+            "2": projection_epoch,
+            "3": str(owner_cursor),
+            "4": owner_id,
+            "5": field,
+            "6": str(generation),
         }
         chunk_bound = ""
         if not follow:
-            chunk_bound = " AND chunk_index < $8"
-            params["8"] = str(selection.chunk_count)
+            chunk_bound = " AND chunk_index < $7"
+            params["7"] = str(selection.chunk_count)
         return await self._forward(
             request,
             table="thread_payload_chunk",
             columns=_CHUNK_COLUMNS,
             where=(
-                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor = $4 AND "
-                f"owner_id = $5 AND field = $6 AND generation = $7{chunk_bound}"
+                "thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND "
+                f"owner_id = $4 AND field = $5 AND generation = $6{chunk_bound}"
             ),
             params=params,
         )
@@ -351,7 +332,6 @@ async def get_interest(
 ) -> EntityInterestResponse:
     interest = await _proxy(request).entity_interest(thread_id, None, before_cursor)
     return EntityInterestResponse(
-        source_id=interest.scope.source_id,
         projection_epoch=interest.scope.projection_epoch,
         through_cursor=str(interest.scope.through_cursor),
         anchor_cursor=str(interest.anchor_cursor),
@@ -365,7 +345,6 @@ async def get_interest(
 async def get_entities(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     anchor_cursor: Annotated[int, Query(ge=0)],
     tail_from: Annotated[int, Query(ge=0)],
@@ -381,7 +360,6 @@ async def get_entities(
     return await _proxy(request).entities(
         request,
         thread_id=thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         anchor_cursor=anchor_cursor,
         tail_from=tail_from,
@@ -394,7 +372,6 @@ async def get_entities(
 async def get_payload_interest(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     owner_cursor: Annotated[int, Query(ge=0)],
     owner_id: str,
@@ -403,10 +380,9 @@ async def get_payload_interest(
     revision_cursor: Annotated[int, Query(ge=0)],
 ) -> PayloadInterestResponse:
     selection = await _proxy(request).payload_selection(
-        thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
+        thread_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
     )
     return PayloadInterestResponse(
-        source_id=selection.scope.source_id,
         projection_epoch=selection.scope.projection_epoch,
         owner_cursor=str(selection.owner_cursor),
         owner_id=selection.owner_id,
@@ -423,18 +399,16 @@ async def get_payload_interest(
 async def get_commands(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     command_id: Annotated[list[str], Query(min_length=1, max_length=128)],
 ) -> StreamingResponse:
-    return await _proxy(request).commands(request, thread_id, source_id, projection_epoch, command_id)
+    return await _proxy(request).commands(request, thread_id, projection_epoch, command_id)
 
 
 @router.get("/payload-chunks")
 async def get_payload_chunks(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     owner_cursor: Annotated[int, Query(ge=0)],
     owner_id: str,
@@ -450,7 +424,6 @@ async def get_payload_chunks(
     return await _proxy(request).payload_chunks(
         request,
         thread_id=thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         owner_cursor=owner_cursor,
         owner_id=owner_id,

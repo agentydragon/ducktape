@@ -754,18 +754,13 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     app = create_app(
         inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
     )
-    body = {
-        "source_id": "test-runner",
-        "projection_epoch": THREAD_FOLD_EPOCH,
-        "command_ids": ["failed", "pending", "absent", "failed"],
-    }
+    body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
         first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
         assert first.status_code == 200, first.text
         assert first.json() == {
-            "source_id": "test-runner",
             "projection_epoch": THREAD_FOLD_EPOCH,
             "commands": [
                 {"command_id": "failed", "outcome": "failed"},

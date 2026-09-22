@@ -48,7 +48,6 @@ class ArchivedObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cursor: str
-    source_id: str
     kind: str
 
 

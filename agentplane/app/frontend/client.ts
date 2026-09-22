@@ -61,14 +61,13 @@ export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
 
 export async function reconcileCommands(
   threadId: string,
-  sourceId: string,
   projectionEpoch: string,
   commandIds: string[],
   signal?: AbortSignal
 ): Promise<CommandReconciliationResponse> {
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
-    body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    body: { projection_epoch: projectionEpoch, command_ids: commandIds },
     signal,
   });
   if (error) throw new Error(displayableError(error));
@@ -107,7 +106,7 @@ export async function threadObservations(
 
 export async function threadEvidence(
   threadId: string,
-  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  scope: { projectionEpoch: string; entityKind: string; entityId: string },
   afterCursor = "0",
   signal?: AbortSignal
 ): Promise<EvidencePage> {
@@ -115,7 +114,6 @@ export async function threadEvidence(
     params: {
       path: { thread_id: threadId },
       query: {
-        source_id: scope.sourceId,
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,
@@ -131,7 +129,7 @@ export async function threadEvidence(
 
 export async function threadNativeFrames(
   threadId: string,
-  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  scope: { projectionEpoch: string; entityKind: string; entityId: string },
   observationCursor: string,
   afterSequence = "0",
   signal?: AbortSignal
@@ -140,7 +138,6 @@ export async function threadNativeFrames(
     params: {
       path: { thread_id: threadId, observation_cursor: observationCursor },
       query: {
-        source_id: scope.sourceId,
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,

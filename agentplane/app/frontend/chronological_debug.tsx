@@ -56,9 +56,6 @@ function Observation({
       <summary>
         Observation {observation.cursor} · {observation.kind}
       </summary>
-      <Text size="xs" style={{ overflowWrap: "anywhere" }}>
-        Source {observation.source_id}
-      </Text>
       {expanded && <ObservationEntry threadId={threadId} cursor={observation.cursor} />}
     </details>
   );

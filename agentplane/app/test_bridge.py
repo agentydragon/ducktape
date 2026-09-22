@@ -641,9 +641,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             async with replica_store._sessions() as session:
                 checkpoint = await session.get(ThreadCheckpoint, thread)
                 assert checkpoint is not None
-                view = await session.get(
-                    ThreadEntity, (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
-                )
+                view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
                 assert view is not None
                 operational = ThreadOperationalState.model_validate(view.state["operational"])
             assert operational.feed_error is not None

@@ -9,6 +9,7 @@ exports_files(
         "0005_conversation_projection_storage.py",
         "0006_thread_fold_rename.py",
         "0007_event_origin_sequence.py",
+        "0008_thread_scope_source_id.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -64,6 +65,15 @@ py_library(
 py_library(
     name = "0007_event_origin_sequence",
     srcs = ["0007_event_origin_sequence.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0008_thread_scope_source_id",
+    srcs = ["0008_thread_scope_source_id.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
