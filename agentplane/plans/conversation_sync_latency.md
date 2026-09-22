@@ -302,11 +302,12 @@ Nine requests and five long polls, constant in conversation size — against tod
 per rendered body. Every one of those shapes is shared with every other reader of this conversation
 and with this reader's next open, which is what the current per-view bounds give up.
 
-**New items stream in.** Zero requests. A new segment's index is inside page `k`'s predicate, so it
-arrives on the poll already open; its body arrives on the content poll the same way. When the
-conversation crosses into page `k+1`, the reader subscribes to one new entity page and one new
-content page — **once per `P` segments**, not once per segment, and the shape it creates is then
-warm for everyone.
+**New items stream in.** Zero requests, **including across a page boundary**. A new segment's index
+is inside the predicate of a page the reader already holds — page `k` normally, page `k+1` when the
+conversation crosses into it, because the reader keeps the next page subscribed before it has any
+rows (§ Crossing a page boundary). Its body arrives on that page's content poll the same way. What
+the crossing costs is one new landing-pad subscription afterwards, off the critical path: **once per
+`P` segments**, not once per segment, and the shape it opens is then warm for everyone.
 
 **Scroll up.** Subscribe to page `k-2`. Three requests plus two, and **nothing already on screen is
 touched**: no predicate moves, no shape is retired, no rows are withdrawn and re-delivered. The
@@ -334,15 +335,63 @@ the reader resolves a new interest and subscribes to the new epoch's pages behin
 hidden double-buffer. Unchanged from today, and still covered by
 <../debug/conversation_acceptance.md>.
 
+### Crossing a page boundary
+
+This is the one discontinuity the partition has, so it is worth following in full rather than
+asserting it is cheap.
+
+A segment whose index reaches `k*P` is **not** in page `k-1`'s predicate. It lands in page `k`'s
+shape — which a reader watching the tail is not subscribed to, and so does not see arrive. Left
+there, every `P`th segment would stall behind a subscription the reader only knows to make once it
+learns the segment exists.
+
+**So a reader holds the next page before it exists.** Electric serves a shape whose predicate
+currently matches nothing as an ordinary empty shape, so subscribing to page `k+1` costs a handle
+and no data. The crossing then delivers the segment into an **already-open** poll, with no request
+and no stall — and the reader opens page `k+2` as the new landing pad afterwards, off the critical
+path. A reader at the tail therefore holds `k-1, k, k+1` rather than `k-1, k`: seven shapes with
+their content pages and the control shape, against five.
+
+The alternative — learn the crossing from `view_state` and then subscribe — costs a round trip at
+every boundary, during which the newest segment is known to exist and cannot be rendered. At
+`P = 50` and a busy turn that is a visible hiccup every minute or two, to save one shape that is
+shared by every reader of the conversation. The landing pad is worth it.
+
+**Pages stay closed at both ends.** An open-ended newest page (`segment_index >= k*P`, no upper
+bound) would need sealing when the next one opens, and sealing is a predicate change — a new shape,
+which is the churn this whole partition exists to avoid. Closed from the start means page `k` is
+complete and immutable the moment the conversation moves past it, which is exactly when it becomes
+worth caching.
+
+**What the boundary exposes, and the partition has to answer:** a batch can project segments on both
+sides of it. They commit in one transaction but land in two shapes with independent logs, so a
+reader can see the page-`k` head before the page-`k-1` tail. Within a page this is already true and
+already handled — order by `segment_index` and let a gap fill.
+
+What does not survive unchanged is the **catch-up gate**. Today a reader compares one collection's
+`view_state.revision_cursor` against the interest's `through_cursor`, and that single check is
+exactly what forces the whole-window rebuild it sits on. Under the partition, "caught up" is
+composite: every subscribed page reports up-to-date, **and** the highest `segment_index` held
+reaches the latest the projection has. That second half means `view_state` has to carry
+`latest_segment_index` — otherwise a reader cannot tell "no more segments" from "the page carrying
+them is still catching up". It is more moving parts than one comparison, and it is checkable per
+page rather than all-or-nothing, which is what lets a page arrive without the rest of the view
+waiting on it.
+
 ### What this costs
 
-- **Shapes.** A conversation costs one control shape plus two per page a reader has open. A reader
-  at the tail holds five; one that has scrolled back 500 segments holds twenty-one. Against
-  `ELECTRIC_MAX_SHAPES=1024`, shared across readers and opens — where today's per-view bounds are
-  shared with nobody. **`P` has to be sized against that budget before this is built**, and the
-  shape-creation log (§ W7, landed) is the instrument: count distinct handles over a session.
-- **Two schema additions**, both at projection time: `segment_index` on the entity rows and
-  `owner_segment_index` on the chunk rows. Both are append-only facts, so neither can drift.
+- **Shapes.** A conversation costs one control shape plus two per page a reader has open, and a
+  reader at the tail holds three pages — the one it is reading, the one before it, and the empty
+  landing pad above it. So **seven** at the tail, and twenty-three after scrolling back 500
+  segments at `P = 50`. Against `ELECTRIC_MAX_SHAPES=1024`, shared across readers and opens, where
+  today's per-view bounds are shared with nobody. **`P` has to be sized against that budget before
+  this is built** — and note the budget is global, so the ceiling is concurrent conversations times
+  pages held, not one conversation's depth. The shape-creation log (§ W7, landed) is the
+  instrument: count distinct handles over a session.
+- **Three schema additions**, all at projection time: `segment_index` on the entity rows,
+  `owner_segment_index` on the chunk rows, and `latest_segment_index` on `view_state`, which is what
+  lets a reader tell "there are no more segments" from "the page holding them has not caught up".
+  The first two are append-only facts, so neither can drift.
 - **Nine requests on open rather than four.** The trade is deliberate: constant either way, and
   these are cache hits for the second reader where the current four are not.
 
