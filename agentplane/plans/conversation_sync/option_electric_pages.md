@@ -1,9 +1,16 @@
-# Conversation sync latency
+# Option: TanStack DB + ElectricSQL, partitioned by page
 
-Opening a Thread on staging takes tens of seconds before its text paints, and text that has already
-arrived renders much later than the response carrying it. A HAR showed requests spending ~20 s
-upstream while their bodies transferred in milliseconds, which reads as slow Electric shape
-creation. It is not. This plan records what the cost actually is and what to do about it.
+**One option among several** — see <README.md> for the others and the fit matrix, and
+<requirements.md> for what any of them has to do. This file is the TanStack + Electric branch worked
+out to the point where its costs are visible, kept whole so it can be compared rather than
+half-remembered.
+
+It is the deployed stack, so it starts ahead on familiarity and behind on nothing except the two
+things it structurally cannot do: **W1** (a reader holds seven subscriptions at the tail, not one)
+and **P8/W2** (the content selection lives in a server-side shape predicate, where a client cannot
+express it). Both are called out where they arise below.
+
+The measurement that opens this file is the grounding fact for **every** option, not just this one.
 
 ## Measured, 2026-09-22
 
@@ -43,7 +50,7 @@ Nothing overlaps: `ConversationCollection` mounts no body until the entity shape
 
 Every flow below has to be built from these, so they are worth stating before the flows rather
 than assumed inside them. Deployed: `electricsql/electric:1.8.1`, `ELECTRIC_STORAGE=fast_file`,
-`ELECTRIC_MAX_SHAPES=1024` (<../../cluster/k8s/agentplane-testing/agentplane.k8s.yaml>).
+`ELECTRIC_MAX_SHAPES=1024` (<../../../cluster/k8s/agentplane-testing/agentplane.k8s.yaml>).
 
 - **A shape is its predicate.** Identity is `(table, columns, where, bound params, replica)`. Two
   readers whose predicates match share one server-side shape, its log and its cache; change any
@@ -73,7 +80,7 @@ walks each thing a reader does, from the gesture to the requests to what the DOM
 so a proposed design can be checked against all of them rather than against the open path alone.
 
 **Read from the code, not run.** Cursor arithmetic below comes from `conversation_entity_interest`
-(<../app/trajectory.py>) and `ConversationCollection` (<../app/frontend/conversation_store.tsx>);
+(<../../app/trajectory.py>) and `ConversationCollection` (<../../app/frontend/conversation_store.tsx>);
 the two marked **unverified** are predictions that need a browser test before anyone relies on
 them. `_PAGE_SIZE` is 30 throughout, and a "segment" is an entity of kind `item`,
 `confirmed_input` or `lifecycle` — a turn emits lifecycle rows too, so segments accrue faster than
@@ -208,7 +215,7 @@ A rebuild publishes a new `projection_epoch`. Every shape is scoped to it, so th
 pending-selection mechanism is what this was built for: the new selection syncs in a `hidden`
 subtree and is swapped in only once its `view_state` has caught up to the interest's
 `through_cursor`, so the visible tree never blanks. Covered by
-<../debug/conversation_acceptance.md>.
+<../../debug/conversation_acceptance.md>.
 
 ### What writing these out changes
 
@@ -333,7 +340,7 @@ its rows.
 **The scope is replaced.** Every shape is scoped by `projection_epoch`, so the proxy 410s them all;
 the reader resolves a new interest and subscribes to the new epoch's pages behind the existing
 hidden double-buffer. Unchanged from today, and still covered by
-<../debug/conversation_acceptance.md>.
+<../../debug/conversation_acceptance.md>.
 
 ### Crossing a page boundary
 
