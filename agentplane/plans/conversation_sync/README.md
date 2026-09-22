@@ -53,7 +53,7 @@ Cells are judgements from the option files, not measurements.
 | P4 scroll back               | + (free)    | +             | +             | +        | ~              | +               |
 | **P5 place survives**        | +           | +             | +             | +        | **−**          | +               |
 | P6 disconnect resumes        | +           | +             | +             | ~        | **−**          | +               |
-| P7 rebuild swaps in          | +           | +             | +             | +        | +              | +               |
+| P7 stale epoch refused       | +           | +             | +             | +        | +              | +               |
 | **P8 client picks content**  | +           | +             | +             | +        | **−**          | ~ (shape/field) |
 | P9 command reconcile         | +           | +             | +             | +        | +              | +               |
 | S1 body ≤ its own revision   | +           | +             | +             | +        | ~              | +               |
@@ -87,6 +87,11 @@ Cells are judgements from the option files, not measurements.
   each costs to satisfy. P8 in particular is reachable with Electric, by giving each payload field
   its own content shape and letting the client subscribe to the ones it wants — at the price of
   shape count, which lands on **O1** rather than on P8.
+- **P7 is settled and cheap.** It asks only that a stale-epoch read be refused rather than served;
+  a rebuild may cost a full page reload, because nothing at runtime causes one. The seamless swap
+  the deployed code performs is more than required, and the pending-selection double buffer it needs
+  is the same machinery rotation and paging up use — so a design that never rebuilds a selection can
+  drop all of it. See <requirements.md> § P7.
 - **The case against the Electric family is cumulative, not structural.** Shape count, the page
   boundary and its landing pad, a catch-up signal that becomes composite, and no per-card readiness
   signal. Each is affordable alone; the question is whether the pile is worth what shapes buy,
@@ -132,19 +137,14 @@ What any chosen design has to be held to.
    out. What they buy is a cache shared between readers of one conversation; what they cost is
    everything in option_electric_pages.md that is not about conversations. With few concurrent
    readers per conversation, that trade looks bad — but it is a judgement, not a derivation.
-2. **Decide whether P7 is worth its machinery.** Nothing at runtime mints a new projection epoch:
-   it is a deploy-time constant whose mismatch raises rather than reprojects, and no rebuild path is
-   implemented. Every option scores `+` on it, so it discriminates nothing — what it does is carry a
-   hidden-subtree double buffer that a design without selection rebuilds would not otherwise need.
-   See <requirements.md> § P7.
-3. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
+2. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
    `revision_cursor > $since` for the overlap — and **pin with a test that every mutation advances
    an entity's `revision_cursor`, including a body change.** That single assumption carries the
    moving window, A1 and the SSE option alike.
-4. **Add `segment_index` to the fold.** Needed by every option that pages, including the Electric
+3. **Add `segment_index` to the fold.** Needed by every option that pages, including the Electric
    one, and a cursor cannot substitute: how many segments a cursor range covers depends on how
    densely a turn packs them.
-5. **Read Zero and Replicache** — Replicache especially, whose pull protocol is this option
+4. **Read Zero and Replicache** — Replicache especially, whose pull protocol is this option
    specified properly, and worth copying rather than reinventing.
 
 `subset__where` (<prior_art.md>) drops down the list: it could only help an Electric option reach

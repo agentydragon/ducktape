@@ -32,7 +32,7 @@ letting one reader pull arbitrary volume, and any path that skips the app.
 | P4  | A reader can scroll back **arbitrarily far**, incrementally, bounded work per step.                                                                                                        | Deployed behaviour                                      |
 | P5  | The reader's **place survives every sync event**: no DOM teardown, no scroll jump, nothing already shown withdrawn.                                                                        | Owner, 2026-09-22                                       |
 | P6  | A **transient disconnect** keeps what is on screen and resumes without refetching it.                                                                                                      | Owner, 2026-09-22; `test_projected_browser…` asserts it |
-| P7  | A **rebuilt projection** swaps in with no page reload and no loss of reader state. Spelled out below.                                                                                      | <../../debug/conversation_acceptance.md>                |
+| P7  | A **stale-epoch read is refused, never served.** A rebuild may cost the reader a full reload. Below.                                                                                       | <../../debug/conversation_acceptance.md>                |
 | P8  | **The client chooses its content selection** — text, reasoning, tool arguments, output — and that choice composes with streaming. Selecting nothing still returns metadata and references. | <../../docs/thread_view_sync.md> § Queries              |
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Deployed behaviour                                      |
 
@@ -61,52 +61,38 @@ against `ELECTRIC_MAX_SHAPES`, not a P8 problem.
 So P8 separates designs that have a parameter for it from designs that do not, and every design
 here can grow one.
 
-**P7, spelled out**, since "epoch replacement" says nothing to a reader of this file. The fold can
-be **rebuilt** — reprojected from the event log under a new `projection_epoch`, which is part of the
-identity of every entity, chunk and payload reference. Old and new cannot be mixed: cursors and
-references do not correspond across a rebuild, so a reader has to move between epochs atomically
-rather than merge them.
+**P7, and why it is cheap.** The fold can be **rebuilt** — reprojected from the event log under a
+new `projection_epoch`, which is part of the identity of every entity, chunk and payload reference.
+Old and new cannot be mixed: cursors and references do not correspond across a rebuild.
 
-What the reader is entitled to while that happens:
-
-- **No page reload, and no blank.** The deployed implementation syncs the new epoch in a hidden
-  subtree and swaps it in only once its `view_state` has caught up, so the visible tree is never
-  empty.
-- **An unsent draft in the composer survives** — it lives in the same JavaScript document
-  throughout.
-- **UI state survives**: an evidence disclosure the reader had collapsed stays collapsed.
-- **A stale read is refused, not served.** A request carrying the old epoch gets 410 rather than
-  data from the new one.
-
-The one artifact a reader may legitimately see is a transient _Catching up conversation…_ status.
-Covered end to end by `test_projection_epoch_replacement_retires_old_requests_and_preserves_draft`.
-
-**But almost nothing causes one, so P7 is probably over-weighted.** `projection_epoch` comes from
-`CONVERSATION_PROJECTION_EPOCH`, a module constant (`"v1"`), stamped when a thread's projection is
-first created. On every later batch a mismatch **raises** rather than reprojecting:
+**The epoch exists for forward compatibility**, not for a runtime event. Nothing at runtime mints
+one: `CONVERSATION_PROJECTION_EPOCH` is a module constant stamped when a thread's projection is
+first created, and on every later batch a mismatch **raises** rather than reprojecting.
 
 ```python
 if checkpoint.projection_epoch != CONVERSATION_PROJECTION_EPOCH:
     raise ConversationProjectionError(f"… must be reset for {CONVERSATION_PROJECTION_EPOCH!r}")
 ```
 
-So the only cause is a **deploy that changed the constant**, which we do when the projector's output
-shape changes — and even then the app does not rebuild, it stops ingesting that thread until someone
-resets it. There is no implemented rebuild path (<../../app/README.md>: "No instance reset is
-performed by this implementation work"), and under **C3** the standing answer to an epoch bump is to
-reset staging and testing, which discards the data rather than swapping it under a reader.
+So the only cause is a deploy that changed the constant, because the projector's output shape
+changed. The app then stops ingesting that thread until someone resets it; no rebuild path is
+implemented, and under **C3** the standing answer is to reset staging and testing, discarding the
+data rather than swapping it under a reader. `source_id`, the other half of a scope, is not a
+rebuild either — a source change stops the browser rather than re-scoping it.
 
-The other half of a scope, `source_id`, is not a rebuild either: a source change raises
-`EventReplicationError` and the browser is _stopped_ rather than re-scoped
-(`test_rejected_source_suffix_stops_browser_without_replacing_verified_history`).
+**What P7 therefore requires is only the refusal.** A read carrying a stale epoch must get a 410
+rather than data from the new one — that is the forward-compatibility guarantee, and it is what
+stops a projector change from silently serving mixed-shape rows. **A full page reload afterwards is
+acceptable**, because this happens essentially never.
 
-**What follows.** P7's cost is the pending-selection double buffer — a second collection synced in a
-hidden subtree until its `view_state` catches up. That machinery is currently load-bearing for three
-things: rotation, paging up, and epoch replacement. The first two are what
-<option_electric_today.md> fails P5 on; the third happens approximately never. **In a design that
-never rebuilds a selection, P7 would be the only caller left**, and for a near-never operator action
-"re-resolve and show a spinner" is probably an adequate answer. Worth deciding deliberately rather
-than carrying the machinery by default.
+**What it does not require: a seamless swap.** The deployed implementation does more — it syncs the
+new epoch in a hidden subtree and swaps it in only once caught up, preserving an unsent draft and
+collapsed disclosures
+(`test_projection_epoch_replacement_retires_old_requests_and_preserves_draft`,
+<../../debug/conversation_acceptance.md>). That is nicer than required, and it is not free: the
+pending-selection double buffer it needs is the same machinery rotation and paging up use. **A
+replacement design need not reproduce it.** In a design that never rebuilds a selection, nothing
+else needs that machinery either, and it can go.
 
 ## Sync semantics
 

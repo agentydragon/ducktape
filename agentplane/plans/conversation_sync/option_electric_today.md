@@ -10,8 +10,14 @@ reached through a `payload-interest` call that hands the client its extent.
 ## What it gets right
 
 **P1, P2, P3, P7, P9, S1, S2, S4, O2** all hold today, and `test_thread_browser` covers most of
-them. The epoch double-buffer (P7) is genuinely good and worth keeping in any option: the pending
-selection syncs in a hidden subtree and swaps only once caught up, so the visible tree never blanks.
+them.
+
+The epoch double-buffer is worth a note, because it looks like an asset and is not one. It is
+genuinely good — the pending selection syncs in a hidden subtree and swaps only once caught up, so
+the visible tree never blanks — but P7 asks only that a stale read be refused, and a rebuild may
+cost a full reload (<requirements.md> § P7). So this machinery exceeds its requirement, and the same
+machinery is what rotation and paging up use, which is where P5 is lost. It is not a reason to keep
+this design.
 
 ## What it gets wrong, in order
 
