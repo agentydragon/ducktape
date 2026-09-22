@@ -354,7 +354,7 @@ export async function threadEntityInterest(
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
   if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Thread entity interest failed with ${response.status}`);
+  if (!response.ok) throw new Error(`Entity interest failed with ${response.status}`);
   return (await response.json()) as EntityInterest;
 }
 
