@@ -24,7 +24,7 @@ this deployment has few readers and few conversations.
 
 ## What it does and does not solve
 
-- **P8/D1, P10, P4/E4, E2/E5**: as option_moving_window.md — one declared interest that moves,
+- **P8/D2, D1, P4/E4, E2/E5**: as option_moving_window.md — one declared interest that moves,
   content selection as a parameter of it. This option is that protocol with a different transport.
 - **P6** is _harder_ than A1, not easier. A resumable stream needs a last-event id and a server able
   to answer "everything after this" — SSE's `Last-Event-ID` gives the protocol half; the app owes

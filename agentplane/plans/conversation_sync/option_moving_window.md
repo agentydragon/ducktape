@@ -1,6 +1,6 @@
 # Option: one watch over a moving range
 
-The protocol **P10** describes, written out. The client states what range it wants and what it
+The protocol **D1** describes, written out. The client states what range it wants and what it
 already holds; the server sends the difference and keeps it informed of that range. There is one
 subscription and it moves.
 
@@ -34,13 +34,13 @@ which blocks until something in 50–150 changes, returns it, and is re-issued.
 
 **The watch is the outstanding request.** There is no subscription object on the server to create,
 update or expire — "moving the watch" is issuing the next request with a different `want`. That is
-what makes P10 fall out rather than needing machinery: the client carries its own state, so the
+what makes D1 fall out rather than needing machinery: the client carries its own state, so the
 server has nothing per-reader to keep in step with it.
 
 ## Against the requirements
 
-- **P10** by construction. `want`, `have` and `since` are the whole mechanism.
-- **P8 / D1** by construction. `content` is a parameter of the same request. "Text now, reasoning
+- **D1** by construction. `want`, `have` and `since` are the whole mechanism.
+- **P8 / D2** by construction. `content` is a parameter of the same request. "Text now, reasoning
   when I expand it" is two values of one parameter, and a reader that wants everything streamed says
   so. Nothing about laziness is in the protocol.
 - **E4, E5**: the overlap is never re-sent — only its changes. This is the property Electric cannot

@@ -32,7 +32,7 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
   options cite. Read this first; it is the thing to argue with.
 - **<option_poll.md>** — the app answers HTTP; the client polls. `A0` whole conversation, `A1` delta.
 - **<option_moving_window.md>** — one watch over a range the client moves, paying only the
-  difference. The protocol P10 describes.
+  difference. The protocol D1 describes.
 - **<option_app_push.md>** — the same delta, pushed over SSE, reusing machinery the app already has.
 - **<option_electric_today.md>** — what is deployed, as a baseline.
 - **<option_electric_pages.md>** — TanStack DB + Electric, partitioned into stable pages. The
@@ -55,7 +55,6 @@ Cells are judgements from the option files, not measurements.
 | P7 epoch replacement         | +           | +             | +             | +        | +              | +              |
 | **P8 client picks content**  | +           | +             | +             | +        | **−**          | **−**          |
 | P9 command reconcile         | +           | +             | +             | +        | +              | +              |
-| **P10 one moving watch**     | +           | ~             | **+**         | +        | **−**          | **−**          |
 | S1 body ≤ its own revision   | +           | +             | +             | +        | ~              | +              |
 | S2 ordering                  | +           | +             | +             | +        | +              | +              |
 | S3 caught-up signal          | +           | +             | +             | +        | +              | ~              |
@@ -69,15 +68,20 @@ Cells are judgements from the option files, not measurements.
 | O2 horizontal scale          | +           | +             | +             | ~        | +              | +              |
 | O3 debuggable                | +           | +             | +             | +        | ~              | ~              |
 | **O4 few moving parts**      | +           | +             | +             | ~        | −              | **−**          |
-| D1 no windowed/lazy seam     | +           | +             | +             | +        | −              | −              |
-| D2 incrementally reachable   | +           | +             | +             | ~        | n/a            | −              |
+| **D1 one moving watch**      | +           | ~             | **+**         | +        | −              | −              |
+| D2 no windowed/lazy seam     | +           | +             | +             | +        | −              | −              |
+| D3 incrementally reachable   | +           | +             | +             | ~        | n/a            | −              |
 
 ### What the matrix says
 
-- **P10 eliminates both Electric columns**, not on preference but on mechanism: a shape's predicate
-  is fixed at creation, so a moved window is a different shape whose log replays from `offset=-1`.
-  The page partition sidesteps the re-transfer by holding `N` immovable shapes, which is the thing
-  P10 rules out.
+- **D1 is the sharpest axis, and it is a desire.** A shape's predicate is fixed at creation, so a
+  moved window is a different shape whose log replays from `offset=-1`; the page partition dodges
+  that only by holding `N` immovable shapes. Electric therefore cannot do D1 at all — but D1 does
+  not eliminate it, and how heavily to weight it is the judgement to make rather than one this
+  matrix makes.
+- **P8 is the only hard failure on the Electric columns**, because it is in
+  <../../docs/thread_view_sync.md> rather than in anyone's preferences. An Electric design that
+  wants to stay in contention has to answer it or argue the spec should change.
 - **The moving window is the only column that is all `+`.** That is not a claim that it is right —
   it is the option written _from_ these requirements, so it ought to score well, and the honest
   reading is that the requirements have not yet been stress-tested against it. Its costs are real
@@ -95,9 +99,9 @@ Cells are judgements from the option files, not measurements.
 
 ## What to settle next, in order
 
-1. **Confirm P10 and P8 are binding.** Both are now stated; between them they disqualify every
-   Electric design as written. If either is softer than it looks, say so before the rest is built on
-   it.
+1. **Decide what D1 is worth.** It is a desire, not a gate — but it is the axis the families differ
+   most on, and no Electric design can meet it. P8 is separately binding as written, since it is in
+   the spec; whether that spec line should hold is itself a decision available.
 2. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
    `revision_cursor > $since` for the overlap — and **pin with a test that every mutation advances
    an entity's `revision_cursor`, including a body change.** That single assumption carries the
@@ -109,9 +113,8 @@ Cells are judgements from the option files, not measurements.
    specified properly, and worth copying rather than reinventing.
 
 `subset__where` (<prior_art.md>) drops down the list: it could only help an Electric option reach
-P10, and a narrow snapshot of a wide shape still leaves the live log carrying the whole
-conversation.
+D1, and a narrow snapshot of a wide shape still leaves the live log carrying the whole
+conversation — but it is cheap, and it would improve the Electric option on P1 and O1 regardless.
 
-#7592 — the page content shape — stays held, and under P10 it is unlikely to be what lands. The
-extent on `PayloadRef` (S1) and `segment_index` are the parts of that work worth keeping whatever
-wins.
+#7592 — the page content shape — stays held. The extent on `PayloadRef` (S1) and `segment_index`
+are the parts of that work worth keeping whatever wins.

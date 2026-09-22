@@ -13,7 +13,7 @@ The useful axis is not "which library" but **who decides what is synced, and in 
 | A client-declared query          | **Client**            | **Zero**, Convex, InstantDB, Triplit, LiveStore |
 | A server-computed per-reader set | Server, per reader    | Replicache, Phoenix Channels, our SSE routes    |
 
-**P8 and P10 both point at row three.** A client-declared query is exactly "the client says what it
+**P8 and D1 both point at row three.** A client-declared query is exactly "the client says what it
 is looking at, once" — which is why this axis, rather than the feature lists, is what should drive
 the comparison.
 
@@ -22,14 +22,14 @@ the comparison.
 - **Zero (Rocicorp).** Client declares queries; the server maintains them incrementally and streams
   diffs. Explicitly built around the thing we keep hitting — a reader's view is a query, not a
   partition someone else chose. Questions: maturity, whether a query can select which columns/fields
-  (P8), whether a live query's range can be **moved** without re-delivering the overlap (P10), how
+  (P8), whether a live query's range can be **moved** without re-delivering the overlap (D1), how
   deep history paging behaves, and self-hosting.
 - **Replicache (Rocicorp, earlier).** Client pulls a delta against a cookie; the **server** computes
-  what changed for that client. Nothing to subscribe to, so P10 holds by construction, and the pull
+  what changed for that client. Nothing to subscribe to, so D1 holds by construction, and the pull
   endpoint is essentially option_poll.md § A1 with a well-specified protocol and a client cache. The
   closest prior art to the cheapest option here, and the one to read for how it handles P6 and S3.
 - **PowerSync.** Postgres → SQLite, with server-side **sync rules** defining per-user buckets.
-  Partition model like Electric's, so likely inherits the Electric problem with P10; worth checking whether bucket membership
+  Partition model like Electric's, so likely inherits the Electric problem with D1; worth checking whether bucket membership
   can be parameterised per reader at subscribe time.
 - **Phoenix Channels / LiveView.** The reference implementation of option_app_push.md, with a
   decade of operational experience. Read for failure modes and scaling limits, not adoption.
@@ -47,12 +47,12 @@ the comparison.
 ## What to check first
 
 1. **Zero** — does a client query select fields, and can it page backwards cheaply? If yes it is the
-   only option on this list that satisfies P8, P10 and D1 without us building the mechanism.
+   only option on this list that satisfies P8, D1 and D2 without us building the mechanism.
 2. **Replicache's pull protocol** — specifically its answers to S3 (caught up vs arriving) and P6
    (resume). Even if we build option A1 ourselves, the protocol is worth copying rather than
    inventing.
 3. **Electric's `subset__where`** — our proxy pins it to `true = true`. If Electric can snapshot a
    _narrow_ subset of a _wide_ shape, then one stable shape per conversation with a tail-only
-   snapshot may satisfy P1 and O1 together. It still would not reach **P10** — the live log of a wide shape
-   carries the whole conversation, so a reader receives changes for rows it is not showing — so this
-   dropped down the list once P10 was stated.
+   snapshot may satisfy P1 and O1 together. It still would not reach **D1** — the live log of a wide shape
+   carries the whole conversation, so a reader receives changes for rows it is not showing — but it
+   is cheap to check and would materially improve the Electric option on P1 and O1.
