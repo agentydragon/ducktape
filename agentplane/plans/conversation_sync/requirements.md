@@ -81,6 +81,33 @@ What the reader is entitled to while that happens:
 The one artifact a reader may legitimately see is a transient _Catching up conversation…_ status.
 Covered end to end by `test_projection_epoch_replacement_retires_old_requests_and_preserves_draft`.
 
+**But almost nothing causes one, so P7 is probably over-weighted.** `projection_epoch` comes from
+`CONVERSATION_PROJECTION_EPOCH`, a module constant (`"v1"`), stamped when a thread's projection is
+first created. On every later batch a mismatch **raises** rather than reprojecting:
+
+```python
+if checkpoint.projection_epoch != CONVERSATION_PROJECTION_EPOCH:
+    raise ConversationProjectionError(f"… must be reset for {CONVERSATION_PROJECTION_EPOCH!r}")
+```
+
+So the only cause is a **deploy that changed the constant**, which we do when the projector's output
+shape changes — and even then the app does not rebuild, it stops ingesting that thread until someone
+resets it. There is no implemented rebuild path (<../../app/README.md>: "No instance reset is
+performed by this implementation work"), and under **C3** the standing answer to an epoch bump is to
+reset staging and testing, which discards the data rather than swapping it under a reader.
+
+The other half of a scope, `source_id`, is not a rebuild either: a source change raises
+`EventReplicationError` and the browser is _stopped_ rather than re-scoped
+(`test_rejected_source_suffix_stops_browser_without_replacing_verified_history`).
+
+**What follows.** P7's cost is the pending-selection double buffer — a second collection synced in a
+hidden subtree until its `view_state` catches up. That machinery is currently load-bearing for three
+things: rotation, paging up, and epoch replacement. The first two are what
+<option_electric_today.md> fails P5 on; the third happens approximately never. **In a design that
+never rebuilds a selection, P7 would be the only caller left**, and for a near-never operator action
+"re-resolve and show a spinner" is probably an adequate answer. Worth deciding deliberately rather
+than carrying the machinery by default.
+
 ## Sync semantics
 
 | ID  | Requirement                                                                                                                                | Source                                 |
