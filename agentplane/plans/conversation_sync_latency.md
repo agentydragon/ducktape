@@ -96,9 +96,8 @@ first page; and place is kept by **measure-and-correct after the swap**, not by 
 
 ### 4. Scroll up, then an item streams in — **unverified, believed broken**
 
-This is where the arithmetic stops working. With a history page open, the collection holds 30 tail
-segments and 30 history segments. `ActiveConversation` rotates the selection when it holds more
-than 60:
+This is where the arithmetic stops working. `ActiveConversation` rotates the whole selection once
+it holds more than 60 segments:
 
 ```tsx
 useEffect(() => {
@@ -106,19 +105,31 @@ useEffect(() => {
 }, [onRotate, segmentCount]);
 ```
 
-So **one** streamed segment takes the count to 61 and rotates. The rotation re-resolves with the
-same `beforeCursor`, which yields 30 + 30 again, and the next streamed segment rotates again. A
-reader who scrolls up during an active turn should therefore get a full selection rebuild **per
-arriving segment**, each one a fresh shape, a hidden catch-up, a swap and a scroll-restoration
-attempt.
+Counting what a reader holds after one page up. The tail admits 30 (`cursor >= tail_from`, where
+`tail_from` is `segments[0]`); the history page admits the 30 below `segments[1]`, which is
+`segments[0]` plus 29 older — the deliberate overlap from flow 3. So **59 distinct**, and the
+threshold needs 61. Two streamed segments reach it, and the selection rotates.
 
-W9 as drafted makes this worse rather than better: a rotation would rebuild two shapes instead of
-one, and the content shape replays from `offset=-1`, so the whole window's text re-transfers on
-each. Eager window content is the right trade for an open (§ W9) and the wrong one for a
-per-segment rebuild.
+What comes back is the problem. `/sync/interest` re-resolves with `anchor_cursor` unset, so the
+anchor becomes the current `through_cursor` and `tail_from` moves up by the two segments that
+arrived — the tail is now `segments[2]` and newer. The history page has not moved: it still ends
+strictly below `segments[1]`. **`segments[1]` is now in neither window.** A hole opens in the
+middle of what the reader is looking at, and it widens by one on every rotation after that, since
+the count returns to 60 and each further segment trips it again.
 
-A browser test should confirm the rotation-per-segment reading before anything is designed around
-it. If it holds, a fix has to come **before** W9, not after.
+So the predicted behaviour is: rotate every streamed segment while a history page is open, and lose
+one already-rendered segment from the middle of the view each time. Flow 3's place-keeping is
+measure-and-correct against `[data-conversation-anchor]`, so the anchor row itself can be the one
+that disappears.
+
+W9 as drafted makes the cost worse without touching the cause: a rotation would rebuild two shapes
+instead of one, and the content shape replays from `offset=-1`, so the window's whole text
+re-transfers each time. Eager window content is the right trade for an open (§ W9) and the wrong
+one for a per-segment rebuild.
+
+**All of this is read off the code rather than run.** It needs a browser test that scrolls up and
+then streams — asserting no hole and a bounded number of shape handles — before anything is
+designed around it. If it holds, a fix comes **before** W9, not after.
 
 ### 5. Rotation on a long turn at the bottom
 
