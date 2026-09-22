@@ -15,6 +15,7 @@ resources:
   - ciliumnetworkpolicy.yaml
   - oura-access-token-eso.yaml
   - google-access-token-eso.yaml
+  - google-write-access-token-eso.yaml
 
 configMapGenerator:
   - name: airlock-config
