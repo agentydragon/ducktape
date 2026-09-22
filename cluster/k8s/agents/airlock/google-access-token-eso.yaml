@@ -1,16 +1,15 @@
 # Airlock writes google-access-token (read-only Google scopes) into the `airlock`
-# namespace; ESO mirrors it where its consumers read it.
+# namespace; ESO mirrors it where its consumers read it. Never into a namespace an agent can
+# read Secrets in (docs/personal_agents/verdicts.md): agents reach Google through a proxy that
+# presents the token for them.
 apiVersion: external-secrets.io/v1
 kind: ClusterExternalSecret
 metadata:
   name: google-access-token
 spec:
   namespaces:
-    # Haku reads it directly (Drive, Tasks, Gmail/Calendar REST fallback) -- an agent-readable
-    # token, the pattern docs/personal_agents/verdicts.md rules out; add no agent namespace here.
-    - haku-sandbox
     # agentplane-staging/-testing's egress proxies substitute this into a sandbox's
-    # Gmail/Calendar requests (cluster/cdk8s/agentplane/egress.py's `google-readonly`
+    # Google read requests (cluster/cdk8s/agentplane/egress.py's `google-readonly`
     # EgressCredential, present in both environments). Each proxy's own Secret watch is
     # scoped to its isolated credentials namespace
     # (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE/
