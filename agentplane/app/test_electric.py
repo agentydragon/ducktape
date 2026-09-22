@@ -75,7 +75,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
     assert response.status_code == 200
     assert response.headers["electric-offset"] == "7_0"
     assert response.headers["electric-up-to-date"] == "true"
-    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["cache-control"] == "private, no-cache"
     assert "x-private" not in response.headers
     assert seen is not None
     query = httpx.QueryParams(seen.url.query)
@@ -90,6 +90,35 @@ async def test_entity_shape_is_bounded_and_fixed_by_server() -> None:
         "3": "epoch-4",
         "4": "70",
     }
+
+
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified() -> None:
+    """Immutable history is cached and revalidated, never re-transferred and never served unchecked."""
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.headers.get("if-none-match") == '"shape-7_0"':
+            return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    query = "source_id=runner%2Fsource&projection_epoch=epoch-4&anchor_cursor=99&tail_from=70&offset=-1"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        first = await client.get(f"/threads/{THREAD}/sync/entities?{query}")
+        again = await client.get(
+            f"/threads/{THREAD}/sync/entities?{query}", headers={"if-none-match": first.headers["etag"]}
+        )
+    await electric.aclose()
+
+    assert first.status_code == 200
+    assert first.headers["etag"] == '"shape-7_0"'
+    # Stored, but only ever served through a request this proxy authorized: `no-store` would make
+    # the entity tag inert, and a `max-age` would let a cached body outlive the caller's session.
+    assert first.headers["cache-control"] == "private, no-cache"
+    assert again.status_code == 304
+    assert again.content == b""
+    assert [request.headers.get("if-none-match") for request in seen] == [None, '"shape-7_0"']
 
 
 async def test_stale_or_client_widened_interest_is_rejected() -> None:

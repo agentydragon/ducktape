@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
@@ -20,6 +22,8 @@ from agentplane.app.trajectory import (
     ConversationPayloadSelection,
     ConversationScope,
 )
+
+logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 30
 _SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
@@ -303,16 +307,37 @@ class ElectricProxy:
             params=httpx.QueryParams(query),
             headers={
                 "accept": request.headers.get("accept", "application/json"),
-                **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
+                **{
+                    key: request.headers[key]
+                    # if-none-match is what lets Electric answer a re-read of an offset it has
+                    # already served with 304 and no body; without it its entity tag is inert.
+                    for key in ("electric-protocol-version", "if-none-match")
+                    if key in request.headers
+                },
             },
         )
+        # Electric answers headers once the shape exists, so this separates creating a shape from
+        # transferring it: a cold creation and a warm snapshot are indistinguishable in a HAR.
+        started = time.monotonic()
         try:
             response = await self._client.send(upstream, stream=True)
         except httpx.RequestError as error:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
+        upstream_seconds = time.monotonic() - started
+        logger.info(
+            "electric shape response: %s",
+            f"{table=} {upstream_seconds=:.3f} status={response.status_code} "
+            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')}",
+        )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
-        headers["cache-control"] = "private, no-store"
+        # Electric serves an immutable log segment per offset and marks it publicly cacheable for a
+        # long time, which is how the protocol avoids re-transferring history. These responses are
+        # caller-scoped, so `public` cannot stand and neither can a `max-age`: a browser's HTTP
+        # cache outlives a logout and offers no way to clear it, so a stored body must never be
+        # served without a request this proxy authorizes. `no-cache` keeps the body in that cache
+        # and forces exactly such a request, and Electric's own entity tag then answers it 304.
+        headers["cache-control"] = "private, no-cache"
         return ElectricStreamingResponse(response, headers)
 
 
