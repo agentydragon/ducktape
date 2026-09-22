@@ -8,15 +8,12 @@ metadata:
   name: google-access-token
 spec:
   namespaces:
-    # agentplane-staging/-testing's egress proxies substitute this into a sandbox's
-    # Google read requests (cluster/cdk8s/agentplane/egress.py's `google-readonly`
-    # EgressCredential, present in both environments). Each proxy's own Secret watch is
-    # scoped to its isolated credentials namespace
-    # (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE/
-    # TESTING_NAMESPACE), not the app namespace itself -- nothing there ever mounted
-    # this Secret.
+    # agentplane-staging's egress proxy substitutes this into a sandbox's Google read
+    # requests (cluster/cdk8s/agentplane/egress.py's `google-readonly` EgressCredential). The
+    # proxy's Secret watch is scoped to its isolated credentials namespace
+    # (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE), not the app
+    # namespace. Not agentplane-testing: testing reaches no real account.
     - agentplane-staging-egress-credentials
-    - agentplane-testing-egress-credentials
   externalSecretSpec:
     refreshInterval: 1m
     secretStoreRef:

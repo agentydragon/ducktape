@@ -128,6 +128,7 @@ ENV = Environment(
         ca_secret_name="agentplane-testing-egress-ca",
         credentials_namespace=TESTING_NAMESPACE,
         include_forgejo_credential=False,
+        include_google_credential=False,
     ),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(

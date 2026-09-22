@@ -278,7 +278,10 @@ ENV = Environment(
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(
-        ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE, include_forgejo_credential=True
+        ca_secret_name="agentplane-egress-ca",
+        credentials_namespace=STAGING_NAMESPACE,
+        include_forgejo_credential=True,
+        include_google_credential=True,
     ),
     app=AppProps(
         hostname=_HOSTNAME,

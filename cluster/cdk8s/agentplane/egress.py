@@ -121,7 +121,9 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+def _egress_credentials(
+    scope: Construct, *, namespace: str, include_forgejo_credential: bool, include_google_credential: bool
+) -> None:
     EgressCredential(
         scope,
         "egresscredential-agentplane-workload",
@@ -214,34 +216,37 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
             ],
         ),
     )
-    EgressCredential(
-        scope,
-        "egresscredential-google-readonly",
-        metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
-        spec=EgressCredentialSpec(
-            description=(
-                "A Google OAuth access token minted and refreshed by Airlock "
-                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of "
-                "Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, "
-                "Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the "
-                "token was actually granted is whatever the operator consented to at Airlock, which "
-                "can be narrower than that list -- an API outside it answers 403 "
-                "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
-                "presents it."
+    if include_google_credential:
+        EgressCredential(
+            scope,
+            "egresscredential-google-readonly",
+            metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
+            spec=EgressCredentialSpec(
+                description=(
+                    "A Google OAuth access token minted and refreshed by Airlock "
+                    "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of "
+                    "Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, "
+                    "Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the "
+                    "token was actually granted is whatever the operator consented to at Airlock, which "
+                    "can be narrower than that list -- an API outside it answers 403 "
+                    "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
+                    "presents it."
+                ),
+                source=EgressCredentialSpecSource(
+                    secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
+                ),
+                targets=[
+                    EgressCredentialSpecTargets(
+                        header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                    )
+                ],
             ),
-            source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
-            ),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        ),
-    )
+        )
 
 
-def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+def _egress_policies(
+    scope: Construct, *, namespace: str, include_forgejo_credential: bool, include_google_credential: bool
+) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-basic",
@@ -383,44 +388,45 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
             ]
         ),
     )
-    EgressPolicy(
-        scope,
-        "egresspolicy-google-readonly",
-        metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
-        spec=EgressPolicySpec(
-            rules=[
-                # One API per host, so read-only methods are the only restriction needed.
-                EgressPolicySpecRules(
-                    hosts=[
-                        "gmail.googleapis.com",
-                        "tasks.googleapis.com",
-                        "people.googleapis.com",
-                        "docs.googleapis.com",
-                        "sheets.googleapis.com",
-                        "slides.googleapis.com",
-                        "youtube.googleapis.com",
-                    ],
-                    methods=[EgressPolicySpecRulesMethods.GET],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
-                ),
-                # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
-                # YouTube is reachable on both hosts; client libraries differ on which they use.
-                EgressPolicySpecRules(
-                    hosts=["www.googleapis.com"],
-                    methods=[EgressPolicySpecRulesMethods.GET],
-                    paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
-                ),
-                # Drive Activity's only read is a POST query.
-                EgressPolicySpecRules(
-                    hosts=["driveactivity.googleapis.com"],
-                    methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=["/v2/activity:query"],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
-                ),
-            ]
-        ),
-    )
+    if include_google_credential:
+        EgressPolicy(
+            scope,
+            "egresspolicy-google-readonly",
+            metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
+            spec=EgressPolicySpec(
+                rules=[
+                    # One API per host, so read-only methods are the only restriction needed.
+                    EgressPolicySpecRules(
+                        hosts=[
+                            "gmail.googleapis.com",
+                            "tasks.googleapis.com",
+                            "people.googleapis.com",
+                            "docs.googleapis.com",
+                            "sheets.googleapis.com",
+                            "slides.googleapis.com",
+                            "youtube.googleapis.com",
+                        ],
+                        methods=[EgressPolicySpecRulesMethods.GET],
+                        credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                    ),
+                    # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
+                    # YouTube is reachable on both hosts; client libraries differ on which they use.
+                    EgressPolicySpecRules(
+                        hosts=["www.googleapis.com"],
+                        methods=[EgressPolicySpecRulesMethods.GET],
+                        paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
+                        credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                    ),
+                    # Drive Activity's only read is a POST query.
+                    EgressPolicySpecRules(
+                        hosts=["driveactivity.googleapis.com"],
+                        methods=[EgressPolicySpecRulesMethods.POST],
+                        paths=["/v2/activity:query"],
+                        credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                    ),
+                ]
+            ),
+        )
 
 
 class Egress(Construct):
@@ -448,10 +454,16 @@ class Egress(Construct):
         if env.replicas.pdb_min_available is not None:
             self._add_pdb(env.replicas.pdb_min_available)
         _egress_credentials(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+            self,
+            namespace=env.namespace,
+            include_forgejo_credential=env.egress.include_forgejo_credential,
+            include_google_credential=env.egress.include_google_credential,
         )
         _egress_policies(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
+            self,
+            namespace=env.namespace,
+            include_forgejo_credential=env.egress.include_forgejo_credential,
+            include_google_credential=env.egress.include_google_credential,
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
