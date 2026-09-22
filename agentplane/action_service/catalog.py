@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from agentplane.sandbox_actions.binding import SandboxExecutorBinding
 
@@ -133,24 +133,6 @@ class ActionGroupView(BaseModel):
     actions: list[ActionView]
 
 
-class ActionGroupHealthView(BaseModel):
-    """Operator-facing live-health projection of one mcp-kind ActionGroup.
-
-    Distinct from ActionGroupView (agent-facing discovery, carries the full tool catalog): this
-    exists because McpExecutorBinding.config is opaque and never projected to an Agent, so the
-    oauth join key has to come from a different, operator-only view.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str
-    title: str
-    executor_description: str
-    available: bool
-    health: McpHealth | None = None
-    oauth_server_id: str | None = None
-
-
 class UnknownActionError(Exception):
     def __init__(self, group_key: str, action_key: str) -> None:
         super().__init__(f"unknown group/action {(group_key, action_key)!r}")
@@ -169,6 +151,16 @@ class ActionCatalog(BaseModel):
 
     groups: dict[Key, ActionGroup] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _server_id_matches_group_key(self) -> ActionCatalog:
+        for key, group in self.groups.items():
+            if not isinstance(group.executor, McpExecutorBinding):
+                continue
+            server_id = group.executor.config.get("server_id")
+            if server_id is not None and server_id != key:
+                raise ValueError(f"ActionGroup {key!r} executor config server_id {server_id!r} must match its key")
+        return self
+
     def resolve(self, group_key: str, action_key: str) -> tuple[ActionGroup, ActionDefinition]:
         group = self.groups.get(group_key)
         if group is not None and not group.available:
@@ -181,32 +173,18 @@ class ActionCatalog(BaseModel):
     def group_views(self) -> list[ActionGroupView]:
         return [_group_view(key, group) for key, group in self.groups.items()]
 
-    def mcp_group_health_views(self) -> list[ActionGroupHealthView]:
-        views: list[ActionGroupHealthView] = []
-        for key, group in self.groups.items():
-            executor = group.executor
-            if not isinstance(executor, McpExecutorBinding):
-                continue
-            views.append(
-                ActionGroupHealthView(
-                    key=key,
-                    title=group.title,
-                    executor_description=executor.description,
-                    available=group.available,
-                    health=group.health,
-                    oauth_server_id=_oauth_server_id(executor),
-                )
-            )
-        return views
+    def mcp_group_views(self) -> list[ActionGroupView]:
+        """Operator-facing subset of group_views(): every mcp-kind group, oauth-linked or not.
+
+        The same view agents get (never carries backend config), so an operator joins it to
+        McpLinkageView by matching `key` against `server_id` directly -- guaranteed to agree by
+        the _server_id_matches_group_key validator above, wherever a group declares a server_id.
+        """
+        return [view for view in self.group_views() if view.executor_kind == "mcp"]
 
     def action_view(self, group_key: str, action_key: str) -> ActionView:
         _, action = self.resolve(group_key, action_key)
         return _action_view(group_key, action_key, action)
-
-
-def _oauth_server_id(executor: McpExecutorBinding) -> str | None:
-    server_id = executor.config.get("server_id")
-    return server_id if isinstance(server_id, str) else None
 
 
 def _action_view(group_key: str, action_key: str, action: ActionDefinition) -> ActionView:

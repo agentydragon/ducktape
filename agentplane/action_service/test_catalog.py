@@ -9,16 +9,12 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from agentplane.action_service.catalog import (
-    ActionCatalog,
-    ActionGroupHealthView,
-    McpExecutorBinding,
-    UnknownActionError,
-)
+from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
 
 # A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
-# YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
-# fixture-executor group proving discovery end to end, one deliberately unavailable group.
+# YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two mcp-kind groups (one available
+# fixture-executor group proving discovery end to end, one deliberately unavailable) plus one
+# sandbox-kind group proving mcp_group_views() filters by executor kind.
 CONFIGURED_CATALOG_YAML = textwrap.dedent("""
     github:
       title: GitHub
@@ -50,6 +46,20 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
       actions:
         list_events:
           description: List upcoming events.
+    sandbox:
+      title: Sandbox
+      description: Runs in-process, not over MCP.
+      executor:
+        kind: sandbox
+        description: Stamped and exec'd by this service.
+        namespace: agentplane-test
+        environments:
+          default:
+            template: agentplane-runner
+            container: main
+            default_cwd: /workspace
+            description: The default box shape.
+        default_environment: default
 """)
 
 
@@ -64,7 +74,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
     views = {view.key: view for view in catalog.group_views()}
 
-    assert views.keys() == {"github", "calendar"}
+    assert views.keys() == {"github", "calendar", "sandbox"}
     github = views["github"]
     assert github.title == "GitHub"
     assert github.available is True
@@ -85,18 +95,27 @@ def test_executor_backend_configuration_never_reaches_a_view() -> None:
     assert "github-mcp.internal.example" not in rendered
 
 
-def test_mcp_group_health_view_carries_oauth_join_key_and_never_leaks_config() -> None:
+def test_mcp_group_views_excludes_sandbox_kind_groups() -> None:
     catalog = _catalog()
 
-    views: dict[str, ActionGroupHealthView] = {view.key: view for view in catalog.mcp_group_health_views()}
+    views = {view.key: view for view in catalog.mcp_group_views()}
 
     assert views.keys() == {"github", "calendar"}
-    assert views["github"].oauth_server_id == "github"
-    assert views["calendar"].oauth_server_id is None
 
-    rendered = "\n".join(view.model_dump_json() for view in views.values())
-    assert "github-mcp-account" not in rendered
-    assert "github-mcp.internal.example" not in rendered
+
+def test_server_id_must_match_its_own_group_key() -> None:
+    bad_yaml = textwrap.dedent("""
+        github:
+          title: GitHub
+          description: x
+          executor:
+            kind: mcp
+            description: x
+            config: {server_id: not-github}
+        """)
+
+    with pytest.raises(ValidationError, match="not-github"):
+        ActionCatalog(groups=yaml.safe_load(bad_yaml))
 
 
 def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:

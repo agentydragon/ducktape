@@ -671,7 +671,7 @@ async def test_operator_observes_mcp_group_health_without_a_real_tool_call_faili
             if test_review["health"] is not None and test_review["health"]["state"] == "available":
                 break
             # Each read awaits the executor's own connection supervisor; no fixed delay.
-    assert test_review["oauth_server_id"] is None
+    assert test_review["executor_kind"] == "mcp"
     assert test_review["available"] is True
 
 

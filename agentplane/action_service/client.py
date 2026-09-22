@@ -11,7 +11,7 @@ from uuid import UUID
 import httpx
 from anyio import CancelScope
 
-from agentplane.action_service.catalog import ActionGroupHealthView
+from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import (
     EnrollmentDecisionInput,
@@ -107,9 +107,9 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("GET", "/v1/operator/mcp-servers")
         return [McpLinkageView.model_validate(row) for row in response.json()]
 
-    async def mcp_group_health(self) -> list[ActionGroupHealthView]:
+    async def mcp_group_health(self) -> list[ActionGroupView]:
         response = await self._request("GET", "/v1/operator/mcp-servers/health")
-        return [ActionGroupHealthView.model_validate(row) for row in response.json()]
+        return [ActionGroupView.model_validate(row) for row in response.json()]
 
     async def mcp_linkage(self, server_id: str) -> McpLinkageView:
         response = await self._request("GET", f"/v1/operator/mcp-servers/{server_id}/linkage")
