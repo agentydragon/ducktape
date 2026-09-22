@@ -161,6 +161,37 @@ it("keeps a payload callback error until the reader retries the stream", async (
   expect(container.textContent).not.toContain("retired callback");
 });
 
+it("never replaces a body it has shown with nothing until the generation changes", async () => {
+  vi.spyOn(api, "GET").mockRejectedValue(new Error("offline"));
+  captured.rows.push(chunk(0, "Projected browser prefix and streamed suffix"));
+  const container = await render(
+    <PayloadBody threadId="thread" reference={REFERENCE} follow>
+      {(body) => <p>{body ?? "body withdrawn"}</p>}
+    </PayloadBody>
+  );
+  expect(container.textContent).toContain("Projected browser prefix and streamed suffix");
+
+  // The stream erroring, the reader going offline and the revision advancing out of reach all
+  // leave text that is still true of this generation; a loading line where the conversation was
+  // is the one thing that must not happen.
+  captured.rows.splice(0);
+  await rerender(
+    <PayloadBody threadId="thread" reference={{ ...REFERENCE, revision_cursor: "9" }} follow={false}>
+      {(body) => <p>{body ?? "body withdrawn"}</p>}
+    </PayloadBody>
+  );
+  expect(container.textContent).toContain("Projected browser prefix and streamed suffix");
+  expect(container.textContent).not.toContain("body withdrawn");
+
+  // A different generation is a different value, so nothing is carried into it.
+  await rerender(
+    <PayloadBody threadId="thread" reference={{ ...REFERENCE, generation: "5", revision_cursor: "5" }} follow>
+      {(body) => <p>{body ?? "body withdrawn"}</p>}
+    </PayloadBody>
+  );
+  expect(container.textContent).toContain("body withdrawn");
+});
+
 it("reads a completed revision over HTTP and holds the streamed text through the handoff", async () => {
   let settle: (body: string) => void = () => undefined;
   const get = vi.spyOn(api, "GET").mockImplementation(

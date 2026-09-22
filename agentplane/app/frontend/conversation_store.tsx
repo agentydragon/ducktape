@@ -504,18 +504,18 @@ export function PayloadBody({
       reference.source_id,
     ]
   );
-  // A generation only ever grows, so an earlier revision's value is a prefix of the newer one.
-  // Carrying it forward keeps arrived text on screen while the next read is in flight, whether that
-  // read is a chunk stream or a completed revision, and whether it is slow or offline. It stands in
-  // for nothing else: an unavailable revision is a fact about the content, not a slower load, so
-  // the completed path passes that through rather than falling back to what it last showed.
+  // A generation only ever grows, so whatever was last shown for one is a prefix of its next
+  // revision. Once a value has been on screen, nothing below may replace it with nothing: a read in
+  // flight, a stream that errored, a browser that went offline and a revision that has advanced out
+  // of reach all leave the reader looking at text that is still true of this generation, rather
+  // than at a loading line where their conversation was. Only a different generation clears it.
   const retained = useRef<{ generation: string; body: string } | null>(null);
   const generation = generationKey(stableReference);
   if (retained.current !== null && retained.current.generation !== generation) retained.current = null;
   const remember = useCallback(
     (body: string | null): JSX.Element => {
       if (body !== null) retained.current = { generation, body };
-      return children(body);
+      return children(body ?? retained.current?.body ?? null);
     },
     [children, generation]
   );
@@ -532,7 +532,7 @@ export function PayloadBody({
       {remember}
     </StreamingPayloadBody>
   ) : (
-    <CompletedPayloadBody threadId={threadId} reference={stableReference} pending={retained.current?.body ?? null}>
+    <CompletedPayloadBody threadId={threadId} reference={stableReference}>
       {remember}
     </CompletedPayloadBody>
   );
@@ -541,13 +541,10 @@ export function PayloadBody({
 function CompletedPayloadBody({
   threadId,
   reference,
-  pending,
   children,
 }: {
   threadId: string;
   reference: PayloadRef;
-  /** What the follow stream had already shown for this generation, held until the read lands. */
-  pending: string | null;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
   const refreshConversation = useContext(RefreshConversation);
@@ -599,7 +596,7 @@ function CompletedPayloadBody({
           {error} <button onClick={() => setAttempt((value) => value + 1)}>Retry payload</button>
         </p>
       )}
-      {children(body?.key === key ? body.value : pending)}
+      {children(body?.key === key ? body.value : null)}
     </>
   );
 }
