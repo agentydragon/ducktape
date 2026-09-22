@@ -5,7 +5,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
@@ -28,6 +28,7 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
+    k8s,
 )
 from constructs import Construct
 
@@ -276,16 +277,35 @@ class Actions(Construct):
             )
             deployment.containers[0].mount("/etc/agentplane-github", github_volume, read_only=True)
         for mount in self.env.actions.bearer_mcp_mounts:
-            bearer_secret = Secret.from_secret_name(self, f"{mount.name}-bearer-secret", mount.secret_name)
-            bearer_volume = Volume.from_secret(
-                self,
-                f"{mount.name}-bearer-volume",
-                bearer_secret,
-                items={mount.secret_key: PathMapping(path=mount.file_name)},
+            # cdk8s-plus has no optional SecretVolumeSource builder. Keep the
+            # optionality in the typed Kubernetes volume source: a missing soft
+            # dependency leaves its bearer file absent, so the Action Service can
+            # keep serving while that MCP group remains unavailable.
+            volume_name = f"secret-{mount.secret_name}"
+            ApiObject.of(deployment).add_json_patch(
+                JsonPatch.add(
+                    "/spec/template/spec/volumes/-",
+                    k8s.Volume(
+                        name=volume_name,
+                        secret=k8s.SecretVolumeSource(
+                            default_mode=0o440,
+                            items=[k8s.KeyToPath(key=mount.secret_key, path=mount.file_name)],
+                            optional=mount.optional,
+                            secret_name=mount.secret_name,
+                        ),
+                    ),
+                )
             )
-            # Its own directory: a subPath file cannot be mounted inside the read-only
-            # settings volume (runc: "not a directory").
-            deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+            ApiObject.of(deployment).add_json_patch(
+                JsonPatch.add(
+                    "/spec/template/spec/containers/0/volumeMounts/-",
+                    k8s.VolumeMount(
+                        name=volume_name,
+                        mount_path=f"/run/secrets/{mount.name}",
+                        read_only=True,
+                    ),
+                )
+            )
 
         node_scheduling.attract_to_zone(deployment)
         apply_pod_spec_patches(deployment)
