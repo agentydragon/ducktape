@@ -6,9 +6,9 @@ metadata:
     annotations:
         description: Tana personal access token for the full agentydragon@gmail.com account
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console,agentplane-staging
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console,agentplane-staging
 type: Opaque
 stringData:
     token: ENC[AES256_GCM,data:c6gIRTboy5GrOAgH71HOD5fi6JRYSyL2Ux+bIYC7tTwQNt095oxEuNdSW9fmJZJtQQbC2tmQO38Y5zYOYHTGXljJEbtcz0VOIMzotYg/tLX9N7+xlssEmi0A/iDI1L4AHNGo8ZD9MH/ew/TV/K/N6PSLQc7Asm5KzvymlBB9ehZe6XakQjT03QyJ6/faUwPcdIgyvXMIhgeVNiQOsLobMmtlEthGvs4oy/jeUgOgMUkMYOTzwAk86JZ28tGOWxBjFWAxDnSjJJBEPbg1Gvxr46Vcgdhv2PSsLiGqWuQ=,iv:xWWkGuBm6qrWKPgbXp14sFm0Lx3s5tdYKwKPsfBhF+Q=,tag:8n6xIqIEbD0QrOZcI7fAsw==,type:str]
