@@ -2,8 +2,8 @@ import { Alert, Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine
 import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
-  type ActionGroupHealthService,
-  actionGroupHealthService,
+  type ActionGroupService,
+  actionGroupService,
   type ActionGroupView,
   displayableError,
   mcpLinkageService,
@@ -17,14 +17,17 @@ type Row =
   | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
   | { kind: "health-only"; group: ActionGroupView };
 
-// Every mcp-kind ActionGroup whose config carries a server_id is guaranteed (by a backend
-// validation invariant, ActionCatalog._server_id_matches_group_key) to have that server_id equal
-// its own key -- so an oauth-linked group's key doubles as the join key, with no separate field.
+// /action-groups returns every configured group, sandbox-kind included; this page only cares
+// about mcp-kind ones. Every mcp-kind group whose config carries a server_id is guaranteed (by a
+// backend validation invariant, ActionCatalog._server_id_matches_group_key) to have that
+// server_id equal its own key -- so an oauth-linked group's key doubles as the join key, with no
+// separate field needed.
 function mergeRows(groups: ActionGroupView[], linkages: McpLinkageView[]): Row[] {
   const linkageBySid = new Map(linkages.map((linkage) => [linkage.server_id, linkage]));
   const matched = new Set<string>();
   const rows: Row[] = [];
   for (const group of groups) {
+    if (group.executor_kind !== "mcp") continue;
     const linkage = linkageBySid.get(group.key);
     if (linkage) {
       matched.add(linkage.server_id);
@@ -62,10 +65,10 @@ function LifecycleBadge({ health }: { health: McpHealth }): JSX.Element {
 
 export function McpServers({
   service = mcpLinkageService,
-  healthService = actionGroupHealthService,
+  groupService = actionGroupService,
 }: {
   service?: McpLinkageService;
-  healthService?: ActionGroupHealthService;
+  groupService?: ActionGroupService;
 }): JSX.Element {
   const [linkages, setLinkages] = useState<McpLinkageView[]>([]);
   const [groups, setGroups] = useState<ActionGroupView[]>([]);
@@ -78,21 +81,21 @@ export function McpServers({
     setLoading(true);
     setError(null);
     setWarnings([]);
-    const [linkageResult, healthResult] = await Promise.allSettled([service.list(), healthService.list()]);
+    const [linkageResult, groupResult] = await Promise.allSettled([service.list(), groupService.list()]);
     const nextWarnings: string[] = [];
     if (linkageResult.status === "fulfilled") setLinkages(linkageResult.value);
     else {
       setLinkages([]);
       nextWarnings.push(`OAuth-linked servers: ${displayableError(linkageResult.reason)}`);
     }
-    if (healthResult.status === "fulfilled") setGroups(healthResult.value);
+    if (groupResult.status === "fulfilled") setGroups(groupResult.value);
     else {
       setGroups([]);
-      nextWarnings.push(`Live connection health: ${displayableError(healthResult.reason)}`);
+      nextWarnings.push(`Live connection health: ${displayableError(groupResult.reason)}`);
     }
     setWarnings(nextWarnings);
     setLoading(false);
-  }, [service, healthService]);
+  }, [service, groupService]);
 
   useEffect(() => {
     void load();

@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { ActionGroupHealthService, ActionGroupView, McpLinkageService, McpLinkageView } from "../client";
+import type { ActionGroupService, ActionGroupView, McpLinkageService, McpLinkageView } from "../client";
 import { McpServers } from "./mcp_servers";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -19,18 +19,18 @@ afterEach(async () => {
 async function render(
   list: McpLinkageService["list"],
   overrides: Partial<McpLinkageService> = {},
-  healthList: ActionGroupHealthService["list"] = async () => []
+  groupList: ActionGroupService["list"] = async () => []
 ): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   mounted.push({ root, container });
   const service: McpLinkageService = { list, status: vi.fn(), start: vi.fn(), disconnect: vi.fn(), ...overrides };
-  const healthService: ActionGroupHealthService = { list: healthList };
+  const groupService: ActionGroupService = { list: groupList };
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <McpServers service={service} healthService={healthService} />
+        <McpServers service={service} groupService={groupService} />
       </MantineProvider>
     )
   );
@@ -51,7 +51,7 @@ function pendingList(): { promise: Promise<McpLinkageView[]>; resolve: (rows: Mc
   return { promise, resolve };
 }
 
-function pendingHealthList(): {
+function pendingGroupList(): {
   promise: Promise<ActionGroupView[]>;
   resolve: (rows: ActionGroupView[]) => void;
 } {
@@ -111,20 +111,20 @@ it("does not claim an empty inventory until the pending request succeeds", async
   expect(refresh(container).disabled).toBe(false);
 });
 
-it("stays loading until both the linkage and health fetches resolve", async () => {
+it("stays loading until both the linkage and group fetches resolve", async () => {
   const linkage = pendingList();
-  const health = pendingHealthList();
+  const groups = pendingGroupList();
   const container = await render(
     () => linkage.promise,
     {},
-    () => health.promise
+    () => groups.promise
   );
   expect(container.querySelector('[role="status"]')).not.toBeNull();
 
   await act(async () => linkage.resolve([]));
   expect(container.querySelector('[role="status"]')).not.toBeNull();
 
-  await act(async () => health.resolve([]));
+  await act(async () => groups.resolve([]));
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
@@ -257,4 +257,25 @@ it("renders an oauth linkage with no matching health row exactly as before", asy
   expect(container.textContent).toContain("unlinked");
   const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
   expect(buttons).toContain("Link account");
+});
+
+it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
+  const container = await render(
+    async () => [],
+    {},
+    async () => [
+      {
+        key: "sandbox",
+        title: "Sandbox",
+        description: "Runs in-process, not over MCP.",
+        executor_kind: "sandbox",
+        executor_description: "Stamped and exec'd by this service.",
+        available: true,
+        health: null,
+        actions: [],
+      },
+    ]
+  );
+  expect(container.textContent).not.toContain("sandbox");
+  expect(container.textContent).toContain("No MCP servers are configured");
 });

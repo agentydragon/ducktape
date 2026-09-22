@@ -250,13 +250,13 @@ export const mcpLinkageService: McpLinkageService = {
 
 export type ActionGroupView = components["schemas"]["ActionGroupView"];
 
-export interface ActionGroupHealthService {
+export interface ActionGroupService {
   list(): Promise<ActionGroupView[]>;
 }
 
-export const actionGroupHealthService: ActionGroupHealthService = {
+export const actionGroupService: ActionGroupService = {
   async list() {
-    const { data, error, response } = await api.GET("/mcp-servers/health");
+    const { data, error, response } = await api.GET("/action-groups");
     if (error) throw new Error(httpError(response, error));
     return data;
   },
