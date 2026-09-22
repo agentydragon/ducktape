@@ -34,9 +34,10 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 - **<option_moving_window.md>** — one watch over a range the client moves, paying only the
   difference. The protocol D1 describes.
 - **<option_app_push.md>** — the same delta, pushed over SSE, reusing machinery the app already has.
-- **<option_electric_today.md>** — what is deployed, as a baseline.
-- **<option_electric_pages.md>** — TanStack DB + Electric, partitioned into stable pages. The
-  furthest worked out, because it is where the thinking started.
+- **<option_electric_today.md>** — what is deployed, how it fails, and the seven reader flows traced
+  through it.
+- **<option_electric_pages.md>** — TanStack DB + Electric, repartitioned into stable pages.
+- **<electric_primitives.md>** — what Electric actually offers, for both of the above.
 - **<prior_art.md>** — how other systems cut this, and which are worth an afternoon.
 
 ## Fit matrix
@@ -82,16 +83,14 @@ Cells are judgements from the option files, not measurements.
   without `have`.
 - **A0 fails D1 hardest**, which is easy to miss because it has no window to move: it re-sends the
   whole conversation on every poll, held or not.
-- **Nothing here is disqualified.** Two earlier readings of this matrix said otherwise — first that
-  D1 eliminated the Electric family, then that P8 did — and both were wrong. P8 is satisfiable with
-  Electric by giving each payload field its own content shape and letting the client subscribe to
-  the ones it wants; that is the client choosing, and it composes with streaming. It costs shape
-  count (pages × fields in use), which is an **O1** problem rather than a P8 one.
-- **So the case against the Electric family is cumulative, not structural.** Shape count, the page
-  boundary and its landing pad, a catch-up signal that becomes composite, no per-card readiness
-  signal, and the browser cache being the only place the overlap is avoided. Each is affordable;
-  the question is whether the pile is worth what shapes buy, which is a server-side cache shared
-  between readers of one conversation.
+- **Nothing here is disqualified.** No requirement rules out a family; the differences are in what
+  each costs to satisfy. P8 in particular is reachable with Electric, by giving each payload field
+  its own content shape and letting the client subscribe to the ones it wants — at the price of
+  shape count, which lands on **O1** rather than on P8.
+- **The case against the Electric family is cumulative, not structural.** Shape count, the page
+  boundary and its landing pad, a catch-up signal that becomes composite, and no per-card readiness
+  signal. Each is affordable alone; the question is whether the pile is worth what shapes buy,
+  which is a cache shared between readers **of the same conversation**.
 - **The moving window is the only column that is all `+`.** That is not a claim that it is right —
   it is the option written _from_ these requirements, so it ought to score well, and the honest
   reading is that the requirements have not yet been stress-tested against it. Its costs are real
@@ -106,6 +105,26 @@ Cells are judgements from the option files, not measurements.
 - **A1 is strictly worse than the moving window** and differs by one idea: `have`. Without it a
   reader that scrolls up re-downloads its whole new window. Keep A1 on the matrix only as the step
   before, not as a destination.
+
+## Measurement gates
+
+What any chosen design has to be held to.
+
+- Open-to-first-text for a 30-segment tail, cold and warm, with upstream shape-creation duration
+  reported separately from transfer. `agentplane/acceptance/test_conversation_latency.py` is the
+  instrument, and it only exercises what the deployment is running.
+- Distinct Electric shape handles created during one turn: zero new shapes per completing item, and
+  zero per arriving segment while a reader holds a history page. The second is flow 4, and the
+  shape-creation log (landed in #7589) reports a handle per request, so counting distinct handles over
+  a session answers both.
+- **Shape count against `ELECTRIC_MAX_SHAPES=1024`**, before any Electric partition is built rather
+  than after: pages × fields in use × concurrent conversations, given that shapes are shared between
+  readers of one conversation.
+- Browser coverage for the two flows nothing asserts end to end: scroll up and then stream (no hole
+  appears, and the reader's place does not move), and a page's rows surviving an unsubscribe of a
+  page above it.
+- Small-file create/fsync latency on `seaweedfs-ovh` versus `local-path-ovh-ssd` from the Electric
+  pod's node, before spending W1's PVC change.
 
 ## What to settle next, in order
 

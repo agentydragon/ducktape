@@ -31,10 +31,9 @@ selection the client's; the deployed implementation has no parameter for it, and
 put a fixed field set in a shape predicate. Baking "reasoning is lazy, text is eager" into the
 protocol is an **optimisation** on the wrong side of the wire.
 
-An earlier draft of this file said P8 **disqualifies** the Electric family. That was wrong. `field`
-is a column of the chunk table, so a field selection is a `where` predicate and therefore part of a
-shape's identity — but that means **one shape per field**, not no shape at all, and the client
-chooses P8-style by choosing which of them to subscribe to:
+It is satisfiable everywhere, including with Electric. `field` is a column of the chunk table, so a
+field selection is a `where` predicate and therefore part of a shape's identity — which means **one
+shape per field**, and the client chooses by choosing which of them to subscribe to:
 
 - A reader always holds the entity shapes, which carry metadata and references. "Selecting nothing
   still returns metadata and references" holds by default.
@@ -49,8 +48,8 @@ chooses P8-style by choosing which of them to subscribe to:
 What it costs is shape count: pages × fields in use, rather than pages. That is an **O1** problem
 against `ELECTRIC_MAX_SHAPES`, not a P8 problem.
 
-So no option on the matrix is disqualified by P8. It separates designs that have a parameter for it
-from designs that do not, and every design here can grow one.
+So P8 separates designs that have a parameter for it from designs that do not, and every design
+here can grow one.
 
 ## Sync semantics
 
@@ -118,11 +117,9 @@ The worked case. A client holds segments 100–200 at revision 9932. The reader 
 client now wants 50–150. It should fetch **50–99**, learn of any change to **100–150 since revision
 9932**, and drop 151–200. What it must not do is receive 100–150 again.
 
-Note what this is _not_: a cap on subscriptions. An earlier draft of this file read "one watch, and
-move it", and that turned an implementation shape into the requirement. The count is free; the
-re-transfer is the cost.
+Note what this is _not_: a cap on subscriptions. The count is free; the re-transfer is the cost.
 
-**This splits the options cleanly, and not where the earlier version did:**
+**How it splits the options:**
 
 - **Overlapping windows re-send.** Any design where the viewport is one predicate that changes —
   Electric as deployed, or a delta poll without a `have` parameter — replays the new window whole.
@@ -130,12 +127,9 @@ re-transfer is the cost.
   different shape and a fresh shape's log starts at `offset=-1`.
 - **Non-overlapping partitions do not.** The page partition (§ option_electric_pages) never moves a
   bound, so scrolling up subscribes to a page the client does not hold and re-sends nothing. It pays
-  for this in subscription count, which D1 no longer charges for.
+  for this in subscription count, which D1 does not charge for.
 - **A stated `have` does not either.** § option_moving_window sends the difference because the
   client says what it holds.
-
-So D1 readmits the page partition, and leaves **P8** as the only hard thing standing against the
-Electric family.
 
 One honest edge: a reader that unsubscribes from a page, scrolls back to it and re-subscribes does
 re-download it. That is not a D1 violation — the client dropped the data — but it is the cost of
