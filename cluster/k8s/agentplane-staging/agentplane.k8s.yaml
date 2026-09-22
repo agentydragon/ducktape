@@ -2915,6 +2915,35 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the canonical Tana PAT from external-creds.
+  name: tana-agentydragon-gmail-com-account-pat
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: tana-agentydragon-gmail-com-account-pat
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: tana-agentydragon-gmail-com-account-pat
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:

@@ -3883,6 +3883,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: valkey
@@ -5345,6 +5347,8 @@ spec:
     - name: claude-rbac
       namespace: ducktape-flux
     - name: cnpg
+      namespace: ducktape-flux
+    - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux

@@ -16,3 +16,4 @@ resources:
   - groq.sops.yaml
   - mistral.sops.yaml
   - openclaw-telegram-bot-token.sops.yaml
+  - tana-agentydragon-gmail-com-account-pat.sops.yaml

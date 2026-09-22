@@ -7,6 +7,18 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
+from constructs import Construct
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecData,
+    ExternalSecretSpecDataRemoteRef,
+    ExternalSecretSpecSecretStoreRef,
+    ExternalSecretSpecSecretStoreRefKind,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -21,6 +33,7 @@ from cluster.cdk8s.metadata import metadata
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = "cluster/k8s/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
+_STORE = "kubernetes-external-creds-secret-store"
 
 
 @dataclass(frozen=True)
@@ -39,6 +52,34 @@ class Credential:
     secret_name: str
     consumers: tuple[ApprovedConsumer, ...] = ()
     namespace: str = NAMESPACE
+
+
+def add_external_secret(
+    scope: Construct, id: str, *, namespace: str, source_name: str, property_name: str, description: str
+) -> ExternalSecret:
+    """Create a namespace-local ESO copy from the canonical external-creds source."""
+    return ExternalSecret(
+        scope,
+        id,
+        metadata=metadata(source_name, namespace, annotations={"description": description}),
+        spec=ExternalSecretSpec(
+            refresh_interval="1h",
+            secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=_STORE
+            ),
+            data=[
+                ExternalSecretSpecData(
+                    secret_key=property_name,
+                    remote_ref=ExternalSecretSpecDataRemoteRef(key=source_name, property=property_name),
+                )
+            ],
+            target=ExternalSecretSpecTarget(
+                name=source_name,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            ),
+        ),
+    )
 
 
 # This roster is the authorization boundary: each consumer is an explicit approval.
@@ -139,6 +180,15 @@ CREDENTIALS = (
         secret_file="openclaw-telegram-bot-token.sops.yaml",
         secret_name="openclaw-telegram-bot-token",
         consumers=(ApprovedConsumer("claude-sandbox", "openclaw-telegram-bot-token-claude-sandbox-reader"),),
+    ),
+    Credential(
+        secret_file="tana-agentydragon-gmail-com-account-pat.sops.yaml",
+        secret_name="tana-agentydragon-gmail-com-account-pat",
+        consumers=(
+            ApprovedConsumer("agentplane-staging", "tana-agentydragon-gmail-com-account-pat-agentplane-staging-reader"),
+            ApprovedConsumer("haku-console", "tana-agentydragon-gmail-com-account-pat-haku-console-reader"),
+            ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),
+        ),
     ),
 )
 
