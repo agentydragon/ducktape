@@ -248,6 +248,20 @@ export const mcpLinkageService: McpLinkageService = {
   },
 };
 
+export type ActionGroupView = components["schemas"]["ActionGroupView"];
+
+export interface ActionGroupService {
+  list(): Promise<ActionGroupView[]>;
+}
+
+export const actionGroupService: ActionGroupService = {
+  async list() {
+    const { data, error, response } = await api.GET("/action-groups");
+    if (error) throw new Error(httpError(response, error));
+    return data;
+  },
+};
+
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
   decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
