@@ -1245,20 +1245,20 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/content$/,
     (match, query, signal) => {
-      const tailFrom = BigInt(query.get("tail_from") ?? "0");
-      const subset = currentSubset(query);
-      if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true")
-          return electricLongPoll(`visual-content-${match[1]}`, "conversation_payload_chunk", signal);
+      // The chunk table is append-only, so its shape replays a full log from -1 rather than
+      // bootstrapping from a current snapshot; the proxy refuses a subset handshake for it.
+      if (query.get("live") === "true")
+        return electricLongPoll(`visual-content-${match[1]}`, "conversation_payload_chunk", signal);
+      if (query.get("offset") !== null && query.get("offset") !== "-1")
         return electricShape([], `visual-content-${match[1]}`);
-      }
+      const tailFrom = BigInt(query.get("tail_from") ?? "0");
       const rows = payloadChunkRows(match[1]).filter(
         (row) => ["text", "confirmed_input"].includes(row.field) && BigInt(row.owner_cursor) >= tailFrom
       );
-      const shaped = rows.map((row) => shapeRow("conversation_payload_chunk", row));
-      return subset
-        ? electricSubset(shaped, `visual-content-${match[1]}`)
-        : electricShape(shaped, `visual-content-${match[1]}`);
+      return electricShape(
+        rows.map((row) => shapeRow("conversation_payload_chunk", row)),
+        `visual-content-${match[1]}`
+      );
     },
   ],
   [
