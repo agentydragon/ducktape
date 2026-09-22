@@ -38,6 +38,7 @@ export type CommandReconciliationResponse = components["schemas"]["CommandReconc
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
+export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -73,6 +74,20 @@ export async function reconcileCommands(
   return data;
 }
 
+export async function conversationObservationEntry(
+  threadId: string,
+  cursor: string,
+  signal?: AbortSignal
+): Promise<ArchivedObservationEntry> {
+  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations/{cursor}", {
+    // openapi-fetch serializes path values without converting them to JS numbers.
+    params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
 export async function conversationObservations(
   threadId: string,
   cursor: { before?: string; after?: string },
@@ -81,12 +96,7 @@ export async function conversationObservations(
   const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations", {
     params: {
       path: { thread_id: threadId },
-      query: {
-        // openapi-fetch serializes query values without converting them to JS numbers.
-        before_cursor: cursor.before as unknown as number | undefined,
-        after_cursor: cursor.after as unknown as number | undefined,
-        limit: 30,
-      },
+      query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
     },
     signal,
   });
@@ -108,7 +118,7 @@ export async function conversationEvidence(
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,
-        after_cursor: afterCursor as unknown as number,
+        after_cursor: afterCursor,
         limit: 30,
       },
     },
@@ -127,13 +137,13 @@ export async function conversationFrames(
 ): Promise<NativeFramePage> {
   const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
     params: {
-      path: { thread_id: threadId, observation_cursor: observationCursor as unknown as number },
+      path: { thread_id: threadId, observation_cursor: observationCursor },
       query: {
         source_id: scope.sourceId,
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,
-        after_sequence: afterSequence as unknown as number,
+        after_sequence: afterSequence,
         limit: 30,
       },
     },

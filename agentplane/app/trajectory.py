@@ -41,6 +41,7 @@ from agentplane.app import conversation_projection
 from agentplane.app.changes import Changes
 from agentplane.app.conversation_debug import (
     ArchivedObservation,
+    ArchivedObservationEntry,
     ConversationEvidenceNotFoundError,
     ConversationScopeChangedError,
     EvidenceObservation,
@@ -750,14 +751,16 @@ class TrajectoryStore:
         ):
             raise ValueError("invalid chronological observation page bounds")
         async with self._sessions() as session:
-            query = select(Event).where(Event.thread_id == thread_id)
+            query = select(Event.cursor, Event.origin_source_id, Event.origin_sequence, Event.kind).where(
+                Event.thread_id == thread_id
+            )
             if after_cursor is not None:
                 query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
             else:
                 if before_cursor is not None:
                     query = query.where(Event.cursor < before_cursor)
                 query = query.order_by(Event.cursor.desc())
-            rows = list(await session.scalars(query.limit(limit)))
+            rows = list(await session.execute(query.limit(limit)))
             if after_cursor is None:
                 rows.reverse()
             if not rows:
@@ -772,20 +775,25 @@ class TrajectoryStore:
             )
             return ObservationPage(
                 observations=[
-                    ArchivedObservation.model_validate(
-                        {
-                            "cursor": str(row.cursor),
-                            "source_id": row.origin_source_id,
-                            "source_sequence": str(row.origin_sequence),
-                            "kind": row.kind,
-                            "entry": row.payload,
-                        }
+                    ArchivedObservation(
+                        cursor=str(row.cursor),
+                        source_id=row.origin_source_id,
+                        source_sequence=str(row.origin_sequence),
+                        kind=row.kind,
                     )
                     for row in rows
                 ],
                 next_before_cursor=str(rows[0].cursor) if has_older else None,
                 next_after_cursor=str(rows[-1].cursor) if has_newer else None,
             )
+
+    async def conversation_observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
+        """One raw archive entry, read only when a reader expands that observation."""
+        async with self._sessions() as session:
+            payload = await session.scalar(
+                select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == cursor)
+            )
+            return None if payload is None else ArchivedObservationEntry(cursor=str(cursor), entry=payload)
 
     async def command_outcomes(
         self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]

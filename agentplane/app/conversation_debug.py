@@ -43,12 +43,20 @@ class NativeFramePage(BaseModel):
 
 
 class ArchivedObservation(BaseModel):
+    """Identity and kind only; the raw entry is fetched per observation on expansion."""
+
     model_config = ConfigDict(extra="forbid")
 
     cursor: str
     source_id: str
     source_sequence: str
     kind: str
+
+
+class ArchivedObservationEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str
     entry: dict[str, JsonValue]
 
 
