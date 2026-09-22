@@ -74,9 +74,8 @@ Independent of each other; fan out.
 - **Artifacts from the chart.** Each Kustomization node builds its artifact value first
   and reads `sourceRef` off it; the `ArtifactGenerator` is assembled from the list
   last. Deletes `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the
-  triple-written names; retires `cluster/validation/test_actions_artifact.py`. The SOPS
-  `decryption` block becomes one value. Exit: `kustomize build` of each packaged
-  directory unchanged, checked once in the PR.
+  triple-written names; retires `cluster/validation/test_actions_artifact.py`. Exit:
+  `kustomize build` of each packaged directory unchanged, checked once in the PR.
 
 **Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
 

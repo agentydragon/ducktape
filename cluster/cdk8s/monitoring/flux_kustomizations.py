@@ -3,9 +3,6 @@
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -14,6 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -228,10 +226,7 @@ def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-loki", namespace="ducktape-flux"
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
@@ -269,10 +264,7 @@ def mimir(
                 name="monitoring-mimir",
                 namespace="ducktape-flux",
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-blocks", namespace="monitoring"
@@ -363,10 +355,7 @@ def monitoring_stack(
                 name="monitoring-stack",
                 namespace="ducktape-flux",
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
@@ -418,10 +407,7 @@ def tempo(
                 name="monitoring-tempo",
                 namespace="ducktape-flux",
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="tempo", namespace="monitoring"

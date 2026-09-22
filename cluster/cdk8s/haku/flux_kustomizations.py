@@ -5,9 +5,6 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -17,6 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -39,10 +37,7 @@ def haku_forgejo_tea(chart: Chart, haku_rbac: Kustomization) -> Kustomization:
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             depends_on=[
                 # haku-sandbox ns the secret lives in
                 flux_kustomization_depends_on(haku_rbac)
@@ -78,10 +73,7 @@ def haku_mailbox(
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
             ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 cnpg,
                 # Certificate CRD + controller

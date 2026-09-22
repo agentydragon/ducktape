@@ -23,6 +23,9 @@ from cdk8s import ApiObject, ApiObjectMetadata, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
 )
@@ -30,6 +33,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
+SOPS_DECRYPTION = KustomizationSpecDecryption(
+    provider=KustomizationSpecDecryptionProvider.SOPS,
+    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+)
 
 
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:

@@ -50,9 +50,6 @@ from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -69,6 +66,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     NAMESPACE,
+    SOPS_DECRYPTION,
     flux_kustomization,
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
@@ -445,10 +443,7 @@ def litellm(
             path="./cluster/k8s/litellm",
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
             source_ref=KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
             ),
