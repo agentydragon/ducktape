@@ -90,7 +90,7 @@ iron-proxy keep the credential.
 
 **C is what the cluster does today, and it is the weakest of the four.**
 `cluster/k8s/agents/airlock/google-access-token-eso.yaml` mirrors a live Google access
-token into `claude-sandbox` and `haku-sandbox` on a 1-minute refresh. That is exactly
+token into `haku-sandbox` on a 1-minute refresh. That is exactly
 the exposure the coder agent's design was built to remove: a credential readable from
 inside the agent, and therefore reachable by prompt injection from anything the agent
 reads. It should not be extended to the personal-data agent.
