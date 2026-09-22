@@ -1,8 +1,9 @@
 """Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
-five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant-reads
-ActionPolicySet, and the ActionPolicyBinding granting them to that ServiceAccount. See
-cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject bindings
-are written by the integration app at runtime and are never checked in here.
+five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant/Gmail/Google
+Calendar-reads ActionPolicySets, and the ActionPolicyBinding granting them to that
+ServiceAccount. See cluster/k8s/agentplane-staging/README.md § Action policies --
+Sandbox-subject bindings are written by the integration app at runtime and are never
+checked in here.
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ _GITHUB_READS_SET = "github-reads"
 _SANDBOX_SET = "sandbox-self"
 _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
+_GMAIL_READS_SET = "gmail-reads"
+_GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -172,6 +175,25 @@ _HOME_ASSISTANT_READS_ACTIONS = [
     "ha_list_services",
     "ha_search",
 ]
+
+# Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
+# (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
+# filters_create/delete) stay on the human path, matching haku-console's own gating.
+_GMAIL_READS_ACTIONS = [
+    "drafts_get",
+    "drafts_list",
+    "filters_get",
+    "filters_list",
+    "labels_get",
+    "labels_list",
+    "messages_get",
+    "threads_get",
+    "threads_list",
+]
+
+# Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
+# stays on the human path, matching haku-console's own gating.
+_GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_events"]
 
 
 def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
@@ -388,11 +410,52 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
+    # Gmail's and Google Calendar's read-only surfaces (see the _GMAIL_READS_ACTIONS /
+    # _GOOGLE_CALENDAR_READS_ACTIONS lists above for the reviewed tool lists and exclusions).
+    _policy_set(
+        scope,
+        "actionpolicyset-gmail-reads",
+        metadata=ApiObjectMetadata(
+            name=_GMAIL_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"gmail": _GMAIL_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+    _policy_set(
+        scope,
+        "actionpolicyset-google-calendar-reads",
+        metadata=ApiObjectMetadata(
+            name=_GOOGLE_CALENDAR_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+
     # What the console's `haku_v1` grants for GitHub (github-reads and
-    # github-identity-reads) and now Home Assistant (home-assistant-reads), attached to
-    # the Claude.ai connector's principal. The binding's existence is the grant: deleting
-    # it, or the label on the ServiceAccount, puts every one of these Actions back on the
-    # human path.
+    # github-identity-reads), Home Assistant (home-assistant-reads), and now Gmail/Calendar
+    # (gmail-reads, google-calendar-reads), attached to the Claude.ai connector's principal.
+    # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
+    # puts every one of these Actions back on the human path.
     _binding(
         scope,
         "actionpolicybinding-claude-ai-reads",
@@ -400,11 +463,18 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
             subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-            policy_sets=[_GITHUB_READS_SET, _GITHUB_IDENTITY_READS_SET, _SANDBOX_SET, _HOME_ASSISTANT_READS_SET],
+            policy_sets=[
+                _GITHUB_READS_SET,
+                _GITHUB_IDENTITY_READS_SET,
+                _SANDBOX_SET,
+                _HOME_ASSISTANT_READS_SET,
+                _GMAIL_READS_SET,
+                _GOOGLE_CALENDAR_READS_SET,
+            ],
         ),
     )
