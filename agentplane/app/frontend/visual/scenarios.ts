@@ -63,7 +63,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     failedTurn: "before-content",
-    readySelectors: ['[data-conversation-anchor="6"]'],
+    readySelectors: ['[data-thread-anchor="6"]'],
     captureViewport: true,
   },
   session_error_phone: {
@@ -71,7 +71,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     failedTurn: "after-content",
-    readySelectors: ['[data-conversation-anchor="8"]'],
+    readySelectors: ['[data-thread-anchor="8"]'],
     captureViewport: true,
   },
   session_error_raw: {
@@ -97,7 +97,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1100 },
     interleavedEvents: true,
-    readySelectors: ['[data-conversation-anchor="18"]'],
+    readySelectors: ['[data-thread-anchor="18"]'],
     captureViewport: true,
   },
   session_interleaved_raw: {
@@ -317,7 +317,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
-    readySelectors: ['[data-conversation-anchor="34"]'],
+    readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_deleted_sandbox: {
@@ -346,7 +346,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     outputName: "session-phone",
-    readySelectors: ['[data-conversation-anchor="34"]'],
+    readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_reasoning: {
@@ -387,7 +387,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
-    readySelectors: ['[data-conversation-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_pending: {
@@ -395,7 +395,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_pending_phone: {
@@ -403,7 +403,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_pending_raw: {
@@ -412,7 +412,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     openDebug: "latest",
-    readySelectors: ['[aria-label="Chronological observations"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_pending_controls: {
@@ -420,7 +420,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "controls",
-    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_command_outcomes_phone: {
@@ -428,7 +428,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-conversation-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_catching_up: {
@@ -437,7 +437,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     sessionReplay: "catching-up",
     // The intentionally stale view state withholds segments while it catches up.
-    readySelectors: ['[data-conversation-catchup="true"]'],
+    readySelectors: ['[data-thread-catchup="true"]'],
   },
   session_sync_unavailable: {
     element: "#app",
@@ -454,7 +454,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     outputName: "session-states-phone",
-    readySelectors: ['[data-conversation-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="19"]'],
     captureViewport: true,
   },
 };

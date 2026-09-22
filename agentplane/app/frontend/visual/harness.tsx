@@ -946,15 +946,15 @@ function statesRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
-function conversationRows(threadId: string): Record<string, unknown>[] {
+function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
 
-function conversationInterest(threadId: string): Record<string, string | null> {
-  const through = conversationRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
+function threadEntityInterest(threadId: string): Record<string, string | null> {
+  const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
   return {
     source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
@@ -1095,7 +1095,7 @@ function currentSubset(query: URLSearchParams): boolean {
     throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
   }
   if (query.get("source_id") !== CONVERSATION_SOURCE || query.get("projection_epoch") !== CONVERSATION_EPOCH) {
-    throw new Error("current Electric shapes must select the resolved conversation source and projection epoch");
+    throw new Error("current Electric shapes must select the resolved thread fold source and projection epoch");
   }
   // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
   // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
@@ -1124,7 +1124,7 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
 }
 
 function threadRows(threadId: string): Record<string, unknown>[] {
-  return conversationRows(threadId).map(electricEntity);
+  return threadEntityRows(threadId).map(electricEntity);
 }
 
 function archivedStderr(cursor: number): Record<string, unknown> {
@@ -1178,8 +1178,8 @@ routes.push(
       scenario.sessionReplay === "unavailable"
         ? // This persistent service failure is distinct from a ready shape's stale source/epoch
           // 410, which the production collection intentionally resolves once.
-          Response.json({ detail: "conversation projection is temporarily unavailable" }, { status: 503 })
-        : conversationInterest(match[1]),
+          Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
+        : threadEntityInterest(match[1]),
   ],
   [
     "GET",
@@ -1280,12 +1280,12 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence$/,
+    /^\/threads\/([0-9a-f-]+)\/evidence$/,
     () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence\/([0-9]+)\/frames$/,
+    /^\/threads\/([0-9a-f-]+)\/evidence\/([0-9]+)\/frames$/,
     (_match) => ({
       frames: [
         {
@@ -1297,10 +1297,10 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])],
+  ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/conversation\/observations\/([0-9]+)$/,
+    /^\/threads\/([0-9a-f-]+)\/observations\/([0-9]+)$/,
     (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
   ]
 );
@@ -1336,7 +1336,7 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected conversations use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
 class HarnessEventSource extends EventTarget {
   readonly url: string;
   readyState = 1;

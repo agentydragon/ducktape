@@ -2,8 +2,8 @@ import { Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 
 import {
-  conversationObservationEntry,
-  conversationObservations,
+  threadObservationEntry,
+  threadObservations,
   displayableError,
   type ArchivedObservationEntry,
   type ObservationPage,
@@ -20,7 +20,7 @@ function ObservationEntry({ threadId, cursor }: { threadId: string; cursor: stri
     const controller = new AbortController();
     setEntry(null);
     setError(null);
-    void conversationObservationEntry(threadId, cursor, controller.signal).then(
+    void threadObservationEntry(threadId, cursor, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) setEntry(value);
       },
@@ -79,7 +79,7 @@ function ObservationHistory({
     const controller = new AbortController();
     setPage(null);
     setError(null);
-    void conversationObservations(threadId, request, controller.signal).then(
+    void threadObservations(threadId, request, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) setPage(value);
       },

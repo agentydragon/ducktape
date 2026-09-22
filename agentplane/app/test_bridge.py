@@ -862,7 +862,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
         )
 
 
-async def test_stored_conversation_stream_does_not_require_reachable_runner(
+async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)

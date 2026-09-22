@@ -75,12 +75,12 @@ export async function reconcileCommands(
   return data;
 }
 
-export async function conversationObservationEntry(
+export async function threadObservationEntry(
   threadId: string,
   cursor: string,
   signal?: AbortSignal
 ): Promise<ArchivedObservationEntry> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations/{cursor}", {
+  const { data, error } = await api.GET("/threads/{thread_id}/observations/{cursor}", {
     // openapi-fetch serializes path values without converting them to JS numbers.
     params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
     signal,
@@ -89,12 +89,12 @@ export async function conversationObservationEntry(
   return data;
 }
 
-export async function conversationObservations(
+export async function threadObservations(
   threadId: string,
   cursor: { before?: string; after?: string },
   signal?: AbortSignal
 ): Promise<ObservationPage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations", {
+  const { data, error } = await api.GET("/threads/{thread_id}/observations", {
     params: {
       path: { thread_id: threadId },
       query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
@@ -105,13 +105,13 @@ export async function conversationObservations(
   return data;
 }
 
-export async function conversationEvidence(
+export async function threadEvidence(
   threadId: string,
   scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
   afterCursor = "0",
   signal?: AbortSignal
 ): Promise<EvidencePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence", {
+  const { data, error } = await api.GET("/threads/{thread_id}/evidence", {
     params: {
       path: { thread_id: threadId },
       query: {
@@ -129,14 +129,14 @@ export async function conversationEvidence(
   return data;
 }
 
-export async function conversationFrames(
+export async function threadNativeFrames(
   threadId: string,
   scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
   observationCursor: string,
   afterSequence = "0",
   signal?: AbortSignal
 ): Promise<NativeFramePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
+  const { data, error } = await api.GET("/threads/{thread_id}/evidence/{observation_cursor}/frames", {
     params: {
       path: { thread_id: threadId, observation_cursor: observationCursor },
       query: {
@@ -346,7 +346,7 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-export async function conversationInterest(
+export async function threadEntityInterest(
   threadId: string,
   beforeCursor?: string,
   signal?: AbortSignal
@@ -354,7 +354,7 @@ export async function conversationInterest(
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
   if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Conversation interest failed with ${response.status}`);
+  if (!response.ok) throw new Error(`Thread entity interest failed with ${response.status}`);
   return (await response.json()) as EntityInterest;
 }
 

@@ -73,7 +73,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         action_policy,
         reviewer=reviewer,
     )
-    path = f"/threads/{thread}/conversation/evidence"
+    path = f"/threads/{thread}/evidence"
     params = {
         "source_id": scope.source_id,
         "projection_epoch": scope.projection_epoch,
@@ -127,7 +127,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         for limit in ("0", "201"):
             assert (await client.get(path, params=params | {"limit": limit}, headers=AGENT_AUTH)).status_code == 422
 
-        chronological = f"/threads/{thread}/conversation/observations"
+        chronological = f"/threads/{thread}/observations"
         assert (await client.get(chronological)).status_code == 401
         tail = await client.get(chronological, params={"limit": "3"}, headers=AGENT_AUTH)
         assert tail.status_code == 200, tail.text

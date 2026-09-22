@@ -41,7 +41,7 @@ _ITEMS = 35
 
 @dataclass(frozen=True)
 class Seeded:
-    """One projected conversation, and the identities the proxy's routes take as parameters."""
+    """One projected thread, and the identities the proxy's routes take as parameters."""
 
     thread: UUID
     interest: ThreadEntityInterest
