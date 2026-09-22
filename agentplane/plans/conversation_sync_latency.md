@@ -208,11 +208,19 @@ updates because its chunks did.
 Three pieces, one epoch bump:
 
 - **`PayloadField.REASONING`.** Reasoning writes to `text` today, distinguished only by the item's
-  `kind` on its entity row, so a shape on `field = 'text'` would drag in every reasoning body — which
-  may stay omitted until requested, and which `ContentSelection` already names as its own kind.
-- **The extent on `PayloadRef`** — `chunk_count` and `content_bytes`. A shape carrying many bodies
-  hands a reader more than the revision its metadata names, so each body needs a bound it can apply
-  without a second request. This is also a correctness requirement on its own; see below.
+  `kind` on its entity row, so a shape on `field = 'text'` drags in every reasoning body — which may
+  stay omitted until requested, and which `ContentSelection` already names as its own kind. The
+  criterion for the window is **what the page always renders**, and reasoning fails it: it renders
+  behind a `RetainedDisclosure`, exactly like tool arguments and output, and a reasoning trace is
+  routinely longer than the answer it precedes. Splitting the field is what lets the window carry
+  the one and not the other; the item `kind` cannot, because a shape predicate selects over the
+  chunk table, which has no kind.
+- **The extent on `PayloadRef`** — `content_bytes`, the value's whole length at the revision. A
+  shape carrying many bodies hands a reader more than the revision its metadata names, so each body
+  needs a bound it can apply without a second request. This is also a correctness requirement on its
+  own; see below. A chunk count beside it would be redundant and worse than redundant: the byte
+  length is a projection fact, while how many chunks a value occupies depends on how the store
+  batched the writes, so the two can disagree.
 - **The shape per generation, not per revision.** A `chunk_index < n` bound makes shape identity
   depend on the revision, so every append defines a new shape and a completing item pays a cold
   creation for bytes its own stream already delivered. Bound the shape to the generation and let the
