@@ -1283,7 +1283,7 @@ metadata:
   name: google-readonly
   namespace: agentplane-staging
 spec:
-  description: A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same token Airlock's `google` provider mints for every consumer -- currently granted `gmail.readonly` and `calendar.readonly` (Airlock's own config additionally requests several other `.readonly` scopes not yet granted; check cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before assuming more than Gmail and Calendar work). The proxy does not narrow what the token itself may do -- `google-readonly`'s own rules are what restrict this credential to Gmail and Calendar hosts/paths.
+  description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
   source:
     secretRef:
       name: google-access-token
@@ -1417,6 +1417,12 @@ spec:
   rules:
     - hosts:
         - gmail.googleapis.com
+        - tasks.googleapis.com
+        - people.googleapis.com
+        - docs.googleapis.com
+        - sheets.googleapis.com
+        - slides.googleapis.com
+        - youtube.googleapis.com
       methods:
         - GET
       credentialRef:
@@ -1427,6 +1433,16 @@ spec:
         - GET
       paths:
         - /calendar/v3/**
+        - /drive/v3/**
+        - /youtube/v3/**
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - driveactivity.googleapis.com
+      methods:
+        - POST
+      paths:
+        - /v2/activity:query
       credentialRef:
         name: google-readonly
 ---

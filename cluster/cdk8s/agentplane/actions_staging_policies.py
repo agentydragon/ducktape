@@ -336,10 +336,8 @@ def add_staging_action_policies(scope: Construct) -> None:
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
-    # `google-readonly` substitutes the same read-only Google token Airlock already mints for other
-    # consumers -- currently granted `gmail.readonly` and `calendar.readonly` (see egress.py's
-    # `google-readonly` EgressCredential for the caveat about scopes Airlock's config requests but
-    # hasn't been granted yet).
+    # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
+    # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads (egress.py).
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
