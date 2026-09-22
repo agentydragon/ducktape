@@ -6,7 +6,7 @@ groups.
 from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
-from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
+from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
@@ -31,7 +31,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -62,8 +62,8 @@ _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-# The same reflected Secrets haku-console's own home_assistant/tana servers read
-# (cluster/cdk8s/haku/console_config.py), widened to reflect into this namespace too.
+# The same ESO-delivered Secrets haku-console's own home_assistant/tana servers read
+# (cluster/cdk8s/haku/console_config.py), with the Tana PAT approved for this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
@@ -291,6 +291,17 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    ServiceAccount(
+        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+    )
+    external_creds.add_external_secret(
+        chart,
+        "tana-pat-external-secret",
+        namespace=_NAMESPACE,
+        source_name=_TANA_MCP_BEARER_SECRET,
+        property_name="token",
+        description="ESO copy of the canonical Tana PAT from external-creds.",
+    )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
@@ -356,6 +367,7 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
+    external_creds: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -396,6 +408,7 @@ def agentplane_staging(
                 cert_manager_trust,
                 claude_rbac,
                 cnpg,
+                external_creds,
                 external_secrets_config,
             ),
         ),

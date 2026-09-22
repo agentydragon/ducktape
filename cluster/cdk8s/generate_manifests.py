@@ -516,7 +516,11 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     agents_flux_kustomizations.tana_mcp(
-        flux_chart, external_secrets_config_kustomization, valkey_kustomization, monitoring_crds_kustomization
+        flux_chart,
+        external_creds_kustomization,
+        external_secrets_config_kustomization,
+        valkey_kustomization,
+        monitoring_crds_kustomization,
     )
     cli_proxy_api_kustomization = cli_proxy_api_flux_kustomizations.cli_proxy_api(
         flux_chart,
@@ -789,6 +793,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         claude_rbac_kustomization,
         cnpg_kustomization,
+        external_creds_kustomization,
         external_secrets_config_kustomization,
     )
     flux_app.synth()

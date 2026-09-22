@@ -778,7 +778,11 @@ def agent_shared_secrets(chart: Chart, claude_rbac: Kustomization) -> Kustomizat
 
 
 def tana_mcp(
-    chart: Chart, external_secrets_config: Kustomization, valkey: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    external_creds: Kustomization,
+    external_secrets_config: Kustomization,
+    valkey: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
     return flux_kustomization(
@@ -807,6 +811,7 @@ def tana_mcp(
                 ),
             ],
             depends_on=flux_kustomization_depends_on_many(
+                external_creds,
                 external_secrets_config,
                 valkey,
                 # ServiceMonitor + PrometheusRule
