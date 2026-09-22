@@ -17,8 +17,13 @@ from agentplane.app.operator_sessions import Base
 from agentplane.app.presets import Harness
 
 
-class Thread(Base):
-    __tablename__ = "thread"
+class EventLog(Base):
+    """A runner session's Event sequence as the app copies it, minted on first sight.
+
+    Everything recorded hangs off it; its id is the id the thread is known by.
+    """
+
+    __tablename__ = "event_log"
     __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -32,9 +37,21 @@ class Thread(Base):
             values_callable=lambda values: [item.value for item in values],
         )
     )
+    # The spec's model, rewritten by ingestion as the feed reports a change.
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class Thread(Base):
+    """What an operator has set on an event log's thread. No row means the defaults: unnamed and
+    not archived, so ingestion never has to create one."""
+
+    __tablename__ = "thread"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
+    )
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
@@ -45,7 +62,7 @@ class Event(Base):
     __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     # `record` admits an entry only where `origin.sequence == cursor`, so this key is also the
     # runner's follow sequence that `ThreadNativeLink.source_sequence` names. The entry's own
@@ -70,7 +87,7 @@ class FeedState(Base):
     __tablename__ = "feed_state"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     attached: Mapped[dict[str, object]] = mapped_column(JSONB)
     # NULL means the stream has not ended. Empty JSON is a normal end; a message is an error end.
@@ -89,7 +106,7 @@ class ThreadCheckpoint(Base):
     __tablename__ = "thread_checkpoint"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     source_id: Mapped[str] = mapped_column(Text)
     projection_epoch: Mapped[str] = mapped_column(Text)
@@ -123,7 +140,7 @@ class ThreadEntity(Base):
     )
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_kind: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -150,7 +167,7 @@ class ThreadPayloadManifest(Base):
     __tablename__ = "thread_payload_manifest"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -168,7 +185,7 @@ class ThreadPayloadChunk(Base):
     __tablename__ = "thread_payload_chunk"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -183,7 +200,7 @@ class ThreadEvidence(Base):
     __tablename__ = "thread_evidence"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -194,7 +211,7 @@ class ThreadNativeLink(Base):
     __tablename__ = "thread_native_link"
 
     thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
     )
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
