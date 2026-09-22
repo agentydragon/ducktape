@@ -2687,6 +2687,7 @@ spec:
             items:
               - key: token
                 path: bearer-token
+            optional: true
             secretName: tana-agentydragon-gmail-com-account-pat
 ---
 apiVersion: v1

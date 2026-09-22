@@ -72,6 +72,7 @@ class BearerMcpMount:
     secret_name: str
     secret_key: str
     file_name: str = "bearer-token"
+    optional: bool = False
 
 
 @dataclass(frozen=True)

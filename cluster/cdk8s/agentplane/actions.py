@@ -282,6 +282,7 @@ class Actions(Construct):
                 f"{mount.name}-bearer-volume",
                 bearer_secret,
                 items={mount.secret_key: PathMapping(path=mount.file_name)},
+                optional=mount.optional or None,
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").

@@ -265,7 +265,7 @@ ENV = Environment(
             # The Secret's own key is `token` (it's a Tana personal access token, not a
             # bearer minted for this purpose); renamed at mount time to the same
             # `bearer-token` file name every other static-bearer group uses.
-            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token"),
+            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True),
         ],
         extra_egress=[
             cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
