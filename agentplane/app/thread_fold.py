@@ -42,7 +42,6 @@ class Position:
 
 @dataclass(frozen=True)
 class PayloadRef:
-    source_id: str
     projection_epoch: str
     owner_cursor: int
     owner_id: str
@@ -60,7 +59,6 @@ class FieldValue:
 class PayloadOwner:
     """Identity shared by an item field, command input, or confirmed input."""
 
-    source_id: str
     projection_epoch: str
     cursor: int
     owner_id: str
@@ -69,7 +67,6 @@ class PayloadOwner:
 
 @dataclass(frozen=True)
 class Item:
-    source_id: str
     projection_epoch: str
     item_id: str
     cursor: int
@@ -86,7 +83,6 @@ class Item:
 
 @dataclass(frozen=True)
 class ConfirmedInput:
-    source_id: str
     projection_epoch: str
     cursor: int
     revision_cursor: int
@@ -98,7 +94,6 @@ class ConfirmedInput:
 
 @dataclass(frozen=True)
 class LifecycleSegment:
-    source_id: str
     projection_epoch: str
     cursor: int
     revision_cursor: int
@@ -108,7 +103,6 @@ class LifecycleSegment:
 
 @dataclass(frozen=True)
 class CommandSummary:
-    source_id: str
     projection_epoch: str
     command_id: str
     admission_cursor: int
@@ -135,7 +129,6 @@ class ViewState:
 
 @dataclass(frozen=True)
 class EvidenceAssociation:
-    source_id: str
     projection_epoch: str
     entity_cursor: int
     observation_cursor: int
@@ -253,15 +246,14 @@ class _Fold:
 
     @staticmethod
     def _item_owner(item: Item) -> PayloadOwner:
-        return PayloadOwner(item.source_id, item.projection_epoch, item.cursor, item.item_id, item.revision_cursor)
+        return PayloadOwner(item.projection_epoch, item.cursor, item.item_id, item.revision_cursor)
 
     def _validate_ref(
         self, reference: PayloadRef, owner: PayloadOwner, field: PayloadField, *, preloaded: bool
     ) -> None:
         position = self.state.position
         if (
-            reference.source_id != position.source_id
-            or reference.projection_epoch != position.projection_epoch
+            reference.projection_epoch != position.projection_epoch
             or reference.owner_cursor != owner.cursor
             or reference.owner_id != owner.owner_id
             or reference.field is not field
@@ -280,18 +272,10 @@ class _Fold:
         prior = self.prior.items[item_id]
         position = self.state.position
         if prior is None:
-            item = Item(
-                position.source_id,
-                position.projection_epoch,
-                item_id,
-                cursor,
-                cursor,
-                turn_id=self.state.controls.active_turn_id,
-            )
+            item = Item(position.projection_epoch, item_id, cursor, cursor, turn_id=self.state.controls.active_turn_id)
         else:
             if (
-                prior.source_id != position.source_id
-                or prior.projection_epoch != position.projection_epoch
+                prior.projection_epoch != position.projection_epoch
                 or prior.item_id != item_id
                 or not 0 < prior.cursor <= prior.revision_cursor <= self.initial_through_cursor
             ):
@@ -327,7 +311,6 @@ class _Fold:
         if base is not None:
             self._validate_ref(base, owner, field, preloaded=False)
         reference = PayloadRef(
-            self.state.position.source_id,
             self.state.position.projection_epoch,
             owner.cursor,
             owner.owner_id,
@@ -357,7 +340,6 @@ class _Fold:
     def _evidence(self, item: Item | int, entry: event_log_pb2.EventEntry) -> None:
         self.evidence.append(
             EvidenceAssociation(
-                self.state.position.source_id,
                 self.state.position.projection_epoch,
                 item.cursor if isinstance(item, Item) else item,
                 entry.cursor,
@@ -375,17 +357,14 @@ class _Fold:
             raise ValueError(f"missing admitted command: {command_id}")
         position = self.state.position
         if (
-            prior.source_id != position.source_id
-            or prior.projection_epoch != position.projection_epoch
+            prior.projection_epoch != position.projection_epoch
             or prior.command_id != command_id
             or not 0 < prior.admission_cursor <= self.initial_through_cursor
         ):
             raise ValueError(f"invalid prior command: {command_id}")
         if prior.input is not None:
             reference = prior.input.reference
-            owner = PayloadOwner(
-                prior.source_id, prior.projection_epoch, prior.admission_cursor, command_id, prior.admission_cursor
-            )
+            owner = PayloadOwner(prior.projection_epoch, prior.admission_cursor, command_id, prior.admission_cursor)
             try:
                 self._validate_ref(reference, owner, PayloadField.COMMAND_INPUT, preloaded=True)
             except ValueError as error:
@@ -404,11 +383,9 @@ class _Fold:
         operation = command.WhichOneof("operation")
         if operation is None:
             raise ObservationNotUnderstoodError(cursor, "command_admitted.operation")
-        summary = CommandSummary(
-            self.state.position.source_id, self.state.position.projection_epoch, command_id, cursor, operation
-        )
+        summary = CommandSummary(self.state.position.projection_epoch, command_id, cursor, operation)
         if operation == "submit_input":
-            owner = PayloadOwner(summary.source_id, summary.projection_epoch, cursor, command_id, cursor)
+            owner = PayloadOwner(summary.projection_epoch, cursor, command_id, cursor)
             summary = replace(
                 summary,
                 input=self._write(
@@ -434,7 +411,6 @@ class _Fold:
     def _lifecycle(self, entry: event_log_pb2.EventEntry, observation: str) -> None:
         cursor, event = entry.cursor, entry.event
         self.lifecycle[cursor] = LifecycleSegment(
-            self.state.position.source_id,
             self.state.position.projection_epoch,
             cursor,
             cursor,
@@ -547,7 +523,6 @@ class _Fold:
             case "harness_user_message_confirmed":
                 confirmed = event.harness_user_message_confirmed
                 owner = PayloadOwner(
-                    self.state.position.source_id,
                     self.state.position.projection_epoch,
                     cursor,
                     confirmed.harness_message_id or f"confirmed:{cursor}",
@@ -555,7 +530,6 @@ class _Fold:
                 )
                 value = self._write(owner, None, cursor, PayloadField.CONFIRMED_INPUT, confirmed.text, append=False)
                 self.confirmed[cursor] = ConfirmedInput(
-                    self.state.position.source_id,
                     self.state.position.projection_epoch,
                     cursor,
                     cursor,

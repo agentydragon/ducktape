@@ -22,7 +22,6 @@ type ThreadEntityState = ThreadEntityView["state"];
 
 export interface ThreadEntity {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
   entityId: string;
@@ -37,7 +36,6 @@ export interface ThreadEntity {
   inputRef: PayloadRef | null;
 }
 const payloadRefSchema = z.object({
-  source_id: z.string(),
   projection_epoch: z.string(),
   owner_cursor: z.string(),
   owner_id: z.string(),
@@ -78,7 +76,6 @@ const stateSchema = z.union([
 ]);
 const entitySchema = z.object({
   threadId: z.string(),
-  sourceId: z.string(),
   projectionEpoch: z.string(),
   entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
   entityId: z.string(),
@@ -95,7 +92,6 @@ const entitySchema = z.object({
 
 const chunkSchema = z.object({
   threadId: z.string(),
-  sourceId: z.string(),
   projectionEpoch: z.string(),
   ownerCursor: decimal,
   ownerId: z.string(),
@@ -108,7 +104,6 @@ type PayloadChunk = z.output<typeof chunkSchema>;
 
 function entityUrl(threadId: string, interest: EntityInterest): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/entities`, window.location.href);
-  url.searchParams.set("source_id", interest.source_id);
   url.searchParams.set("projection_epoch", interest.projection_epoch);
   url.searchParams.set("anchor_cursor", interest.anchor_cursor);
   url.searchParams.set("tail_from", interest.tail_from);
@@ -120,7 +115,7 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
 function entityCollection(threadId: string, interest: EntityInterest, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-thread:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      id: `agentplane-thread:${threadId}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
@@ -155,14 +150,8 @@ function traceEntityCollection(
   return true;
 }
 
-function commandUrl(
-  threadId: string,
-  sourceId: string,
-  projectionEpoch: string,
-  commandIds: readonly string[]
-): string {
+function commandUrl(threadId: string, projectionEpoch: string, commandIds: readonly string[]): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/commands`, window.location.href);
-  url.searchParams.set("source_id", sourceId);
   url.searchParams.set("projection_epoch", projectionEpoch);
   for (const id of [...new Set(commandIds)].sort()) url.searchParams.append("command_id", id);
   return url.toString();
@@ -170,7 +159,6 @@ function commandUrl(
 
 function commandCollection(
   threadId: string,
-  sourceId: string,
   projectionEpoch: string,
   commandIds: readonly string[],
   onError: (error: unknown) => void
@@ -178,13 +166,13 @@ function commandCollection(
   const selected = [...new Set(commandIds)].sort();
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-commands:${threadId}:${sourceId}:${projectionEpoch}:${selected.join(":")}`,
+      id: `agentplane-commands:${threadId}:${projectionEpoch}:${selected.join(":")}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => row.entityId,
       syncMode: "on-demand",
       shapeOptions: {
-        url: commandUrl(threadId, sourceId, projectionEpoch, selected),
+        url: commandUrl(threadId, projectionEpoch, selected),
         params: { log: "changes_only" },
         columnMapper: snakeCamelMapper(),
         onError,
@@ -195,13 +183,11 @@ function commandCollection(
 
 export function CommandSelection({
   threadId,
-  sourceId,
   projectionEpoch,
   commandIds,
   children,
 }: {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   commandIds: readonly string[];
   children: (rows: ThreadEntity[]) => JSX.Element;
@@ -219,12 +205,12 @@ export function CommandSelection({
   }, []);
   const collection = useMemo(() => {
     let next: ReturnType<typeof commandCollection>;
-    next = commandCollection(threadId, sourceId, projectionEpoch, key.split("\u0000"), (reason) => {
+    next = commandCollection(threadId, projectionEpoch, key.split("\u0000"), (reason) => {
       if (currentCollection.current !== next) return;
       setStreamError({ collection: next, message: displayableError(reason) });
     });
     return next;
-  }, [attempt, key, projectionEpoch, sourceId, threadId]);
+  }, [attempt, key, projectionEpoch, threadId]);
   useEffect(() => {
     currentCollection.current = collection;
     return () => {
@@ -429,7 +415,6 @@ export function ThreadCollection({
 
 function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): string {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/payload-chunks`, window.location.href);
-  url.searchParams.set("source_id", reference.source_id);
   url.searchParams.set("projection_epoch", reference.projection_epoch);
   url.searchParams.set("owner_cursor", reference.owner_cursor);
   url.searchParams.set("owner_id", reference.owner_id);
@@ -443,7 +428,7 @@ function chunkUrl(threadId: string, reference: PayloadRef, follow: boolean): str
 function chunkCollection(threadId: string, reference: PayloadRef, follow: boolean, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-payload:${threadId}:${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
+      id: `agentplane-payload:${threadId}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${follow ? "follow" : reference.revision_cursor}`,
       gcTime: 1_000,
       schema: chunkSchema,
       getKey: (row) => row.chunkIndex.toString(),
@@ -470,10 +455,9 @@ export function PayloadBody({
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
   const refreshThread = useContext(RefreshThread);
-  const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const referenceKey = `${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
   const stableReference = useMemo<PayloadRef>(
     () => ({
-      source_id: reference.source_id,
       projection_epoch: reference.projection_epoch,
       owner_cursor: reference.owner_cursor,
       owner_id: reference.owner_id,
@@ -488,7 +472,6 @@ export function PayloadBody({
       reference.owner_id,
       reference.projection_epoch,
       reference.revision_cursor,
-      reference.source_id,
     ]
   );
   const [selection, setSelection] = useState<{
@@ -548,9 +531,7 @@ export function PayloadBody({
       window.removeEventListener("online", online);
     };
   }, [follow, referenceKey, refreshThread, refreshGeneration, stableReference, threadId]);
-  const sameScope =
-    selection?.reference.source_id === reference.source_id &&
-    selection.reference.projection_epoch === reference.projection_epoch;
+  const sameScope = selection?.reference.projection_epoch === reference.projection_epoch;
   if (!selection || !sameScope) return error ? <p role="alert">{error}</p> : children(null);
   return (
     <>
@@ -599,7 +580,6 @@ function ActivePayloadBody({
     next = chunkCollection(
       threadId,
       {
-        source_id: reference.source_id,
         projection_epoch: reference.projection_epoch,
         owner_cursor: reference.owner_cursor,
         owner_id: reference.owner_id,
@@ -620,7 +600,6 @@ function ActivePayloadBody({
     reference.owner_cursor,
     reference.owner_id,
     reference.projection_epoch,
-    reference.source_id,
     refreshGeneration,
     selectedRevision,
     threadId,
