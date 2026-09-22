@@ -141,9 +141,8 @@ outcomes, which wants a lookup rather than a subscription — pending commands a
 entity shape. The set changes at human pace, and the change sits on the recovery path four
 lost-response cases cover, so it stays behind the entity work.
 
-**What decides the order.** If a cold shape creation turns out to be milliseconds, the entity work
-is not worth a schema change and W1 is the whole story; if it is seconds, this is the fix and it
-does not depend on W1 landing. The measurement below answers that.
+**What decided the order.** The measurement below: a cold shape creation is sub-second, so this is
+not where the latency is. It stays on the list as a correctness-of-usage item, behind W9.
 
 ### W9 — collapse content back onto one mechanism
 
@@ -172,6 +171,44 @@ confirmed_input, command_input`, and a reasoning item writes to `text`, distingu
 - **It is only a win once a shape is cheap or rare.** Two cold shapes per open is worse than one
   plus a body read per item while creation costs what it currently costs. So this lands after W1 or
   W5, not before, and doing it first would be a regression.
+
+## Measured, 2026-09-22
+
+Against `agentplane-testing`, on threads whose shapes had never been created, through the deployed
+app's own routes:
+
+| Stage                                     | 7-row thread A | 7-row thread B |
+| ----------------------------------------- | -------------- | -------------- |
+| `/sync/interest`                          | 0.54 s         | 0.37 s         |
+| `/sync/entities` (offset=now + snapshot)  | 0.89 s         | 0.81 s         |
+| 3 bodies (`payload-interest` + `-chunks`) | 2.90 s         | 2.53 s         |
+| **total**                                 | **4.33 s**     | **3.72 s**     |
+
+A cold entity shape took 0.37–0.62 s and a warm one 0.36–0.53 s. **Shape creation is not the
+cost** — cold and warm are indistinguishable, so what is being measured either way is a round trip.
+
+That overturns the diagnosis this plan opened with. The open path costs **one round trip per
+request and roughly 0.4 s per round trip**, and it issues two per body. Seven rows and three bodies
+already cost 4.3 s; the 30-segment tail the design specifies is ~60 requests on the open path, and
+~0.4 s each is the reported twenty seconds. Not one slow shape — sixty ordinary ones.
+
+Read this as a ratio, not as absolutes: these come through an agent HTTPS proxy from outside the
+cluster, so a browser's round trip is smaller. What holds regardless is that the open path is
+`O(bodies)` round trips when it needs to be `O(1)`.
+
+Consequences, in order:
+
+- **W9 is the fix, not a follow-up.** One window-scoped chunk shape makes the open path four
+  requests whatever the conversation's size. It was sequenced after W1/W5 on the argument that two
+  cold shapes beat one plus a body read per item — which assumed body reads were cheap. They are
+  not; nothing here is, because the cost is the round trip.
+- **W3 halves the problem where W9 removes it.** Serving completed bodies over one HTTP request
+  each took the open path from two requests per body to one. It is still one per body.
+- **W1 is not the story.** A cold shape on the `seaweedfs-ovh` volume is sub-second at this size.
+  It may still matter for a long conversation's first shape; nothing here measures that.
+- **W5 is worth much less than derived.** Redefining the entity shape on every open costs one
+  sub-second creation, not twenty seconds. The argument for it is now shape hygiene — a shape is a
+  partition, and ours is a viewport — rather than latency.
 
 ## Measurement gates
 
