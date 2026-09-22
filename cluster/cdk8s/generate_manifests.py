@@ -46,9 +46,6 @@ from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flu
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
-from cluster.cdk8s.flux_image_automation_forgejo import (
-    flux_kustomizations as flux_image_automation_forgejo_flux_kustomizations,
-)
 from cluster.cdk8s.flux_image_automation_ghcr import (
     flux_kustomizations as flux_image_automation_ghcr_flux_kustomizations,
 )
@@ -77,12 +74,7 @@ from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_ku
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
-from cluster.cdk8s.litellm import (
-    credentials as litellm_credentials,
-    flux_kustomizations as litellm_flux_kustomizations,
-    keys as litellm_keys,
-    proxy as litellm_proxy,
-)
+from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
@@ -869,9 +861,9 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
     )
     flux_image_automation_forgejo_artifact = artifact(
-        "flux-image-automation-forgejo", "cluster/k8s/flux-image-automation-forgejo"
+        "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
-    flux_image_automation_forgejo_flux_kustomizations.flux_image_automation_forgejo(
+    forgejo_image_automation.flux_image_automation_forgejo(
         flux_chart,
         flux_image_automation_forgejo_artifact,
         forgejo_images_kustomization,
@@ -1123,8 +1115,8 @@ def generate_manifests(root: Path) -> None:
     haku_flux_kustomizations.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
     haku_workloads_artifact = artifact("haku-workloads", "cluster/k8s/haku/workloads")
     haku_flux_kustomizations.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
-    litellm_keys_tf_artifact = artifact("litellm-keys-tf", "cluster/k8s/litellm/keys-tf")
-    litellm_keys_tf_kustomization = litellm_flux_kustomizations.litellm_keys_tf(
+    litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
+    litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
         flux_chart,
         litellm_keys_tf_artifact,
         litellm_kustomization,
