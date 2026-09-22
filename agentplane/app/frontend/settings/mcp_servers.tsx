@@ -4,25 +4,28 @@ import { type JSX, useCallback, useEffect, useState } from "react";
 import {
   type ActionGroupHealthService,
   actionGroupHealthService,
-  type ActionGroupHealthView,
+  type ActionGroupView,
   displayableError,
   mcpLinkageService,
   type McpLinkageService,
   type McpLinkageView,
 } from "../client";
 
-type McpHealth = ActionGroupHealthView["health"];
+type McpHealth = ActionGroupView["health"];
 
 type Row =
-  | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupHealthView | null }
-  | { kind: "health-only"; group: ActionGroupHealthView };
+  | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
+  | { kind: "health-only"; group: ActionGroupView };
 
-function mergeRows(groups: ActionGroupHealthView[], linkages: McpLinkageView[]): Row[] {
+// Every mcp-kind ActionGroup whose config carries a server_id is guaranteed (by a backend
+// validation invariant, ActionCatalog._server_id_matches_group_key) to have that server_id equal
+// its own key -- so an oauth-linked group's key doubles as the join key, with no separate field.
+function mergeRows(groups: ActionGroupView[], linkages: McpLinkageView[]): Row[] {
   const linkageBySid = new Map(linkages.map((linkage) => [linkage.server_id, linkage]));
   const matched = new Set<string>();
   const rows: Row[] = [];
   for (const group of groups) {
-    const linkage = group.oauth_server_id != null ? linkageBySid.get(group.oauth_server_id) : undefined;
+    const linkage = linkageBySid.get(group.key);
     if (linkage) {
       matched.add(linkage.server_id);
       rows.push({ kind: "oauth", linkage, group });
@@ -65,7 +68,7 @@ export function McpServers({
   healthService?: ActionGroupHealthService;
 }): JSX.Element {
   const [linkages, setLinkages] = useState<McpLinkageView[]>([]);
-  const [groups, setGroups] = useState<ActionGroupHealthView[]>([]);
+  const [groups, setGroups] = useState<ActionGroupView[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);

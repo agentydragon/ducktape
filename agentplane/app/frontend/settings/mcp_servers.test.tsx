@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { ActionGroupHealthService, ActionGroupHealthView, McpLinkageService, McpLinkageView } from "../client";
+import type { ActionGroupHealthService, ActionGroupView, McpLinkageService, McpLinkageView } from "../client";
 import { McpServers } from "./mcp_servers";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -52,11 +52,11 @@ function pendingList(): { promise: Promise<McpLinkageView[]>; resolve: (rows: Mc
 }
 
 function pendingHealthList(): {
-  promise: Promise<ActionGroupHealthView[]>;
-  resolve: (rows: ActionGroupHealthView[]) => void;
+  promise: Promise<ActionGroupView[]>;
+  resolve: (rows: ActionGroupView[]) => void;
 } {
-  let resolve!: (rows: ActionGroupHealthView[]) => void;
-  const promise = new Promise<ActionGroupHealthView[]>((accept) => {
+  let resolve!: (rows: ActionGroupView[]) => void;
+  const promise = new Promise<ActionGroupView[]>((accept) => {
     resolve = accept;
   });
   return { promise, resolve };
@@ -184,10 +184,12 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
       {
         key: "tana",
         title: "Tana",
+        description: "Tana MCP tools",
+        executor_kind: "mcp",
         executor_description: "Tana MCP tools",
         available: true,
         health: { state: "available", reason: null, last_discovery_at: null, retry_at: null, failures: 0 },
-        oauth_server_id: null,
+        actions: [],
       },
     ]
   );
@@ -218,6 +220,8 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
       {
         key: "github",
         title: "GitHub",
+        description: "Read access to public GitHub repositories.",
+        executor_kind: "mcp",
         executor_description: "Connected as Rai's GitHub account.",
         available: true,
         health: {
@@ -227,7 +231,7 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
           retry_at: null,
           failures: 3,
         },
-        oauth_server_id: "github",
+        actions: [],
       },
     ]
   );

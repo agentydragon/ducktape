@@ -248,10 +248,10 @@ export const mcpLinkageService: McpLinkageService = {
   },
 };
 
-export type ActionGroupHealthView = components["schemas"]["ActionGroupHealthView"];
+export type ActionGroupView = components["schemas"]["ActionGroupView"];
 
 export interface ActionGroupHealthService {
-  list(): Promise<ActionGroupHealthView[]>;
+  list(): Promise<ActionGroupView[]>;
 }
 
 export const actionGroupHealthService: ActionGroupHealthService = {
