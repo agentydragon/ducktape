@@ -635,8 +635,8 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
-# A conversation cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
-# string -- the representation every conversation response model already publishes it in. Declaring
+# A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
+# string -- the representation every fold response model already publishes it in. Declaring
 # it `int` here would put `integer` in the schema and make every browser caller cast past it. The
 # range check the string form loses is restored here: the column is a signed 64-bit integer, and a
 # value past it must be refused as a bad request rather than reaching the driver as one.
@@ -654,7 +654,7 @@ DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_i
 DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
 
 
-@threads.get("/{thread_id}/conversation/evidence")
+@threads.get("/{thread_id}/evidence")
 async def thread_evidence(
     thread_id: UUID,
     store: Store,
@@ -676,7 +676,7 @@ async def thread_evidence(
     )
 
 
-@threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
+@threads.get("/{thread_id}/evidence/{observation_cursor}/frames")
 async def thread_native_frames(
     thread_id: UUID,
     observation_cursor: DecimalCursorPath,
@@ -700,7 +700,7 @@ async def thread_native_frames(
     )
 
 
-@threads.get("/{thread_id}/conversation/observations/{cursor}")
+@threads.get("/{thread_id}/observations/{cursor}")
 async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
     """The raw entry behind one listed observation, read only when a reader expands it."""
     entry = await store.observation_entry(thread_id, cursor)
@@ -709,7 +709,7 @@ async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -
     return entry
 
 
-@threads.get("/{thread_id}/conversation/observations")
+@threads.get("/{thread_id}/observations")
 async def thread_observations(
     thread_id: UUID,
     store: Store,

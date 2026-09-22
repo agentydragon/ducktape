@@ -4,13 +4,13 @@ import { createCollection, useLiveQuery } from "@tanstack/react-db";
 import { createContext, type JSX, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
-import { conversationInterest, displayableError, type ThreadEntityView, type EntityInterest } from "./client";
+import { threadEntityInterest, displayableError, type ThreadEntityView, type EntityInterest } from "./client";
 
 const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
-const RefreshConversation = createContext<() => void>(() => undefined);
+const RefreshThread = createContext<() => void>(() => undefined);
 declare global {
   interface Window {
-    __agentplaneConversationCollectionTrace?: unknown[];
+    __agentplaneThreadCollectionTrace?: unknown[];
   }
 }
 type Decimal = z.output<typeof decimal>;
@@ -18,9 +18,9 @@ export function decimalBigInt(value: Decimal): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
 }
 export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
-type ConversationState = ThreadEntityView["state"];
+type ThreadEntityState = ThreadEntityView["state"];
 
-export interface ConversationEntity {
+export interface ThreadEntity {
   threadId: string;
   sourceId: string;
   projectionEpoch: string;
@@ -30,7 +30,7 @@ export interface ConversationEntity {
   revisionCursor: Decimal;
   pending: boolean;
   turnId: string | null;
-  state: ConversationState;
+  state: ThreadEntityState;
   textRef: PayloadRef | null;
   argumentsRef: PayloadRef | null;
   outputRef: PayloadRef | null;
@@ -120,7 +120,7 @@ function entityUrl(threadId: string, interest: EntityInterest): string {
 function entityCollection(threadId: string, interest: EntityInterest, onError: (error: unknown) => void) {
   return createCollection(
     electricCollectionOptions({
-      id: `agentplane-conversation:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
+      id: `agentplane-thread:${threadId}:${interest.source_id}:${interest.projection_epoch}:${interest.anchor_cursor}:${interest.window_from ?? "tail"}`,
       gcTime: 1_000,
       schema: entitySchema,
       getKey: (row) => `${row.entityKind}:${row.entityId}`,
@@ -140,7 +140,7 @@ function traceEntityCollection(
   role: "active" | "pending",
   collection: ReturnType<typeof entityCollection>
 ): boolean {
-  const trace = window.__agentplaneConversationCollectionTrace;
+  const trace = window.__agentplaneThreadCollectionTrace;
   if (!trace) return false;
   trace.push({
     kind,
@@ -204,7 +204,7 @@ export function CommandSelection({
   sourceId: string;
   projectionEpoch: string;
   commandIds: readonly string[];
-  children: (rows: ConversationEntity[]) => JSX.Element;
+  children: (rows: ThreadEntity[]) => JSX.Element;
 }): JSX.Element {
   const key = [...new Set(commandIds)].sort().join("\u0000");
   const [attempt, setAttempt] = useState(0);
@@ -253,7 +253,7 @@ export function CommandSelection({
   );
 }
 
-function ActiveConversation({
+function ActiveCollection({
   threadId,
   interest,
   collection,
@@ -265,7 +265,7 @@ function ActiveConversation({
   threadId: string;
   interest: EntityInterest;
   collection: ReturnType<typeof entityCollection>;
-  onRows: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+  onRows: (rows: ThreadEntity[], interest: EntityInterest) => JSX.Element;
   onRotate: () => void;
   onCaughtUp?: () => void;
   role: "active" | "pending";
@@ -297,26 +297,26 @@ function ActiveConversation({
     return () => window.clearTimeout(retry);
   }, [onRotate, query.isError]);
   return (
-    <RefreshConversation.Provider value={onRotate}>
-      {query.isError && <p role="alert">Conversation synchronization stopped.</p>}
+    <RefreshThread.Provider value={onRotate}>
+      {query.isError && <p role="alert">Thread synchronization stopped.</p>}
       {!query.isError && !caughtUp && (
-        <p role="status" data-conversation-catchup="true">
-          Catching up conversation…
+        <p role="status" data-thread-catchup="true">
+          Catching up thread…
         </p>
       )}
       {onRows(caughtUp ? rows : [], interest)}
-    </RefreshConversation.Provider>
+    </RefreshThread.Provider>
   );
 }
 
-export function ConversationCollection({
+export function ThreadCollection({
   threadId,
   beforeCursor,
   children,
 }: {
   threadId: string;
   beforeCursor?: string;
-  children: (rows: ConversationEntity[], interest: EntityInterest) => JSX.Element;
+  children: (rows: ThreadEntity[], interest: EntityInterest) => JSX.Element;
 }): JSX.Element {
   type Selection = { interest: EntityInterest; collection: ReturnType<typeof entityCollection> };
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -343,7 +343,7 @@ export function ConversationCollection({
     const controller = new AbortController();
     let retry: number | undefined;
     setInterestError(null);
-    void conversationInterest(threadId, beforeCursor, controller.signal).then(
+    void threadEntityInterest(threadId, beforeCursor, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) {
           const next: Selection = {
@@ -384,20 +384,20 @@ export function ConversationCollection({
     };
   }, [beforeCursor, generation, rotate, threadId]);
   if (!selection) {
-    if (interestError) return <p role="alert">Conversation sync failed: {interestError}</p>;
-    return <p role="status">Loading conversation…</p>;
+    if (interestError) return <p role="alert">Thread sync failed: {interestError}</p>;
+    return <p role="status">Loading thread…</p>;
   }
   return (
     <>
       {interestError && (
-        <p role="alert">Conversation sync failed: {interestError}; showing the current window and retrying.</p>
+        <p role="alert">Thread sync failed: {interestError}; showing the current window and retrying.</p>
       )}
       {streamError && (
         <p role="alert">
-          Conversation synchronization stopped: {streamError} <button onClick={rotate}>Refresh conversation</button>
+          Thread synchronization stopped: {streamError} <button onClick={rotate}>Refresh thread</button>
         </p>
       )}
-      <ActiveConversation
+      <ActiveCollection
         threadId={threadId}
         interest={selection.interest}
         collection={selection.collection}
@@ -407,7 +407,7 @@ export function ConversationCollection({
       />
       {pendingSelection && (
         <div hidden>
-          <ActiveConversation
+          <ActiveCollection
             threadId={threadId}
             interest={pendingSelection.interest}
             collection={pendingSelection.collection}
@@ -469,7 +469,7 @@ export function PayloadBody({
   follow: boolean;
   children: (body: string | null) => JSX.Element;
 }): JSX.Element {
-  const refreshConversation = useContext(RefreshConversation);
+  const refreshThread = useContext(RefreshThread);
   const referenceKey = `${reference.source_id}:${reference.projection_epoch}:${reference.owner_cursor}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
   const stableReference = useMemo<PayloadRef>(
     () => ({
@@ -515,8 +515,8 @@ export function PayloadBody({
       void fetch(url, { signal: controller.signal })
         .then(async (response) => {
           if (response.status === 410) {
-            refreshConversation();
-            throw new Error("Payload revision is unavailable after conversation reset");
+            refreshThread();
+            throw new Error("Payload revision is unavailable after thread reset");
           }
           if (!response.ok) throw new Error(`Payload selection failed with ${response.status}`);
           const value = (await response.json()) as { chunk_count: string; content_bytes: string };
@@ -547,7 +547,7 @@ export function PayloadBody({
       if (retry !== undefined) window.clearTimeout(retry);
       window.removeEventListener("online", online);
     };
-  }, [follow, referenceKey, refreshConversation, refreshGeneration, stableReference, threadId]);
+  }, [follow, referenceKey, refreshThread, refreshGeneration, stableReference, threadId]);
   const sameScope =
     selection?.reference.source_id === reference.source_id &&
     selection.reference.projection_epoch === reference.projection_epoch;

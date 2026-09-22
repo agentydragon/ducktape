@@ -1,4 +1,4 @@
-"""Authenticated, server-scoped access to bounded Electric conversation shapes."""
+"""Authenticated, server-scoped access to bounded Electric thread shapes."""
 
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ class ElectricProxy:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
         scope = await self._store.current_scope(thread_id)
         if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
         selected = sorted(set(command_ids))
         params.update({str(index): command_id for index, command_id in enumerate(selected, start=4)})
@@ -149,7 +149,7 @@ class ElectricProxy:
         except ValueError as error:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
         if interest is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no conversation for thread {thread_id}")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no materialized fold for thread {thread_id}")
         return interest
 
     async def payload_selection(
@@ -196,12 +196,12 @@ class ElectricProxy:
             source_id,
             projection_epoch,
         ):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         expected = await self.entity_interest(thread_id, anchor_cursor, window_before)
         if (expected.scope.source_id, expected.scope.projection_epoch) != (source_id, projection_epoch):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         if tail_from != expected.tail_from or window_from != expected.window_from:
-            raise HTTPException(status.HTTP_410_GONE, "conversation interest has changed; resolve it again")
+            raise HTTPException(status.HTTP_410_GONE, "entity interest has changed; resolve it again")
         scope = expected.scope
         segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND cursor >= $4)"
         params: dict[str, str] = {
@@ -316,7 +316,7 @@ class ElectricProxy:
         try:
             response = await self._client.send(upstream, stream=True)
         except httpx.RequestError as error:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "thread sync is unavailable") from error
         upstream_seconds = time.monotonic() - started
         logger.info(
             "electric shape response: %s",
@@ -335,7 +335,7 @@ class ElectricProxy:
         return ElectricStreamingResponse(response, headers)
 
 
-router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["conversation-sync"])
+router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["thread-sync"])
 
 
 def _proxy(request: Request) -> ElectricProxy:

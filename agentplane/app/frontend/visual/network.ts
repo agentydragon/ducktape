@@ -56,7 +56,7 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
 
 /**
  * Build the same JSON and protocol headers consumed by `electricCollectionOptions` in production.
- * Visual conversation scenes use this rather than an EventSource replay so the collection's column
+ * Visual thread scenes use this rather than an EventSource replay so the collection's column
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
 function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "thread_entity") {

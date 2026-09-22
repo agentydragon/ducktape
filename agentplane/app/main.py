@@ -117,8 +117,7 @@ class Settings(BaseSettings):
     action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
     electric_url: str | None = Field(
-        default=None,
-        description="Cluster-internal Electric root URL; omitted leaves conversation sync routes disabled.",
+        default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
     )
     models: ModelCatalog = Field(
         description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
