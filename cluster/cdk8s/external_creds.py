@@ -46,6 +46,11 @@ class Credential:
 CREDENTIALS = (
     Credential(secret_file="analysis-ai.sops.yaml", secret_name="analysis-ai-api-key"),
     Credential(
+        secret_file="ankiweb-credentials.sops.yaml",
+        secret_name="ankiweb-credentials",
+        consumers=(ApprovedConsumer("haku-sandbox", "ankiweb-credentials-haku-sandbox-reader"),),
+    ),
+    Credential(
         secret_file="anthropic-haku.sops.yaml",
         secret_name="llm-anthropic-haku",
         consumers=(

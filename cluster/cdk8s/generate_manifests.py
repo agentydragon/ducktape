@@ -717,7 +717,7 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.haku_managed_agent(
         flux_chart,
         forgejo_images_kustomization,
-        agent_shared_secrets_kustomization,
+        external_creds_kustomization,
         external_secrets_config_kustomization,
         haku_namespace_kustomization,
         haku_rbac_kustomization,
