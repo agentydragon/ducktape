@@ -278,7 +278,7 @@ async def _history_windows(
     tail_params = {key: tail_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")}
     snapshot = await _current_snapshot(client_two, f"{path}/entities", tail_params)
     snapshot.raise_for_status()
-    assert snapshot.headers["cache-control"] == "private, no-store"
+    assert snapshot.headers["cache-control"] == "private, no-cache"
     rows = [message["value"] for message in snapshot.json()["data"] if "value" in message]
     assert {row["entity_id"] for row in rows if row["entity_kind"] == "item"} == {
         f"history-{index:03}" for index in range(65, 95)
