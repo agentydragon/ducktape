@@ -49,7 +49,6 @@ class ArchivedObservation(BaseModel):
 
     cursor: str
     source_id: str
-    source_sequence: str
     kind: str
 
 

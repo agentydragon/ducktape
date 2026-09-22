@@ -8,6 +8,7 @@ exports_files(
         "0004_followable_event_entries.py",
         "0005_conversation_projection_storage.py",
         "0006_thread_fold_rename.py",
+        "0007_event_origin_sequence.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -58,4 +59,13 @@ py_library(
     name = "0006_thread_fold_rename",
     srcs = ["0006_thread_fold_rename.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0007_event_origin_sequence",
+    srcs = ["0007_event_origin_sequence.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

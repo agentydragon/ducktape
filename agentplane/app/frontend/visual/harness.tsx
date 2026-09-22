@@ -1161,8 +1161,8 @@ const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
 function observationPage(threadId: string) {
   return {
     observations: [
-      { cursor: "31", source_id: CONVERSATION_SOURCE, source_sequence: "31", kind: "harness_stderr" },
-      { cursor: "34", source_id: CONVERSATION_SOURCE, source_sequence: "34", kind: "item_completed" },
+      { cursor: "31", source_id: CONVERSATION_SOURCE, kind: "harness_stderr" },
+      { cursor: "34", source_id: CONVERSATION_SOURCE, kind: "item_completed" },
     ],
     next_before_cursor: null,
     next_after_cursor: null,

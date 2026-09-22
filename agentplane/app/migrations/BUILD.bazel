@@ -11,6 +11,7 @@ filegroup(
         "//agentplane/app/migrations/versions:0004_followable_event_entries.py",
         "//agentplane/app/migrations/versions:0005_conversation_projection_storage.py",
         "//agentplane/app/migrations/versions:0006_thread_fold_rename.py",
+        "//agentplane/app/migrations/versions:0007_event_origin_sequence.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )
