@@ -2272,20 +2272,17 @@ data:
     mcp_servers:
       github:
         server_id: github
-        provider: github
         server_url: https://api.githubcopilot.com/mcp/
         client_id: configured-by-secret
         client_secret_file: /etc/agentplane-github/client_secret
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
       kubernetes:
         server_id: kubernetes
-        provider: kubernetes
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
       grocy_sf:
         server_id: grocy_sf
-        provider: grocy_sf
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
         client_id: cb57e244-c13c-4eac-a299-e052698b774e
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback

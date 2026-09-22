@@ -159,7 +159,7 @@ export function McpServers({
                 <div>
                   <Text fw={600}>{row.linkage.server_id}</Text>
                   <Text size="sm" c="dimmed">
-                    {row.linkage.provider} · {row.linkage.server_url}
+                    {row.linkage.server_url}
                   </Text>
                   <Text size="xs" c="dimmed">
                     Scopes: {row.linkage.scopes.length ? row.linkage.scopes.join(", ") : "provider default"}

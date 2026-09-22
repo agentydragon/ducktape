@@ -69,7 +69,6 @@ _ACTIONS_SETTINGS = {
     "mcp_servers": {
         "example": {
             "server_id": "example",
-            "provider": "example",
             "server_url": _OAUTH_FIXTURE_MCP_URL,
             "client_id": "agentplane-testing-mcp",
             "client_secret_file": "/etc/agentplane-mcp/client-secret",
