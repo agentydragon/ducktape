@@ -46,10 +46,6 @@ class EgressProps:
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
     credentials_namespace: str
-    include_forgejo_credential: bool
-    # The operator's real read-only Google token (Airlock's `google` provider). Staging only:
-    # testing reaches no real account.
-    include_google_credential: bool
 
 
 @dataclass(frozen=True)

@@ -124,12 +124,7 @@ ENV = Environment(
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(
-        ca_secret_name="agentplane-testing-egress-ca",
-        credentials_namespace=TESTING_NAMESPACE,
-        include_forgejo_credential=False,
-        include_google_credential=False,
-    ),
+    egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
@@ -154,11 +149,7 @@ def chart(app: App) -> Chart:
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(
-        chart,
-        "egress-credentials",
-        namespace=ENV.egress.credentials_namespace,
-        proxy_namespace=ENV.namespace,
-        include_forgejo=ENV.egress.include_forgejo_credential,
+        chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
     )
     return chart
 
