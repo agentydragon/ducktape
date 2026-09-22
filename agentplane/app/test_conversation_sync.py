@@ -372,8 +372,10 @@ async def _history_windows(
     assert str(item["revision_cursor"]) == str(hidden.cursor)
     raw_ref = item["text_ref"]
     reference = json.loads(raw_ref) if isinstance(raw_ref, str) else raw_ref
+    # Revisiting an evicted window reads completed bodies the way the browser does: whole, at the
+    # exact revision the re-fetched row names, with no shape for content that can no longer change.
     selected = await client_one.get(
-        f"{path}/payload-chunks",
+        f"/threads/{thread}/conversation/payload",
         params={
             "source_id": reference["source_id"],
             "projection_epoch": reference["projection_epoch"],
@@ -382,14 +384,10 @@ async def _history_windows(
             "field": reference["field"],
             "generation": reference["generation"],
             "revision_cursor": reference["revision_cursor"],
-            "offset": "-1",
         },
     )
     selected.raise_for_status()
-    selected_chunks = [message["value"] for message in selected.json() if "value" in message]
-    assert "".join(row["text"] for row in sorted(selected_chunks, key=lambda row: int(row["chunk_index"]))) == (
-        "Body 40" + hidden_text
-    )
+    assert selected.json() == {"availability": "present", "body": "Body 40" + hidden_text}
 
 
 if __name__ == "__main__":
