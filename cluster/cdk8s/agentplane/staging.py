@@ -1,6 +1,6 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana/Gmail/Google
-Calendar MCP action groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/Grocy SF/SSH/Home Assistant/Tana/Gmail/
+Google Calendar MCP action groups.
 """
 
 from __future__ import annotations
@@ -31,9 +31,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
@@ -51,7 +50,8 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -65,6 +65,16 @@ _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
+_GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
+# grocy-mcp-sf's OIDCProxy authorization server (mcp_infra/authentik_auth) only advertises
+# `none`/`private_key_jwt` in `token_endpoint_auth_methods_supported` -- no client_secret_post
+# or client_secret_basic -- so this is a public, PKCE-only client (RFC 7591 dynamic client
+# registration against https://grocy-mcp-sf.allegedly.works/register, redirect_uri
+# https://agentplane-staging.allegedly.works/mcp-linkage/callback), the same shape as
+# `kubernetes` below. No client secret exists to rotate or leak. If the registration is ever
+# lost (e.g. the server's Valkey-backed client store is wiped), re-run the DCR POST and update
+# this literal; nothing else changes.
+_GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One standalone google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
@@ -111,7 +121,6 @@ _ACTIONS_SETTINGS = {
     "mcp_servers": {
         "github": {
             "server_id": "github",
-            "provider": "github",
             "server_url": _GITHUB_MCP_URL,
             "client_id": "configured-by-secret",
             "client_secret_file": "/etc/agentplane-github/client_secret",
@@ -119,9 +128,14 @@ _ACTIONS_SETTINGS = {
         },
         "kubernetes": {
             "server_id": "kubernetes",
-            "provider": "kubernetes",
             "server_url": _KUBERNETES_MCP_URL,
             "client_id": "kubectl-passthrough-mcp",
+            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
+        },
+        "grocy_sf": {
+            "server_id": "grocy_sf",
+            "server_url": _GROCY_SF_MCP_URL,
+            "client_id": _GROCY_SF_MCP_CLIENT_ID,
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
         },
     },
@@ -150,6 +164,20 @@ _ACTIONS_SETTINGS = {
                     "transport": "streamable-http",
                     "url": _KUBERNETES_MCP_URL,
                     "server_id": "kubernetes",
+                    "auth": "oauth",
+                },
+            },
+        },
+        "grocy_sf": {
+            "title": "Grocy SF MCP",
+            "description": "Grocy SF household MCP tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Grocy SF MCP executed with the linked operator Grocy account.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _GROCY_SF_MCP_URL,
+                    "server_id": "grocy_sf",
                     "auth": "oauth",
                 },
             },
@@ -329,6 +357,9 @@ ENV = Environment(
             cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+            # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
+            # same public Gateway path.
+            cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
             cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
@@ -431,6 +462,7 @@ def _add_session_secret(scope: Chart) -> None:
 
 def agentplane_staging(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
@@ -449,7 +481,7 @@ def agentplane_staging(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path=f"./cluster/k8s/{ENV.namespace}",
+            path=artifact_path(artifact),
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
@@ -469,9 +501,7 @@ def agentplane_staging(
                 )
             ],
             decryption=sops_decryption(ENV.extra_resources),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 agentplane_crds,
                 agent_sandbox_controller,

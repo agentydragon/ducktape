@@ -14,17 +14,13 @@ from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -84,7 +80,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def clickhouse_schema(flux_chart: Chart, root: Path, clickhouse: Kustomization) -> Kustomization:
+def clickhouse_schema(
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, clickhouse: Kustomization
+) -> Kustomization:
     name = NAME
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -100,10 +98,8 @@ def clickhouse_schema(flux_chart: Chart, root: Path, clickhouse: Kustomization) 
             retry_interval="1m",
             interval="10m",
             timeout="20m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-            ),
-            path=f"./{OUTPUT_DIR}",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=health_checks(rendered_chart, ("Job",)),

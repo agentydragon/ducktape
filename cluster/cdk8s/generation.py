@@ -7,12 +7,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 
+from cluster.cdk8s.flux import SOPS_DECRYPTION
 from cluster.cdk8s.metadata import metadata
 
 CNPG_DATABASE_READY = (
@@ -45,7 +42,4 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
     """Return the Flux decryption block when a directory lists an encrypted Secret."""
     if not any(resource.endswith(".sops.yaml") for resource in resources):
         return None
-    return KustomizationSpecDecryption(
-        provider=KustomizationSpecDecryptionProvider.SOPS,
-        secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-    )
+    return SOPS_DECRYPTION

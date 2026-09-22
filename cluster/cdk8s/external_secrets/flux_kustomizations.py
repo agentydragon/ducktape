@@ -9,7 +9,9 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -18,7 +20,9 @@ from cluster.cdk8s.flux import (
 )
 
 
-def external_secrets_config(chart: Chart, external_secrets_operator: Kustomization) -> Kustomization:
+def external_secrets_config(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "external-secrets-config"
     return flux_kustomization(
         chart,
@@ -26,11 +30,9 @@ def external_secrets_config(chart: Chart, external_secrets_operator: Kustomizati
         spec=KustomizationSpec(
             interval="10m0s",
             retry_interval="30s",
-            path="./cluster/k8s/external-secrets/config",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m0s",
             wait=True,
             # Health-check a representative shared ClusterSecretStore before dependents run.
@@ -70,7 +72,10 @@ def external_secrets_crds(chart: Chart) -> Kustomization:
 
 
 def external_secrets_operator(
-    chart: Chart, external_secrets_crds: Kustomization, cert_manager: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_crds: Kustomization,
+    cert_manager: Kustomization,
 ) -> Kustomization:
     name = "external-secrets-operator"
     return flux_kustomization(
@@ -79,11 +84,9 @@ def external_secrets_operator(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m0s",
-            path="./cluster/k8s/external-secrets/operator",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m0s",
             wait=True,
             depends_on=flux_kustomization_depends_on_many(

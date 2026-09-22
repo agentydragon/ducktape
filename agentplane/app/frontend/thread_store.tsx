@@ -51,9 +51,7 @@ const stateSchema = z.union([
       active_turn_id: z.string().nullable(),
       harness_state: z.string().nullable(),
     }),
-    unresolved_count: z.number().int(),
     operational: z.object({
-      operational_version: z.string(),
       status: z.enum(["active", "ended", "failed"]),
       last_verified_cursor: z.string(),
       feed_error: z.object({ cursor: z.string().nullable(), message: z.string() }).nullable(),

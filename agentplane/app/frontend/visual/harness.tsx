@@ -696,9 +696,7 @@ function viewState(
         active_turn_id: activeTurn,
         harness_state: activeTurn === null ? "stopped" : "running",
       },
-      unresolved_count: 0,
       operational: {
-        operational_version: String(throughCursor),
         status: "active",
         last_verified_cursor: String(throughCursor),
         feed_error: null,
@@ -1234,7 +1232,6 @@ routes.push(
         field,
         generation,
         revision_cursor: revisionCursor,
-        present: body !== undefined,
         chunk_count: body === undefined ? "0" : "1",
         content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
       };

@@ -67,18 +67,9 @@ neighbourhood is in. "1:1 first, abstract when the neighbourhood is in": literal
 duplicated while the other side is still YAML; a shared type, registry, loader or
 derived roster is not written until every node it would touch is a construct.
 
-## Wave 1: derive what the Flux chart makes derivable
+## Pause after Wave 1
 
-Independent of each other; fan out.
-
-- **Artifacts from the chart.** Each Kustomization node builds its artifact value first
-  and reads `sourceRef` off it; the `ArtifactGenerator` is assembled from the list
-  last. Deletes `_DUCKTAPE_ARTIFACTS`, the per-node `sourceRef` blocks and the
-  triple-written names; retires `cluster/validation/test_actions_artifact.py`. The SOPS
-  `decryption` block becomes one value. Exit: `kustomize build` of each packaged
-  directory unchanged, checked once in the PR.
-
-**Pause after Wave 1.** Look at the Flux layer as one thing before building on it:
+Look at the Flux layer as one thing before building on it:
 
 - Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
   whether that is acceptable as is, wants keyword-only parameters, or reveals that
@@ -98,7 +89,7 @@ Independent of each other; fan out.
 
 ## Wave 2: split the trees
 
-One PR, after Wave 1's first two entries, because each half is broken alone.
+One PR, because each half is broken alone.
 
 - cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
   hand-written files only. Each artifact gets a second copy op from the generated
@@ -187,13 +178,6 @@ declarations again.
 Cleanups and patterns that look right from where the tree is today, not committed to
 by any wave. Each names what would settle it. None is a reason to widen a wave's PR.
 
-- **Flatten the 72 single-file subpackages.** #7391 put each slice's Flux nodes in
-  `cluster/cdk8s/<area>/flux_kustomizations.py` with its own `BUILD.bazel`; 72 of the 79
-  subpackages hold one module. STYLE.md flattens a directory with fewer than three
-  files. Likely target: `cluster/cdk8s/flux_kustomizations/<area>.py` until the
-  directory's workloads convert, at which point the nodes move into the component's
-  package. Unsure whether the move is worth doing before Wave 4 moves most of them
-  anyway; decide at the Wave 1 pause from how many areas Wave 4 will touch.
 - **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
   order by hand, which is the design. If it becomes hard to read, the shape to try is
   one function per area that builds its subgraph from explicit predecessor parameters

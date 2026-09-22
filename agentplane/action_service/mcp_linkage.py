@@ -50,17 +50,10 @@ MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
 )
 
 
-class McpProvider(StrEnum):
-    GITHUB = "github"
-    KUBERNETES = "kubernetes"
-    EXAMPLE = "example"
-
-
 class McpOAuthServer(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     server_id: Key
-    provider: McpProvider
     server_url: str = Field(min_length=1)
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
@@ -96,7 +89,6 @@ class McpLinkageView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     server_id: str
-    provider: McpProvider
     server_url: str
     status: McpLinkageStatus
     revision: int
@@ -288,7 +280,6 @@ class McpLinkageAuthority:
             if current is None:
                 current = McpServerLinkageRow(
                     server_id=server.server_id,
-                    provider=server.provider.value,
                     server_url=server.server_url,
                     revision=revision,
                     scopes=scopes,
@@ -301,7 +292,6 @@ class McpLinkageAuthority:
                 )
                 db.add(current)
             else:
-                current.provider = server.provider.value
                 current.server_url = server.server_url
                 current.revision = revision
                 current.scopes = scopes
@@ -681,7 +671,6 @@ def _view(
         failure = None
     return McpLinkageView(
         server_id=server.server_id,
-        provider=server.provider,
         server_url=server.server_url,
         status=status,
         revision=revision,

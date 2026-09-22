@@ -2207,7 +2207,6 @@ data:
     mcp_servers:
       example:
         server_id: example
-        provider: example
         server_url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
         client_id: agentplane-testing-mcp
         client_secret_file: /etc/agentplane-mcp/client-secret

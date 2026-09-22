@@ -18,6 +18,7 @@ from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.presets import Harness
 from agentplane.app.trajectory import (
     CommandIdConflictError,
+    EntityKind,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -464,7 +465,6 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
     assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
     assert operational.model_dump() == {
-        "operational_version": "1",
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
@@ -480,12 +480,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_reset is not None
         reset = ThreadOperationalState.model_validate(view_reset.state["operational"])
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
-    assert reset.model_dump() == {
-        "operational_version": "2",
-        "status": "active",
-        "last_verified_cursor": "1",
-        "feed_error": None,
-    }
+    assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
     await store.end_feed(thread, lease=lease, error="projection invariant failed")
     async with replica._sessions() as session:
@@ -495,7 +490,6 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert unknown_failure is not None
         operational = ThreadOperationalState.model_validate(unknown_failure.state["operational"])
     assert operational.model_dump() == {
-        "operational_version": "3",
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": None, "message": "projection invariant failed"},
@@ -752,7 +746,6 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
             )
         )
     assert replacement is not None
-    assert replacement.present
     assert replacement.chunk_count == replacement.content_bytes == 0
     assert item is not None
     assert item.text_ref is not None
@@ -843,5 +836,88 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
     ]
 
 
+async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(
+        thread,
+        [
+            event_entry(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
+            event_entry(
+                2,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool", tool=event_pb2.ToolResult(output="out", succeeded=False)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    await store.record(
+        thread,
+        [
+            event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
+            event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="late")),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        rows = await session.scalars(
+            select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM)
+        )
+        completions = {
+            row.entity_id: (row.revision_cursor, row.state["completion"], row.state["tool_succeeded"]) for row in rows
+        }
+    assert completions == {"answer": (3, "text", None), "tool": (4, "tool", False)}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    """The index is a position in the thread, so it is dense, ordered and fixed once given."""
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(
+        thread,
+        [
+            event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1)),
+            event_entry(2, text_delta=event_pb2.TextDelta(item_id="first", text="a")),
+            event_entry(3, text_delta=event_pb2.TextDelta(item_id="second", text="b")),
+        ],
+        lease=lease,
+    )
+
+    async def numbered() -> list[tuple[str, str, int]]:
+        async with store._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ThreadEntity).where(ThreadEntity.thread_id == thread).order_by(ThreadEntity.entity_index)
+                )
+            ).all()
+            return [(row.entity_kind, row.entity_id, row.entity_index) for row in rows]
+
+    first_pass = await numbered()
+    # Dense from zero over every kind, the view state included -- a range of the index is every row
+    # in that stretch of the thread, not only the rendered ones.
+    assert [index for _, _, index in first_pass] == list(range(len(first_pass)))
+    assert ("view_state", "current") in [(kind, entity_id) for kind, entity_id, _ in first_pass]
+    assert [entity_id for kind, entity_id, _ in first_pass if kind == "item"] == ["first", "second"]
+
+    # A revision keeps its number; a new row takes the next one.
+    await store.record(
+        thread,
+        [
+            event_entry(4, text_delta=event_pb2.TextDelta(item_id="first", text="c")),
+            event_entry(5, text_delta=event_pb2.TextDelta(item_id="third", text="d")),
+        ],
+        lease=lease,
+    )
+    after = await numbered()
+    positions = {(kind, entity_id): index for kind, entity_id, index in after}
+    before = {(kind, entity_id): index for kind, entity_id, index in first_pass}
+    assert before.items() <= positions.items()
+    assert [index for _, _, index in after] == list(range(len(after)))
+    assert positions[("item", "third")] == len(first_pass)

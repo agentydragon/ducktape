@@ -14,7 +14,6 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import get_args
 from uuid import UUID, uuid4
 
 import httpx
@@ -29,7 +28,7 @@ from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.thread_fold import PayloadField
-from agentplane.app.trajectory import ThreadEntityInterest, ThreadEntityView, ThreadPayloadSelection, TrajectoryStore
+from agentplane.app.trajectory import EntityKind, ThreadEntityInterest, ThreadPayloadSelection, TrajectoryStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -144,7 +143,7 @@ async def test_entity_shape_names_only_kinds_the_projection_writes(store: Trajec
     assert response.status_code == 200
     assert seen is not None
     named = set(re.findall(r"'([a-z_]+)'", httpx.QueryParams(seen.url.query)["where"]))
-    written = set(get_args(ThreadEntityView.model_fields["entity_kind"].annotation))
+    written = set(EntityKind)
     assert named
     assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
 

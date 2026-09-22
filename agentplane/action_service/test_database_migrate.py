@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.db import Base
 
 NOTE = "Existing deployed note — preserved."
+LINKAGE = "test-linkage"
+ACCESS_TOKEN = "test-only-access-token"
 
 
 def _seed_at_0005(connection: Connection) -> None:
@@ -55,6 +57,38 @@ def _seed_at_0005(connection: Connection) -> None:
     )
 
 
+def _seed_linkage_at_0016(connection: Connection) -> None:
+    """A linked MCP server with its shared token state, in the 0016 shape that still has `provider`."""
+    token_state = UUID("00000000-0000-4000-8000-000000000003")
+    connection.execute(
+        text(
+            """
+            INSERT INTO mcp_oauth_token_state
+                (id, server_id, access_token, token_type, scope, token_revision, updated_at,
+                 refresh_failure_count)
+            VALUES (:token_state, :server, :token, 'Bearer', '[]', 1, now(), 0)
+            """
+        ).bindparams(token_state=token_state, server=LINKAGE, token=ACCESS_TOKEN)
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO mcp_server_linkage (server_id, provider, server_url, revision, scopes, token_state_id)
+            VALUES (:server, :server, 'https://mcp.example.test/mcp', 1, '[]', :token_state)
+            """
+        ).bindparams(server=LINKAGE, token_state=token_state)
+    )
+
+
+def _linked_access_token(connection: Connection) -> object:
+    return connection.scalar(
+        text(
+            "SELECT access_token FROM mcp_server_linkage JOIN mcp_oauth_token_state ON token_state_id = "
+            "mcp_oauth_token_state.id WHERE mcp_server_linkage.server_id = :server"
+        ).bindparams(server=LINKAGE)
+    )
+
+
 def _round_trip(connection: Connection) -> None:
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
@@ -77,17 +111,28 @@ def _round_trip(connection: Connection) -> None:
 
     # `0016` stores a principal as its own fields and drops what the old encoding held rather than
     # parsing it apart, in both directions. That is the documented behaviour.
-    command.upgrade(config, "head")
+    command.upgrade(config, "0016_structured_principals")
     assert connection.scalar(text("SELECT count(*) FROM action_request")) == 0
     assert connection.scalar(text("SELECT count(*) FROM action_decision")) == 0
     assert connection.scalar(text("SELECT count(*) FROM action_event")) == 0
 
+    # `0017` drops the linkage's `provider` and keeps the linkage and its token state both ways; on
+    # the way down `provider` comes back as the `server_id`.
+    _seed_linkage_at_0016(connection)
+    command.upgrade(config, "head")
+    assert _linked_access_token(connection) == ACCESS_TOKEN
+    command.downgrade(config, "0016_structured_principals")
+    assert connection.scalar(text("SELECT provider FROM mcp_server_linkage")) == LINKAGE
+    assert _linked_access_token(connection) == ACCESS_TOKEN
+    command.upgrade(config, "head")
+
     # Check the changed tables, not unrelated migration-only request/execution indexes.
+    changed = {"action_decision", "action_event", "action_request", "mcp_server_linkage"}
     context = MigrationContext.configure(
         connection,
         opts={
             "include_object": lambda obj, name, type_, reflected, compare_to: (
-                type_ != "index" and (type_ != "table" or name in {"action_decision", "action_event", "action_request"})
+                type_ != "index" and (type_ != "table" or name in changed)
             )
         },
     )
