@@ -210,6 +210,35 @@ Consequences, in order:
   sub-second creation, not twenty seconds. The argument for it is now shape hygiene — a shape is a
   partition, and ours is a viewport — rather than latency.
 
+## A body may now run ahead of the metadata that names it
+
+`test_http_admission_ahead_of_replay_does_not_skip_earlier_events` fails on this branch, and it is
+right to. Its gate holds `/sync/entities` while leaving `/sync/payload-chunks` alone, so the browser
+holds an item whose `text_ref` still names an earlier revision while that field's later chunks are
+already in Electric. It used to render the earlier revision. It now renders everything the chunk
+stream has: `"Test retained prefix and preceding delta A and preceding delta B"` where the item's
+own metadata says `"Test retained prefix"`.
+
+Both halves of that were removed here, and neither removal was wrong alone:
+
+- **W2** dropped the server-side `chunk_index < $8`, on the argument that `ActivePayloadBody`
+  already filtered the prefix client-side. True when written.
+- **W4** then deleted that client-side filter along with the `payload-interest` fetch that fed it
+  `chunk_count`, on the argument that a contiguous run from index 0 is the whole value at _some_
+  revision of the generation. Also true — and that is the problem. Some revision is not the one the
+  conversation is showing.
+
+So an item's text and its metadata can disagree, which the conversation model does not allow: a
+revision is what makes a body and the row naming it one fact. The shape staying per generation is
+still right; what is missing is a bound the reader can apply without a second request.
+
+**The fix is the extent on the reference** — `chunk_count` and `content_bytes` on `PayloadRef`,
+which this plan proposed as W4 and then abandoned for the contiguity rule precisely to avoid a
+schema change. It is not an optimisation. It is what lets a reader render exactly the revision its
+metadata names, from a shape that carries more. W9 needs it for the same reason and more sharply: a
+window-scoped chunk shape delivers every item's chunks at once, so every body it feeds needs its
+own bound. One epoch bump carries both.
+
 ## Measurement gates
 
 None of the landed work is accepted on a passing build.
