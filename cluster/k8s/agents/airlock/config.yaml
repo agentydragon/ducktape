@@ -58,9 +58,9 @@ oauth:
         access_type: offline
         prompt: consent
     # A separate provider, not a widened `google` grant: the `google` access token above is
-    # ESO-mirrored into haku-sandbox directly (see google-access-token-eso.yaml),
-    # so adding write scopes to that same token would hand write-capable Gmail/Calendar to every
-    # holder of it. This provider's token is instead mirrored only into the google-mcp namespace
+    # what agentplane's egress proxies present on sandboxes' Google reads (see
+    # google-access-token-eso.yaml), so adding write scopes to that same token would hand
+    # write-capable Gmail/Calendar to every holder of it. This provider's token is instead mirrored only into the google-mcp namespace
     # (google-write-access-token-eso.yaml), which fronts it behind an approval-gated MCP server
     # (x/google_mcp_server) -- see plans/personal_agents/personal_data_agent.md and
     # docs/personal_agents/verdicts.md for why that boundary matters. Scopes match what
