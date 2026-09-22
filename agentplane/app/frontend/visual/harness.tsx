@@ -1239,8 +1239,10 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/content$/,
     (match, query, signal) => {
       // The chunk table is append-only, so its shape replays a full log from -1 rather than
-      // bootstrapping from a current snapshot; the proxy refuses a subset handshake for it.
-      if (query.get("live") === "true")
+      // bootstrapping from a current snapshot; the proxy refuses a subset handshake for it. A
+      // subscribing reader asks for that replay as `offset=-1&live=true`, so the log has to be
+      // served before the long poll is considered — reversed, the first read never returns rows.
+      if (query.get("live") === "true" && query.get("offset") !== "-1")
         return electricLongPoll(`visual-content-${match[1]}`, "conversation_payload_chunk", signal);
       if (query.get("offset") !== null && query.get("offset") !== "-1")
         return electricShape([], `visual-content-${match[1]}`);
