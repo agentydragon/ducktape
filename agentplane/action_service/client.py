@@ -107,8 +107,8 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("GET", "/v1/operator/mcp-servers")
         return [McpLinkageView.model_validate(row) for row in response.json()]
 
-    async def mcp_group_health(self) -> list[ActionGroupView]:
-        response = await self._request("GET", "/v1/operator/mcp-servers/health")
+    async def action_groups(self) -> list[ActionGroupView]:
+        response = await self._request("GET", "/v1/action-groups")
         return [ActionGroupView.model_validate(row) for row in response.json()]
 
     async def mcp_linkage(self, server_id: str) -> McpLinkageView:

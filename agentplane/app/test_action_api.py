@@ -71,7 +71,11 @@ from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.app.trajectory import TrajectoryStore
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from agentplane.workload_auth.principal import (
+    WorkloadPrincipal,
+    WorkloadPrincipalRejectedError,
+    WorkloadPrincipalResolver,
+)
 from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
@@ -79,6 +83,15 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, si
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
 SUBJECT_B = "test-second-subject"
+
+
+class _RejectAllWorkloadResolver:
+    """This fixture's downstream app has no real workload identities; only its operator/BFF flow
+    is under test, but /v1/action-groups now also tries workload auth before falling back to
+    operator, so a resolver that correctly rejects (rather than a None placeholder) is required."""
+
+    async def resolve_workload(self, token: str) -> WorkloadPrincipal:
+        raise WorkloadPrincipalRejectedError("test: this fixture has no workload identities")
 
 
 @dataclass
@@ -159,7 +172,7 @@ async def review(
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
-            cast(WorkloadPrincipalResolver, None),
+            cast(WorkloadPrincipalResolver, _RejectAllWorkloadResolver()),
             OidcOperatorAuthenticator(target),
             catalog,
             callers=policies,
@@ -637,7 +650,7 @@ async def test_provider_availability_is_not_operator_rejection(
 ) -> None:
     await review.browser.get("/auth/login")
     caplog.set_level(logging.WARNING, logger="agentplane.app.action_federation")
-    for path in ("/actions", "/mcp-servers", "/mcp-servers/health", "/push/config"):
+    for path in ("/actions", "/mcp-servers", "/action-groups", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
         detail = response.json()["detail"]
@@ -666,7 +679,7 @@ async def test_operator_observes_mcp_group_health_without_a_real_tool_call_faili
     await review.browser.get("/auth/login")
     async with asyncio.timeout(10):
         while True:
-            groups = (await review.browser.get("/mcp-servers/health")).json()
+            groups = (await review.browser.get("/action-groups")).json()
             test_review = next(group for group in groups if group["key"] == "test_review")
             if test_review["health"] is not None and test_review["health"]["state"] == "available":
                 break

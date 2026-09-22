@@ -314,10 +314,10 @@ Operators manage linkage at `GET /v1/operator/mcp-servers`
 (every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
 `POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
 unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
-unexpired flow matching `state`. `GET /v1/operator/mcp-servers/health` mirrors the workload-facing
-group diagnostics above (lifecycle, reason, last discovery, failures, retry time) for every
-mcp-kind group regardless of auth mechanism, so a static-bearer group's connectivity is visible to
-operators too, not only OAuth-linked ones. Startup unwinds already-opened adapters, including a
+unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly (it accepts
+either bearer scheme): the same group diagnostics above (lifecycle, reason, last discovery,
+failures, retry time), for every mcp-kind group regardless of auth mechanism, so a static-bearer
+group's connectivity is visible to operators too, not only OAuth-linked ones. Startup unwinds already-opened adapters, including a
 partially started adapter. Drain fences claims and reconnects but retains published connections
 through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
 after draining service tasks, then closes Kubernetes and database resources.

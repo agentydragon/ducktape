@@ -361,9 +361,9 @@ async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
     return await client.mcp_linkages()
 
 
-@connections_router.get("/mcp-servers/health")
-async def mcp_group_health(client: OperatorActions) -> list[ActionGroupView]:
-    return await client.mcp_group_health()
+@connections_router.get("/action-groups")
+async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
+    return await client.action_groups()
 
 
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")

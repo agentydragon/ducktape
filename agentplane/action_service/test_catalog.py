@@ -12,9 +12,8 @@ from pydantic import ValidationError
 from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
 
 # A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
-# YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two mcp-kind groups (one available
-# fixture-executor group proving discovery end to end, one deliberately unavailable) plus one
-# sandbox-kind group proving mcp_group_views() filters by executor kind.
+# YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
+# fixture-executor group proving discovery end to end, one deliberately unavailable group.
 CONFIGURED_CATALOG_YAML = textwrap.dedent("""
     github:
       title: GitHub
@@ -46,20 +45,6 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
       actions:
         list_events:
           description: List upcoming events.
-    sandbox:
-      title: Sandbox
-      description: Runs in-process, not over MCP.
-      executor:
-        kind: sandbox
-        description: Stamped and exec'd by this service.
-        namespace: agentplane-test
-        environments:
-          default:
-            template: agentplane-runner
-            container: main
-            default_cwd: /workspace
-            description: The default box shape.
-        default_environment: default
 """)
 
 
@@ -74,7 +59,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
     views = {view.key: view for view in catalog.group_views()}
 
-    assert views.keys() == {"github", "calendar", "sandbox"}
+    assert views.keys() == {"github", "calendar"}
     github = views["github"]
     assert github.title == "GitHub"
     assert github.available is True
@@ -93,14 +78,6 @@ def test_executor_backend_configuration_never_reaches_a_view() -> None:
 
     assert "github-mcp-account" not in rendered
     assert "github-mcp.internal.example" not in rendered
-
-
-def test_mcp_group_views_excludes_sandbox_kind_groups() -> None:
-    catalog = _catalog()
-
-    views = {view.key: view for view in catalog.mcp_group_views()}
-
-    assert views.keys() == {"github", "calendar"}
 
 
 def test_server_id_must_match_its_own_group_key() -> None:

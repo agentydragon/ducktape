@@ -151,6 +151,8 @@ class ActionCatalog(BaseModel):
 
     groups: dict[Key, ActionGroup] = Field(default_factory=dict)
 
+    # Lets the operator settings page join an ActionGroupView back to its McpLinkageView by
+    # matching `key` against `server_id` directly, with no separate wire-carried join key needed.
     @model_validator(mode="after")
     def _server_id_matches_group_key(self) -> ActionCatalog:
         for key, group in self.groups.items():
@@ -172,15 +174,6 @@ class ActionCatalog(BaseModel):
 
     def group_views(self) -> list[ActionGroupView]:
         return [_group_view(key, group) for key, group in self.groups.items()]
-
-    def mcp_group_views(self) -> list[ActionGroupView]:
-        """Operator-facing subset of group_views(): every mcp-kind group, oauth-linked or not.
-
-        The same view agents get (never carries backend config), so an operator joins it to
-        McpLinkageView by matching `key` against `server_id` directly -- guaranteed to agree by
-        the _server_id_matches_group_key validator above, wherever a group declares a server_id.
-        """
-        return [view for view in self.group_views() if view.executor_kind == "mcp"]
 
     def action_view(self, group_key: str, action_key: str) -> ActionView:
         _, action = self.resolve(group_key, action_key)

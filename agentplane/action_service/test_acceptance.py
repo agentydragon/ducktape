@@ -543,15 +543,12 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
         ]
         assert "github-mcp-account" not in groups.text
 
-        # The operator route is the same ActionGroupView the workload route returns above, just
-        # operator-authenticated -- there is only one mcp-kind group here, so the two agree exactly.
-        health = await client.get("/v1/operator/mcp-servers/health", headers=_operator())
-        assert health.status_code == 200
-        assert health.json() == groups.json()
-        assert "github-mcp-account" not in health.text
-
-        unauthenticated_health = await client.get("/v1/operator/mcp-servers/health")
-        assert unauthenticated_health.status_code == 401
+        # /v1/action-groups accepts either bearer scheme: the response is identical and
+        # non-sensitive to both, so an operator (e.g. the settings page) reads it too.
+        as_operator = await client.get("/v1/action-groups", headers=_operator())
+        assert as_operator.status_code == 200
+        assert as_operator.json() == groups.json()
+        assert "github-mcp-account" not in as_operator.text
 
         unauthenticated = await client.get("/v1/action-groups")
         assert unauthenticated.status_code == 401
