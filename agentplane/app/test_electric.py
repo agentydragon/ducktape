@@ -106,7 +106,6 @@ def make_app(upstream: httpx.MockTransport, store: TrajectoryStore) -> tuple[Fas
 
 def entity_query(seeded: Seeded) -> dict[str, str]:
     return {
-        "source_id": seeded.interest.scope.source_id,
         "projection_epoch": seeded.interest.scope.projection_epoch,
         "anchor_cursor": str(seeded.interest.anchor_cursor),
         "tail_from": str(seeded.interest.tail_from),
@@ -116,7 +115,6 @@ def entity_query(seeded: Seeded) -> dict[str, str]:
 def payload_query(seeded: Seeded) -> dict[str, str]:
     selection = seeded.selection
     return {
-        "source_id": selection.scope.source_id,
         "projection_epoch": selection.scope.projection_epoch,
         "owner_cursor": str(selection.owner_cursor),
         "owner_id": selection.owner_id,
@@ -181,14 +179,13 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStor
     assert query["log"] == "changes_only"
     assert query["queryable_columns"] == query["columns"]
     assert query["replica"] == "full"
-    assert "cursor >= $4" in query["where"]
+    assert "cursor >= $3" in query["where"]
     # The shape's lower bound is the interest's, verbatim: the proxy owns the predicate and a
     # browser cannot widen it, and the value is whatever the real resolver computed.
-    assert {str(index): query[f"params[{index}]"] for index in range(1, 5)} == {
+    assert {str(index): query[f"params[{index}]"] for index in range(1, 4)} == {
         "1": str(seeded.thread),
-        "2": seeded.interest.scope.source_id,
-        "3": seeded.interest.scope.projection_epoch,
-        "4": str(seeded.interest.tail_from),
+        "2": seeded.interest.scope.projection_epoch,
+        "3": str(seeded.interest.tail_from),
     }
 
 
@@ -238,17 +235,15 @@ async def test_stale_or_client_widened_interest_is_rejected(store: TrajectorySto
     assert bad_log.status_code == 400
 
 
-@pytest.mark.parametrize("field", ["source_id", "projection_epoch"])
-async def test_old_entity_scope_is_rejected_before_forwarding(
-    field: str, store: TrajectoryStore, seeded: Seeded
-) -> None:
+async def test_old_entity_scope_is_rejected_before_forwarding(store: TrajectoryStore, seeded: Seeded) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("retired scopes must not reach Electric")
 
     app, electric = make_app(httpx.MockTransport(unexpected), store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
-            f"/threads/{seeded.thread}/sync/entities", params=entity_query(seeded) | {field: "retired-scope"}
+            f"/threads/{seeded.thread}/sync/entities",
+            params=entity_query(seeded) | {"projection_epoch": "retired-scope"},
         )
     await electric.aclose()
     assert response.status_code == 410
@@ -282,8 +277,8 @@ async def test_current_snapshot_cannot_change_fixed_shape(
     assert response.status_code == 200
     forwarded = seen[0].url.params
     assert forwarded["log"] == "changes_only"
-    assert "cursor >= $4" in forwarded["where"]
-    assert forwarded["params[4]"] == str(seeded.interest.tail_from)
+    assert "cursor >= $3" in forwarded["where"]
+    assert forwarded["params[3]"] == str(seeded.interest.tail_from)
     assert seen[0].headers["electric-protocol-version"] == "1.0"
     for key, value in subset.items():
         assert forwarded[key] == value
@@ -349,9 +344,9 @@ async def test_payload_shape_uses_server_verified_exact_revision(store: Trajecto
     assert forwarded["table"] == "thread_payload_chunk"
     # The shape stops at the revision's own extent: a later append to the same generation is a
     # different shape, and this one never grows past what its metadata named.
-    assert "chunk_index < $8" in forwarded["where"]
-    assert forwarded["params[7]"] == str(selection.generation)
-    assert forwarded["params[8]"] == str(selection.chunk_count)
+    assert "chunk_index < $7" in forwarded["where"]
+    assert forwarded["params[6]"] == str(selection.generation)
+    assert forwarded["params[7]"] == str(selection.chunk_count)
 
 
 async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(
@@ -365,7 +360,7 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
 
     app, electric = make_app(httpx.MockTransport(upstream), store)
     scope = seeded.interest.scope
-    params = [("source_id", scope.source_id), ("projection_epoch", scope.projection_epoch), ("offset", "-1")]
+    params = [("projection_epoch", scope.projection_epoch), ("offset", "-1")]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/commands",
@@ -390,14 +385,12 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
     assert len(seen) == 1
     query = httpx.QueryParams(seen[0].url.query)
     assert query["where"] == (
-        "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
-        "entity_kind = 'command' AND entity_id IN ($4,$5)"
+        "thread_id = $1 AND projection_epoch = $2 AND entity_kind = 'command' AND entity_id IN ($3,$4)"
     )
     assert query["params[1]"] == str(seeded.thread)
-    assert query["params[2]"] == scope.source_id
-    assert query["params[3]"] == scope.projection_epoch
-    assert query["params[4]"] == "failed"
-    assert query["params[5]"] == "future"
+    assert query["params[2]"] == scope.projection_epoch
+    assert query["params[3]"] == "failed"
+    assert query["params[4]"] == "future"
     assert "command_id" not in query
 
 
@@ -433,7 +426,6 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     response = await app.state.electric.entities(
         Request(scope),
         thread_id=seeded.thread,
-        source_id=seeded.interest.scope.source_id,
         projection_epoch=seeded.interest.scope.projection_epoch,
         anchor_cursor=seeded.interest.anchor_cursor,
         tail_from=seeded.interest.tail_from,

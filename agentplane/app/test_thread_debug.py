@@ -74,12 +74,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         reviewer=reviewer,
     )
     path = f"/threads/{thread}/evidence"
-    params = {
-        "source_id": scope.source_id,
-        "projection_epoch": scope.projection_epoch,
-        "entity_kind": "item",
-        "entity_id": "first",
-    }
+    params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         denied = await client.get(path, params=params)
         assert denied.status_code == 401
@@ -114,9 +109,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert empty.json() == {"frames": [], "next_after_sequence": None}
         wrong_entity = await client.get(f"{path}/8/frames", params=params | {"entity_id": "second"}, headers=AGENT_AUTH)
         assert wrong_entity.status_code == 404
-        for field in ("source_id", "projection_epoch"):
-            stale = await client.get(path, params=params | {field: "stale"}, headers=AGENT_AUTH)
-            assert stale.status_code == 410
+        stale = await client.get(path, params=params | {"projection_epoch": "stale"}, headers=AGENT_AUTH)
+        assert stale.status_code == 410
         lifecycle = await client.get(
             path, params=params | {"entity_kind": "lifecycle", "entity_id": "2"}, headers=AGENT_AUTH
         )
@@ -167,7 +161,6 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         rows = debug_tail.json()["observations"]
         assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
         assert [row["cursor"] for row in rows] == ["10", "11", "12"]
-        assert all(row["source_id"] == scope.source_id for row in rows)
         assert "entry" not in rows[0]
         assert stderr not in debug_tail.text
         entries = [(await client.get(f"{chronological}/{row['cursor']}", headers=AGENT_AUTH)).json() for row in rows]

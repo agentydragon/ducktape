@@ -646,7 +646,6 @@ function payload(
   revisionCursor = ownerCursor
 ): Record<string, string> {
   const reference = {
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     owner_cursor: String(ownerCursor),
     owner_id: ownerId,
@@ -667,7 +666,6 @@ function entity(
 ): Record<string, unknown> {
   return {
     thread_id: extra.thread_id ?? THREADS[0].id,
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     entity_kind: kind,
     entity_id: id,
@@ -956,7 +954,6 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
 function threadEntityInterest(threadId: string): Record<string, string | null> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
   return {
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     through_cursor: String(through),
     anchor_cursor: String(through),
@@ -1094,8 +1091,8 @@ function currentSubset(query: URLSearchParams): boolean {
   if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
     throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
   }
-  if (query.get("source_id") !== CONVERSATION_SOURCE || query.get("projection_epoch") !== CONVERSATION_EPOCH) {
-    throw new Error("current Electric shapes must select the resolved thread fold source and projection epoch");
+  if (query.get("projection_epoch") !== CONVERSATION_EPOCH) {
+    throw new Error("current Electric shapes must select the resolved thread fold projection epoch");
   }
   // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
   // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
@@ -1105,10 +1102,9 @@ function currentSubset(query: URLSearchParams): boolean {
 function shapeRow(relation: string, value: Record<string, unknown>) {
   const identity =
     relation === "thread_entity"
-      ? [value.thread_id, value.source_id, value.projection_epoch, value.entity_kind, value.entity_id]
+      ? [value.thread_id, value.projection_epoch, value.entity_kind, value.entity_id]
       : [
           value.thread_id,
-          value.source_id,
           value.projection_epoch,
           value.owner_cursor,
           value.owner_id,
@@ -1161,8 +1157,8 @@ const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
 function observationPage(threadId: string) {
   return {
     observations: [
-      { cursor: "31", source_id: CONVERSATION_SOURCE, kind: "harness_stderr" },
-      { cursor: "34", source_id: CONVERSATION_SOURCE, kind: "item_completed" },
+      { cursor: "31", kind: "harness_stderr" },
+      { cursor: "34", kind: "item_completed" },
     ],
     next_before_cursor: null,
     next_after_cursor: null,
@@ -1232,7 +1228,6 @@ routes.push(
       const revisionCursor = query.get("revision_cursor") ?? "0";
       const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
       return {
-        source_id: CONVERSATION_SOURCE,
         projection_epoch: CONVERSATION_EPOCH,
         owner_cursor: ownerCursor,
         owner_id: ownerId,
@@ -1263,7 +1258,6 @@ routes.push(
             : [
                 shapeRow("thread_payload_chunk", {
                   thread_id: match[1],
-                  source_id: CONVERSATION_SOURCE,
                   projection_epoch: CONVERSATION_EPOCH,
                   owner_cursor: ownerCursor,
                   owner_id: ownerId,

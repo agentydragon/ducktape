@@ -641,9 +641,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             async with replica_store._sessions() as session:
                 checkpoint = await session.get(ThreadCheckpoint, thread)
                 assert checkpoint is not None
-                view = await session.get(
-                    ThreadEntity, (thread, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
-                )
+                view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
                 assert view is not None
                 operational = ThreadOperationalState.model_validate(view.state["operational"])
             assert operational.feed_error is not None
@@ -676,17 +674,19 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 )
             assert not dispatched
 
-            contacted_runner = False
+            reattached = False
 
-            async def reject_client(_sandbox: str) -> RunnerClient:
-                nonlocal contacted_runner
-                contacted_runner = True
+            async def reject_attach(*_args: object, **_kwargs: object) -> None:
+                nonlocal reattached
+                reattached = True
                 raise AssertionError("a rejected feed must refuse reopen before native attach")
 
-            monkeypatch.setattr(survivor, "_client", reject_client)
+            # Patched on the class, not the bridge: the survivor's discovery loop keeps listing the
+            # runner's sessions meanwhile, and it must not reattach the rejected one either.
+            monkeypatch.setattr(RunnerClient, "attach", reject_attach)
             with pytest.raises(RunnerError, match="runner history is rejected"):
                 await survivor.open_session(SANDBOX, SESSION, spec)
-            assert not contacted_runner
+            assert not reattached
         finally:
             await survivor.close()
     finally:

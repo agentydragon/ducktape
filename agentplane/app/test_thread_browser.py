@@ -333,7 +333,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         stale = await page.request.get(
             f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
             params={
-                **{key: old_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")},
+                **{key: old_interest[key] for key in ("projection_epoch", "anchor_cursor", "tail_from")},
                 "offset": "now",
             },
         )
@@ -1469,9 +1469,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     async with store._sessions() as session, session.begin():
         checkpoint = await session.get(ThreadCheckpoint, thread.id)
         assert checkpoint is not None
-        view = await session.get(
-            ThreadEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
-        )
+        view = await session.get(ThreadEntity, (thread.id, checkpoint.projection_epoch, "view_state", "current"))
         assert view is not None
         feed = await session.get(FeedState, thread.id)
         assert feed is not None

@@ -221,14 +221,13 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
         spec=EgressCredentialSpec(
             description=(
                 "A Google OAuth access token minted and refreshed by Airlock "
-                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same "
-                "token Airlock's `google` provider mints for every consumer -- currently granted "
-                "`gmail.readonly` and `calendar.readonly` (Airlock's own config additionally "
-                "requests several other `.readonly` scopes not yet granted; check "
-                "cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before "
-                "assuming more than Gmail and Calendar work). The proxy does not narrow what the "
-                "token itself may do -- `google-readonly`'s own rules are what restrict this "
-                "credential to Gmail and Calendar hosts/paths."
+                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of "
+                "Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, "
+                "Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the "
+                "token was actually granted is whatever the operator consented to at Airlock, which "
+                "can be narrower than that list -- an API outside it answers 403 "
+                "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
+                "presents it."
             ),
             source=EgressCredentialSpecSource(
                 secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
@@ -390,20 +389,33 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
         metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
         spec=EgressPolicySpec(
             rules=[
-                # Gmail has its own dedicated API host, so no path restriction is needed beyond
-                # read-only methods -- unlike Calendar below, nothing else is reachable here.
+                # One API per host, so read-only methods are the only restriction needed.
                 EgressPolicySpecRules(
-                    hosts=["gmail.googleapis.com"],
+                    hosts=[
+                        "gmail.googleapis.com",
+                        "tasks.googleapis.com",
+                        "people.googleapis.com",
+                        "docs.googleapis.com",
+                        "sheets.googleapis.com",
+                        "slides.googleapis.com",
+                        "youtube.googleapis.com",
+                    ],
                     methods=[EgressPolicySpecRulesMethods.GET],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
                 ),
-                # Calendar shares this host with many other Google APIs the underlying token could
-                # also authenticate (Drive, Docs, Sheets, ...); the path restricts this rule to
-                # Calendar's own surface regardless of what else the token is scoped for.
+                # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
+                # YouTube is reachable on both hosts; client libraries differ on which they use.
                 EgressPolicySpecRules(
                     hosts=["www.googleapis.com"],
                     methods=[EgressPolicySpecRulesMethods.GET],
-                    paths=["/calendar/v3/**"],
+                    paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+                ),
+                # Drive Activity's only read is a POST query.
+                EgressPolicySpecRules(
+                    hosts=["driveactivity.googleapis.com"],
+                    methods=[EgressPolicySpecRulesMethods.POST],
+                    paths=["/v2/activity:query"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
                 ),
             ]

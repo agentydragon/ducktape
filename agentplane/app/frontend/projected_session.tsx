@@ -96,7 +96,7 @@ function LazyBody({
   follow: boolean;
   plain?: boolean;
 }): JSX.Element {
-  const id = `${body.reference.source_id}:${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
+  const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
       <Body {...body} />
@@ -119,7 +119,6 @@ function EvidenceFramesPage({
   const [afterSequence, setAfterSequence] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
-    sourceId: entity.sourceId,
     projectionEpoch: entity.projectionEpoch,
     entityKind: entity.entityKind,
     entityId: entity.entityId,
@@ -186,7 +185,7 @@ function EvidenceFramesPage({
 
 function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observationCursor: string }): JSX.Element {
   const { entity } = props;
-  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
+  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
     <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
       <EvidenceFramesPage key={id} {...props} />
@@ -201,7 +200,6 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   const [afterCursor, setAfterCursor] = useState("0");
   const request = useRef<AbortController | null>(null);
   const scope = {
-    sourceId: entity.sourceId,
     projectionEpoch: entity.projectionEpoch,
     entityKind: entity.entityKind,
     entityId: entity.entityId,
@@ -267,7 +265,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
 }
 
 function Evidence({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
-  const id = `${entity.sourceId}:${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
   return (
     <RetainedDisclosure id={id} summary="Evidence">
       <EvidencePageView key={id} threadId={threadId} entity={entity} />
@@ -411,7 +409,6 @@ function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
 
 function SelectedCommandOutcomes({
   threadId,
-  sourceId,
   projectionEpoch,
   commands,
   store,
@@ -419,7 +416,6 @@ function SelectedCommandOutcomes({
   deliver,
 }: {
   threadId: string;
-  sourceId: string;
   projectionEpoch: string;
   commands: LocalCommand[];
   store: LocalCommands;
@@ -428,7 +424,7 @@ function SelectedCommandOutcomes({
 }): JSX.Element {
   const ids = commands.slice(0, 128).map((value) => value.command.commandId);
   return (
-    <CommandSelection threadId={threadId} sourceId={sourceId} projectionEpoch={projectionEpoch} commandIds={ids}>
+    <CommandSelection threadId={threadId} projectionEpoch={projectionEpoch} commandIds={ids}>
       {(rows) => (
         <SelectedCommandRows
           threadId={threadId}
@@ -922,7 +918,6 @@ function ProjectedSessionBody({
         {view && selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
             threadId={threadId}
-            sourceId={view.sourceId}
             projectionEpoch={view.projectionEpoch}
             commands={selectedCommandIds}
             store={commands.store}

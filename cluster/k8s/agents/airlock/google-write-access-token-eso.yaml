@@ -3,7 +3,7 @@
 # fronts it behind agentplane's approval-gated ActionGroups (x/google_mcp_server,
 # cluster/cdk8s/google_mcp.py). Deliberately not mirrored into claude-sandbox, haku-sandbox, or
 # agentplane-staging directly: unlike google-access-token (read-only, google-access-token-eso.yaml),
-# this token can send mail and mutate Gmail/Calendar, so it must never reach a namespace the
+# which an egress proxy may present on a sandbox's reads, this token can send mail and mutate Gmail/Calendar, so it must never reach a namespace the
 # agent's own execution can read from directly. See plans/personal_agents/personal_data_agent.md
 # and docs/personal_agents/verdicts.md.
 apiVersion: external-secrets.io/v1

@@ -96,9 +96,9 @@ class Event(Base):
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     # `record` admits an entry only where `origin.sequence == cursor`, so this key is also the
-    # runner's follow sequence that `ThreadNativeLink.source_sequence` names.
+    # runner's follow sequence that `ThreadNativeLink.source_sequence` names. The entry's own
+    # proto-JSON `payload` names its `origin.source_id`, which is constant for a Thread.
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    origin_source_id: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
@@ -126,7 +126,13 @@ class FeedState(Base):
 
 
 class ThreadCheckpoint(Base):
-    """One source/epoch-owned materialized prefix for a Thread."""
+    """One source/epoch-owned materialized prefix for a Thread.
+
+    `thread_id` alone keys this row, and `TrajectoryStore.record` refuses an entry whose
+    `origin.source_id` disagrees with the prefix, so this is the one place a Thread's runner
+    source is stored: every other fold table is scoped by `(thread_id, projection_epoch)` and
+    reads its source from here.
+    """
 
     __tablename__ = "thread_checkpoint"
 
@@ -155,20 +161,11 @@ class ThreadEntity(Base):
 
     __tablename__ = "thread_entity"
     __table_args__ = (
-        Index("ix_thread_entity_scope_revision", "thread_id", "source_id", "projection_epoch", "revision_cursor"),
-        Index(
-            "ix_thread_entity_scope_cursor",
-            "thread_id",
-            "source_id",
-            "projection_epoch",
-            "cursor",
-            "entity_kind",
-            "entity_id",
-        ),
+        Index("ix_thread_entity_scope_revision", "thread_id", "projection_epoch", "revision_cursor"),
+        Index("ix_thread_entity_scope_cursor", "thread_id", "projection_epoch", "cursor", "entity_kind", "entity_id"),
         Index(
             "ix_thread_entity_scope_pending_cursor",
             "thread_id",
-            "source_id",
             "projection_epoch",
             "cursor",
             "entity_kind",
@@ -178,7 +175,6 @@ class ThreadEntity(Base):
         Index(
             "ix_thread_entity_scope_segment_cursor",
             "thread_id",
-            "source_id",
             "projection_epoch",
             "cursor",
             postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
@@ -188,7 +184,6 @@ class ThreadEntity(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_kind: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_id: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -211,7 +206,6 @@ class ThreadPayloadManifest(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -231,7 +225,6 @@ class ThreadPayloadChunk(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     owner_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -247,7 +240,6 @@ class ThreadEvidence(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -259,7 +251,6 @@ class ThreadNativeLink(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     projection_epoch: Mapped[str] = mapped_column(Text, primary_key=True)
     entity_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     observation_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -318,7 +309,6 @@ class FeedSnapshot:
 
 @dataclass(frozen=True)
 class ThreadScope:
-    source_id: str
     projection_epoch: str
     through_cursor: int
 
@@ -348,7 +338,6 @@ class ThreadPayloadSelection:
 class ThreadPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     owner_cursor: str
     owner_id: str
@@ -427,7 +416,6 @@ class _ThreadEntityViewFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_id: UUID
-    source_id: str
     projection_epoch: str
     entity_id: str
     cursor: int
@@ -558,12 +546,12 @@ class TrajectoryStore:
             )
 
     async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
-        """The sole source/epoch scope currently materialized for a Thread."""
+        """The sole epoch scope currently materialized for a Thread."""
         async with self._sessions() as session:
             checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
                 return None
-            return ThreadScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            return ThreadScope(checkpoint.projection_epoch, checkpoint.through_cursor)
 
     async def entity_interest(
         self,
@@ -579,13 +567,12 @@ class TrajectoryStore:
             checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
             if checkpoint is None:
                 return None
-            scope = ThreadScope(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor)
+            scope = ThreadScope(checkpoint.projection_epoch, checkpoint.through_cursor)
             anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
             if anchor < 0 or anchor > scope.through_cursor:
                 raise ValueError("anchor is outside the projected prefix")
             common = (
                 ThreadEntity.thread_id == thread_id,
-                ThreadEntity.source_id == scope.source_id,
                 ThreadEntity.projection_epoch == scope.projection_epoch,
                 ThreadEntity.entity_kind.in_(SEGMENT_KINDS),
             )
@@ -629,7 +616,6 @@ class TrajectoryStore:
             manifest = await session.scalar(
                 select(ThreadPayloadManifest).where(
                     ThreadPayloadManifest.thread_id == thread_id,
-                    ThreadPayloadManifest.source_id == checkpoint.source_id,
                     ThreadPayloadManifest.projection_epoch == checkpoint.projection_epoch,
                     ThreadPayloadManifest.owner_cursor == owner_cursor,
                     ThreadPayloadManifest.owner_id == owner_id,
@@ -641,7 +627,7 @@ class TrajectoryStore:
             if manifest is None:
                 return None
             return ThreadPayloadSelection(
-                ThreadScope(manifest.source_id, manifest.projection_epoch, checkpoint.through_cursor),
+                ThreadScope(manifest.projection_epoch, checkpoint.through_cursor),
                 owner_cursor,
                 owner_id,
                 field,
@@ -653,27 +639,16 @@ class TrajectoryStore:
             )
 
     async def evidence(
-        self,
-        thread_id: UUID,
-        *,
-        source_id: str,
-        projection_epoch: str,
-        entity_kind: str,
-        entity_id: str,
-        after_cursor: int,
-        limit: int,
+        self, thread_id: UUID, *, projection_epoch: str, entity_kind: str, entity_id: str, after_cursor: int, limit: int
     ) -> EvidencePage:
         if not 1 <= limit <= 200 or after_cursor < 0:
             raise ValueError("invalid evidence page bounds")
         async with self._sessions() as session:
-            entity_cursor = await _evidence_entity_cursor(
-                session, thread_id, source_id, projection_epoch, entity_kind, entity_id
-            )
+            entity_cursor = await _evidence_entity_cursor(session, thread_id, projection_epoch, entity_kind, entity_id)
             native_exists = (
                 select(ThreadNativeLink.source_sequence)
                 .where(
                     ThreadNativeLink.thread_id == ThreadEvidence.thread_id,
-                    ThreadNativeLink.source_id == ThreadEvidence.source_id,
                     ThreadNativeLink.projection_epoch == ThreadEvidence.projection_epoch,
                     ThreadNativeLink.entity_cursor == ThreadEvidence.entity_cursor,
                     ThreadNativeLink.observation_cursor == ThreadEvidence.observation_cursor,
@@ -685,7 +660,6 @@ class TrajectoryStore:
                     select(ThreadEvidence.observation_cursor, native_exists)
                     .where(
                         ThreadEvidence.thread_id == thread_id,
-                        ThreadEvidence.source_id == source_id,
                         ThreadEvidence.projection_epoch == projection_epoch,
                         ThreadEvidence.entity_cursor == entity_cursor,
                         ThreadEvidence.observation_cursor > after_cursor,
@@ -706,7 +680,6 @@ class TrajectoryStore:
         self,
         thread_id: UUID,
         *,
-        source_id: str,
         projection_epoch: str,
         entity_kind: str,
         entity_id: str,
@@ -717,11 +690,9 @@ class TrajectoryStore:
         if not 1 <= limit <= 200 or after_sequence < 0:
             raise ValueError("invalid native frame page bounds")
         async with self._sessions() as session:
-            entity_cursor = await _evidence_entity_cursor(
-                session, thread_id, source_id, projection_epoch, entity_kind, entity_id
-            )
+            entity_cursor = await _evidence_entity_cursor(session, thread_id, projection_epoch, entity_kind, entity_id)
             association = await session.get(
-                ThreadEvidence, (thread_id, source_id, projection_epoch, entity_cursor, observation_cursor)
+                ThreadEvidence, (thread_id, projection_epoch, entity_cursor, observation_cursor)
             )
             if association is None:
                 raise ThreadEvidenceNotFoundError("no evidence association for the selected observation")
@@ -732,14 +703,12 @@ class TrajectoryStore:
                         Event,
                         (
                             (Event.thread_id == ThreadNativeLink.thread_id)
-                            & (Event.origin_source_id == ThreadNativeLink.source_id)
                             & (Event.cursor == ThreadNativeLink.source_sequence)
                             & (Event.kind == "native")
                         ),
                     )
                     .where(
                         ThreadNativeLink.thread_id == thread_id,
-                        ThreadNativeLink.source_id == source_id,
                         ThreadNativeLink.projection_epoch == projection_epoch,
                         ThreadNativeLink.entity_cursor == entity_cursor,
                         ThreadNativeLink.observation_cursor == observation_cursor,
@@ -775,7 +744,7 @@ class TrajectoryStore:
         ):
             raise ValueError("invalid chronological observation page bounds")
         async with self._sessions() as session:
-            query = select(Event.cursor, Event.origin_source_id, Event.kind).where(Event.thread_id == thread_id)
+            query = select(Event.cursor, Event.kind).where(Event.thread_id == thread_id)
             if after_cursor is not None:
                 query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
             else:
@@ -796,10 +765,7 @@ class TrajectoryStore:
                 )
             )
             return ObservationPage(
-                observations=[
-                    ArchivedObservation(cursor=str(row.cursor), source_id=row.origin_source_id, kind=row.kind)
-                    for row in rows
-                ],
+                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in rows],
                 next_before_cursor=str(rows[0].cursor) if has_older else None,
                 next_after_cursor=str(rows[-1].cursor) if has_newer else None,
             )
@@ -813,7 +779,7 @@ class TrajectoryStore:
             return None if payload is None else ArchivedObservationEntry(cursor=str(cursor), entry=payload)
 
     async def command_outcomes(
-        self, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: Sequence[str]
+        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
     ) -> dict[str, thread_fold.CommandOutcome | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
@@ -821,15 +787,11 @@ class TrajectoryStore:
             if await session.get(Thread, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
             checkpoint = await session.get(ThreadCheckpoint, thread_id)
-            if checkpoint is None or (checkpoint.source_id, checkpoint.projection_epoch) != (
-                source_id,
-                projection_epoch,
-            ):
+            if checkpoint is None or checkpoint.projection_epoch != projection_epoch:
                 raise ThreadScopeResetError("thread fold scope was reset")
             rows = await session.scalars(
                 select(ThreadEntity).where(
                     ThreadEntity.thread_id == thread_id,
-                    ThreadEntity.source_id == source_id,
                     ThreadEntity.projection_epoch == projection_epoch,
                     ThreadEntity.entity_kind == EntityKind.COMMAND,
                     ThreadEntity.entity_id.in_(requested),
@@ -886,7 +848,6 @@ class TrajectoryStore:
                     Event(
                         thread_id=thread_id,
                         cursor=entry.cursor,
-                        origin_source_id=entry.origin.source_id,
                         at=entry.event.at.ToDatetime(tzinfo=UTC),
                         kind=entry.event.WhichOneof("observation") or "",
                         payload=payload,
@@ -1068,8 +1029,7 @@ class TrajectoryStore:
             if checkpoint is None:
                 return None
             summary = await session.get(
-                ThreadEntity,
-                (thread_id, checkpoint.source_id, checkpoint.projection_epoch, EntityKind.COMMAND, command.command_id),
+                ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.COMMAND, command.command_id)
             )
             if summary is None:
                 return None
@@ -1161,7 +1121,6 @@ async def _record_thread_fold(
             .on_conflict_do_update(
                 index_elements=[
                     ThreadEntity.thread_id,
-                    ThreadEntity.source_id,
                     ThreadEntity.projection_epoch,
                     ThreadEntity.entity_kind,
                     ThreadEntity.entity_id,
@@ -1172,7 +1131,6 @@ async def _record_thread_fold(
     for evidence in result.evidence_upserts:
         values = {
             "thread_id": thread_id,
-            "source_id": evidence.source_id,
             "projection_epoch": evidence.projection_epoch,
             "entity_cursor": evidence.entity_cursor,
             "observation_cursor": evidence.observation_cursor,
@@ -1200,7 +1158,6 @@ async def _fold_state(
     row = await session.scalar(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == checkpoint.thread_id,
-            ThreadEntity.source_id == checkpoint.source_id,
             ThreadEntity.projection_epoch == checkpoint.projection_epoch,
             ThreadEntity.entity_kind == EntityKind.VIEW_STATE,
             ThreadEntity.entity_id == "current",
@@ -1231,9 +1188,7 @@ async def _set_operational(
     checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
         return
-    row = await session.get(
-        ThreadEntity, (thread_id, checkpoint.source_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
-    )
+    row = await session.get(ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current"))
     if row is None:
         raise ValueError("thread checkpoint has no current controls")
     view = ThreadViewState.model_validate(row.state)
@@ -1263,7 +1218,6 @@ async def _prior_entities(
     rows = await session.scalars(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == thread_id,
-            ThreadEntity.source_id == checkpoint.source_id,
             ThreadEntity.projection_epoch == checkpoint.projection_epoch,
             (
                 (ThreadEntity.entity_kind == EntityKind.ITEM) & (ThreadEntity.entity_id.in_(required.item_ids))
@@ -1285,7 +1239,6 @@ async def _prior_entities(
 
 def _fold_item(view: ThreadItemEntityView) -> thread_fold.Item:
     return thread_fold.Item(
-        view.source_id,
         view.projection_epoch,
         view.entity_id,
         view.cursor,
@@ -1313,7 +1266,6 @@ def _fold_completion(state: ThreadItemState) -> thread_fold.Completion | None:
 
 def _command_summary(view: ThreadCommandEntityView) -> thread_fold.CommandSummary:
     return thread_fold.CommandSummary(
-        view.source_id,
         view.projection_epoch,
         view.entity_id,
         view.cursor,
@@ -1329,7 +1281,6 @@ def _fold_ref(reference: ThreadPayloadReference | None) -> thread_fold.PayloadRe
     if reference is None:
         return None
     return thread_fold.PayloadRef(
-        reference.source_id,
         reference.projection_epoch,
         int(reference.owner_cursor),
         reference.owner_id,
@@ -1381,7 +1332,6 @@ async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequen
         await session.execute(
             insert(ThreadPayloadManifest).values(
                 thread_id=thread_id,
-                source_id=plan.reference.source_id,
                 projection_epoch=plan.reference.projection_epoch,
                 owner_cursor=plan.reference.owner_cursor,
                 owner_id=plan.reference.owner_id,
@@ -1397,7 +1347,6 @@ async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequen
             session.add(
                 ThreadPayloadChunk(
                     thread_id=thread_id,
-                    source_id=plan.reference.source_id,
                     projection_epoch=plan.reference.projection_epoch,
                     owner_cursor=plan.reference.owner_cursor,
                     owner_id=plan.reference.owner_id,
@@ -1411,10 +1360,9 @@ async def _write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequen
 
 def _payload_manifest_key(
     thread_id: UUID, reference: thread_fold.PayloadRef
-) -> tuple[UUID, str, str, int, str, str, int, int]:
+) -> tuple[UUID, str, int, str, str, int, int]:
     return (
         thread_id,
-        reference.source_id,
         reference.projection_epoch,
         reference.owner_cursor,
         reference.owner_id,
@@ -1440,7 +1388,6 @@ def _view_state_entity(
 ) -> ThreadViewStateEntityView:
     return ThreadViewStateEntityView(
         thread_id=thread_id,
-        source_id=state.position.source_id,
         projection_epoch=state.position.projection_epoch,
         entity_kind=EntityKind.VIEW_STATE,
         entity_id="current",
@@ -1474,7 +1421,6 @@ def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityVie
     tool = item.completion if isinstance(item.completion, thread_fold.ToolCompletion) else None
     return ThreadItemEntityView(
         thread_id=thread_id,
-        source_id=item.source_id,
         projection_epoch=item.projection_epoch,
         entity_kind=EntityKind.ITEM,
         entity_id=item.item_id,
@@ -1498,7 +1444,6 @@ def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityVie
 def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
     return ThreadConfirmedInputEntityView(
         thread_id=thread_id,
-        source_id=value.source_id,
         projection_epoch=value.projection_epoch,
         entity_kind=EntityKind.CONFIRMED_INPUT,
         entity_id=str(value.cursor),
@@ -1519,7 +1464,6 @@ def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) 
 def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> ThreadLifecycleEntityView:
     return ThreadLifecycleEntityView(
         thread_id=thread_id,
-        source_id=value.source_id,
         projection_epoch=value.projection_epoch,
         entity_kind=EntityKind.LIFECYCLE,
         entity_id=str(value.cursor),
@@ -1538,7 +1482,6 @@ def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> T
 def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> ThreadCommandEntityView:
     return ThreadCommandEntityView(
         thread_id=thread_id,
-        source_id=value.source_id,
         projection_epoch=value.projection_epoch,
         entity_kind=EntityKind.COMMAND,
         entity_id=value.command_id,
@@ -1563,7 +1506,6 @@ def _reference(reference: thread_fold.PayloadRef | None) -> ThreadPayloadReferen
     if reference is None:
         return None
     return ThreadPayloadReference(
-        source_id=reference.source_id,
         projection_epoch=reference.projection_epoch,
         owner_cursor=str(reference.owner_cursor),
         owner_id=reference.owner_id,
@@ -1574,14 +1516,14 @@ def _reference(reference: thread_fold.PayloadRef | None) -> ThreadPayloadReferen
 
 
 async def _evidence_entity_cursor(
-    session: AsyncSession, thread_id: UUID, source_id: str, projection_epoch: str, entity_kind: str, entity_id: str
+    session: AsyncSession, thread_id: UUID, projection_epoch: str, entity_kind: str, entity_id: str
 ) -> int:
     checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
         raise ThreadEvidenceNotFoundError("no materialized thread fold")
-    if (checkpoint.source_id, checkpoint.projection_epoch) != (source_id, projection_epoch):
-        raise ThreadScopeChangedError("the thread fold source or projection epoch has changed")
-    entity = await session.get(ThreadEntity, (thread_id, source_id, projection_epoch, entity_kind, entity_id))
+    if checkpoint.projection_epoch != projection_epoch:
+        raise ThreadScopeChangedError("the thread fold projection epoch has changed")
+    entity = await session.get(ThreadEntity, (thread_id, projection_epoch, entity_kind, entity_id))
     if entity is None:
         raise ThreadEvidenceNotFoundError("no selected thread entity")
     return entity.cursor

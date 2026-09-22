@@ -154,7 +154,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     assert scope is not None
     # Warm the driver, typed codec, and Python caches before taking its allocation profile.
     assert await store.admitted_command(thread, command) == admitted
-    assert await store.command_outcomes(thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]) == {
+    assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
         "admission": "pending",
         "absent": None,
     }
@@ -175,9 +175,10 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
             lease=lease,
         )
         assert await store.admitted_command(thread, command) == admitted
-        assert await store.command_outcomes(
-            thread, scope.source_id, scope.projection_epoch, ["admission", "absent"]
-        ) == {"admission": "pending", "absent": None}
+        assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
+            "admission": "pending",
+            "absent": None,
+        }
         current, peak = tracemalloc.get_traced_memory()
         after = tracemalloc.take_snapshot()
     finally:
@@ -185,7 +186,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
     assert peak < 1_000_000, f"bounded record/read path allocated {peak} bytes for {history_size} historical rows"
     async with store._sessions() as session:
-        item = await session.get(ThreadEntity, (thread, scope.source_id, scope.projection_epoch, "item", "old-item"))
+        item = await session.get(ThreadEntity, (thread, scope.projection_epoch, "item", "old-item"))
     assert item is not None
     assert item.revision_cursor == history_size + 3
 
@@ -276,7 +277,6 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
                     select(ThreadEntity.cursor)
                     .where(
                         ThreadEntity.thread_id == thread,
-                        ThreadEntity.source_id == scope.source_id,
                         ThreadEntity.projection_epoch == scope.projection_epoch,
                         ThreadEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
                         ThreadEntity.cursor < scope.through_cursor + 1,
@@ -648,8 +648,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         checkpoint_before = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_before is not None
         view_before = await session.get(
-            ThreadEntity,
-            (thread, checkpoint_before.source_id, checkpoint_before.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_before.projection_epoch, "view_state", "current")
         )
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
@@ -659,8 +658,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         checkpoint_after = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_after is not None
         view_after = await session.get(
-            ThreadEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert view_after is not None
         operational = ThreadOperationalState.model_validate(view_after.state["operational"])
@@ -678,8 +676,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     )
     async with replica._sessions() as session:
         view_reset = await session.get(
-            ThreadEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert view_reset is not None
         reset = ThreadOperationalState.model_validate(view_reset.state["operational"])
@@ -694,8 +691,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     await store.end_feed(thread, lease=lease, error="projection invariant failed")
     async with replica._sessions() as session:
         unknown_failure = await session.get(
-            ThreadEntity,
-            (thread, checkpoint_after.source_id, checkpoint_after.projection_epoch, "view_state", "current"),
+            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
         assert unknown_failure is not None
         operational = ThreadOperationalState.model_validate(unknown_failure.state["operational"])
@@ -925,7 +921,6 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         ).all()
     assert item is not None
     assert item.text_ref == {
-        "source_id": "test-runner",
         "projection_epoch": "v1",
         "owner_cursor": "1",
         "owner_id": "old",
