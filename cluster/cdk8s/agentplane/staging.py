@@ -1,6 +1,6 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana MCP action
-groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana/Gmail/Google
+Calendar MCP action groups.
 """
 
 from __future__ import annotations
@@ -11,11 +11,15 @@ from eso_password_generator_crds.io.external_secrets.generators import Password,
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
     ExternalSecretSpec,
+    ExternalSecretSpecData,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromSourceRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecSecretStoreRef,
+    ExternalSecretSpecSecretStoreRefKind,
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -62,10 +66,18 @@ _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
+# One standalone google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
+# distinct paths, on a Google credential separate from haku-console's own per-Operator
+# connections -- see that module's docstring.
+_GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
+_CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
 # The same ESO-delivered Secrets haku-console's own home_assistant/tana servers read
 # (cluster/cdk8s/haku/console_config.py), with the Tana PAT approved for this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
+_GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
+# cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml
+_GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -210,6 +222,36 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
+        "gmail": {
+            "title": "Gmail",
+            "description": "Gmail read/write tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential "
+                "separate from haku-console's per-Operator connections.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _GMAIL_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
+                },
+            },
+        },
+        "google_calendar": {
+            "title": "Google Calendar",
+            "description": "Google Calendar read/write tools; every Action remains subject to operator approval.",
+            "executor": {
+                "kind": "mcp",
+                "description": "Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google "
+                "credential separate from haku-console's per-Operator connections.",
+                "config": {
+                    "transport": "streamable-http",
+                    "url": _CALENDAR_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
+                },
+            },
+        },
     },
 }
 
@@ -254,6 +296,7 @@ ENV = Environment(
             BEARER_SECRET_NAME,
             _HA_MCP_BEARER_SECRET,
             _TANA_MCP_BEARER_SECRET,
+            _GOOGLE_MCP_BEARER_SECRET,
         ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
@@ -266,12 +309,16 @@ ENV = Environment(
             # bearer minted for this purpose); renamed at mount time to the same
             # `bearer-token` file name every other static-bearer group uses.
             BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True),
+            # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
+            # one caller-facing bearer.
+            BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
             cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
             cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
             cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
+            cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
@@ -301,6 +348,32 @@ def chart(app: App) -> Chart:
         source_name=_TANA_MCP_BEARER_SECRET,
         property_name="token",
         description="ESO copy of the canonical Tana PAT from external-creds.",
+    )
+    ExternalSecret(
+        chart,
+        "google-mcp-bearer-external-secret",
+        metadata=metadata(
+            _GOOGLE_MCP_BEARER_SECRET,
+            _NAMESPACE,
+            annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
+        ),
+        spec=ExternalSecretSpec(
+            refresh_interval="1h",
+            secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=_GOOGLE_MCP_SECRET_STORE
+            ),
+            data=[
+                ExternalSecretSpecData(
+                    secret_key="bearer-token",
+                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_GOOGLE_MCP_BEARER_SECRET, property="bearer-token"),
+                )
+            ],
+            target=ExternalSecretSpecTarget(
+                name=_GOOGLE_MCP_BEARER_SECRET,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            ),
+        ),
     )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
