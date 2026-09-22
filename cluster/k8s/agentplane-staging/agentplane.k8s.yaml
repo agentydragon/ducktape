@@ -2283,6 +2283,12 @@ data:
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+      grocy_sf:
+        server_id: grocy_sf
+        provider: grocy_sf
+        server_url: https://grocy-mcp-sf.allegedly.works/mcp
+        client_id: cb57e244-c13c-4eac-a299-e052698b774e
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
     action_groups:
       github:
         title: GitHub MCP
@@ -2305,6 +2311,17 @@ data:
             transport: streamable-http
             url: https://kubectl-passthrough-mcp.allegedly.works/mcp
             server_id: kubernetes
+            auth: oauth
+      grocy_sf:
+        title: Grocy SF MCP
+        description: Grocy SF household MCP tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Grocy SF MCP executed with the linked operator Grocy account.
+          config:
+            transport: streamable-http
+            url: https://grocy-mcp-sf.allegedly.works/mcp
+            server_id: grocy_sf
             auth: oauth
       sandbox:
         title: Sandbox
@@ -2838,6 +2855,15 @@ spec:
               protocol: TCP
           serverNames:
             - kubectl-passthrough-mcp.allegedly.works
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - grocy-mcp-sf.allegedly.works
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/component: server
