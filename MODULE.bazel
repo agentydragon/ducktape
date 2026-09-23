@@ -1157,6 +1157,23 @@ http_file(
     urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
 )
 
+# The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
+# BUILD extracts the operator CRs' CRDs. The operators create their other CRDs
+# (VirtualMachine, StorageProfile) at runtime, and upstream publishes no YAML for them.
+http_file(
+    name = "kubevirt_operator_bundle",
+    downloaded_file_path = "kubevirt-operator.yaml",
+    sha256 = "57e0822062e6617964fd7e1731f9ace531f8ee34a0e48cf8dd0ccce72196e1d6",
+    urls = ["https://github.com/kubevirt/kubevirt/releases/download/v1.8.2/kubevirt-operator.yaml"],
+)
+
+http_file(
+    name = "cdi_operator_bundle",
+    downloaded_file_path = "cdi-operator.yaml",
+    sha256 = "e96d59abdf358c5161cb96adcfdcc6107efc3fb608ec93ade11578c94a222015",
+    urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
