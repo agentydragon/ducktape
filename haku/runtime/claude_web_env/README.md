@@ -27,7 +27,6 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
   plus:
   - `*.anthropic.com`
   - `*.allegedly.works` — the cluster (kube API, Forgejo, LiteLLM, haku-console, …)
-  - `*.googleapis.com` — Gmail/Calendar/Tasks read-only REST
   - `*.buildbuddy.io` — RBE/remote cache (only if Haku runs `bbr`)
   - `nixos.org`, `cache.nixos.org` — Nix channels + binary cache, so the
     `.#agent-haku` install (and any Nix/pre-commit work) pulls from the cache
