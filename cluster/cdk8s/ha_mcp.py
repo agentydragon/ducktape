@@ -67,7 +67,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
@@ -112,7 +111,11 @@ _APP_DATA_DIR = "/data"
 def _bearer_credentials(scope: Construct) -> None:
     """The facade's static bearer token: ducktape mints it itself (same pattern as
     ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
-    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients."""
+    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients.
+
+    agentplane-staging reads a copy through the `kubernetes-ha-mcp-secret-store`
+    ClusterSecretStore (cluster/cdk8s/external_secrets/config.py), not Reflector.
+    """
     Password(
         scope,
         "bearer-password-generator",
@@ -128,18 +131,7 @@ def _bearer_credentials(scope: Construct) -> None:
             target=ExternalSecretSpecTarget(
                 name=_BEARER_SECRET_NAME,
                 creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
-                        }
-                    ),
-                    data={_BEARER_SECRET_KEY: "{{ .password }}"},
-                ),
+                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={_BEARER_SECRET_KEY: "{{ .password }}"}),
             ),
             data_from=[
                 ExternalSecretSpecDataFrom(
@@ -399,9 +391,8 @@ class HaMcpApp(Construct):
             ],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
-                # The same token agentplane-staging's Action Service presents (reflected as
-                # ha-mcp-bearer into agentplane-staging by the emberstack reflector) -- one source
-                # of truth, no drift.
+                # The same token agentplane-staging's Action Service presents (its ESO copy of
+                # this Secret) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),

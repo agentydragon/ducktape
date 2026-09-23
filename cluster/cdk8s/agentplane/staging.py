@@ -37,7 +37,7 @@ from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -79,12 +79,14 @@ _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# ha-mcp reflects its bearer into this namespace (cluster/cdk8s/ha_mcp.py); the Tana PAT is an
+# ha-mcp and google-mcp each mint their bearer in their own namespace (cluster/cdk8s/ha_mcp.py,
+# google_mcp.py), and this namespace reads a copy through that backend's store; the Tana PAT is an
 # external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
-_HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
+_HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
 # cluster/cdk8s/external_secrets/config.py
+_HA_MCP_SECRET_STORE = "kubernetes-ha-mcp-secret-store"
 _GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
@@ -399,6 +401,14 @@ def chart(app: App) -> Chart:
                 deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             ),
         ),
+    )
+    credential_external_secret(
+        chart,
+        namespace=_NAMESPACE,
+        target=_HA_MCP_BEARER_SECRET,
+        source="ha-mcp-bearer",
+        key="bearer-token",
+        store=_HA_MCP_SECRET_STORE,
     )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
