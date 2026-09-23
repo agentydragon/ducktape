@@ -190,6 +190,12 @@ indirection, stop and ask before changing the design.
 - **Synthetic props for construct tests, real environments for invariants.** A
   construct test builds a `Chart(Testing.app(), ...)` with a small props value and
   asserts the shape; `test_fleet_rules.py` is the pattern.
+- **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
+  graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
+  `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
+  From the devshell: `python3 cluster/cdk8s/render_diff.py origin/devel HEAD`; renders
+  cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
+  Flux semantics it reproduces.
 
 ## Adding a fleet rule
 
