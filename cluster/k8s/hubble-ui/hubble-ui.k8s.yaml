@@ -1,17 +1,9 @@
-# Restrict Hubble UI ingress to the Authentik shared proxy outpost only.
-# Hubble UI has no built-in auth — anyone reaching port 8081 sees all
-# cluster network flows.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: hubble-ui-ingress
   namespace: kube-system
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: hubble-ui
-  policyTypes:
-    - Ingress
   ingress:
     - from:
         - namespaceSelector:
@@ -24,7 +16,6 @@ spec:
       ports:
         - port: 8081
           protocol: TCP
-    # Gatus: health check probes
     - from:
         - namespaceSelector:
             matchLabels:
@@ -35,3 +26,8 @@ spec:
       ports:
         - port: 8081
           protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hubble-ui
+  policyTypes:
+    - Ingress
