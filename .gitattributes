@@ -59,6 +59,7 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/descheduler/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/github-branch-protection/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/machine-access-tf/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
