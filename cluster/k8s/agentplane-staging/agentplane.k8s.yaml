@@ -2396,7 +2396,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2533,7 +2533,7 @@ spec:
               name: secret-ssh-mcp-bearer
               readOnly: true
             - mountPath: /run/secrets/ha-mcp
-              name: secret-ha-mcp-bearer
+              name: secret-ha-mcp-client-bearer
               readOnly: true
             - mountPath: /run/secrets/tana-mcp
               name: secret-tana-agentydragon-gmail-com-account-pat
@@ -2649,12 +2649,12 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: ssh-mcp-bearer
-        - name: secret-ha-mcp-bearer
+        - name: secret-ha-mcp-client-bearer
           secret:
             items:
               - key: bearer-token
                 path: bearer-token
-            secretName: ha-mcp-bearer
+            secretName: ha-mcp-client-bearer
         - name: secret-tana-agentydragon-gmail-com-account-pat
           secret:
             items:
@@ -2940,11 +2940,60 @@ spec:
     deletionPolicy: Retain
     name: tana-agentydragon-gmail-com-account-pat
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-google-mcp-bearer-reader
+  namespace: google-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - google-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-google-mcp-bearer-reader
+  namespace: google-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-google-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-google-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: google-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  annotations:
-    description: ESO copy of google-mcp's own caller-facing bearer.
   name: google-mcp-bearer
   namespace: agentplane-staging
 spec:
@@ -2956,11 +3005,82 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-google-mcp-secret-store
+    name: kubernetes-agentplane-staging-google-mcp-bearer-secret-store
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: google-mcp-bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-ha-mcp-bearer-reader
+  namespace: ha-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ha-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-ha-mcp-bearer-reader
+  namespace: ha-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-ha-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-ha-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: ha-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ha-mcp-client-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ha-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-ha-mcp-bearer-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ha-mcp-client-bearer
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -3524,7 +3644,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-staging-egress-forgejo-reader
+  name: agentplane-staging-forgejo-reader
   namespace: haku-sandbox
 rules:
   - apiGroups:
@@ -3539,12 +3659,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-staging-egress-forgejo-reader
+  name: agentplane-staging-forgejo-reader
   namespace: haku-sandbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-staging-egress-forgejo-reader
+  name: agentplane-staging-forgejo-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -3677,7 +3797,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-staging-egress-grocy-sf-reader
+  name: agentplane-staging-grocy-sf-reader
   namespace: agents-infra
 rules:
   - apiGroups:
@@ -3692,12 +3812,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-staging-egress-grocy-sf-reader
+  name: agentplane-staging-grocy-sf-reader
   namespace: agents-infra
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-staging-egress-grocy-sf-reader
+  name: agentplane-staging-grocy-sf-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount

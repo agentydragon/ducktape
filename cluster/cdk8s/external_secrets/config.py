@@ -203,11 +203,6 @@ def chart(app: App) -> Chart:
         ],
         remote_namespace="forgejo-images",
     )
-    # google-mcp mints its own caller-facing bearer (cluster/cdk8s/google_mcp.py); only
-    # agentplane-staging's Action Service (the only caller) reads a copy.
-    _store(
-        chart, "kubernetes-google-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="google-mcp"
-    )
     return chart
 
 
