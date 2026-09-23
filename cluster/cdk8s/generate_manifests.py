@@ -136,12 +136,16 @@ from cluster.cdk8s.forgejo import (
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
+from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
+from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
+from cluster.cdk8s.github_exporter import (
+    app as github_exporter_app,
+    flux_kustomizations as github_exporter_flux_kustomizations,
+)
 from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
-)
-from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
@@ -317,6 +321,7 @@ def generate_manifests(root: Path) -> None:
     tempo.write_manifests(root)
     grafana_instance.write_manifests(root)
     grafana_app.write_manifests(root)
+    github_exporter_app.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
