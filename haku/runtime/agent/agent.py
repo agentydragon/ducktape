@@ -80,8 +80,8 @@ def build_mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
     tools: list[MCPStreamableHTTPTool] = []
     if settings.console_token:
         # Bearer auth rides a pre-built http_client; the `headers=` kwarg is ignored in
-        # later releases. Verify http_client against the pinned 1.0.0 before wiring Tana
-        # for real — in-repo MCPStreamableHTTPTool usage so far is name+url only.
+        # later releases. Verify http_client against the pinned 1.0.0 before relying on the
+        # console tools — in-repo MCPStreamableHTTPTool usage so far is name+url only.
         tools.append(
             MCPStreamableHTTPTool(
                 name="haku_console",

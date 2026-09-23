@@ -283,7 +283,7 @@ capacity; when the node is contended, CFS shares CPU proportionally to requests
 (compressible resource — no pod is killed). Memory limits remain useful
 (`RequestsAndLimits`) since memory is incompressible.
 
-See `cluster/k8s/agents/tana-mcp/facade-deployment.yaml` for a working example
+See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 (fastmcp takes ~6 CPU-seconds to import; at 60m limit this costs 100s wall time).
 
 ## Dropped Services

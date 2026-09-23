@@ -23,8 +23,12 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -32,10 +36,9 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.operator_sessions import BrowserSession
+from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
-from agentplane.app.trajectory import TrajectoryStore
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -57,12 +60,16 @@ class ServeApp(Protocol):
 def serve(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     authentication: FakeAuthenticationV1Api,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -107,7 +114,22 @@ def serve(
             public_base_url=app_url,
         )
         reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
-        app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, oidc, reviewer)
+        app = create_app(
+            inventory,
+            bridge,
+            store,
+            MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            oidc,
+            reviewer,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
+        )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
         server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
         async with serve_app(idp, sock=idp_sock):
@@ -227,15 +249,17 @@ async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeA
     assert (refused.status_code, allowed.status_code) == (403, 200), refused.text
 
 
-async def test_session_expiry_and_server_side_oauth_state(browser: httpx.AsyncClient, store: TrajectoryStore) -> None:
+async def test_session_expiry_and_server_side_oauth_state(
+    browser: httpx.AsyncClient, operator_sessions: OperatorSessionStore
+) -> None:
     response = await browser.get("/auth/login", follow_redirects=False)
-    async with store.operator_sessions.sessions() as db:
+    async with operator_sessions.sessions() as db:
         row = (await db.scalars(select(BrowserSession))).one()
         assert "_state_" in next(iter(row.payload))
         assert "code_verifier" in str(row.payload)
         assert row.expires_at <= datetime.now(UTC) + timedelta(minutes=10)
     await browser.get(response.headers["location"])
-    async with store.operator_sessions.sessions.begin() as db:
+    async with operator_sessions.sessions.begin() as db:
         row = (await db.scalars(select(BrowserSession))).one()
         assert row.payload["user"]["issuer"]
         assert row.payload["user"]["subject"] == SUBJECT
@@ -295,9 +319,11 @@ async def test_callback_rotates_handle_and_cannot_be_replayed(browser: httpx.Asy
     assert (await browser.get("/auth/me")).status_code == 200
 
 
-async def test_expired_pending_login_cannot_finish(browser: httpx.AsyncClient, store: TrajectoryStore) -> None:
+async def test_expired_pending_login_cannot_finish(
+    browser: httpx.AsyncClient, operator_sessions: OperatorSessionStore
+) -> None:
     login = await browser.get("/auth/login", follow_redirects=False)
-    async with store.operator_sessions.sessions.begin() as db:
+    async with operator_sessions.sessions.begin() as db:
         await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
     assert (await browser.get(login.headers["location"])).status_code == 401
     assert (await browser.get("/auth/me")).status_code == 401

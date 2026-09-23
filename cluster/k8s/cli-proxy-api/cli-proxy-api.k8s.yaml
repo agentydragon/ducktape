@@ -1,0 +1,262 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: cli-proxy-api
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cli-proxy-api-data
+  namespace: cli-proxy-api
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: seaweedfs-ovh
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up to three times only before its first response byte reaches the caller. Remote management uses native Authentik OIDC for browsers and a management key for AIQuota.
+  name: cli-proxy-api-config
+  namespace: cli-proxy-api
+spec:
+  data:
+    - remoteRef:
+        key: cli-proxy-api-client-key
+        property: client-key
+      secretKey: client_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    creationPolicy: Owner
+    name: cli-proxy-api-config
+    template:
+      data:
+        config.yaml: |
+          host: "0.0.0.0"
+          port: 8317
+          auth-dir: "/data/auth"
+          api-keys:
+            - "{{ .client_key }}"
+          debug: false
+          # Recheck restored provider quota instead of honoring stale local cooldown windows.
+          disable-cooling: true
+          streaming:
+            bootstrap-retries: 3
+          # Permit AIQuota's management-key requests from its separate pod.
+          # Browser management access uses native OIDC (deployment.yaml).
+          remote-management:
+            allow-remote: true
+      engineVersion: v2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: cli-proxy-api
+  name: cli-proxy-api
+  namespace: cli-proxy-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cli-proxy-api
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cli-proxy-api
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - -config
+            - /config/config.yaml
+          env:
+            - name: MANAGEMENT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: management-password
+                  name: cli-proxy-api-management
+            - name: MANAGEMENT_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  key: MANAGEMENT_OIDC_ISSUER
+                  name: cli-proxy-api-admin-oidc
+            - name: MANAGEMENT_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: MANAGEMENT_OIDC_CLIENT_ID
+                  name: cli-proxy-api-admin-oidc
+            - name: MANAGEMENT_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: MANAGEMENT_OIDC_CLIENT_SECRET
+                  name: cli-proxy-api-admin-oidc
+            - name: MANAGEMENT_OIDC_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  key: MANAGEMENT_OIDC_REDIRECT_URL
+                  name: cli-proxy-api-admin-oidc
+            - name: MANAGEMENT_OIDC_ALLOWED_SUBJECTS
+              valueFrom:
+                secretKeyRef:
+                  key: MANAGEMENT_OIDC_ALLOWED_SUBJECTS
+                  name: cli-proxy-api-admin-oidc
+          image: git.allegedly.works/ducktape-ci/cli-proxy-api:unset
+          livenessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            tcpSocket:
+              port: 8317
+          name: cli-proxy-api
+          ports:
+            - containerPort: 8317
+              name: http
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: 8317
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /config
+              name: config
+              readOnly: true
+            - mountPath: /data
+              name: data
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - mkdir -p /data/auth
+          image: busybox:1.38
+          name: init-auth-dir
+          volumeMounts:
+            - mountPath: /data
+              name: data
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - name: config
+          secret:
+            secretName: cli-proxy-api-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cli-proxy-api-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cli-proxy-api
+  namespace: cli-proxy-api
+spec:
+  ports:
+    - name: http
+      port: 8317
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: cli-proxy-api
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: cli-proxy-api
+  namespace: cli-proxy-api
+spec:
+  hostnames:
+    - cli-proxy-api.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: cli-proxy-api
+          port: 8317
+      matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+      timeouts:
+        backendRequest: 600s
+        request: 600s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: cli-proxy-api-admin
+  namespace: cli-proxy-api
+spec:
+  hostnames:
+    - cli-proxy-api-admin.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: cli-proxy-api
+          port: 8317
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cli-proxy-api-ingress
+  namespace: cli-proxy-api
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cli-proxy-api
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: litellm
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: aiquota
+            k8s:io.kubernetes.pod.namespace: cli-proxy-api
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP

@@ -69,14 +69,8 @@ from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
-from cluster.cdk8s.agentplane.app_settings import (
-    BASIC_POLICY,
-    FORGEJO_HAKU_POLICY,
-    GITHUB_PUBLIC_POLICY,
-    GOOGLE_READONLY_POLICY,
-    KUBERNETES_POLICY,
-    PACKAGES_POLICY,
-)
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -110,7 +104,7 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
 # the Gateway and back for a Service one hop away, which is why haku's own agent has no public
-# route either (cluster/k8s/agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml). Plain HTTP on
+# route either (haku_egress_proxy.py's haku-agent-runner-egress policy). Plain HTTP on
 # 3000, so the proxy reads the request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000
@@ -121,7 +115,7 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
         "egresscredential-agentplane-workload",
@@ -152,7 +146,7 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
                 "limit it adds, so treat anything the token can reach on those hosts as reachable."
             ),
             source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="agentplane-github-pat", key="token")
+                secret_ref=EgressCredentialSpecSourceSecretRef(name=GITHUB_PAT_SECRET, key="token")
             ),
             targets=[
                 EgressCredentialSpecTargets(
@@ -164,34 +158,6 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
             ],
         ),
     )
-
-    if include_forgejo_credential:
-        EgressCredential(
-            scope,
-            "egresscredential-forgejo-haku",
-            metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
-            spec=EgressCredentialSpec(
-                description=(
-                    "The password of the `haku` account on the internal Forgejo, the service user that "
-                    "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
-                    "its full authority -- it is the account's own password, not a scoped token, so it "
-                    "reaches every repository haku can reach and the web UI besides. The proxy narrows "
-                    "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
-                    "account."
-                ),
-                source=EgressCredentialSpecSource(
-                    secret_ref=EgressCredentialSpecSourceSecretRef(name="haku-forgejo-git", key="password")
-                ),
-                # Git over HTTP and Forgejo's REST API both authenticate with `Basic
-                # base64(haku:<password>)`, so the placeholder travels as the password half. A client
-                # sends the username itself; only the secret half is substituted here.
-                targets=[
-                    EgressCredentialSpecTargets(
-                        header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
-                    )
-                ],
-            ),
-        )
 
     EgressCredential(
         scope,
@@ -214,35 +180,9 @@ def _egress_credentials(scope: Construct, *, namespace: str, include_forgejo_cre
             ],
         ),
     )
-    EgressCredential(
-        scope,
-        "egresscredential-google-readonly",
-        metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
-        spec=EgressCredentialSpec(
-            description=(
-                "A Google OAuth access token minted and refreshed by Airlock "
-                "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same "
-                "token Airlock's `google` provider mints for every consumer -- currently granted "
-                "`gmail.readonly` and `calendar.readonly` (Airlock's own config additionally "
-                "requests several other `.readonly` scopes not yet granted; check "
-                "cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before "
-                "assuming more than Gmail and Calendar work). The proxy does not narrow what the "
-                "token itself may do -- `google-readonly`'s own rules are what restrict this "
-                "credential to Gmail and Calendar hosts/paths."
-            ),
-            source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="google-access-token", key="access_token")
-            ),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        ),
-    )
 
 
-def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_credential: bool) -> None:
+def _egress_policies(scope: Construct, *, namespace: str) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-basic",
@@ -299,26 +239,6 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
             ]
         ),
     )
-    if include_forgejo_credential:
-        EgressPolicy(
-            scope,
-            "egresspolicy-forgejo-haku",
-            metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
-            spec=EgressPolicySpec(
-                rules=[
-                    # No method or path list. The credential is haku's whole account, so a verb or path
-                    # list here would narrow the request without narrowing the authority behind it --
-                    # the same reason the Kubernetes rule carries none. What it does admit is the whole
-                    # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
-                    # web UI.
-                    EgressPolicySpecRules(
-                        hosts=[FORGEJO_HOST],
-                        cluster_internal=True,
-                        credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
-                    )
-                ]
-            ),
-        )
     EgressPolicy(
         scope,
         "egresspolicy-packages",
@@ -384,31 +304,6 @@ def _egress_policies(scope: Construct, *, namespace: str, include_forgejo_creden
             ]
         ),
     )
-    EgressPolicy(
-        scope,
-        "egresspolicy-google-readonly",
-        metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
-        spec=EgressPolicySpec(
-            rules=[
-                # Gmail has its own dedicated API host, so no path restriction is needed beyond
-                # read-only methods -- unlike Calendar below, nothing else is reachable here.
-                EgressPolicySpecRules(
-                    hosts=["gmail.googleapis.com"],
-                    methods=[EgressPolicySpecRulesMethods.GET],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
-                ),
-                # Calendar shares this host with many other Google APIs the underlying token could
-                # also authenticate (Drive, Docs, Sheets, ...); the path restricts this rule to
-                # Calendar's own surface regardless of what else the token is scoped for.
-                EgressPolicySpecRules(
-                    hosts=["www.googleapis.com"],
-                    methods=[EgressPolicySpecRulesMethods.GET],
-                    paths=["/calendar/v3/**"],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
-                ),
-            ]
-        ),
-    )
 
 
 class Egress(Construct):
@@ -435,12 +330,8 @@ class Egress(Construct):
         self._add_network_policy()
         if env.replicas.pdb_min_available is not None:
             self._add_pdb(env.replicas.pdb_min_available)
-        _egress_credentials(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
-        )
-        _egress_policies(
-            self, namespace=env.namespace, include_forgejo_credential=env.egress.include_forgejo_credential
-        )
+        _egress_credentials(self, namespace=env.namespace)
+        _egress_policies(self, namespace=env.namespace)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount

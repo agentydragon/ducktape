@@ -4,22 +4,35 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Generator, Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -28,7 +41,8 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -53,9 +67,12 @@ def pytest_runtest_makereport(
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    """A pristine, migrated per-test database on the shared container, as an asyncpg URL."""
+def migrated_database(postgres_container: PostgresContainer, name: str) -> Iterator[str]:
+    """A pristine, migrated database named `name` on the shared container, as an asyncpg URL.
+
+    Not a fixture: a module whose cases only read can override `db_url` at module scope and pay
+    the creation and migration once, which is most of what a database costs here.
+    """
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
@@ -71,7 +88,7 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
             )
     finally:
         admin_engine.dispose()
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
+    db_name = re.sub(r"[^a-z0-9_]", "_", name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
     RUNNER.apply(async_url)
@@ -80,23 +97,92 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 
 
 @pytest.fixture
-async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    store = TrajectoryStore.connect(db_url)
-    await store.start_updates()
-    try:
-        yield store
-    finally:
-        await store.close()
+def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
+    yield from migrated_database(postgres_container, request.node.name)
 
 
 @pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    replica = TrajectoryStore.connect(db_url)
-    await replica.start_updates()
+async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = connect(db_url)
     try:
-        yield replica
+        yield engine
     finally:
-        await replica.close()
+        await engine.dispose()
+
+
+@pytest.fixture
+def store(engine: AsyncEngine) -> ThreadStore:
+    return ThreadStore(engine)
+
+
+@pytest.fixture
+def event_logs(engine: AsyncEngine) -> EventLogStore:
+    return EventLogStore(engine)
+
+
+@pytest.fixture
+def content(engine: AsyncEngine) -> ContentStore:
+    return ContentStore(engine)
+
+
+@pytest.fixture
+def ingestion(engine: AsyncEngine) -> Ingestion:
+    return Ingestion(engine)
+
+
+@pytest.fixture
+async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
+    updates = ThreadUpdates(engine.url)
+    await updates.start()
+    try:
+        yield updates
+    finally:
+        await updates.close()
+
+
+@dataclass(frozen=True)
+class Replica:
+    """Another app replica's stores, over its own connection pool on the same database."""
+
+    store: ThreadStore
+    event_logs: EventLogStore
+    ingestion: Ingestion
+
+
+@pytest.fixture
+async def replica(db_url: str) -> AsyncIterator[Replica]:
+    engine = connect(db_url)
+    try:
+        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine))
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def operator_sessions(engine: AsyncEngine) -> OperatorSessionStore:
+    return OperatorSessionStore(engine)
+
+
+SPEC = protocol_pb2.SessionSpec(
+    harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+)
+
+
+@pytest.fixture
+async def lease(ingestion: Ingestion) -> IngestionLease:
+    lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
+    assert lease is not None
+    return lease
+
+
+def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+    """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""
+    at = Timestamp()
+    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
+    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
+    return event_log_pb2.EventEntry(
+        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
+    )
 
 
 @pytest.fixture
@@ -110,13 +196,35 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def bridge(store: TrajectoryStore) -> RunnerBridge:
-    """A bridge with nothing to dial, for the inventory and thread routes."""
+async def runners(live_index: LiveIndex) -> AsyncIterator[Runners]:
+    """The runners `live_index` shows, dialled on a port nothing listens on."""
+    runners = Runners(live_index, port=1)
+    yield runners
+    await runners.close()
 
-    async def unreachable(name: str) -> str:
-        raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
-    return RunnerBridge(address_of=unreachable, store=store)
+@pytest.fixture
+async def ingester(runners: Runners, event_logs: EventLogStore, ingestion: Ingestion) -> AsyncIterator[Ingester]:
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+    yield ingester
+    await ingester.close()
+
+
+@pytest.fixture
+def bridge(
+    runners: Runners,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingester: Ingester,
+    thread_updates: ThreadUpdates,
+) -> RunnerBridge:
+    return RunnerBridge(
+        runners=runners,
+        event_logs=event_logs,
+        content=content,
+        ingester=ingester,
+        thread_changes=thread_updates.changes,
+    )
 
 
 @pytest.fixture

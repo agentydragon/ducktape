@@ -24,6 +24,7 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
         config:
           server_url: https://github-mcp.internal.example
           account_secret_ref: github-mcp-account
+          server_id: github
       actions:
         get_file:
           description: Read one file's contents from a public repository.
@@ -77,6 +78,21 @@ def test_executor_backend_configuration_never_reaches_a_view() -> None:
 
     assert "github-mcp-account" not in rendered
     assert "github-mcp.internal.example" not in rendered
+
+
+def test_server_id_must_match_its_own_group_key() -> None:
+    bad_yaml = textwrap.dedent("""
+        github:
+          title: GitHub
+          description: x
+          executor:
+            kind: mcp
+            description: x
+            config: {server_id: not-github}
+        """)
+
+    with pytest.raises(ValidationError, match="not-github"):
+        ActionCatalog(groups=yaml.safe_load(bad_yaml))
 
 
 def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:

@@ -13,7 +13,7 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 @pytest.fixture
 def cnpg_jobs_policy() -> Path:
-    return policy("ignore-cnpg-jobs-for-reloader.yaml")
+    return policy("ignore-cnpg-jobs-for-reloader.k8s.yaml")
 
 
 class TestIgnoreCnpgJobsForReloader:

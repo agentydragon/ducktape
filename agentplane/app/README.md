@@ -2,7 +2,7 @@
 
 The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
 Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
-projects runner events into PostgreSQL conversation rows, synchronizes selected rows and content
+projects runner events into PostgreSQL thread entity rows, synchronizes selected rows and content
 to the browser through authenticated Electric endpoints, and watches Kubernetes inventory.
 Raw runner events remain archived for debug access.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
@@ -10,7 +10,7 @@ The staging instance lives in `cluster/k8s/agentplane-staging/`.
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
 the authoritative design for submission durability, the app queue decision,
-multi-session Thread history, and conversation/Raw projections.
+multi-session Thread history, and folded/Raw projections.
 
 ```sh
 bbr test //agentplane/app/...
@@ -41,33 +41,52 @@ bbr test //agentplane/app/...
   `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
-- `bridge.py`: runner-first commands, leased batched ingestion per sandbox, and retained-event
-  replay; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
-  for the frontend's generated client.
+- `agent_runtime/`: the runner in each sandbox as the app sees it, and the PostgreSQL store of
+  threads, events, feed state, leases, materialized thread entities and immutable content
+  chunks/manifests built from its events. Layered bottom-up on the tables in `models.py`: `runner/`,
+  `events/`, `view/`, and `thread/store.py` (`ThreadStore`: a thread over its event log, with the
+  name and archive state an operator sets). `ingestion.py` copies the running sandboxes' runner
+  sessions into the event log: the `Ingester` holds one lease per sandbox across replicas and runs a
+  `Feed` per session, which batches the runner's events for `Ingestion` to record, the event log's
+  and the fold's writes in one transaction under the lease; each transaction folds only the batch
+  and its touched entities, then commits all projection writes and checkpoint. `updates.py` turns
+  committed PostgreSQL notifications into replica-local wakeups.
+- `agent_runtime/runner/`: `bridge.py` (runner-first sessions and commands) and `runners.py` (the
+  runner in each sandbox as the cluster index shows it: which sandboxes run one, and a client to
+  reach each).
+- `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
+  generated client.
+- `agent_runtime/events/`: the app's copy of each runner session's event log. `event_log.py`
+  (`EventLogStore`: the copied runner events and the feed state), `ingestion_lease.py` (which
+  replica ingests a sandbox), `stream.py` (a thread's stored event log as SSE from the database, so
+  any replica serves it without a runner) and `debug.py` (the typed, paginated observation and
+  evidence reads).
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
   (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
   Service, and the SSE streams that push a snapshot of it to every open tab.
-- `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
+- `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `trajectory.py`: the PostgreSQL store of threads, events, feed state, leases, materialized
-  conversation entities, and immutable content chunks/manifests. Each ingestion transaction
-  folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
-- `conversation_projection.py`: typed deterministic event fold with independent item revisions.
+- `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
+  typed deterministic event fold with independent item revisions), `views.py` (the rows' client
+  contract), `rows.py` (fold records to and from entity rows), `payloads.py` (insert-only bodies),
+  `recording.py` (the fold write path) and `content.py` (`ContentStore`: reads of what the fold
+  assembled).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener conversation copies.
+  per-listener thread copies.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
-- `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
-  in `operator_sessions.py` and reused by `trajectory.py`'s tables. Migrations run separately through
-  `:migrate`; the server itself never creates or checks tables at startup. `:image` and
-  `:migration_image` are separate OCI targets.
+- `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
+  `main.py` builds the pool and hands it to each store and to the thread update listener.
+- `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
+  `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
+  `:migrate`; the server itself never creates or checks tables at startup.
+  `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -92,7 +111,7 @@ the Events and event-derived feed updates without a separate counter.
 `Attached` is a runner snapshot at its own `last_cursor`, persisted before replay. During catch-up
 it can be ahead of the app's copied Event prefix; its model/turn state is not a fold of only that
 prefix. Subsequent Events advance it without rewinding through older replay. Consumers must keep
-that snapshot provenance separate from conversation and pending-command projections of copied Events.
+that snapshot provenance separate from thread-entity and pending-command projections of copied Events.
 
 Reconnect replays the last copied entry too, verifying its identity before extending the prefix.
 A conflict or a stream ending before its advertised cursor records a feed error, not a normal
@@ -109,7 +128,7 @@ The retained-event SSE API reads committed PostgreSQL events on whichever replic
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
 are hints and the database cursor remains authoritative.
 
-`/#/threads/{id}` loads metadata and a bounded latest-30 conversation interest independently
+`/#/threads/{id}` loads metadata and a bounded latest-30 entity interest independently
 of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
 live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
 arguments follow their referenced revisions, while reasoning, tool output and associated debug
@@ -121,7 +140,7 @@ for query, revision and memory contracts and the remaining acceptance gates.
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
 retained items are labelled incomplete rather than actively streaming. The ingestion coordinator
-owns runner attachment; loading a conversation never rebuilds its history.
+owns runner attachment; loading a thread never rebuilds its history.
 
 `test_replication_process.py` kills real app processes before and after an ingestion commit,
 then verifies replacement lease ownership, the exact PostgreSQL prefix, and HTTP/SSE replay/live
@@ -134,7 +153,7 @@ processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runne
 Kubernetes and authentication boundaries are controlled. Its cases are split across four Bazel
 shards. Traces and screenshots are test artifacts; inspect the images as well as results.
 
-Coverage includes older-item streaming, selective bodies/debug, archived conversations,
+Coverage includes older-item streaming, selective bodies/debug, archived threads,
 reload/offline/reconnect, admission responses ahead of projection, lost HTTP replies, exact
 same-ID retries, and failed/noop outcomes after history eviction and explicit dismissal.
 Fault injection holds actual Electric responses while ingestion continues. Rejected runner
@@ -144,10 +163,10 @@ bottom before a queued scroll event. Larger history-window, collection-retention
 proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.md).
 
 The new projection schema is incompatible with populated pre-projection staging/testing
-archives: reset the disposable trajectory data before applying it. There is no implicit
+archives: reset the disposable thread data before applying it. There is no implicit
 backfill, tolerant old-row reader, or on-open replay. Migration `0005_conversation_projection`
-creates the materialized tables, grants and publication; the managed `electric` database role
-must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
+creates the materialized tables, grants and publication, which `0006_thread_fold_rename` renames
+to the `thread_*` family; the managed `electric` database role must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
 mixing incompatible state. No instance reset is performed by this implementation work.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
@@ -214,7 +233,7 @@ writer implements no `Flush()`.
 
 The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and
 Threads, including archived Threads and threadless Sandboxes. Kubernetes watch invalidations and
-the existing PostgreSQL trajectory notifications both refresh that snapshot. A listener reconnect
+the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 
@@ -249,7 +268,7 @@ Sandbox -> Pod, PVC               |
 
 Kubernetes is the sandbox inventory, including a compact annotation holding its live preset
 association plus explicit thread-default edits; the runner holds the live session;
-PostgreSQL holds the raw event archive and materialized conversation that outlive the sandbox. Preset definitions remain app
+PostgreSQL holds the raw event archive and materialized fold that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 
 ## External-client consent
@@ -427,7 +446,7 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Raw is additive:** both modes use the same chronological conversation blocks and disclosure
+- **Raw is additive:** both modes use the same chronological thread blocks and disclosure
   state. Compact Event summaries sit between those blocks; expanded details retain the full generated
   envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.
   Cards are labelled as current aggregates, not historical snapshots at their first cursor. The
@@ -460,21 +479,21 @@ before enrollment can work. Browser permission is requested only from an explici
 click. Real browser/OS push-service delivery still needs operator acceptance; transport and
 service-worker tests do not establish that production experience.
 
-### Lazy conversation evidence
+### Lazy thread evidence
 
-`GET /threads/{thread_id}/conversation/evidence` lists observations associated with
+`GET /threads/{thread_id}/evidence` lists observations associated with
 one `entity_kind`/`entity_id`, scoped by the exact `source_id` and `projection_epoch`.
 It returns observation cursors and whether native links exist, without reading frame bodies.
 `after_cursor` is exclusive; `next_after_cursor` is null at the end of the page sequence.
 
-`GET /threads/{thread_id}/conversation/evidence/{observation_cursor}/frames` expands
+`GET /threads/{thread_id}/evidence/{observation_cursor}/frames` expands
 one association under the same scope and entity. It pages native links by exclusive
 `after_sequence`, returning whole raw entries. Missing captured frames are explicitly
 `unavailable`; an association with no native links returns an empty page. All returned
 cursors/sequences are decimal strings. Both reads default to 30 records and allow up to
 200, reject stale source/epoch references with 410, and require the normal app identity.
 
-`GET /threads/{thread_id}/conversation/observations` reads the original archive,
+`GET /threads/{thread_id}/observations` reads the original archive,
 including semantic observations, unlinked native frames, stderr, and debug checkpoints.
 With no cursor it selects the latest 30 records. Supply either exclusive `before_cursor`
 or `after_cursor` to page older or newer; responses remain in chronological order and

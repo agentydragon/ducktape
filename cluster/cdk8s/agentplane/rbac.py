@@ -85,8 +85,7 @@ _TOKEN_RULE = RolePolicyRule(
 
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the
 # ActionPolicySet/ActionPolicyBinding its Sandbox is auto-approved under, reading
-# their Ready condition to know the Action Service has seen each edit. Rule order is
-# immaterial to RBAC evaluation.
+# their Ready condition to know the Action Service has seen each edit.
 _ACTION_POLICY_RULE = RolePolicyRule(
     resources=[
         custom_resource("agentplane.allegedly.works", "actionpolicysets"),
@@ -179,8 +178,8 @@ class AgentRbac(Construct):
     **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake OAuth and
     credentialless MCP fixtures -- nothing here reaches a real account. `agentplane-staging`
     is the opposite: real Authentik-federated operator login, real GitHub/Kubernetes MCP
-    OAuth linkage, and `claude-ai` Sandboxes carry the real Gmail/Calendar-scoped
-    `google-readonly` egress credential (`egress.py`). An agent identity holding this
+    OAuth linkage, and `claude-ai` Sandboxes carry the real read-only Google
+    `google-readonly` egress credential (`egress_staging_credentials.py`). An agent identity holding this
     Role there could stamp a Sandbox under that ServiceAccount and reach the operator's
     real external accounts with no human in the loop -- the opposite of what "testing"
     fixtures are for. So only `testing.chart` instantiates this construct; `staging.chart`
@@ -189,12 +188,12 @@ class AgentRbac(Construct):
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        rules = list(_SANDBOX_RULES)
-        if env.include_action_policy_rule:
-            rules.append(_ACTION_POLICY_RULE)
-        rules.append(_TOKEN_RULE)
-
-        Role(self, "role", metadata=metadata("agentplane-testing-operator", env.namespace), rules=rules)
+        Role(
+            self,
+            "role",
+            metadata=metadata("agentplane-testing-operator", env.namespace),
+            rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
+        )
 
         RoleBinding(
             self,

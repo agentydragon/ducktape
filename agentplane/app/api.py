@@ -12,17 +12,18 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
+from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
-from agentplane.app import auth_routes, bridge as runner_bridge
+from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
@@ -30,19 +31,29 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
+from agentplane.app.agent_runtime.events import stream
+from agentplane.app.agent_runtime.events.debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.agent_runtime.runner import bridge as runner_bridge
+from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.agent_runtime.view.fold import CommandOutcome
+from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
     EnrollmentHandle,
     decide_enrollment,
     preview_enrollment,
-)
-from agentplane.app.conversation_debug import (
-    ConversationEvidenceNotFoundError,
-    ConversationScopeChangedError,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
 )
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
@@ -63,19 +74,11 @@ from agentplane.app.inventory import (
     SandboxRunningError,
     SandboxView,
 )
-from agentplane.app.live import LiveIndex, router as live_router
+from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
-from agentplane.app.operator_sessions import OperatorSessionMiddleware
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.trajectory import (
-    CommandIdConflictError,
-    CommandOutcomeValue,
-    ConversationScopeResetError,
-    ThreadNotFoundError,
-    ThreadView,
-    TrajectoryStore,
-)
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -282,14 +285,30 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-def _store(request: Request) -> TrajectoryStore:
+def _store(request: Request) -> ThreadStore:
     store = request.app.state.store
-    if not isinstance(store, TrajectoryStore):
-        raise TypeError(f"app.state.store is {type(store).__name__}, not TrajectoryStore")
+    if not isinstance(store, ThreadStore):
+        raise TypeError(f"app.state.store is {type(store).__name__}, not ThreadStore")
     return store
 
 
-Store = Annotated[TrajectoryStore, Depends(_store)]
+def _event_logs(request: Request) -> EventLogStore:
+    event_logs = request.app.state.event_logs
+    if not isinstance(event_logs, EventLogStore):
+        raise TypeError(f"app.state.event_logs is {type(event_logs).__name__}, not EventLogStore")
+    return event_logs
+
+
+def _content(request: Request) -> ContentStore:
+    content = request.app.state.content
+    if not isinstance(content, ContentStore):
+        raise TypeError(f"app.state.content is {type(content).__name__}, not ContentStore")
+    return content
+
+
+Store = Annotated[ThreadStore, Depends(_store)]
+EventLogs = Annotated[EventLogStore, Depends(_event_logs)]
+Content = Annotated[ContentStore, Depends(_content)]
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
@@ -357,6 +376,11 @@ async def mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView
 @connections_router.get("/mcp-servers")
 async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
     return await client.mcp_linkages()
+
+
+@connections_router.get("/action-groups")
+async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
+    return await client.action_groups()
 
 
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")
@@ -495,7 +519,6 @@ class ThreadRename(BaseModel):
 class CommandReconciliationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     command_ids: list[str] = Field(max_length=128)
 
@@ -504,13 +527,12 @@ class CommandReconciliationEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command_id: str
-    outcome: CommandOutcomeValue | None
+    outcome: CommandOutcome | None
 
 
 class CommandReconciliationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
     projection_epoch: str
     commands: list[CommandReconciliationEntry]
 
@@ -559,14 +581,13 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 
 @threads.post("/{thread_id}/commands/reconcile")
 async def reconcile_commands(
-    store: Store, thread_id: UUID, body: CommandReconciliationRequest
+    content: Content, thread_id: UUID, body: CommandReconciliationRequest
 ) -> CommandReconciliationResponse:
     try:
-        outcomes = await store.command_outcomes(thread_id, body.source_id, body.projection_epoch, body.command_ids)
-    except ConversationScopeResetError as error:
+        outcomes = await content.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
+    except ThreadScopeResetError as error:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
     return CommandReconciliationResponse(
-        source_id=body.source_id,
         projection_epoch=body.projection_epoch,
         commands=[
             CommandReconciliationEntry(command_id=command_id, outcome=outcome)
@@ -596,6 +617,7 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
 async def thread_command(
     request: Request,
     store: Store,
+    content: Content,
     catalog: Annotated[ModelCatalog, Depends(_models)],
     thread_id: UUID,
     body: dict[str, object],
@@ -611,7 +633,7 @@ async def thread_command(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="command requires id and operation"
         )
-    if admitted := await store.admitted_command(thread_id, command):
+    if admitted := await content.admitted_command(thread_id, command):
         return MessageToDict(admitted)
     thread = await store.get_thread(thread_id)
     if thread is None:
@@ -628,58 +650,83 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
-@threads.get("/{thread_id}/conversation/evidence")
-async def conversation_evidence(
+# A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
+# string -- the representation every fold response model already publishes it in. Declaring
+# it `int` here would put `integer` in the schema and make every browser caller cast past it. The
+# range check the string form loses is restored here: the column is a signed 64-bit integer, and a
+# value past it must be refused as a bad request rather than reaching the driver as one.
+_DECIMAL = r"^\d+$"
+_INT64_MAX = 2**63 - 1
+
+
+def _within_int64(value: str) -> str:
+    if int(value) > _INT64_MAX:
+        raise ValueError(f"cursor is outside the signed 64-bit range: {value}")
+    return value
+
+
+DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_int64)]
+DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
+
+
+@threads.get("/{thread_id}/evidence")
+async def thread_evidence(
     thread_id: UUID,
-    store: Store,
-    source_id: str,
+    content: Content,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_cursor: Annotated[int, Query(ge=0)] = 0,
+    after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
-    return await store.conversation_evidence(
+    return await content.evidence(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        after_cursor=after_cursor,
+        after_cursor=int(after_cursor),
         limit=limit,
     )
 
 
-@threads.get("/{thread_id}/conversation/evidence/{observation_cursor}/frames")
-async def conversation_native_frames(
+@threads.get("/{thread_id}/evidence/{observation_cursor}/frames")
+async def thread_native_frames(
     thread_id: UUID,
-    observation_cursor: int,
-    store: Store,
-    source_id: str,
+    observation_cursor: DecimalCursorPath,
+    content: Content,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
-    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
-    return await store.conversation_native_frames(
+    return await content.native_frames(
         thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
         entity_id=entity_id,
-        observation_cursor=observation_cursor,
-        after_sequence=after_sequence,
+        observation_cursor=int(observation_cursor),
+        after_sequence=int(after_sequence),
         limit=limit,
     )
 
 
-@threads.get("/{thread_id}/conversation/observations")
-async def conversation_observations(
+@threads.get("/{thread_id}/observations/{cursor}")
+async def thread_observation_entry(thread_id: UUID, cursor: int, event_logs: EventLogs) -> ArchivedObservationEntry:
+    """The raw entry behind one listed observation, read only when a reader expands it."""
+    entry = await event_logs.observation_entry(thread_id, cursor)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
+    return entry
+
+
+@threads.get("/{thread_id}/observations")
+async def thread_observations(
     thread_id: UUID,
     store: Store,
-    before_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
-    after_cursor: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    event_logs: EventLogs,
+    before_cursor: DecimalCursor | None = None,
+    after_cursor: DecimalCursor | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> ObservationPage:
     """Original chronological observations; default to the tail, including unlinked debug data."""
@@ -689,14 +736,18 @@ async def conversation_observations(
         )
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return await store.conversation_observations(
-        thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+    return await event_logs.observations(
+        thread_id,
+        before_cursor=None if before_cursor is None else int(before_cursor),
+        after_cursor=None if after_cursor is None else int(after_cursor),
+        limit=limit,
     )
 
 
 @threads.get("/{thread_id}/events")
 async def thread_events(
     store: Store,
+    event_logs: EventLogs,
     thread_id: UUID,
     after: Annotated[int, Query(ge=0, description="EventEntries with a greater cursor.")] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
@@ -704,13 +755,14 @@ async def thread_events(
     """The stored EventEntries as proto-JSON, in cursor order."""
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(entry) for entry in await store.events(thread_id, after_cursor=after, limit=limit)]
+    return [MessageToDict(entry) for entry in await event_logs.events(thread_id, after_cursor=after, limit=limit)]
 
 
 @threads.get("/{thread_id}/events/stream")
 async def thread_event_stream(
     store: Store,
-    bridge: runner_bridge.Bridge,
+    event_logs: EventLogs,
+    updates: Updates,
     shutdown: Shutdown,
     thread_id: UUID,
     after: Annotated[int, Query(ge=0, description="Replay EventEntries with a greater cursor.")] = 0,
@@ -724,7 +776,7 @@ async def thread_event_stream(
     if cursor > thread.last_cursor:
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return StreamingResponse(
-        shutdown.until(bridge.events(thread_id, after_cursor=cursor)),
+        shutdown.until(stream.follow(event_logs, updates.changes, thread_id, after_cursor=cursor)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -733,7 +785,7 @@ async def thread_event_stream(
 def create_app(
     inventory: SandboxInventory,
     bridge: runner_bridge.RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     catalog: ModelCatalog,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -744,6 +796,11 @@ def create_app(
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
     electric: ElectricProxy | None = None,
+    *,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -757,6 +814,9 @@ def create_app(
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
+    app.state.event_logs = event_logs
+    app.state.content = content
+    app.state.thread_updates = thread_updates
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.egress = egress
@@ -790,7 +850,7 @@ def create_app(
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,
-            store=store.operator_sessions,
+            store=operator_sessions,
             secret_key=oidc.session_secret,
             session_cookie=oidc.cookie_name,
             https_only=oidc.secure,
@@ -802,14 +862,12 @@ def create_app(
     # Outermost, so a request the drain refuses touches nothing below it.
     app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
 
-    @app.exception_handler(ConversationScopeChangedError)
-    async def _conversation_scope_changed(_request: Request, error: ConversationScopeChangedError) -> JSONResponse:
+    @app.exception_handler(ThreadScopeChangedError)
+    async def _thread_scope_changed(_request: Request, error: ThreadScopeChangedError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_410_GONE)
 
-    @app.exception_handler(ConversationEvidenceNotFoundError)
-    async def _conversation_evidence_missing(
-        _request: Request, error: ConversationEvidenceNotFoundError
-    ) -> JSONResponse:
+    @app.exception_handler(ThreadEvidenceNotFoundError)
+    async def _evidence_missing(_request: Request, error: ThreadEvidenceNotFoundError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
 
     @app.exception_handler(ThreadNotFoundError)
@@ -861,8 +919,8 @@ def create_app(
     async def _unknown_policy_set(_request: Request, error: UnknownPolicySetError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
-    @app.exception_handler(runner_bridge.SandboxNotReachableError)
-    async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
+    @app.exception_handler(SandboxNotReachableError)
+    async def _not_reachable(_request: Request, error: SandboxNotReachableError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)

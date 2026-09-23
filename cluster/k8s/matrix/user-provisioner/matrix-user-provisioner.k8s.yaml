@@ -1,0 +1,54 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: matrix
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: provision-matrix-users
+  namespace: matrix
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      containers:
+        - env:
+            - name: REGISTRATION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: registration_shared_secret
+                  name: synapse-registration-secret
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: synapse-admin-credentials
+            - name: PUBLIC_CODER_AGENT_BOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: public-coder-agent-matrix-bot-password
+          image: git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset
+          imagePullPolicy: Always
+          name: provision
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: OnFailure
+  ttlSecondsAfterFinished: 3600

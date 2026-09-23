@@ -14,6 +14,12 @@ Use this skill for every new or changed dashboard under
 dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
+A new dashboard is three edits: the `<name>.json` file, its `configMapGenerator`
+entry in that directory's `kustomization.yaml`, and a `_dashboard(chart, "<name>",
+config_map=True, ...)` line in `_dashboards` of
+`cluster/cdk8s/monitoring/grafana_instance.py`, which renders the `GrafanaDashboard`;
+then `bb run //cluster/cdk8s:generate_manifests`.
+
 ## Credential consent
 
 Before running the verifier or any live Grafana validation that reads the
@@ -114,7 +120,7 @@ verification.
 
 ## Deployment check
 
-The repository's `GrafanaDashboard` CRD and ConfigMap are applied by Flux. A
+The generated `GrafanaDashboard` and its ConfigMap are applied by Flux. A
 successful Bazel/Kustomize build proves wiring, not that Grafana imported the
 new dashboard. After merge, check the live resource and dashboard API, then run
 the live verifier:

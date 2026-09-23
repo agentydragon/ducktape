@@ -1,0 +1,6 @@
+# Hand-written: carries the Flux image-automation marker the generated Deployment cannot.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/google-mcp
+    newTag: devel-20260923053843-5b789bf # {"$imagepolicy": "flux-system:google-mcp:tag"}

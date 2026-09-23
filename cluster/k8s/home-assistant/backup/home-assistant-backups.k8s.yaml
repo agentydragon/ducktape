@@ -1,0 +1,160 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Home Assistant's tenant-local SeaweedFS backup bucket.
+  name: home-assistant-backups
+  namespace: home-assistant
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: home-assistant-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: home-assistant-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Home Assistant's tenant-local SeaweedFS backup credentials.
+  name: home-assistant-backups
+  namespace: home-assistant
+spec:
+  identityRef:
+    name: home-assistant-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: home-assistant-seaweedfs-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: home-assistant
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: home-assistant
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: home-assistant-backup-secret-reader
+  namespace: home-assistant
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: home-assistant-backup-secret-reader
+  namespace: home-assistant
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - home-assistant-config-restic
+      - home-assistant-seaweedfs-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: home-assistant-backup-secret-reader
+  namespace: home-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: home-assistant-backup-secret-reader
+subjects:
+  - kind: ServiceAccount
+    name: home-assistant-backup-secret-reader
+    namespace: home-assistant
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: home-assistant-backup-secrets
+  namespace: home-assistant
+spec:
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: home-assistant-backup-secret-reader
+          namespace: home-assistant
+      remoteNamespace: home-assistant
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: home-assistant-config-restic-tenant
+  namespace: home-assistant
+spec:
+  data:
+    - remoteRef:
+        key: home-assistant-config-restic
+        property: RESTIC_REPOSITORY
+      secretKey: RESTIC_REPOSITORY
+    - remoteRef:
+        key: home-assistant-config-restic
+        property: RESTIC_PASSWORD
+      secretKey: RESTIC_PASSWORD
+    - remoteRef:
+        key: home-assistant-config-restic
+        property: AWS_DEFAULT_REGION
+      secretKey: AWS_DEFAULT_REGION
+    - remoteRef:
+        key: home-assistant-seaweedfs-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: AWS_ACCESS_KEY_ID
+    - remoteRef:
+        key: home-assistant-seaweedfs-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: AWS_SECRET_ACCESS_KEY
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: home-assistant-backup-secrets
+  target:
+    creationPolicy: Owner
+    name: home-assistant-config-restic-tenant
+    template:
+      type: Opaque

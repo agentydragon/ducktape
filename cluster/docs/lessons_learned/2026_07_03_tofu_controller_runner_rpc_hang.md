@@ -11,7 +11,7 @@ upstream, but the `tofu-controller` chart's `templates/deployment.yaml` builds `
 fixed list of `.Values.*` fields with no `extraArgs`/`extraFlags` escape hatch (checked against
 chart `0.16.5`) — there is no values key that reaches it. Setting it would need a Flux
 `postRenderers` kustomize patch appending the arg (precedent:
-<../../k8s/volsync/helmrelease.yaml>), which is untested here and not worth the risk for a
+<../../cdk8s/volsync.py>), which is untested here and not worth the risk for a
 30-minute default that's no longer a permanent hang, just a bounded wait. Left unset; revisit
 only if 30 minutes actually proves too generous under real worker-slot pressure.
 

@@ -2,14 +2,38 @@
 
 load("//devinfra/python:defs.bzl", "py_library")
 
+package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "user_provisioner",
+    srcs = ["user_provisioner.py"],
+    deps = [
+        ":server",
+        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )

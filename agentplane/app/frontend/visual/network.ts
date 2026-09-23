@@ -25,30 +25,28 @@ export interface ElectricShapeMessage {
 }
 
 const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
-  conversation_entity: {
+  thread_entity: {
     arguments_ref: { type: "jsonb" },
     cursor: { type: "int8", not_null: true },
-    entity_id: { type: "text", not_null: true, pk_index: 4 },
-    entity_kind: { type: "text", not_null: true, pk_index: 3 },
+    entity_id: { type: "text", not_null: true, pk_index: 3 },
+    entity_kind: { type: "text", not_null: true, pk_index: 2 },
     input_ref: { type: "jsonb" },
     output_ref: { type: "jsonb" },
     pending: { type: "bool", not_null: true },
-    projection_epoch: { type: "text", not_null: true, pk_index: 2 },
+    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
     revision_cursor: { type: "int8", not_null: true },
-    source_id: { type: "text", not_null: true, pk_index: 1 },
     state: { type: "jsonb", not_null: true },
     text_ref: { type: "jsonb" },
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
     turn_id: { type: "text" },
   },
-  conversation_payload_chunk: {
-    chunk_index: { type: "int8", not_null: true, pk_index: 7 },
-    field: { type: "text", not_null: true, pk_index: 5 },
-    generation: { type: "int8", not_null: true, pk_index: 6 },
-    owner_cursor: { type: "int8", not_null: true, pk_index: 3 },
-    owner_id: { type: "text", not_null: true, pk_index: 4 },
-    projection_epoch: { type: "text", not_null: true, pk_index: 2 },
-    source_id: { type: "text", not_null: true, pk_index: 1 },
+  thread_payload_chunk: {
+    chunk_index: { type: "int8", not_null: true, pk_index: 6 },
+    field: { type: "text", not_null: true, pk_index: 4 },
+    generation: { type: "int8", not_null: true, pk_index: 5 },
+    owner_cursor: { type: "int8", not_null: true, pk_index: 2 },
+    owner_id: { type: "text", not_null: true, pk_index: 3 },
+    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
     text: { type: "text", not_null: true },
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
   },
@@ -56,10 +54,10 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
 
 /**
  * Build the same JSON and protocol headers consumed by `electricCollectionOptions` in production.
- * Visual conversation scenes use this rather than an EventSource replay so the collection's column
+ * Visual thread scenes use this rather than an EventSource replay so the collection's column
  * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
  */
-function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "conversation_entity") {
+function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "thread_entity") {
   const relation = rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : fallback;
   const schema = ELECTRIC_SCHEMAS[relation];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
@@ -96,7 +94,7 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
  * Electric's body reader waits until the collection cancels it during teardown.
  */
 export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
-  const schema = ELECTRIC_SCHEMAS[relation ?? "conversation_entity"];
+  const schema = ELECTRIC_SCHEMAS[relation ?? "thread_entity"];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
   let onAbort: (() => void) | undefined;
   const removeAbortListener = () => {

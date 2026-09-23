@@ -57,21 +57,30 @@ from agentplane.app.action_policy import (
     ActionPolicyView,
     BindingProvenance,
 )
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
-from agentplane.app.trajectory import TrajectoryStore
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from agentplane.workload_auth.principal import (
+    WorkloadPrincipal,
+    WorkloadPrincipalRejectedError,
+    WorkloadPrincipalResolver,
+)
 from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
@@ -79,6 +88,15 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, si
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
 SUBJECT_B = "test-second-subject"
+
+
+class _RejectAllWorkloadResolver:
+    """This fixture's downstream app has no real workload identities; only its operator/BFF flow
+    is under test, but /v1/action-groups now also tries workload auth before falling back to
+    operator, so a resolver that correctly rejects (rather than a None placeholder) is required."""
+
+    async def resolve_workload(self, token: str) -> WorkloadPrincipal:
+        raise WorkloadPrincipalRejectedError("test: this fixture has no workload identities")
 
 
 @dataclass
@@ -111,7 +129,9 @@ async def review(
     db_url: str,
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -119,6 +139,8 @@ async def review(
     reviewer: TokenReviewer,
     operator_connection: str,
     direct_federation: bool,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
@@ -159,7 +181,7 @@ async def review(
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
-            cast(WorkloadPrincipalResolver, None),
+            cast(WorkloadPrincipalResolver, _RejectAllWorkloadResolver()),
             OidcOperatorAuthenticator(target),
             catalog,
             callers=policies,
@@ -282,6 +304,10 @@ async def review(
             oidc,
             reviewer,
             operator_actions=operator_client,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
         )
         await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
@@ -289,12 +315,12 @@ async def review(
         )
         browser.headers["Origin"] = app_url
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
-        replica_store = TrajectoryStore.connect(db_url)
-        stack.push_async_callback(replica_store.close)
+        replica_engine = connect(db_url)
+        stack.push_async_callback(replica_engine.dispose)
         replica = create_app(
             inventory,
             bridge,
-            replica_store,
+            ThreadStore(replica_engine),
             {harness: ["test-model"] for harness in Harness},
             egress,
             decisions,
@@ -305,6 +331,11 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
+            event_logs=EventLogStore(replica_engine),
+            content=ContentStore(replica_engine),
+            # Never started: nothing here reads thread updates, only the shared operator sessions.
+            thread_updates=ThreadUpdates(replica_engine.url),
+            operator_sessions=OperatorSessionStore(replica_engine),
         )
         second_browser = await stack.enter_async_context(
             httpx.AsyncClient(
@@ -637,7 +668,7 @@ async def test_provider_availability_is_not_operator_rejection(
 ) -> None:
     await review.browser.get("/auth/login")
     caplog.set_level(logging.WARNING, logger="agentplane.app.action_federation")
-    for path in ("/actions", "/mcp-servers", "/push/config"):
+    for path in ("/actions", "/mcp-servers", "/action-groups", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
         detail = response.json()["detail"]
@@ -656,10 +687,23 @@ async def test_provider_availability_is_not_operator_rejection(
         assert SUBJECT_A not in response.text
     # Every failure leaves a cause in the log, and the log leaks no more than the response does.
     federation_warnings = [r for r in caplog.records if r.name == "agentplane.app.action_federation"]
-    assert len(federation_warnings) == 3
+    assert len(federation_warnings) == 4
     assert "test-private" not in caplog.text
     assert "access_token" not in caplog.text
     assert SUBJECT_A not in caplog.text
+
+
+async def test_operator_observes_mcp_group_health_without_a_real_tool_call_failing_first(review: Review) -> None:
+    await review.browser.get("/auth/login")
+    async with asyncio.timeout(10):
+        while True:
+            groups = (await review.browser.get("/action-groups")).json()
+            test_review = next(group for group in groups if group["key"] == "test_review")
+            if test_review["health"] is not None and test_review["health"]["state"] == "available":
+                break
+            # Each read awaits the executor's own connection supervisor; no fixed delay.
+    assert test_review["executor_kind"] == "mcp"
+    assert test_review["available"] is True
 
 
 async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operators_distinct(review: Review) -> None:

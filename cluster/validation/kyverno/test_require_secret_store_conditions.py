@@ -13,7 +13,7 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 @pytest.fixture
 def secret_store_conditions_policy() -> Path:
-    return policy("require-secret-store-conditions.yaml")
+    return policy("require-secret-store-conditions.k8s.yaml")
 
 
 class TestRequireSecretStoreConditions:

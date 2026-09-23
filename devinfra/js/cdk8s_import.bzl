@@ -14,12 +14,16 @@ load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@npm_ducktape//:cdk8s-cli/package_json.bzl", cdk8s_bin = "bin")
 load("//devinfra/python:defs.bzl", "py_library")
 
+def _outs(root, module_name, package_path, files):
+    return [root + "/" + module_name + "/" + package_path + "/" + f for f in files]
+
 def cdk8s_import(
         name,
         crd,
         module_name,
         module_path,
         jsii_module_path = None,
+        python_module_path = None,
         visibility = None,
         crd_name = None,
         crd_version = None,
@@ -60,6 +64,12 @@ def cdk8s_import(
                       pass the dashed variant explicitly when it does (checked the same way as
                       module_path: run `cdk8s import` locally once and read the actual filename
                       under `_jsii/`).
+        python_module_path: The package path Python imports the constructs from. Defaults to
+                      module_path; pass it only when a module_path segment is a Python keyword
+                      (group `redis.redis.opstreelabs.in` imports as `in/opstreelabs/redis/redis`,
+                      and `import x.in...` is a syntax error). The generated package is moved
+                      there unchanged: its code imports only relatively and loads its jsii
+                      assembly via `__name__`, so the directory it lives in is free to change.
         visibility:  Visibility of the output py_library target.
     """
     if crd_name != None:
@@ -87,17 +97,12 @@ def cdk8s_import(
         fail("cdk8s_import: crd_version/crd_remove_paths require crd_name")
 
     jsii_module_path = jsii_module_path if jsii_module_path != None else module_path
+    python_module_path = python_module_path if python_module_path != None else module_path
     out_dir = "_" + name + "_imports"
-    module_dir = out_dir + "/" + module_name + "/" + module_path
-    jsii_tarball = module_dir + "/_jsii/" + module_name + "_" + jsii_module_path.replace("/", "") + "@0.0.0.jsii.tgz"
-    py_srcs = [
-        module_dir + "/__init__.py",
-        module_dir + "/_jsii/__init__.py",
-    ]
-    data_files = [
-        module_dir + "/py.typed",
-        jsii_tarball,
-    ]
+    generate_dir = out_dir if python_module_path == module_path else "_" + name + "_generated"
+    jsii_tarball = "_jsii/" + module_name + "_" + jsii_module_path.replace("/", "") + "@0.0.0.jsii.tgz"
+    py_files = ["__init__.py", "_jsii/__init__.py"]
+    data_files = ["py.typed", jsii_tarball]
 
     cdk8s_bin.cdk8s_binary(
         name = "_" + name + "_cdk8s_bin",
@@ -113,7 +118,7 @@ def cdk8s_import(
         # crd is an http_file (MODULE.bazel) in an external repo -- copy_to_bin can't
         # (and doesn't need to) copy it into the output tree first.
         copy_srcs_to_bin = False,
-        outs = py_srcs + data_files,
+        outs = _outs(generate_dir, module_name, module_path, py_files + data_files),
         args = [
             "import",
             # js_binary tools default to running with cwd = bazel-out/<config>/bin (the
@@ -125,15 +130,27 @@ def cdk8s_import(
             "--no-check-upgrade",
             "--no-save",
             "-o",
-            native.package_name() + "/" + out_dir,
+            native.package_name() + "/" + generate_dir,
         ],
         tool = ":_" + name + "_cdk8s_bin",
     )
 
+    if generate_dir != out_dir:
+        generated = _outs(generate_dir, module_name, module_path, py_files + data_files)
+        moved = _outs(out_dir, module_name, python_module_path, py_files + data_files)
+        for i in range(len(generated)):
+            native.genrule(
+                name = "_{}_move_{}".format(name, i),
+                srcs = [":" + generated[i]],
+                outs = [moved[i]],
+                cmd = "cp $< $@",
+                visibility = ["//visibility:private"],
+            )
+
     py_library(
         name = name,
-        srcs = py_srcs,
-        data = data_files,
+        srcs = _outs(out_dir, module_name, python_module_path, py_files),
+        data = _outs(out_dir, module_name, python_module_path, data_files),
         imports = [out_dir],
         deps = [
             "@pypi//cdk8s",

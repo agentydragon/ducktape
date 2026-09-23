@@ -80,9 +80,14 @@ Model with constructs, deploy with one props object per environment.
 Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
 its parameters. `generate_manifests.py` is the topological order, written out by hand.
 
-- **A node is `name(chart, *predecessors: Kustomization) -> Kustomization`.** It builds
-  its `KustomizationSpec` with the literals from its directory and returns
-  `flux.flux_kustomization(chart, name, spec=...)`. `dependsOn` is
+- **A node is `name(chart, artifact, *predecessors: Kustomization) -> Kustomization`.** It
+  builds its `KustomizationSpec` with the literals from its directory, reads `sourceRef`
+  and `path` off its artifact (`artifact_source_ref`, `artifact_path`), and returns
+  `flux.flux_kustomization(chart, name, spec=...)`. The entry point builds the artifact
+  (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call,
+  and passes every artifact to `write_artifact_generators` last; a parked node's
+  artifact is left out, since nothing packages a suspended directory. A node sourcing a
+  `GitRepository` directly takes no artifact. `dependsOn` is
   `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
   off the constructs it is handed; the entry carries an explicit `namespace` for that
   reason. The predecessor is a value the caller already built, never a string, a
@@ -115,24 +120,34 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
   entry) may become one module constant. Nothing else until every node it would touch is
   in Python.
+- **A node lives with its directory's generator once that directory is fully
+  generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
+  `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
+  conversion. No interim flattening of those packages.
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
 
 The worked edge, `monitoring-crds -> cilium-monitoring`:
 
 ```python
+# monitoring/flux_kustomizations.py
 def monitoring_crds(chart: Chart) -> Kustomization:
     name = "monitoring-crds"
     return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
 
 
-def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+# monitoring/cilium_monitoring.py, beside the chart it deploys
+def cilium_monitoring(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+) -> Kustomization:
     name = "cilium-monitoring"
     return flux_kustomization(
         chart,
         name,
         spec=KustomizationSpec(
             ...,
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             # The ServiceMonitor CRD.
             depends_on=flux_kustomization_depends_on_many(monitoring_crds),
         ),
@@ -140,8 +155,11 @@ def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomiza
 
 
 # generate_manifests.py
-monitoring_crds_kustomization = monitoring.monitoring_crds(flux_chart)
-monitoring.cilium_monitoring(flux_chart, monitoring_crds_kustomization)
+monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
+monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
+cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
+...
+write_artifact_generators(root, ducktape=[..., monitoring_cilium_artifact, ...], flux_system=[...])
 ```
 
 The one edge still written as a string is `artifact-generators -> flux-system`
@@ -174,6 +192,12 @@ indirection, stop and ask before changing the design.
 - **Synthetic props for construct tests, real environments for invariants.** A
   construct test builds a `Chart(Testing.app(), ...)` with a small props value and
   asserts the shape; `test_fleet_rules.py` is the pattern.
+- **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
+  graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
+  `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
+  From the devshell: `python3 cluster/cdk8s/render_diff.py origin/devel HEAD`; renders
+  cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
+  Flux semantics it reproduces.
 
 ## Adding a fleet rule
 

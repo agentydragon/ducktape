@@ -20,7 +20,7 @@ Read this before starting either.
   `LiveStatus` for rendering the "stream is stale" banner.
 
 This pattern already serves `/live/sandboxes` and `/live/sandboxes/{name}` — both backed by an
-in-process Kubernetes watch (`LiveIndex`) plus the trajectory store's own `Changes`.
+in-process Kubernetes watch (`LiveIndex`) plus the thread store's own `Changes`.
 
 **The Action Service's `/actions/stream`** is a second, hand-rolled implementation of the same
 idea, not built on the above:

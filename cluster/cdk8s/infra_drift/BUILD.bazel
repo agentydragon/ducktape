@@ -3,13 +3,19 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
+    name = "drift_watch",
+    srcs = ["drift_watch.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/crd_bindings/flux:gitrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/crd_bindings/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )

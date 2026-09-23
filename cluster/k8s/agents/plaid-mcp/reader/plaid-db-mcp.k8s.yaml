@@ -1,0 +1,252 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plaid-db-mcp-config
+  namespace: plaid-mcp
+data:
+  MCP_FACADE_AUTH__OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-db-mcp/
+  MCP_FACADE_AUTH__PUBLIC_BASE_URL: https://plaid-db.allegedly.works
+  MCP_FACADE_FACADE_NAME: Plaid DB MCP Facade
+  MCP_FACADE_PERSISTENCE__DB: "0"
+  MCP_FACADE_PERSISTENCE__HOST: plaid-valkey-kimsufi-master.plaid-mcp.svc.cluster.local
+  MCP_FACADE_PERSISTENCE__KIND: valkey
+  MCP_FACADE_UPSTREAM__KIND: http
+  MCP_FACADE_UPSTREAM__URL: http://localhost:8000/mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The upstream MCP uses Streamable HTTP and connects with the plaid_ro role.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: plaid-db-mcp
+  name: plaid-db-mcp
+  namespace: plaid-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-db-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-db-mcp
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --access-mode=restricted
+            - --transport=streamable-http
+            - --streamable-http-host=0.0.0.0
+            - --streamable-http-port=8000
+          env:
+            - name: AIRMAN_MCP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: DATABASE_URL
+                  name: plaid-mcp-db-readonly
+          image: enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            tcpSocket:
+              port: 8000
+          name: postgres-mcp
+          ports:
+            - containerPort: 8000
+              name: upstream
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: 8000
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+        - env:
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-db-mcp-oidc
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-db-mcp-oidc
+          envFrom:
+            - configMapRef:
+                name: plaid-db-mcp-config
+          image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: facade
+          ports:
+            - containerPort: 8765
+              name: http
+              protocol: TCP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: plaid-db-mcp
+  name: plaid-db-mcp
+  namespace: plaid-mcp
+spec:
+  ports:
+    - name: http
+      port: 8765
+      protocol: TCP
+      targetPort: http
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/name: plaid-db-mcp
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Authentik-gated Postgres MCP for querying the synced Plaid database through the read-only plaid_ro role.
+  name: plaid-db-mcp
+  namespace: plaid-mcp
+spec:
+  hostnames:
+    - plaid-db.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: plaid-db-mcp
+          port: 8765
+      timeouts:
+        backendRequest: 60s
+        request: 60s
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Default-deny ingress for plaid-db-mcp pods. Only Gateway ingress may reach the OAuth facade; postgres-mcp stays loopback-only.
+  name: plaid-db-mcp-ingress
+  namespace: plaid-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-db-mcp
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: Kimsufi Valkey for the Plaid DB MCP OAuth facade state
+  name: plaid-valkey-kimsufi
+  namespace: plaid-mcp
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: plaid-valkey-kimsufi
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: local-path-ovh

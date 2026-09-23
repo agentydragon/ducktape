@@ -28,7 +28,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
-_STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
 
 
 def secret_env(name: str, secret: str, key: str) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -55,8 +55,10 @@ def gitops_terraform(
     depends_on: Sequence[str] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
+    schema: str | None = None,
 ) -> TerraformV1Alpha2:
-    """`name` is the module directory under tf/gitops and, underscored, its state schema.
+    """`name` is the module directory under tf/gitops and, underscored, its state schema
+    unless `schema` names the one its state already lives in.
 
     `variables` values are written structurally into the runner's tfvars, so a nested
     map arrives as a Terraform map/object, not a string.
@@ -76,10 +78,10 @@ def gitops_terraform(
             approve_plan="auto",
             backend_config=TerraformV1Alpha2SpecBackendConfig(
                 custom_configuration=(
-                    f'backend "pg" {{\n  conn_str    = "{_STATE_DB}"\n  schema_name = "{name.replace("-", "_")}"\n}}\n'
+                    f'backend "pg" {{\n  conn_str    = "{STATE_DB}"\n  schema_name = "{schema or name.replace("-", "_")}"\n}}\n'
                 )
             ),
-            vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()],
+            vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()] or None,
             depends_on=[TerraformV1Alpha2SpecDependsOn(name=dep) for dep in depends_on] or None,
             runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
                 spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(

@@ -111,6 +111,7 @@ py_library(
         ":app_settings",
         ":container_security",
         ":database",
+        ":egress_credentials",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
@@ -234,6 +235,9 @@ py_library(
         "//agentplane/crds:actionpolicybinding",
         "//agentplane/crds:actionpolicyset",
         "//agentplane/crds:egressbinding",
+        "//agentplane/crds:egresspolicy",
+        "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:metadata",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -340,13 +344,16 @@ py_library(
         ":actions_staging_policies",
         ":chart",
         ":egress_credentials",
+        ":egress_staging_credentials",
         ":environment",
         ":generation",
         ":staging_config",
+        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -366,10 +373,13 @@ py_library(
         ":chart",
         ":dex",
         ":egress_credentials",
+        ":egress_testing_credentials",
         ":environment",
         ":generation",
         ":testing_config",
+        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -429,9 +439,36 @@ py_library(
     deps = [
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress_staging_credentials",
+    srcs = ["egress_staging_credentials.py"],
+    deps = [
+        ":app_settings",
+        ":egress",
+        ":egress_credentials",
+        "//agentplane/crds:egresscredential",
+        "//agentplane/crds:egresspolicy",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress_testing_credentials",
+    srcs = ["egress_testing_credentials.py"],
+    deps = [
+        ":egress_credentials",
+        "//cluster/cdk8s:metadata",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -444,6 +481,36 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":egress_credentials",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_staging_credentials",
+    # Imports egress.py, and with it the agentplane egress service's Settings and runtime modules.
+    size = "medium",
+    srcs = ["test_egress_staging_credentials.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":egress_credentials",
+        ":egress_staging_credentials",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_testing_credentials",
+    srcs = ["test_egress_testing_credentials.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":egress_credentials",
+        ":egress_testing_credentials",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",

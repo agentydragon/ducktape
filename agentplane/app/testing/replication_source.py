@@ -112,7 +112,7 @@ class ReplicationSource:
         )
 
     @asynccontextmanager
-    async def serve(self) -> AsyncIterator[str]:
+    async def serve(self) -> AsyncIterator[int]:
         server = grpc.aio.server()
         server.add_generic_rpc_handlers(
             [
@@ -136,6 +136,6 @@ class ReplicationSource:
         port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         try:
-            yield f"127.0.0.1:{port}"
+            yield port
         finally:
             await server.stop(0)

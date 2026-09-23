@@ -77,8 +77,7 @@ zone or the local zone from "designed" to "built."
 (`grocy-mcp-sf`/`grocy-mcp-vallejo`), scoped only by the _calling user's own_ Grocy
 permissions via Authentik identity passthrough (`mcp_infra/authentik_auth`) — there is no
 service-account/API-key path and no read-only-vs-read-write split at the tool level. That's
-the right shape for an operator-driven Haku session (or the haku-console `grocy-sf`
-OAuth-linked connector Haku already uses via approval-gated tool-calls), but it's the wrong
+the right shape for an operator-driven Haku session, but it's the wrong
 shape to hand directly to a low-trust dispatch-plane worker: the full tool surface includes
 `product_delete` (irreversible), arbitrary `entities_create/update/delete`, and no per-op
 allowlist.
@@ -168,6 +167,5 @@ alongside whatever workload becomes the second one, not in isolation for this on
 The canonical home for the shopping list itself is Grocy (operator's call, 2026-07-11) —
 `haku-state`'s `kitchen/board.yaml:shopping_list` is a stopgap mirror for the haku-ui
 Shopping tab until Grocy write permissions are sorted and/or this subagent exists. Once
-built, this subagent's output surfaces through the same approval/tool-call path Haku already
-uses for Grocy writes (`procedures/tool_calls.md` in haku-state) unless/until its own bounded
-write MCP is trusted enough to write directly.
+built, this subagent's output surfaces through an approval-gated tool-call path unless/until
+its own bounded write MCP is trusted enough to write directly.

@@ -1231,22 +1231,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: google-readonly
-  namespace: agentplane-testing
-spec:
-  description: A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same token Airlock's `google` provider mints for every consumer -- currently granted `gmail.readonly` and `calendar.readonly` (Airlock's own config additionally requests several other `.readonly` scopes not yet granted; check cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before assuming more than Gmail and Calendar work). The proxy does not narrow what the token itself may do -- `google-readonly`'s own rules are what restrict this credential to Gmail and Calendar hosts/paths.
-  source:
-    secretRef:
-      name: google-access-token
-      key: access_token
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: basic
@@ -1347,28 +1331,6 @@ spec:
         - POST
       credentialRef:
         name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: google-readonly
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - gmail.googleapis.com
-      methods:
-        - GET
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - www.googleapis.com
-      methods:
-        - GET
-      paths:
-        - /calendar/v3/**
-      credentialRef:
-        name: google-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -2245,7 +2207,6 @@ data:
     mcp_servers:
       example:
         server_id: example
-        provider: example
         server_url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
         client_id: agentplane-testing-mcp
         client_secret_file: /etc/agentplane-mcp/client-secret
@@ -3388,13 +3349,6 @@ metadata:
   name: agentplane-testing-egress-credentials
 spec: {}
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-creds-reader
-  namespace: agentplane-testing-egress-credentials
-automountServiceAccountToken: false
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -3424,6 +3378,13 @@ subjects:
     kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-testing
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-testing-egress-credentials
+automountServiceAccountToken: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

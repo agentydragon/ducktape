@@ -57,8 +57,8 @@
       "sha256": "dq/au70cvLJWUprRbK3Yv7YdIiFbWCA4wscyV+Nduz4="
     },
     "skill-flux_reconcile_audit": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-b8287de99c61/flux_reconcile_audit.skill",
-      "sha256": "uCh96Zxh74QF5cnTIolXCPyEjq21PGi+H1CQwPtKsjo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-75e9dd945374/flux_reconcile_audit.skill",
+      "sha256": "dendlFN09QQnfN8KK9aV34P3xw4OOItEEZQDfxmamOA="
     },
     "skill-hetzner_vnc_screenshot": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-hetzner_vnc_screenshot-5b3ad6fd0489/hetzner_vnc_screenshot.skill",
@@ -221,8 +221,8 @@
       "sha256": "/IsxZjpTyk1rtenQ7GomVQov2hzfQcKsIeDPh6p9qhg="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-87f6afbe4683/grafana.skill",
-      "sha256": "h/avvkaDIUFunaaQn/xSzEabkraZKQdqJnAOcQdYEAg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-fb1524744592/grafana.skill",
+      "sha256": "+xUkdEWSVlm84ucu/eek7kBIanZLTIMjp7PUYwW9awU="
     },
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-7b6ebfd5ec93/ducktape_claude_api-0.1.0-py3-none-any.whl",

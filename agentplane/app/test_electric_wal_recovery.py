@@ -14,9 +14,12 @@ import asyncpg
 import httpx
 import pytest_bazel
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import IngestionLease, TrajectoryStore
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -34,10 +37,11 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
             electric_storage_dir=Path(state_dir),
         ) as service:
-            store = TrajectoryStore.connect(service.database_url)
+            engine = connect(service.database_url)
+            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
             try:
-                thread, source, lease = await _project_initial_item(store)
-                params = {"table": "conversation_entity", "where": f"thread_id = '{thread}'"}
+                thread, source, lease = await _project_initial_item(event_logs, ingestion)
+                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
                 # Do not retain this client across service.stop()/start(): Docker can assign a
                 # different host port when it recreates the published listener.
                 async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
@@ -89,7 +93,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     source.append(
                         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh"))
                     )
-                    await store.record(thread, source.entries[-2:], lease=lease)
+                    await ingestion.record(thread, source.entries[-2:], lease=lease)
                 finally:
                     await connection.close()
 
@@ -126,10 +130,12 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     resnapshot.raise_for_status()
                     assert {row["entity_id"] for row in _values(resnapshot)} >= {"first", "during-outage"}
             finally:
-                await store.close()
+                await engine.dispose()
 
 
-async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
+async def _project_initial_item(
+    event_logs: EventLogStore, ingestion: Ingestion
+) -> tuple[UUID, ReplicationSource, IngestionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -137,11 +143,11 @@ async def _project_initial_item(store: TrajectoryStore) -> tuple[UUID, Replicati
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=2))
+    thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
     assert lease is not None
-    await store.set_attached(thread, source.attached, lease=lease)
-    await store.record(thread, source.entries, lease=lease)
+    await ingestion.set_attached(thread, source.attached, lease=lease)
+    await ingestion.record(thread, source.entries, lease=lease)
     return thread, source, lease
 
 

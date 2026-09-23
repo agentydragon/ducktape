@@ -1,0 +1,30 @@
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: haku-ui-forgejo
+  namespace: flux-system
+spec:
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: haku-ui
+      namespace: haku-sandbox
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: haku-anki
+      namespace: haku-sandbox
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageUpdateAutomation
+      name: haku-ui
+      namespace: haku-sandbox
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: haku-state
+      namespace: flux-system
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: haku-state-write
+      namespace: haku-sandbox
+  secretRef:
+    name: forgejo-webhook-token
+  type: generic

@@ -12,9 +12,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, dex, rbac, testing_config
@@ -27,6 +26,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -36,7 +36,8 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 
 _NAMESPACE = "agentplane-testing"
@@ -69,7 +70,6 @@ _ACTIONS_SETTINGS = {
     "mcp_servers": {
         "example": {
             "server_id": "example",
-            "provider": "example",
             "server_url": _OAUTH_FIXTURE_MCP_URL,
             "client_id": "agentplane-testing-mcp",
             "client_secret_file": "/etc/agentplane-mcp/client-secret",
@@ -119,16 +119,11 @@ ENV = Environment(
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
-    include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(
-        ca_secret_name="agentplane-testing-egress-ca",
-        credentials_namespace=TESTING_NAMESPACE,
-        include_forgejo_credential=False,
-    ),
+    egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
@@ -153,17 +148,15 @@ def chart(app: App) -> Chart:
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(
-        chart,
-        "egress-credentials",
-        namespace=ENV.egress.credentials_namespace,
-        proxy_namespace=ENV.namespace,
-        include_forgejo=ENV.egress.include_forgejo_credential,
+        chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
     )
+    add_testing_egress_credentials(chart, credentials_namespace=ENV.egress.credentials_namespace)
     return chart
 
 
 def agentplane_testing(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
@@ -181,7 +174,7 @@ def agentplane_testing(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path=f"./cluster/k8s/{ENV.namespace}",
+            path=artifact_path(artifact),
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
@@ -193,9 +186,7 @@ def agentplane_testing(
                 )
             ],
             decryption=sops_decryption(ENV.extra_resources),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 agentplane_crds,
                 agent_sandbox_controller,

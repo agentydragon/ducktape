@@ -6,6 +6,7 @@ fetch, EventSource, rendering, and page reload are not replaced by the visual ha
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
@@ -26,23 +27,25 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.models import (
+    FeedState,
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadChunk,
+    ThreadPayloadManifest,
+)
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.trajectory import (
-    ConversationEntity,
-    ConversationFeedErrorState,
-    ConversationOperationalState,
-    ConversationPayloadChunk,
-    ConversationPayloadManifest,
-    ConversationProjectionCheckpoint,
-    ConversationProjectionEvidence,
-    ConversationProjectionNativeLink,
-    ConversationViewState,
-    FeedState,
-    TrajectoryStore,
-)
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -87,7 +90,9 @@ async def page(
 class ThreadBrowser:
     page: Page
     source: ReplicationSource
-    store: TrajectoryStore
+    store: ThreadStore
+    event_logs: EventLogStore
+    content: ContentStore
     opened: Opened
     app: AppProcess
     browser_url: str
@@ -134,55 +139,57 @@ def thread_source() -> ReplicationSource:
 async def thread_browser(
     page: Page,
     db_url: str,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
     thread_source: ReplicationSource,
     replay_after: int | None,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
-    thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
-        source.serve() as target,
+        source.serve() as runner_port,
         app_process(
-            db_url, target, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
+            db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{ingress}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, opened, app, ingress)
+        yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
-    thread_id = await store.thread(SANDBOX, SESSION, thread_source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    thread_id = await event_logs.open(SANDBOX, SESSION, thread_source.attached.spec)
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
-    await store.set_attached(thread_id, thread_source.attached, lease=lease)
-    await store.record(thread_id, thread_source.entries, lease=lease)
-    await store.rename(thread_id, "Test archived conversation")
-    await store.release_ingestion(lease)
+    await ingestion.set_attached(thread_id, thread_source.attached, lease=lease)
+    await ingestion.record(thread_id, thread_source.entries, lease=lease)
+    await store.rename(thread_id, "Test archived thread")
+    await ingestion.release(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         url = f"{ingress}/#/threads/{thread_id}"
         await page.goto(url)
-        await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
-            "Test archived conversation"
-        )
+        await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Test archived thread")
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect(
             page.get_by_text(
@@ -202,13 +209,19 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        assert await store.events(thread_id, limit=100) == thread_source.entries
+        assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
 async def test_switching_threads_starts_at_each_threads_tail(
-    page: Page, db_url: str, store: TrajectoryStore, electric: ElectricService, certificate: BrowserCertificate
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
 ) -> None:
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
     threads: list[str] = []
     for number in range(2):
@@ -228,21 +241,21 @@ async def test_switching_threads_starts_at_each_threads_tail(
                     item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
                 )
             )
-        thread = await store.thread(SANDBOX, source.attached.session_id, source.attached.spec)
-        await store.set_attached(thread, source.attached, lease=lease)
-        await store.record(thread, source.entries, lease=lease)
+        thread = await event_logs.open(SANDBOX, source.attached.session_id, source.attached.spec)
+        await ingestion.set_attached(thread, source.attached, lease=lease)
+        await ingestion.record(thread, source.entries, lease=lease)
         await store.rename(thread, f"Test navigation thread {number}")
         threads.append(str(thread))
-    await store.release_ingestion(lease)
+    await ingestion.release(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress}/#/threads/{threads[0]}")
-        await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
+        await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
         async with page.expect_request(lambda request: "/sync/interest?before_cursor=" in request.url):
             await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
@@ -253,16 +266,16 @@ async def test_switching_threads_starts_at_each_threads_tail(
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
-            await expect(page.locator('[data-conversation-anchor="161"]')).to_be_visible()
+            await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
             await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
-        await page.screenshot(path=undeclared_outputs_dir() / "conversation-thread-navigation.png")
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
     thread_browser: ThreadBrowser,
 ) -> None:
     page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread = await thread_browser.event_logs.open(SANDBOX, SESSION, source.attached.spec)
     thread_browser.opened.replay.set()
     await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -288,9 +301,9 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         finally:
             finished.set()
 
-    await page.route("**/conversation/evidence?*", hold_old_evidence)
+    await page.route("**/evidence?*", hold_old_evidence)
     try:
-        await page.locator('[data-conversation-anchor="3"] summary', has_text="Evidence").click()
+        await page.locator('[data-thread-anchor="3"] summary', has_text="Evidence").click()
         async with asyncio.timeout(15):
             await ready.wait()
 
@@ -298,7 +311,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         # This touches only the disposable test database; the live app and Electric
         # must detect replacement without a page reload or a custom client reset.
         async with store._sessions() as session, session.begin():
-            rows = list(await session.scalars(select(ConversationEntity).where(ConversationEntity.thread_id == thread)))
+            rows = list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
             for row in rows:
                 row.projection_epoch = "test-rebuilt-epoch"
                 row.text_ref = rebuilt_reference(row.text_ref)
@@ -306,38 +319,35 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
                 row.output_ref = rebuilt_reference(row.output_ref)
                 row.input_ref = rebuilt_reference(row.input_ref)
             for model in (
-                ConversationProjectionCheckpoint,
-                ConversationPayloadManifest,
-                ConversationPayloadChunk,
-                ConversationProjectionEvidence,
-                ConversationProjectionNativeLink,
+                ThreadCheckpoint,
+                ThreadPayloadManifest,
+                ThreadPayloadChunk,
+                ThreadEvidence,
+                ThreadNativeLink,
             ):
                 await session.execute(
                     update(model).where(model.thread_id == thread).values(projection_epoch="test-rebuilt-epoch")
                 )
             await session.execute(
-                update(ConversationPayloadChunk)
-                .where(
-                    ConversationPayloadChunk.thread_id == thread,
-                    ConversationPayloadChunk.owner_id == "test-browser-item",
-                )
+                update(ThreadPayloadChunk)
+                .where(ThreadPayloadChunk.thread_id == thread, ThreadPayloadChunk.owner_id == "test-browser-item")
                 .values(text="Test replaced prefix")
             )
 
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible(timeout=20_000)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
         await expect(draft).to_have_value("Draft survives projection replacement")
-        await expect(page.locator('[data-conversation-anchor="3"] details[open]')).to_have_count(0)
+        await expect(page.locator('[data-thread-anchor="3"] details[open]')).to_have_count(0)
         release.set()
         async with asyncio.timeout(15):
             await finished.wait()
-        await expect(page.locator('[data-conversation-anchor="3"] details[open]')).to_have_count(0)
+        await expect(page.locator('[data-thread-anchor="3"] details[open]')).to_have_count(0)
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible()
 
         stale = await page.request.get(
             f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
             params={
-                **{key: old_interest[key] for key in ("source_id", "projection_epoch", "anchor_cursor", "tail_from")},
+                **{key: old_interest[key] for key in ("projection_epoch", "anchor_cursor", "tail_from")},
                 "offset": "now",
             },
         )
@@ -348,7 +358,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         if ready.is_set():
             async with asyncio.timeout(15):
                 await finished.wait()
-        await page.unroute("**/conversation/evidence?*", hold_old_evidence)
+        await page.unroute("**/evidence?*", hold_old_evidence)
 
 
 async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
@@ -395,13 +405,14 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page.on("request", lambda request: requests.append(request.url))
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with electric_service() as service:
-        store = TrajectoryStore.connect(service.database_url)
+        engine = connect(service.database_url)
+        event_logs, content = EventLogStore(engine), ContentStore(engine)
         try:
-            thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             async with (
-                source.serve() as target,
+                source.serve() as runner_port,
                 app_process(
-                    service.database_url, target, frontend_directory=directory, electric_url=service.url
+                    service.database_url, runner_port, frontend_directory=directory, electric_url=service.url
                 ) as app,
                 http2_proxy(app.url, certificate) as ingress,
                 asyncio.timeout(60),
@@ -424,8 +435,8 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
                 ).to_be_visible()
-                assert not any("/conversation/evidence" in url for url in requests)
-                first_card = page.locator(f'[data-conversation-anchor="{first.cursor}"]')
+                assert not any("/evidence" in url for url in requests)
+                first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
                 await first_card.locator("summary", has_text="Evidence").click()
                 frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
                 await expect(frame_summary).to_be_visible()
@@ -441,7 +452,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
                 await first_card.locator("summary", has_text="Evidence").click()
-                tool_card = page.locator(f'[data-conversation-anchor="{tool.cursor}"]')
+                tool_card = page.locator(f'[data-thread-anchor="{tool.cursor}"]')
                 await tool_card.locator("summary", has_text="Arguments").click()
                 await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
@@ -465,10 +476,10 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 )
                 await tool_card.locator("summary", has_text="Output").click()
                 await expect(tool_card.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_card = page.locator(f'[data-conversation-anchor="{reasoning.cursor}"]')
+                reasoning_card = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
                 await reasoning_card.locator("summary", has_text="Reasoning").click()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_be_visible()
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-expanded.png")
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 
                 await page.reload()
                 await expect(
@@ -479,12 +490,12 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                     """() => performance.getEntriesByType('resource').some(
                         entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
                 )
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reloaded.png")
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
                 await page.context.set_offline(True)
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
                     while True:
-                        scope = await store.current_conversation_scope(thread)
+                        scope = await content.current_scope(thread)
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
@@ -495,13 +506,13 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
                 ).to_have_count(1)
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-conversation-reconnected.png")
+                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
         finally:
-            await store.close()
+            await engine.dispose()
 
 
 @pytest.mark.parametrize("phone", [False, True])
-async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
+async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     thread_browser: ThreadBrowser, phone: bool
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -520,19 +531,23 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
     await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives debug inspection")
-    assert not any("/conversation/observations" in url for url in requests)
+    assert not any("/observations" in url for url in requests)
     await page.get_by_role("button", name="Debug history", exact=True).click()
     dialog = page.get_by_role("dialog", name="Chronological debug")
     observations = dialog.locator("[data-debug-observation]")
     await expect(observations).to_have_count(30)
     await expect(observations.first).to_have_attribute("data-debug-observation", str(last.cursor - 29))
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
+    # The listing carries identity only: a page of 30 raw entries is what used to make opening this
+    # drawer wait on its own transfer and parse, and none of them is what the reader asked to see.
     assert await dialog.locator("pre").count() == 0
+    assert not any(re.search(r"/observations/\d+", url) for url in requests)
     for entry in (source.entries[-4], stderr, checkpoint, last):
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
         await record.locator("summary").click()
         await expect(record.locator("pre")).to_be_visible()
         assert json_format.Parse(await record.locator("pre").inner_text(), event_log_pb2.EventEntry()) == entry
+        assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
     await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)
@@ -547,13 +562,11 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
 
     # Follow the exact semantic observation back into the original archive, including packets
     # that have no item association. The context query ends at the selected observation.
-    card = page.locator('[data-conversation-anchor="3"]')
+    card = page.locator('[data-thread-anchor="3"]')
     await card.locator("summary", has_text="Evidence").click()
     await card.get_by_role("button", name="Inspect chronological context").first.click()
     await expect(observations.last).to_have_attribute("data-debug-observation", "3")
-    assert parse_qs(urlsplit([url for url in requests if "/conversation/observations" in url][-1]).query)[
-        "before_cursor"
-    ] == ["4"]
+    assert parse_qs(urlsplit([url for url in requests if "/observations" in url][-1]).query)["before_cursor"] == ["4"]
     await dialog.get_by_role("button", name="Latest observations", exact=True).click()
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
     await page.keyboard.press("Escape")
@@ -562,7 +575,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
     await expect(card.locator("details").first).to_have_attribute("open", "")
 
     # Closing the drawer cancels an in-flight real archive response. A response released
-    # afterwards must not repopulate the closed view or disturb the conversation draft.
+    # afterwards must not repopulate the closed view or disturb the thread draft.
     response_ready = asyncio.Event()
     release_response = asyncio.Event()
     response_finished = asyncio.Event()
@@ -576,14 +589,12 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
         finally:
             response_finished.set()
 
-    await page.route("**/conversation/observations?*", hold_debug_response)
+    await page.route("**/observations?*", hold_debug_response)
     try:
         await page.get_by_role("button", name="Debug history", exact=True).click()
         async with asyncio.timeout(10):
             await response_ready.wait()
-        async with page.expect_event(
-            "requestfailed", predicate=lambda request: "/conversation/observations" in request.url
-        ):
+        async with page.expect_event("requestfailed", predicate=lambda request: "/observations" in request.url):
             await page.keyboard.press("Escape")
             release_response.set()
         async with asyncio.timeout(10):
@@ -593,10 +604,10 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_conversation(
         await expect(draft).to_have_value("Draft survives debug inspection")
     finally:
         release_response.set()
-        await page.unroute("**/conversation/observations?*", hold_debug_response)
+        await page.unroute("**/observations?*", hold_debug_response)
 
 
-async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
+async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -622,7 +633,7 @@ async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
@@ -646,7 +657,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
 
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
 @pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
-async def test_conversation_follows_bottom_until_reader_scrolls_up(
+async def test_thread_follows_bottom_until_reader_scrolls_up(
     thread_browser: ThreadBrowser, raw: bool, phone: bool, request: pytest.FixtureRequest
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -702,23 +713,33 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
     await history.hover()
+    # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
+    # still load and be re-measured after it, and the scroll correction for a re-measure lands a
+    # frame after its commit. Sample that same position once two consecutive frames agree.
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
     await page.mouse.wheel(0, -600)
-    await page.wait_for_function(
-        """() => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            return area.scrollHeight - area.clientHeight - area.scrollTop > 400;
-        }"""
-    )
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_anchor = await history.evaluate(
-        """area => {
-            const top = area.getBoundingClientRect().top;
-            const item = [...area.querySelectorAll('[data-conversation-anchor]')].find(
-                item => item.getBoundingClientRect().bottom > top
-            );
-            return {cursor: item.dataset.conversationAnchor, offset: item.getBoundingClientRect().top - top};
-        }"""
-    )
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+        reading_anchor = await history.evaluate(
+            """area => new Promise(resolve => {
+                const sample = () => {
+                    const top = area.getBoundingClientRect().top;
+                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                        item => item.getBoundingClientRect().bottom > top
+                    );
+                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
+                };
+                const settle = previous => requestAnimationFrame(() => {
+                    const current = sample();
+                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
+                    else settle(current);
+                });
+                requestAnimationFrame(() => settle(sample()));
+            })"""
+        )
+    await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -785,7 +806,7 @@ async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> N
         await page.wait_for_function(
             """anchor => {
             const area = document.querySelector('[aria-label="Thread history"]');
-            const item = area.querySelector(`[data-conversation-anchor="${anchor.cursor}"]`);
+            const item = area.querySelector(`[data-thread-anchor="${anchor.cursor}"]`);
             return item !== null && Math.abs(
                 item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
             ) <= 2;
@@ -803,8 +824,8 @@ async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> N
                     scrollHeight: area.scrollHeight,
                     viewportHeight: area.clientHeight,
                     viewportWidth: area.clientWidth,
-                    rows: [...area.querySelectorAll('[data-conversation-anchor]')].map(item => ({
-                        cursor: item.dataset.conversationAnchor,
+                    rows: [...area.querySelectorAll('[data-thread-anchor]')].map(item => ({
+                        cursor: item.dataset.threadAnchor,
                         offset: item.getBoundingClientRect().top - top,
                         height: item.getBoundingClientRect().height,
                     })),
@@ -903,7 +924,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
-        lifecycle = page.locator(f'[data-conversation-anchor="{failed.cursor}"]')
+        lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
         await lifecycle.locator("summary", has_text="Evidence").click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
@@ -956,7 +977,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
     assert source.commands.empty()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    archived = await thread_browser.store.events(thread.id, limit=100)
+    archived = await thread_browser.event_logs.events(thread.id, limit=100)
     assert archived == source.entries
     assert [entry.event.command_admitted.command for entry in archived if entry.event.HasField("command_admitted")] == [
         command,
@@ -1062,7 +1083,7 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     assert command.submit_input.text == "Test input retained across an unsent request"
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
     await page.reload()
     await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
@@ -1080,7 +1101,7 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
-        for entry in await thread_browser.store.events(thread.id, limit=100)
+        for entry in await thread_browser.event_logs.events(thread.id, limit=100)
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
@@ -1118,7 +1139,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert admission in await thread_browser.store.events(thread.id, limit=100)
+        assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
         await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
 
@@ -1140,7 +1161,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 
 async def expand_item_evidence(page: Page) -> None:
-    await page.locator('[data-conversation-anchor="3"]').locator("summary", has_text="Evidence").click()
+    await page.locator('[data-thread-anchor="3"]').locator("summary", has_text="Evidence").click()
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1170,7 +1191,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         assert admission.event.command_admitted.command == command
         assert admission == source.entries[4]
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
@@ -1187,7 +1208,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
-        await expect(page.get_by_text("Catching up conversation…", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
         assert source.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
@@ -1209,7 +1230,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         )
         await expect(pending).to_have_count(0)
         assert source.commands.empty(), "reload/replay must not automatically send the Command again"
-        archived = await thread_browser.store.events(thread.id, limit=100)
+        archived = await thread_browser.event_logs.events(thread.id, limit=100)
         assert archived == source.entries
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
@@ -1239,7 +1260,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     assert admission.event.command_admitted.command == command
     assert admission == source.entries[6]
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
     pending = page.get_by_role("region", name="Pending commands")
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
@@ -1265,7 +1286,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1347,7 +1368,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert len(submissions) == 1
         assert source.commands.empty()
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
     finally:
         drop_reply.set()
         await page.unroute_all(behavior="wait")
@@ -1404,15 +1425,15 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
         await page.unroute("**/sync/commands?*", terminal_shape_error)
 
 
-async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
+async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
-    await expect(page.get_by_role("status")).to_have_text("Loading conversation…")
+    await expect(page.get_by_role("status")).to_have_text("Loading thread…")
     await expect(page.locator('[aria-label="Model"]:enabled')).to_have_count(0)
     await expect(page.locator("textarea:enabled")).to_have_count(0)
     await expect(page.locator('[aria-label="Interrupt"]:enabled')).to_have_count(0)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.last_cursor(thread.id) == 0
+    assert await thread_browser.event_logs.last_cursor(thread.id) == 0
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1421,7 +1442,7 @@ async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_br
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
-    assert await thread_browser.store.events(thread.id, limit=100) == thread_browser.source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
 
 @pytest.mark.parametrize(
@@ -1454,7 +1475,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
 
 async def test_unknown_projection_failure_keeps_verified_history_and_stops_browser(
@@ -1471,24 +1492,19 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
     (thread,) = await store.list_threads(sandbox=SANDBOX)
     async with store._sessions() as session, session.begin():
-        checkpoint = await session.get(ConversationProjectionCheckpoint, thread.id)
+        checkpoint = await session.get(ThreadCheckpoint, thread.id)
         assert checkpoint is not None
-        view = await session.get(
-            ConversationEntity, (thread.id, checkpoint.source_id, checkpoint.projection_epoch, "view_state", "current")
-        )
+        view = await session.get(ThreadEntity, (thread.id, checkpoint.projection_epoch, "view_state", "current"))
         assert view is not None
         feed = await session.get(FeedState, thread.id)
         assert feed is not None
-        state = ConversationViewState.model_validate(view.state)
+        state = ThreadViewState.model_validate(view.state)
         view.state = state.model_copy(
             update={
-                "operational": ConversationOperationalState(
-                    operational_version=str(int(state.operational.operational_version) + 1),
+                "operational": ThreadOperationalState(
                     status="failed",
                     last_verified_cursor=str(checkpoint.through_cursor),
-                    feed_error=ConversationFeedErrorState(
-                        cursor=None, message="batch-wide projection invariant failed"
-                    ),
+                    feed_error=ThreadFeedErrorState(cursor=None, message="batch-wide projection invariant failed"),
                 )
             }
         ).model_dump(mode="json")
@@ -1513,7 +1529,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
     await expect(composer).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
-    assert await store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 if __name__ == "__main__":

@@ -1250,21 +1250,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
-  source:
-    secretRef:
-      name: haku-forgejo-git
-      key: password
-  targets:
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
@@ -1272,22 +1257,6 @@ spec:
   source:
     projectedWorkloadToken:
       audience: https://localhost:7445
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  description: A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO. It is the same token Airlock's `google` provider mints for every consumer -- currently granted `gmail.readonly` and `calendar.readonly` (Airlock's own config additionally requests several other `.readonly` scopes not yet granted; check cluster/k8s/agents/airlock/config.yaml and the token's actual granted scope before assuming more than Gmail and Calendar work). The proxy does not narrow what the token itself may do -- `google-readonly`'s own rules are what restrict this credential to Gmail and Calendar hosts/paths.
-  source:
-    secretRef:
-      name: google-access-token
-      key: access_token
   targets:
     - header: Authorization
       method: schemeToken
@@ -1351,19 +1320,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
   name: packages
   namespace: agentplane-staging
 spec:
@@ -1407,28 +1363,6 @@ spec:
         - POST
       credentialRef:
         name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - gmail.googleapis.com
-      methods:
-        - GET
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - www.googleapis.com
-      methods:
-        - GET
-      paths:
-        - /calendar/v3/**
-      credentialRef:
-        name: google-readonly
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -2338,16 +2272,19 @@ data:
     mcp_servers:
       github:
         server_id: github
-        provider: github
         server_url: https://api.githubcopilot.com/mcp/
         client_id: configured-by-secret
         client_secret_file: /etc/agentplane-github/client_secret
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
       kubernetes:
         server_id: kubernetes
-        provider: kubernetes
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+      grocy_sf:
+        server_id: grocy_sf
+        server_url: https://grocy-mcp-sf.allegedly.works/mcp
+        client_id: cb57e244-c13c-4eac-a299-e052698b774e
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
     action_groups:
       github:
@@ -2371,6 +2308,17 @@ data:
             transport: streamable-http
             url: https://kubectl-passthrough-mcp.allegedly.works/mcp
             server_id: kubernetes
+            auth: oauth
+      grocy_sf:
+        title: Grocy SF MCP
+        description: Grocy SF household MCP tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Grocy SF MCP executed with the linked operator Grocy account.
+          config:
+            transport: streamable-http
+            url: https://grocy-mcp-sf.allegedly.works/mcp
+            server_id: grocy_sf
             auth: oauth
       sandbox:
         title: Sandbox
@@ -2402,7 +2350,7 @@ data:
         description: Home Assistant tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Home Assistant MCP backend (ha-mcp), the same one haku-console uses.
+          description: Standalone Home Assistant MCP backend (ha-mcp).
           config:
             transport: streamable-http
             url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
@@ -2413,12 +2361,34 @@ data:
         description: Tana read/write tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.
+          description: Standalone Tana MCP backend (tana-mcp).
           config:
             transport: streamable-http
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
             auth: static_bearer
             bearer_file: /run/secrets/tana-mcp/bearer-token
+      gmail:
+        title: Gmail
+        description: Gmail read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
+      google_calendar:
+        title: Google Calendar
+        description: Google Calendar read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2426,7 +2396,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2568,6 +2538,9 @@ spec:
             - mountPath: /run/secrets/tana-mcp
               name: secret-tana-agentydragon-gmail-com-account-pat
               readOnly: true
+            - mountPath: /run/secrets/google-mcp
+              name: secret-google-mcp-bearer
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2689,6 +2662,12 @@ spec:
                 path: bearer-token
             optional: true
             secretName: tana-agentydragon-gmail-com-account-pat
+        - name: secret-google-mcp-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: google-mcp-bearer
 ---
 apiVersion: v1
 kind: Service
@@ -2829,6 +2808,14 @@ spec:
         - ports:
             - port: "8263"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: google-mcp
+            k8s:io.kubernetes.pod.namespace: google-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEntities:
         - remote-node
         - host
@@ -2865,6 +2852,15 @@ spec:
               protocol: TCP
           serverNames:
             - kubectl-passthrough-mcp.allegedly.works
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - grocy-mcp-sf.allegedly.works
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/component: server
@@ -2943,6 +2939,28 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: tana-agentydragon-gmail-com-account-pat
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of google-mcp's own caller-facing bearer.
+  name: google-mcp-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: google-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-google-mcp-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: google-mcp-bearer
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -3211,6 +3229,74 @@ spec:
           - search_pull_requests
           - search_code
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.
+  name: coinbase-api-credentials
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_key
+      secretKey: api_key
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_secret
+      secretKey: api_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: coinbase-api-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-ai-coinbase-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - coinbase-api-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-coinbase-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-ai-coinbase-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: coinbase
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.coinbase.com
+      methods:
+        - GET
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressBinding
 metadata:
@@ -3228,6 +3314,8 @@ spec:
     - forgejo-haku
     - packages
     - google-readonly
+    - grocy-sf-readonly
+    - coinbase
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3291,10 +3379,68 @@ spec:
           - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
+  name: gmail-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        gmail:
+          - drafts_get
+          - drafts_list
+          - filters_get
+          - filters_list
+          - labels_get
+          - labels_list
+          - messages_get
+          - threads_get
+          - threads_list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
+  name: google-calendar-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        google_calendar:
+          - get_event
+          - list_event_instances
+          - list_events
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
+  name: tana-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        tana:
+          - get_children
+          - get_or_create_calendar_node
+          - get_tag_schema
+          - list_tags
+          - list_workspaces
+          - read_node
+          - search_nodes
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-reads
   namespace: agentplane-staging
 spec:
@@ -3306,6 +3452,9 @@ spec:
     - github-identity-reads
     - sandbox-self
     - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
 ---
 apiVersion: v1
 kind: Namespace
@@ -3314,13 +3463,6 @@ metadata:
     description: Outbound credentials readable only by the agentplane-staging egress proxy.
   name: agentplane-staging-egress-credentials
 spec: {}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-creds-reader
-  namespace: agentplane-staging-egress-credentials
-automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -3351,6 +3493,33 @@ subjects:
     kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging-egress-credentials
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agentplane-github-pat
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: agentplane-github-pat
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -3406,26 +3575,6 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: agentplane-github-pat
-  namespace: agentplane-staging-egress-credentials
-spec:
-  data:
-    - remoteRef:
-        key: github-agentydragon-agent
-        property: token
-      secretKey: token
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-external-creds-secret-store
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: agentplane-github-pat
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
   name: haku-forgejo-git
   namespace: agentplane-staging-egress-credentials
 spec:
@@ -3442,3 +3591,192 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: haku-forgejo-git
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
+  source:
+    secretRef:
+      name: haku-forgejo-git
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - forgejo-http.forgejo.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
+  source:
+    secretRef:
+      name: google-access-token
+      key: access_token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - gmail.googleapis.com
+        - tasks.googleapis.com
+        - people.googleapis.com
+        - docs.googleapis.com
+        - sheets.googleapis.com
+        - slides.googleapis.com
+        - youtube.googleapis.com
+      methods:
+        - GET
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - www.googleapis.com
+      methods:
+        - GET
+      paths:
+        - /calendar/v3/**
+        - /drive/v3/**
+        - /youtube/v3/**
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - driveactivity.googleapis.com
+      methods:
+        - POST
+      paths:
+        - /v2/activity:query
+      credentialRef:
+        name: google-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-egress-grocy-sf-reader
+  namespace: agents-infra
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-grocy-sf-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-egress-grocy-sf-reader
+  namespace: agents-infra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-egress-grocy-sf-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-grocy-sf-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: agents-infra
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: agentplane-grocy-sf-readonly
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-grocy-sf-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: grocy-sf-readonly
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the password only on GETs to Grocy's read routes.
+  source:
+    secretRef:
+      name: grocy-sf-readonly
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - grocy-sf.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/objects/**
+        - /api/stock/**
+        - /api/user
+        - /api/system/info
+        - /api/system/db-changed-time
+        - /api/files/**
+      credentialRef:
+        name: grocy-sf-readonly

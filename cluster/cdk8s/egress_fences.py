@@ -1,7 +1,7 @@
 """The FQDN fences on the agent egress proxies: one CiliumNetworkPolicy per proxy Pod naming
 what it may resolve and connect to on the public internet, each in its own chart so the
-committed file keeps the name its hand-written predecessor had. The directories around them
-(`cluster/k8s/agents/{haku-egress-proxy,mitmproxy}`) stay hand-written.
+committed file keeps the name its hand-written predecessor had. `agents/mitmproxy` is written
+by `mitmproxy.py`.
 
 A fence bounds the proxy Pod, not the sandboxes behind it, whose force-proxy
 CiliumClusterwideNetworkPolicies admit kube-dns as a plain L4 rule. In-cluster traffic is not
@@ -47,12 +47,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
         # oci-cache README "Phase 2").
         "ghcr.io",
         "pkg-containers.githubusercontent.com",
-        "gmail.googleapis.com",
-        "www.googleapis.com",
-        # Google Tasks API -- Haku reads the operator's task list. www.googleapis.com covers
-        # Calendar/Drive; Tasks is on its own host. (A 403 here is a token-scope gap, not this
-        # allowlist -- but the host must still be reachable once the scope is granted.)
-        "tasks.googleapis.com",
         # Claude Agent SDK smoke/runtime telemetry. The sandbox CLI subprocess removes
         # *.allegedly.works from its inherited NO_PROXY so this public Authentik-gated endpoint
         # stays behind the forced proxy.
@@ -227,7 +221,7 @@ def _fence(
 
 def haku_cloud_api(app: App) -> Chart:
     """The haku-egress-proxy fence. Plaid Postgres is reached cluster-internally, not through
-    this proxy: the `cluster` rule of ccnp-haku-proxy-egress.yaml."""
+    this proxy: the `cluster` rule of haku_egress_proxy.py's haku-sandbox-force-proxy-egress."""
     return _fence(
         app,
         "cnp-haku-cloud-api-egress",
@@ -317,4 +311,3 @@ def mitmproxy_cloud_api(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, "cluster/k8s/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike)
-    write_charts(root, "cluster/k8s/agents/mitmproxy", mitmproxy_cloud_api)

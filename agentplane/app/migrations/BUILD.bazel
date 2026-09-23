@@ -10,6 +10,12 @@ filegroup(
         "//agentplane/app/migrations/versions:0003_thread_harness.py",
         "//agentplane/app/migrations/versions:0004_followable_event_entries.py",
         "//agentplane/app/migrations/versions:0005_conversation_projection_storage.py",
+        "//agentplane/app/migrations/versions:0006_thread_fold_rename.py",
+        "//agentplane/app/migrations/versions:0007_event_origin_sequence.py",
+        "//agentplane/app/migrations/versions:0008_thread_scope_source_id.py",
+        "//agentplane/app/migrations/versions:0009_thread_entity_index.py",
+        "//agentplane/app/migrations/versions:0010_drop_unread_fold_state.py",
+        "//agentplane/app/migrations/versions:0011_event_log_identity.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )
@@ -19,7 +25,6 @@ py_library(
     srcs = ["env.py"],
     deps = [
         "//agentplane/app:database_migrate",
-        "//agentplane/app:trajectory",
         "@pypi//alembic",
     ],
 )

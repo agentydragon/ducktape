@@ -1,9 +1,10 @@
-"""Authenticated, server-scoped access to bounded Electric conversation shapes."""
+"""Authenticated, server-scoped access to bounded Electric thread shapes."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+import logging
+import time
 from typing import Annotated
 from uuid import UUID
 
@@ -14,20 +15,23 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.trajectory import (
-    ConversationEntityInterest,
-    ConversationInterestExpiredError,
-    ConversationPayloadSelection,
-    ConversationScope,
+from agentplane.app.agent_runtime.view.content import (
+    ContentStore,
+    ThreadEntityInterest,
+    ThreadInterestExpiredError,
+    ThreadPayloadSelection,
 )
+from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind
+
+logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 30
-_SEGMENT_KINDS = "'item','confirmed_input','lifecycle'"
+_SEGMENT_KINDS = ",".join(f"'{kind}'" for kind in SEGMENT_KINDS)
 _ENTITY_COLUMNS = (
-    "thread_id,source_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,pending,turn_id,state,"
+    "thread_id,projection_epoch,entity_kind,entity_id,cursor,revision_cursor,pending,turn_id,state,"
     "text_ref,arguments_ref,output_ref,input_ref"
 )
-_CHUNK_COLUMNS = "thread_id,source_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
+_CHUNK_COLUMNS = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 _PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log"})
 _SUBSET_QUERY = frozenset({"subset__where", "subset__params"})
 _INTEREST_QUERY = frozenset(
@@ -36,7 +40,6 @@ _INTEREST_QUERY = frozenset(
         "tail_from",
         "window_from",
         "window_before",
-        "source_id",
         "projection_epoch",
         "owner_cursor",
         "owner_id",
@@ -66,13 +69,8 @@ _RESPONSE_HEADERS = frozenset(
     }
 )
 
-EntityInterestResolver = Callable[[UUID, int | None, int | None, int], Awaitable[ConversationEntityInterest | None]]
-PayloadResolver = Callable[[UUID, int, str, str, int, int], Awaitable[ConversationPayloadSelection | None]]
-ScopeResolver = Callable[[UUID], Awaitable[ConversationScope | None]]
-
 
 class EntityInterestResponse(BaseModel):
-    source_id: str
     projection_epoch: str
     through_cursor: str
     anchor_cursor: str
@@ -82,14 +80,12 @@ class EntityInterestResponse(BaseModel):
 
 
 class PayloadInterestResponse(BaseModel):
-    source_id: str
     projection_epoch: str
     owner_cursor: str
     owner_id: str
     field: str
     generation: str
     revision_cursor: str
-    present: bool
     chunk_count: str
     content_bytes: str
 
@@ -110,72 +106,68 @@ class ElectricStreamingResponse(StreamingResponse):
 
 
 class ElectricProxy:
-    def __init__(
-        self,
-        client: httpx.AsyncClient,
-        resolve_entities: EntityInterestResolver,
-        resolve_payload: PayloadResolver,
-        resolve_scope: ScopeResolver,
-    ) -> None:
+    def __init__(self, client: httpx.AsyncClient, content: ContentStore) -> None:
         self._client = client
-        self._resolve_entities = resolve_entities
-        self._resolve_payload = resolve_payload
-        self._resolve_scope = resolve_scope
+        self._content = content
 
     async def commands(
-        self, request: Request, thread_id: UUID, source_id: str, projection_epoch: str, command_ids: list[str]
+        self, request: Request, thread_id: UUID, projection_epoch: str, command_ids: list[str]
     ) -> StreamingResponse:
         if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
-        scope = await self._resolve_scope(thread_id)
-        if scope is None or (scope.source_id, scope.projection_epoch) != (source_id, projection_epoch):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
-        params = {"1": str(thread_id), "2": source_id, "3": projection_epoch}
+        scope = await self._content.current_scope(thread_id)
+        if scope is None or scope.projection_epoch != projection_epoch:
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
+        params = {"1": str(thread_id), "2": projection_epoch}
         selected = sorted(set(command_ids))
-        params.update({str(index): command_id for index, command_id in enumerate(selected, start=4)})
-        placeholders = ",".join(f"${index}" for index in range(4, 4 + len(selected)))
+        params.update({str(index): command_id for index, command_id in enumerate(selected, start=3)})
+        placeholders = ",".join(f"${index}" for index in range(3, 3 + len(selected)))
         return await self._forward(
             request,
-            table="conversation_entity",
+            table="thread_entity",
             columns=_ENTITY_COLUMNS,
             where=(
-                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND "
-                f"entity_kind = 'command' AND entity_id IN ({placeholders})"
+                "thread_id = $1 AND projection_epoch = $2 AND "
+                f"entity_kind = '{EntityKind.COMMAND}' AND entity_id IN ({placeholders})"
             ),
             params=params,
         )
 
     async def entity_interest(
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
-    ) -> ConversationEntityInterest:
+    ) -> ThreadEntityInterest:
         try:
-            interest = await self._resolve_entities(thread_id, anchor_cursor, before_cursor, _PAGE_SIZE)
-        except ConversationInterestExpiredError as error:
+            interest = await self._content.entity_interest(
+                thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=_PAGE_SIZE
+            )
+        except ThreadInterestExpiredError as error:
             # Electric owns 409/must-refetch; an expired app interest needs new bounds.
             raise HTTPException(status.HTTP_410_GONE, str(error)) from error
         except ValueError as error:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
         if interest is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no conversation for thread {thread_id}")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no materialized fold for thread {thread_id}")
         return interest
 
     async def payload_selection(
         self,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         owner_cursor: int,
         owner_id: str,
         field: str,
         generation: int,
         revision_cursor: int,
-    ) -> ConversationPayloadSelection:
-        selection = await self._resolve_payload(thread_id, owner_cursor, owner_id, field, generation, revision_cursor)
-        if (
-            selection is None
-            or selection.scope.source_id != source_id
-            or selection.scope.projection_epoch != projection_epoch
-        ):
+    ) -> ThreadPayloadSelection:
+        selection = await self._content.payload_selection(
+            thread_id,
+            owner_cursor=owner_cursor,
+            owner_id=owner_id,
+            field=field,
+            generation=generation,
+            revision_cursor=revision_cursor,
+        )
+        if selection is None or selection.scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected payload revision is unavailable")
         return selection
 
@@ -184,50 +176,38 @@ class ElectricProxy:
         request: Request,
         *,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         anchor_cursor: int,
         tail_from: int,
         window_from: int | None,
         window_before: int | None,
     ) -> StreamingResponse:
-        current_scope = await self._resolve_scope(thread_id)
-        if current_scope is None or (current_scope.source_id, current_scope.projection_epoch) != (
-            source_id,
-            projection_epoch,
-        ):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+        current_scope = await self._content.current_scope(thread_id)
+        if current_scope is None or current_scope.projection_epoch != projection_epoch:
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         expected = await self.entity_interest(thread_id, anchor_cursor, window_before)
-        if (expected.scope.source_id, expected.scope.projection_epoch) != (source_id, projection_epoch):
-            raise HTTPException(status.HTTP_410_GONE, "the selected conversation scope is unavailable")
+        if expected.scope.projection_epoch != projection_epoch:
+            raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         if tail_from != expected.tail_from or window_from != expected.window_from:
-            raise HTTPException(status.HTTP_410_GONE, "conversation interest has changed; resolve it again")
+            raise HTTPException(status.HTTP_410_GONE, "entity interest has changed; resolve it again")
         scope = expected.scope
-        segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND cursor >= $4)"
-        params: dict[str, str] = {
-            "1": str(thread_id),
-            "2": scope.source_id,
-            "3": scope.projection_epoch,
-            "4": str(tail_from),
-        }
+        segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND cursor >= $3)"
+        params: dict[str, str] = {"1": str(thread_id), "2": scope.projection_epoch, "3": str(tail_from)}
         if window_from is not None and window_before is not None:
-            segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND (cursor >= $4 OR (cursor >= $5 AND cursor < $6)))"
-            params.update({"5": str(window_from), "6": str(window_before)})
+            segment = f"(entity_kind IN ({_SEGMENT_KINDS}) AND (cursor >= $3 OR (cursor >= $4 AND cursor < $5)))"
+            params.update({"4": str(window_from), "5": str(window_before)})
         where = (
-            "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND ("
-            f"{segment} OR entity_kind IN ('view_state','controls') OR "
-            "(entity_kind = 'command' AND pending = TRUE))"
+            "thread_id = $1 AND projection_epoch = $2 AND ("
+            f"{segment} OR entity_kind = '{EntityKind.VIEW_STATE}' OR "
+            f"(entity_kind = '{EntityKind.COMMAND}' AND pending = TRUE))"
         )
-        return await self._forward(
-            request, table="conversation_entity", columns=_ENTITY_COLUMNS, where=where, params=params
-        )
+        return await self._forward(request, table="thread_entity", columns=_ENTITY_COLUMNS, where=where, params=params)
 
     async def payload_chunks(
         self,
         request: Request,
         *,
         thread_id: UUID,
-        source_id: str,
         projection_epoch: str,
         owner_cursor: int,
         owner_id: str,
@@ -237,28 +217,27 @@ class ElectricProxy:
         follow: bool,
     ) -> StreamingResponse:
         selection = await self.payload_selection(
-            thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
+            thread_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
         )
         params = {
             "1": str(thread_id),
-            "2": source_id,
-            "3": projection_epoch,
-            "4": str(owner_cursor),
-            "5": owner_id,
-            "6": field,
-            "7": str(generation),
+            "2": projection_epoch,
+            "3": str(owner_cursor),
+            "4": owner_id,
+            "5": field,
+            "6": str(generation),
         }
         chunk_bound = ""
         if not follow:
-            chunk_bound = " AND chunk_index < $8"
-            params["8"] = str(selection.chunk_count)
+            chunk_bound = " AND chunk_index < $7"
+            params["7"] = str(selection.chunk_count)
         return await self._forward(
             request,
-            table="conversation_payload_chunk",
+            table="thread_payload_chunk",
             columns=_CHUNK_COLUMNS,
             where=(
-                "thread_id = $1 AND source_id = $2 AND projection_epoch = $3 AND owner_cursor = $4 AND "
-                f"owner_id = $5 AND field = $6 AND generation = $7{chunk_bound}"
+                "thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND "
+                f"owner_id = $4 AND field = $5 AND generation = $6{chunk_bound}"
             ),
             params=params,
         )
@@ -268,7 +247,7 @@ class ElectricProxy:
     ) -> StreamingResponse:
         # Mutable rows bootstrap from a current snapshot. Replaying a full shape log
         # would make reload cost proportional to the number of past revisions.
-        log_mode = "changes_only" if table == "conversation_entity" else "full"
+        log_mode = "changes_only" if table == "thread_entity" else "full"
         subset_keys = _SUBSET_QUERY if log_mode == "changes_only" else frozenset()
         allowed = _PASSTHROUGH_QUERY | subset_keys
         if rejected := set(request.query_params) - allowed - _INTEREST_QUERY:
@@ -303,20 +282,41 @@ class ElectricProxy:
             params=httpx.QueryParams(query),
             headers={
                 "accept": request.headers.get("accept", "application/json"),
-                **{key: request.headers[key] for key in ("electric-protocol-version",) if key in request.headers},
+                **{
+                    key: request.headers[key]
+                    # if-none-match is what lets Electric answer a re-read of an offset it has
+                    # already served with 304 and no body; without it its entity tag is inert.
+                    for key in ("electric-protocol-version", "if-none-match")
+                    if key in request.headers
+                },
             },
         )
+        # Electric answers headers once the shape exists, so this separates creating a shape from
+        # transferring it: a cold creation and a warm snapshot are indistinguishable in a HAR.
+        started = time.monotonic()
         try:
             response = await self._client.send(upstream, stream=True)
         except httpx.RequestError as error:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "conversation sync is unavailable") from error
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "thread sync is unavailable") from error
+        upstream_seconds = time.monotonic() - started
+        logger.info(
+            "electric shape response: %s",
+            f"{table=} {upstream_seconds=:.3f} status={response.status_code} "
+            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')}",
+        )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
-        headers["cache-control"] = "private, no-store"
+        # Electric serves an immutable log segment per offset and marks it publicly cacheable for a
+        # long time, which is how the protocol avoids re-transferring history. These responses are
+        # caller-scoped, so `public` cannot stand and neither can a `max-age`: a browser's HTTP
+        # cache outlives a logout and offers no way to clear it, so a stored body must never be
+        # served without a request this proxy authorizes. `no-cache` keeps the body in that cache
+        # and forces exactly such a request, and Electric's own entity tag then answers it 304.
+        headers["cache-control"] = "private, no-cache"
         return ElectricStreamingResponse(response, headers)
 
 
-router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["conversation-sync"])
+router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["thread-sync"])
 
 
 def _proxy(request: Request) -> ElectricProxy:
@@ -332,7 +332,6 @@ async def get_interest(
 ) -> EntityInterestResponse:
     interest = await _proxy(request).entity_interest(thread_id, None, before_cursor)
     return EntityInterestResponse(
-        source_id=interest.scope.source_id,
         projection_epoch=interest.scope.projection_epoch,
         through_cursor=str(interest.scope.through_cursor),
         anchor_cursor=str(interest.anchor_cursor),
@@ -346,7 +345,6 @@ async def get_interest(
 async def get_entities(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     anchor_cursor: Annotated[int, Query(ge=0)],
     tail_from: Annotated[int, Query(ge=0)],
@@ -362,7 +360,6 @@ async def get_entities(
     return await _proxy(request).entities(
         request,
         thread_id=thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         anchor_cursor=anchor_cursor,
         tail_from=tail_from,
@@ -375,7 +372,6 @@ async def get_entities(
 async def get_payload_interest(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     owner_cursor: Annotated[int, Query(ge=0)],
     owner_id: str,
@@ -384,17 +380,15 @@ async def get_payload_interest(
     revision_cursor: Annotated[int, Query(ge=0)],
 ) -> PayloadInterestResponse:
     selection = await _proxy(request).payload_selection(
-        thread_id, source_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
+        thread_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor
     )
     return PayloadInterestResponse(
-        source_id=selection.scope.source_id,
         projection_epoch=selection.scope.projection_epoch,
         owner_cursor=str(selection.owner_cursor),
         owner_id=selection.owner_id,
         field=selection.field,
         generation=str(selection.generation),
         revision_cursor=str(selection.revision_cursor),
-        present=selection.present,
         chunk_count=str(selection.chunk_count),
         content_bytes=str(selection.content_bytes),
     )
@@ -404,18 +398,16 @@ async def get_payload_interest(
 async def get_commands(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     command_id: Annotated[list[str], Query(min_length=1, max_length=128)],
 ) -> StreamingResponse:
-    return await _proxy(request).commands(request, thread_id, source_id, projection_epoch, command_id)
+    return await _proxy(request).commands(request, thread_id, projection_epoch, command_id)
 
 
 @router.get("/payload-chunks")
 async def get_payload_chunks(
     request: Request,
     thread_id: UUID,
-    source_id: str,
     projection_epoch: str,
     owner_cursor: Annotated[int, Query(ge=0)],
     owner_id: str,
@@ -431,7 +423,6 @@ async def get_payload_chunks(
     return await _proxy(request).payload_chunks(
         request,
         thread_id=thread_id,
-        source_id=source_id,
         projection_epoch=projection_epoch,
         owner_cursor=owner_cursor,
         owner_id=owner_id,

@@ -121,15 +121,11 @@ The per-tool-call deep link is an independent console improvement tracked in
 
 ### Haku Google connection and Airlock decoupling
 
-Haku-specific credential architecture; the full G1/G2/G3 sequence and the console-mediation target
-(including the read-only-token tradeoff) live in <../haku/plans/google_access_mediation.md>. Status:
-G1/G2 done (the console owns the per-Operator Google connection and `haku_console_google` is
-removed); G3 — retiring Haku's last Airlock dependency, the read-only `google-access-token` — is
-later than the common Agent lifecycle and not scheduled. Do not couple it to Airlock's unrelated
-Oura, BSC, or remaining credential consumers.
-
-Leaning console-mediated for the security win; decision deferred. Until then the read-only token
-stays (least-privilege by construction — all `.readonly` scopes).
+Haku-specific credential architecture; the full G1–G4 sequence and the mediation target live in
+<../haku/plans/google_access_mediation.md>. Status: G1–G4 done. The read-only
+`google-access-token` no longer reaches `haku-sandbox`, and the console no longer serves Google:
+Haku reaches it through agentplane-staging, whose egress proxy and `google-mcp` hold the
+Airlock-brokered grants, so no Google token reaches the agent.
 
 ### Independent security and consolidation lanes
 

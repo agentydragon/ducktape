@@ -69,28 +69,19 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    NAMESPACE,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -143,9 +134,9 @@ def _bearer_credentials(scope: Construct) -> None:
                     metadata=ExternalSecretSpecTargetTemplateMetadata(
                         annotations={
                             "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
                             "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
                         }
                     ),
                     data={_BEARER_SECRET_KEY: "{{ .password }}"},
@@ -254,7 +245,7 @@ class HaMcpCredentialsProvisioner(Construct):
                     # Deliberately NOT applied to change-driven provisioners (the
                     # readonly-role GRANT Jobs): for those the TTL would convert a
                     # run-on-change script into a run-on-schedule one. See
-                    # study-casino/readonly-role-provisioner-job.yaml.
+                    # cluster/cdk8s/study_casino/app.py (the readonly provisioner Job).
                     "kustomize.toolkit.fluxcd.io/force": "enabled",
                 },
             ),
@@ -352,8 +343,9 @@ class HaMcpApp(Construct):
                 annotations={
                     "description": (
                         "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal "
-                        "and gated by a static bearer that only haku-console holds. The upstream HA token "
-                        "remains server-side, and Haku applies its own per-call approval policy."
+                        "and gated by a static bearer that only agentplane-staging's Action Service holds. "
+                        "The upstream HA token remains server-side, and the Action Service applies its own "
+                        "per-call approval policy."
                     ),
                     "reloader.stakater.com/auto": "true",
                 },
@@ -408,8 +400,9 @@ class HaMcpApp(Construct):
             ],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
-                # The same token haku-console presents (reflected as ha-mcp-bearer into
-                # haku-console by the emberstack reflector) -- one source of truth, no drift.
+                # The same token agentplane-staging's Action Service presents (reflected as
+                # ha-mcp-bearer into agentplane-staging by the emberstack reflector) -- one source
+                # of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
@@ -455,18 +448,16 @@ class HaMcpApp(Construct):
                 _NAMESPACE,
                 annotations={
                     "description": (
-                        "Default-deny ingress for HA-MCP. Only haku-console and agentplane-staging reach the "
-                        "facade port; the upstream server port is reachable only over pod-local loopback. No "
-                        "Gateway ingress -- this MCP is cluster-internal since the move to a static bearer."
+                        "Default-deny ingress for HA-MCP. Only agentplane-staging reaches the facade port; the "
+                        "upstream server port is reachable only over pod-local loopback. No Gateway ingress -- "
+                        "this MCP is cluster-internal since the move to a static bearer."
                     )
                 },
             ),
             selector=_APP_LABELS,
             ingress=[
                 cilium.ingress_from(
-                    {"k8s:io.kubernetes.pod.namespace": "haku-console"},
-                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"},
-                    ports=[_APP_FACADE_PORT],
+                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
                 ),
                 cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
             ],
@@ -504,6 +495,7 @@ class HaMcp(Construct):
 
 def ha_mcp(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
@@ -526,10 +518,8 @@ def ha_mcp(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-            ),
-            path=f"./{OUTPUT_DIR}",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[

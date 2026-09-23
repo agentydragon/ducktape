@@ -1,0 +1,9 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: forgejo
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs

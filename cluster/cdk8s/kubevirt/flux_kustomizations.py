@@ -3,53 +3,14 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def kubevirt(chart: Chart, kubevirt_operator: Kustomization) -> Kustomization:
-    name = "kubevirt"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path="./cluster/k8s/kubevirt/app",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            wait=True,
-            timeout="10m",
-            depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="virt-api", namespace="kubevirt"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="virt-controller", namespace="kubevirt"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="DaemonSet", name="virt-handler", namespace="kubevirt"
-                ),
-            ],
-        ),
-    )
-
-
-def cdi_operator(chart: Chart) -> Kustomization:
+def cdi_operator(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "cdi-operator"
     return flux_kustomization(
         chart,
@@ -57,13 +18,9 @@ def cdi_operator(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/cdi-operator",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="kubevirt-cdi-operator",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             timeout="10m",
             health_checks=[
@@ -75,7 +32,12 @@ def cdi_operator(chart: Chart) -> Kustomization:
     )
 
 
-def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kustomization) -> Kustomization:
+def cdi(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cdi_operator: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
     name = "cdi"
     return flux_kustomization(
         chart,
@@ -83,11 +45,9 @@ def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kusto
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/cdi",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             timeout="10m",
             depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
@@ -106,7 +66,7 @@ def cdi(chart: Chart, cdi_operator: Kustomization, local_path_provisioner: Kusto
     )
 
 
-def kubevirt_operator(chart: Chart) -> Kustomization:
+def kubevirt_operator(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "kubevirt-operator"
     return flux_kustomization(
         chart,
@@ -114,11 +74,9 @@ def kubevirt_operator(chart: Chart) -> Kustomization:
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/kubevirt/operator",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             timeout="10m",
             health_checks=[

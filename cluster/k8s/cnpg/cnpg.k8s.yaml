@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: cnpg-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://cloudnative-pg.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cnpg
+  namespace: cnpg-system
+spec:
+  chart:
+    spec:
+      chart: cloudnative-pg
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+        namespace: flux-system
+      version: 0.29.0
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    crds: CreateReplace
+  values:
+    priorityClassName: system-cluster-critical
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  annotations:
+    description: CloudNativePG Barman Cloud plugin for physical backups and WAL archiving.
+  name: plugin-barman-cloud
+  namespace: cnpg-system
+spec:
+  chart:
+    spec:
+      chart: plugin-barman-cloud
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+        namespace: flux-system
+      version: 0.8.0
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    priorityClassName: system-cluster-critical
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists

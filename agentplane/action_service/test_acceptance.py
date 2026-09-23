@@ -504,7 +504,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 executor=McpExecutorBinding(
                     kind="mcp",
                     description="Connected as Rai's GitHub account.",
-                    config={"account_secret_ref": "github-mcp-account"},
+                    config={"account_secret_ref": "github-mcp-account", "server_id": "github"},
                 ),
                 actions={
                     "get_file": ActionDefinition(
@@ -542,6 +542,13 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             }
         ]
         assert "github-mcp-account" not in groups.text
+
+        # /v1/action-groups accepts either bearer scheme: the response is identical and
+        # non-sensitive to both, so an operator (e.g. the settings page) reads it too.
+        as_operator = await client.get("/v1/action-groups", headers=_operator())
+        assert as_operator.status_code == 200
+        assert as_operator.json() == groups.json()
+        assert "github-mcp-account" not in as_operator.text
 
         unauthenticated = await client.get("/v1/action-groups")
         assert unauthenticated.status_code == 401

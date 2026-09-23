@@ -6,12 +6,12 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from agentplane.app.trajectory import Base
+# Every module declaring tables on `Base`, imported only to register them on its metadata.
+from agentplane.app import operator_sessions  # noqa: F401
+from agentplane.app.agent_runtime import models  # noqa: F401
+from agentplane.app.database import Base
 from util.db_migrations import MigrationRunner
 
-# `Base` is declared in operator_sessions.py; trajectory.py's own Thread/Event tables and
-# operator_sessions.py's BrowserSession all share it, and importing it here (via trajectory.py,
-# which already imports operator_sessions.py) registers every table onto one metadata.
 RUNNER = MigrationRunner(
     metadata=Base.metadata,
     migrations_dir=Path(__file__).parent / "migrations",

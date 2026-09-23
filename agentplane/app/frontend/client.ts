@@ -34,11 +34,12 @@ export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type EntityInterest = components["schemas"]["EntityInterestResponse"];
 export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
-export type ConversationStoredEntity = components["schemas"]["ConversationStoredEntity"];
+export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
+export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -60,34 +61,42 @@ export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
 
 export async function reconcileCommands(
   threadId: string,
-  sourceId: string,
   projectionEpoch: string,
   commandIds: string[],
   signal?: AbortSignal
 ): Promise<CommandReconciliationResponse> {
   const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
     params: { path: { thread_id: threadId } },
-    body: { source_id: sourceId, projection_epoch: projectionEpoch, command_ids: commandIds },
+    body: { projection_epoch: projectionEpoch, command_ids: commandIds },
     signal,
   });
   if (error) throw new Error(displayableError(error));
   return data;
 }
 
-export async function conversationObservations(
+export async function threadObservationEntry(
+  threadId: string,
+  cursor: string,
+  signal?: AbortSignal
+): Promise<ArchivedObservationEntry> {
+  const { data, error } = await api.GET("/threads/{thread_id}/observations/{cursor}", {
+    // openapi-fetch serializes path values without converting them to JS numbers.
+    params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function threadObservations(
   threadId: string,
   cursor: { before?: string; after?: string },
   signal?: AbortSignal
 ): Promise<ObservationPage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/observations", {
+  const { data, error } = await api.GET("/threads/{thread_id}/observations", {
     params: {
       path: { thread_id: threadId },
-      query: {
-        // openapi-fetch serializes query values without converting them to JS numbers.
-        before_cursor: cursor.before as unknown as number | undefined,
-        after_cursor: cursor.after as unknown as number | undefined,
-        limit: 30,
-      },
+      query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
     },
     signal,
   });
@@ -95,21 +104,20 @@ export async function conversationObservations(
   return data;
 }
 
-export async function conversationEvidence(
+export async function threadEvidence(
   threadId: string,
-  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  scope: { projectionEpoch: string; entityKind: string; entityId: string },
   afterCursor = "0",
   signal?: AbortSignal
 ): Promise<EvidencePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence", {
+  const { data, error } = await api.GET("/threads/{thread_id}/evidence", {
     params: {
       path: { thread_id: threadId },
       query: {
-        source_id: scope.sourceId,
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,
-        after_cursor: afterCursor as unknown as number,
+        after_cursor: afterCursor,
         limit: 30,
       },
     },
@@ -119,22 +127,21 @@ export async function conversationEvidence(
   return data;
 }
 
-export async function conversationFrames(
+export async function threadNativeFrames(
   threadId: string,
-  scope: { sourceId: string; projectionEpoch: string; entityKind: string; entityId: string },
+  scope: { projectionEpoch: string; entityKind: string; entityId: string },
   observationCursor: string,
   afterSequence = "0",
   signal?: AbortSignal
 ): Promise<NativeFramePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/conversation/evidence/{observation_cursor}/frames", {
+  const { data, error } = await api.GET("/threads/{thread_id}/evidence/{observation_cursor}/frames", {
     params: {
-      path: { thread_id: threadId, observation_cursor: observationCursor as unknown as number },
+      path: { thread_id: threadId, observation_cursor: observationCursor },
       query: {
-        source_id: scope.sourceId,
         projection_epoch: scope.projectionEpoch,
         entity_kind: scope.entityKind,
         entity_id: scope.entityId,
-        after_sequence: afterSequence as unknown as number,
+        after_sequence: afterSequence,
         limit: 30,
       },
     },
@@ -238,6 +245,20 @@ export const mcpLinkageService: McpLinkageService = {
   },
 };
 
+export type ActionGroupView = components["schemas"]["ActionGroupView"];
+
+export interface ActionGroupService {
+  list(): Promise<ActionGroupView[]>;
+}
+
+export const actionGroupService: ActionGroupService = {
+  async list() {
+    const { data, error, response } = await api.GET("/action-groups");
+    if (error) throw new Error(httpError(response, error));
+    return data;
+  },
+};
+
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
   decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
@@ -322,7 +343,7 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-export async function conversationInterest(
+export async function threadEntityInterest(
   threadId: string,
   beforeCursor?: string,
   signal?: AbortSignal
@@ -330,7 +351,7 @@ export async function conversationInterest(
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
   if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Conversation interest failed with ${response.status}`);
+  if (!response.ok) throw new Error(`Entity interest failed with ${response.status}`);
   return (await response.json()) as EntityInterest;
 }
 

@@ -1,16 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - storage.yaml
-  - forgejo-images-credentials.yaml
-  - metrics-secret.yaml
+  # cdk8s-generated (cluster/cdk8s/home_assistant/app.py).
+  - home-assistant.k8s.yaml
   - break-glass-credentials.sops.yaml
-  - home-assistant.yaml
-  - onboarding-job.yaml
-  - httproute.yaml
-  - monitoring.yaml
-  - networkpolicy.yaml
-  - volsync-backup.yaml
+components:
+  - ./image-pins
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

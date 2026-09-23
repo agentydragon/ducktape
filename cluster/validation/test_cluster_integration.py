@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
@@ -67,10 +68,10 @@ def cluster(k8s_dir: Path) -> ParsedCluster:
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
     local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(k8s_dir))}
-    kust_files = [k for k in parsed.kustomize_files if k.parent.resolve() in local_dirs]
+    kusts = [k for path, k in parsed.kustomize_files.items() if path.parent.resolve() in local_dirs]
 
     async def _build_all() -> list[KustomizeBuildResult]:
-        return list(await asyncio.gather(*[run_kustomize_build(k) for k in kust_files]))
+        return list(await asyncio.gather(*[run_kustomize_build(k) for k in kusts]))
 
     parsed.build_results = asyncio.run(_build_all())
     return parsed
@@ -145,7 +146,11 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     but anonymous (token-less) callers are judged by this static allowlist; this
     CI contract makes the GitOps-owned logs label the review point for both.
     """
-    deployment = yaml.safe_load((k8s_dir / "agents/loki-read-proxy/deployment.yaml").read_text())
+    deployment = one(
+        obj
+        for obj in yaml.safe_load_all((k8s_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
+        if obj["kind"] == "Deployment"
+    )
     container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")
     env = {entry["name"]: entry["value"] for entry in container["env"]}
     loki_allowlist = frozenset(namespace for namespace in env["NAMESPACE_ALLOWLIST"].split(",") if namespace)

@@ -1,0 +1,160 @@
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: github
+  namespace: flux-system
+spec:
+  events:
+    - push
+    - registry_package
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: flux-system
+      namespace: flux-system
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: haku-openclaw-spike
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: openclaw
+  secretRef:
+    name: github-webhook-token
+  type: github
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  address: https://grafana.allegedly.works/api/annotations
+  secretRef:
+    name: grafana-flux-token
+  type: grafana
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: grafana-annotations
+  namespace: flux-system
+spec:
+  eventSeverity: info
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: flux-system
+    - kind: Kustomization
+      name: "*"
+      namespace: ducktape-flux
+    - kind: HelmRelease
+      name: "*"
+      namespace: flux-system
+  providerRef:
+    name: grafana
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: ntfy
+  namespace: flux-system
+spec:
+  secretRef:
+    name: ntfy-webhook
+  type: generic
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: on-call
+  namespace: flux-system
+spec:
+  eventSeverity: error
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: flux-system
+    - kind: Kustomization
+      name: "*"
+      namespace: ducktape-flux
+    - kind: HelmRelease
+      name: "*"
+      namespace: flux-system
+    - kind: GitRepository
+      name: "*"
+      namespace: flux-system
+    - kind: GitRepository
+      name: "*"
+      namespace: ducktape-flux
+  providerRef:
+    name: ntfy
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: flux-webhook
+  namespace: flux-system
+spec:
+  hostnames:
+    - flux-webhook.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: webhook-receiver
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-webhook-ingress
+  namespace: flux-system
+spec:
+  ingress:
+    - ports:
+        - port: 9292
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app: notification-controller
+  policyTypes:
+    - Ingress
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Flux failure notifications delivered through the self-hosted ntfy instance
+    ntfy.ducktape.io/auth-generation: "1"
+  name: ntfy-webhook
+  namespace: flux-system
+spec:
+  data:
+    - remoteRef:
+        key: ntfy-credentials
+        property: alertmanager-token
+      secretKey: alertmanager_token
+  refreshPolicy: OnChange
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ntfy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ntfy-webhook
+    template:
+      data:
+        address: https://ntfy.allegedly.works/alerts
+        headers: |
+          Template: "yes"
+          Authorization: "Bearer {{ .alertmanager_token }}"
+          X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
+          X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
+          X-Tags: "rotating_light"
+      engineVersion: v2
+      type: Opaque

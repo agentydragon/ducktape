@@ -27,7 +27,7 @@ VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 @pytest.fixture
 def vpa_policy() -> Path:
-    return policy("default-vpa-requests-only.yaml")
+    return policy("default-vpa-requests-only.k8s.yaml")
 
 
 @pytest.fixture(scope="session")

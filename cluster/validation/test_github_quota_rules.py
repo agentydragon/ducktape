@@ -10,11 +10,14 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_github_quota_rules(tmp_path: Path) -> None:
-    for name in ("github-quota", "roaming-node"):
-        manifest = yaml.safe_load(
-            get_required_path(f"_main/cluster/k8s/monitoring/rules/{name}-prometheus-rule.yaml").read_text()
+    manifests = {
+        manifest["metadata"]["name"]: manifest
+        for manifest in yaml.safe_load_all(
+            get_required_path("_main/cluster/k8s/monitoring/rules/monitoring-rules.k8s.yaml").read_text()
         )
-        (tmp_path / f"{name}.yaml").write_text(yaml.safe_dump(manifest["spec"]))
+    }
+    for name in ("github-quota", "roaming-node"):
+        (tmp_path / f"{name}.yaml").write_text(yaml.safe_dump(manifests[f"{name}-alerts"]["spec"]))
     (tmp_path / "tests.yaml").write_text(
         get_required_path("_main/cluster/validation/testdata/github_quota_rules.yaml").read_text()
     )

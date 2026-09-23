@@ -1,20 +1,13 @@
-"""Isolated ESO-backed credentials for outbound authentication."""
+"""Isolated credentials namespaces for outbound authentication.
+
+`EgressCredentials` renders only the namespace and the egress proxy's read access to it. Each
+environment's own module copies in the credentials that environment gets
+(`egress_staging_credentials.py`, `egress_testing_credentials.py`).
+"""
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
+from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
     ExternalSecretSpec,
@@ -32,16 +25,18 @@ from cluster.cdk8s.metadata import metadata
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"
-_FORGEJO_STORE = "kubernetes-agentplane-staging-forgejo-secret-store"
-_READER = "external-creds-reader"
+# The Secret `egress.py`'s `github-pat` EgressCredential reads, in both environments.
+GITHUB_PAT_SECRET = "agentplane-github-pat"
+EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
+# The store authenticates as this ServiceAccount in the consuming namespace (ESO referent auth), so a
+# namespace that copies from external-creds needs its own.
+EXTERNAL_CREDS_READER = "external-creds-reader"
 
 
 class EgressCredentials(Construct):
     """Keep the proxy's namespace-wide Secret watch away from application credentials."""
 
-    def __init__(
-        self, scope: Construct, id: str, *, namespace: str, proxy_namespace: str, include_forgejo: bool
-    ) -> None:
+    def __init__(self, scope: Construct, id: str, *, namespace: str, proxy_namespace: str) -> None:
         super().__init__(scope, id)
         Namespace(
             self,
@@ -53,7 +48,6 @@ class EgressCredentials(Construct):
                 },
             ),
         )
-        reader = ServiceAccount(self, "reader", metadata=metadata(_READER, namespace))
         proxy_role = Role(
             self,
             "proxy-role",
@@ -66,70 +60,29 @@ class EgressCredentials(Construct):
             ServiceAccount.from_service_account_name(self, "proxy", "agentplane-egress", namespace_name=proxy_namespace)
         )
 
-        secrets = [
-            ("agentplane-github-pat", "github-agentydragon-agent", "token", "kubernetes-external-creds-secret-store")
-        ]
-        if include_forgejo:
-            secrets.append(("haku-forgejo-git", "haku-forgejo-git", "password", _FORGEJO_STORE))
-            source_role = Role(
-                self,
-                "forgejo-source-role",
-                metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
-                rules=[
-                    RolePolicyRule(
-                        resources=[Secret.from_secret_name(self, "forgejo-source", "haku-forgejo-git")], verbs=["get"]
-                    )
-                ],
-            )
-            RoleBinding(
-                self,
-                "forgejo-source-binding",
-                metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
-                role=source_role,
-            ).add_subjects(reader)
-            ClusterSecretStore(
-                self,
-                "forgejo-store",
-                metadata=ApiObjectMetadata(name=_FORGEJO_STORE),
-                spec=ClusterSecretStoreSpec(
-                    conditions=[ClusterSecretStoreSpecConditions(namespaces=[namespace])],
-                    provider=ClusterSecretStoreSpecProvider(
-                        kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                            remote_namespace="haku-sandbox",
-                            auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                                service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=_READER)
-                            ),
-                            server=ClusterSecretStoreSpecProviderKubernetesServer(
-                                ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                                    type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                                    name="kube-root-ca.crt",
-                                    key="ca.crt",
-                                    namespace="default",
-                                )
-                            ),
-                        )
-                    ),
-                ),
-            )
-        for target, source, key, store in secrets:
-            ExternalSecret(
-                self,
-                target,
-                metadata=metadata(target, namespace),
-                spec=ExternalSecretSpec(
-                    refresh_interval="1h",
-                    secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                        kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=store
-                    ),
-                    data=[
-                        ExternalSecretSpecData(
-                            secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=key)
-                        )
-                    ],
-                    target=ExternalSecretSpecTarget(
-                        name=target,
-                        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                    ),
-                ),
-            )
+
+def credential_external_secret(
+    scope: Construct, *, namespace: str, target: str, source: str, key: str, store: str
+) -> None:
+    """ESO copy of one credential into an egress-credentials namespace, as Secret `target`."""
+    ExternalSecret(
+        scope,
+        target,
+        metadata=metadata(target, namespace),
+        spec=ExternalSecretSpec(
+            refresh_interval="1h",
+            secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=store
+            ),
+            data=[
+                ExternalSecretSpecData(
+                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=key)
+                )
+            ],
+            target=ExternalSecretSpecTarget(
+                name=target,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            ),
+        ),
+    )

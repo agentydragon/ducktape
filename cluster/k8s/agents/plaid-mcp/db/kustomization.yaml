@@ -1,10 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - networkpolicy.yaml
-  - readonly-secret.yaml
-  - postgres-cluster.yaml
-  - readonly-role-provisioner-job.yaml
+  - plaid-mcp-db.k8s.yaml
 configMapGenerator:
   - name: plaid-mcp-db-readonly-sql
     namespace: plaid-mcp

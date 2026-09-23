@@ -88,12 +88,11 @@ enforcing a per-day read budget — which neither A nor B does. If that is what 
 actually want, write it as a policy layer, not as a credential holder, and let
 iron-proxy keep the credential.
 
-**C is what the cluster does today, and it is the weakest of the four.**
-`cluster/k8s/agents/airlock/google-access-token-eso.yaml` mirrors a live Google access
-token into `claude-sandbox` and `haku-sandbox` on a 1-minute refresh. That is exactly
+**C is the weakest of the four.** A live access token mirrored into the agent is exactly
 the exposure the coder agent's design was built to remove: a credential readable from
 inside the agent, and therefore reachable by prompt injection from anything the agent
-reads. It should not be extended to the personal-data agent.
+reads. The cluster no longer does it for any agent; it should not return for the
+personal-data agent.
 
 **A is the strongest where it exists.** `haku/console/tools/{gmail,google_calendar}.py`
 already run this way — the console holds the OAuth clients and each Operator's refresh
@@ -125,8 +124,9 @@ session, unlike restarting the agent (F14).
 How often that fires is the part that matters, and for Gmail it is weekly. Google keeps
 an app requesting restricted scopes in **Testing** publishing status unless it goes
 through the verification and security-assessment path, and a Testing-status app's
-refresh token expires every 7 days — documented in `cluster/k8s/haku/console/README.md`
-from the console's own experience with project `rai-personal`. So a Gmail grant needs
+refresh token expires every 7 days — the console hit this with project `rai-personal`; the
+gotcha sits beside Airlock's `google-write` provider (`cluster/k8s/agents/airlock/config.yaml`).
+So a Gmail grant needs
 reauthorization roughly weekly **regardless of which option above you choose**. That is
 a human-in-the-loop event, not an automation gap, and it is the single best argument for
 Airlock keeping custody: it is the thing with a browser flow and an Authentik login in

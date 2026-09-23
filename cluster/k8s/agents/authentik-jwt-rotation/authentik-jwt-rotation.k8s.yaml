@@ -1,0 +1,184 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agents-infra
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    name: agents-infra
+  name: agents-infra
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agents-infra
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-secrets-sync-pat
+  namespace: agents-infra
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-2
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: github-secrets-sync-pat
+    template:
+      type: Opaque
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Identity for the authentik-jwt-rotation CronJob. Exists solely so the published-secrets-reader RoleBinding in flux-system can let the job read back the Secrets its own k8s_secret outputs publish (probe support).
+  name: authentik-jwt-rotation
+  namespace: agents-infra
+imagePullSecrets:
+  - name: forgejo-images-creds
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Lets the authentik-jwt-rotation CronJob read back exactly the Secrets its k8s_secret outputs publish, so probes can verify the live tokens against their real endpoints. resourceNames must stay in sync with the k8s_secret names in rotations.yaml.
+  name: authentik-jwt-rotation-published-secrets-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-cloud-kube-token
+      - haku-mail-token
+      - alloy-otlp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authentik-jwt-rotation-published-secrets-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: authentik-jwt-rotation-published-secrets-reader
+subjects:
+  - kind: ServiceAccount
+    name: authentik-jwt-rotation
+    namespace: agents-infra
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Rotates every Authentik client_credentials JWT listed in rotations.yaml (the ConfigMap-mounted source of truth). Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted` field (no decryption needed) and skips entries with > rotate_below_hours remaining, so a real mint runs only ~every 44 days per token. Entries with a `probe` also verify the published in-cluster Secret's token against its real endpoint each run and re-mint on 401/403. Everything minted this cycle lands in one commit.
+  name: authentik-jwt-rotation
+  namespace: agents-infra
+spec:
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        spec:
+          automountServiceAccountToken: true
+          containers:
+            - args:
+                - --config
+                - /config/rotations.yaml
+              image: git.allegedly.works/ducktape-ci/authentik-jwt-rotation:unset
+              name: rotate
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - mountPath: /config
+                  name: rotations-config
+                  readOnly: true
+                - mountPath: /var/run/secrets/github-pat
+                  name: github-pat
+                  readOnly: true
+                - mountPath: /var/run/secrets/authentik/claude-web-k8s
+                  name: claude-web-k8s-creds
+                  readOnly: true
+                - mountPath: /var/run/secrets/authentik/haku-k8s
+                  name: haku-k8s-creds
+                  readOnly: true
+                - mountPath: /var/run/secrets/authentik/agent-box-codex
+                  name: agent-box-codex-creds
+                  readOnly: true
+                - mountPath: /var/run/secrets/authentik/haku-mail
+                  name: haku-mail-creds
+                  readOnly: true
+                - mountPath: /var/run/secrets/authentik/alloy-otlp
+                  name: alloy-otlp-creds
+                  readOnly: true
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: authentik-jwt-rotation
+          volumes:
+            - configMap:
+                name: authentik-jwt-rotations-config
+              name: rotations-config
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: claude-web-k8s-creds
+              secret:
+                secretName: kubectl-sandbox-client-credentials
+            - name: haku-k8s-creds
+              secret:
+                secretName: haku-client-credentials
+            - name: agent-box-codex-creds
+              secret:
+                secretName: agent-box-codex-client-credentials
+            - name: haku-mail-creds
+              secret:
+                secretName: haku-mail-client-credentials
+            - name: alloy-otlp-creds
+              secret:
+                secretName: alloy-otlp-client-credentials
+      ttlSecondsAfterFinished: 86400
+  schedule: 15 * * * *
+  successfulJobsHistoryLimit: 3

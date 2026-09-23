@@ -21,7 +21,6 @@ from agentplane.action_service.mcp_linkage import (
     McpLinkageStatus,
     McpLinkageView,
     McpOAuthServer,
-    McpProvider,
 )
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
@@ -44,7 +43,6 @@ async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
 
     server = McpOAuthServer(
         server_id="test-kubernetes",
-        provider=McpProvider.KUBERNETES,
         server_url="https://test-kubernetes.example/mcp",
         authorization_endpoint="https://test-idp.example/authorize",
         token_endpoint="https://test-idp.example/token",

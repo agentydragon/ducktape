@@ -4,17 +4,12 @@ kind: Kustomization
 # rotator's publication point); everything else carries namespace: haku-mailbox
 # explicitly.
 resources:
-  - namespace.yaml
-  - postgres-cluster.yaml
-  - forgejo-images-creds-eso.yaml
-  - certificate.yaml
+  # cdk8s-generated (cluster/cdk8s/haku/mailbox.py) -- see cluster/docs/cdk8s.md.
+  - haku-mailbox.k8s.yaml
   - haku-mailbox-admin.sops.yaml
-  - deployment.yaml
-  - service.yaml
-  - smtp-ingress.yaml
-  - httproute.yaml
   - haku-mail-token.sops.yaml
-  - haku-mail-token-eso.yaml
+components:
+  - ./image-pins
 configMapGenerator:
   - name: haku-mailbox-config
     namespace: haku-mailbox

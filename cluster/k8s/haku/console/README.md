@@ -101,56 +101,6 @@ indexes out of connected MCP-client catalogs. The `recall_index` schema/data and
 `haku_indexer` database role remain in place for now; no migration drops them. Re-enabling Recall
 must restore the catalog, access-profile grants, and maintenance workers as one reviewed change.
 
-## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
-
-The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
-reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
-`google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
-creation), both behind the ordinary operator-approval queue — execute as the **acting
-Operator's own Google account**: each call resolves that Operator's per-Operator Google access
-token from the console's own connection store (`haku/console/oauth/provider_connection.py`),
-self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
-console holds the Google OAuth clients and each Operator's refresh token itself. The console pod
-starts fine before anything is connected; until an Operator connects, both servers are
-`degraded` (hidden from that Operator) and their tools return a "connect your Google account"
-error.
-
-Authenticated-agent Calendar reads (`get_event`, `list_events`, `list_event_instances`) are
-reviewed transparent auto-approved tools; `create_event` always remains operator-approved.
-
-**Deploy prerequisites (operator, one time):**
-
-1. **Gmail OAuth client secret.** The existing `haku-console-google-client-credentials` Secret
-   (keys `client_id`, `client_secret`) supplies the nested
-   `HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_{ID,SECRET}` settings.
-   It is the restricted-scope Gmail project's client, independent of Airlock's
-   `google-client-credentials`.
-2. **Calendar OAuth client secret.** The separate `haku-console` Google Cloud project/client requests
-   only `calendar.events`. Its client is stored in the SOPS-encrypted
-   `haku-console-google-calendar-client-credentials` Secret with the same two keys. The deployment's
-   references remain optional so a missing or temporarily unreconciled Secret degrades only Calendar.
-3. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
-   as an authorized redirect URI on both Google OAuth clients, or that client's callback fails with
-   `redirect_uri_mismatch`.
-
-**Connect (operator, per linkage):** open the console's Settings → Connected accounts and connect
-Google Mail and Google Calendar separately, then complete consent (`access_type=offline`,
-`prompt=consent`). Each callback stores its own refresh token in Postgres; disconnecting one linkage
-deletes only that local grant. Separate projects/clients isolate their verification and credential
-lifecycles.
-
-**Gotcha — Testing publishing status expires the refresh token every 7 days.** The Gmail OAuth app
-(project `rai-personal`) remains in **Testing** because its restricted scopes make publication require
-the expensive verification/security-assessment path. Its connection therefore needs reauthorization
-roughly weekly. Calendar uses a separate project/client so its narrower sensitive-scope verification
-can proceed without Gmail's restricted scopes; once that project is published, Calendar tokens no
-longer inherit Gmail's Testing-mode churn.
-
-Scopes are explicit per deploy-named connection in `console_config.py`: Google Mail requests
-`gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Google Calendar requests
-`calendar.events`. Add a new logical connection when another Google surface is actually exposed
-rather than broadening either existing grant.
-
 ## One-time bootstrap: GitHub's hosted MCP server
 
 GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
@@ -196,25 +146,18 @@ no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blo
 
 The `kubectl-passthrough-mcp` MCP server entry (console_config.py — `pods_*`, `resources_*`,
 `nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
-per-operator browser-linked mechanism as `grocy-sf`: the operator connects once
+per-operator browser-linked mechanism as `github`: the operator connects once
 from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
 which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
 application and stores the association in the console's Postgres database — no static
 token, no secret to mount.
 
-Unlike `grocy-sf`, this server forwards the connecting operator's own token
+This server forwards the connecting operator's own token
 straight to kube-apiserver (`cluster_auth_mode = passthrough` in
 `agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
 of its own — the operator's real permissions apply, via the
 `oidc-ksbx-agentydragon-admin` `ClusterRoleBinding`
-(`agents/kubectl-passthrough-mcp/app/clusterrolebinding-agentydragon-admin.yaml`, cluster-admin).
+(`cluster/cdk8s/kubectl_passthrough_mcp.py`, cluster-admin).
 So every tool call here runs with full cluster-admin once approved; the operator-approval
 click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
 enforcement-inventory entry.
-
-## Tana backend credential
-
-`tana` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
-server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
-only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
-The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.

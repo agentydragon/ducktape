@@ -646,10 +646,9 @@ function payload(
   revisionCursor = ownerCursor
 ): Record<string, string> {
   const reference = {
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     owner_cursor: String(ownerCursor),
-    owner_item_id: ownerId,
+    owner_id: ownerId,
     field,
     generation: "1",
     revision_cursor: String(revisionCursor),
@@ -667,7 +666,6 @@ function entity(
 ): Record<string, unknown> {
   return {
     thread_id: extra.thread_id ?? THREADS[0].id,
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     entity_kind: kind,
     entity_id: id,
@@ -698,9 +696,7 @@ function viewState(
         active_turn_id: activeTurn,
         harness_state: activeTurn === null ? "stopped" : "running",
       },
-      unresolved_count: 0,
       operational: {
-        operational_version: String(throughCursor),
         status: "active",
         last_verified_cursor: String(throughCursor),
         feed_error: null,
@@ -946,17 +942,16 @@ function statesRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
-function conversationRows(threadId: string): Record<string, unknown>[] {
+function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
 
-function conversationInterest(threadId: string): Record<string, string | null> {
-  const through = conversationRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
+function threadEntityInterest(threadId: string): Record<string, string | null> {
+  const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
   return {
-    source_id: CONVERSATION_SOURCE,
     projection_epoch: CONVERSATION_EPOCH,
     through_cursor: String(through),
     anchor_cursor: String(through),
@@ -1094,8 +1089,8 @@ function currentSubset(query: URLSearchParams): boolean {
   if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
     throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
   }
-  if (query.get("source_id") !== CONVERSATION_SOURCE || query.get("projection_epoch") !== CONVERSATION_EPOCH) {
-    throw new Error("current Electric shapes must select the resolved conversation source and projection epoch");
+  if (query.get("projection_epoch") !== CONVERSATION_EPOCH) {
+    throw new Error("current Electric shapes must select the resolved thread fold projection epoch");
   }
   // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
   // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
@@ -1104,11 +1099,10 @@ function currentSubset(query: URLSearchParams): boolean {
 
 function shapeRow(relation: string, value: Record<string, unknown>) {
   const identity =
-    relation === "conversation_entity"
-      ? [value.thread_id, value.source_id, value.projection_epoch, value.entity_kind, value.entity_id]
+    relation === "thread_entity"
+      ? [value.thread_id, value.projection_epoch, value.entity_kind, value.entity_id]
       : [
           value.thread_id,
-          value.source_id,
           value.projection_epoch,
           value.owner_cursor,
           value.owner_id,
@@ -1124,7 +1118,7 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
 }
 
 function threadRows(threadId: string): Record<string, unknown>[] {
-  return conversationRows(threadId).map(electricEntity);
+  return threadEntityRows(threadId).map(electricEntity);
 }
 
 function archivedStderr(cursor: number): Record<string, unknown> {
@@ -1153,23 +1147,16 @@ function archivedCompletion(cursor: number): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
+  "31": () => archivedStderr(31),
+  "34": () => archivedCompletion(34),
+};
+
 function observationPage(threadId: string) {
   return {
     observations: [
-      {
-        cursor: "31",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "31",
-        kind: "harness_stderr",
-        entry: archivedStderr(31),
-      },
-      {
-        cursor: "34",
-        source_id: CONVERSATION_SOURCE,
-        source_sequence: "34",
-        kind: "item_completed",
-        entry: archivedCompletion(34),
-      },
+      { cursor: "31", kind: "harness_stderr" },
+      { cursor: "34", kind: "item_completed" },
     ],
     next_before_cursor: null,
     next_after_cursor: null,
@@ -1185,8 +1172,8 @@ routes.push(
       scenario.sessionReplay === "unavailable"
         ? // This persistent service failure is distinct from a ready shape's stale source/epoch
           // 410, which the production collection intentionally resolves once.
-          Response.json({ detail: "conversation projection is temporarily unavailable" }, { status: 503 })
-        : conversationInterest(match[1]),
+          Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
+        : threadEntityInterest(match[1]),
   ],
   [
     "GET",
@@ -1203,7 +1190,7 @@ routes.push(
         return { ...row, revision_cursor: "8" };
       });
       return electricSubset(
-        rows.map((row) => shapeRow("conversation_entity", row)),
+        rows.map((row) => shapeRow("thread_entity", row)),
         `visual-entities-${match[1]}`
       );
     },
@@ -1223,7 +1210,7 @@ routes.push(
         (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
       );
       return electricSubset(
-        rows.map((row) => shapeRow("conversation_entity", row)),
+        rows.map((row) => shapeRow("thread_entity", row)),
         `visual-commands-${match[1]}`
       );
     },
@@ -1239,14 +1226,12 @@ routes.push(
       const revisionCursor = query.get("revision_cursor") ?? "0";
       const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
       return {
-        source_id: CONVERSATION_SOURCE,
         projection_epoch: CONVERSATION_EPOCH,
         owner_cursor: ownerCursor,
         owner_id: ownerId,
         field,
         generation,
         revision_cursor: revisionCursor,
-        present: body !== undefined,
         chunk_count: body === undefined ? "0" : "1",
         content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
       };
@@ -1268,9 +1253,8 @@ routes.push(
           : body === undefined
             ? []
             : [
-                shapeRow("conversation_payload_chunk", {
+                shapeRow("thread_payload_chunk", {
                   thread_id: match[1],
-                  source_id: CONVERSATION_SOURCE,
                   projection_epoch: CONVERSATION_EPOCH,
                   owner_cursor: ownerCursor,
                   owner_id: ownerId,
@@ -1281,22 +1265,18 @@ routes.push(
                 }),
               ];
       if (query.get("live") === "true" && query.get("offset") !== "-1")
-        return electricLongPoll(
-          `visual-payload-${ownerCursor}-${ownerId}-${field}`,
-          "conversation_payload_chunk",
-          signal
-        );
+        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "thread_payload_chunk", signal);
       return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
     },
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence$/,
+    /^\/threads\/([0-9a-f-]+)\/evidence$/,
     () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/conversation\/evidence\/([0-9]+)\/frames$/,
+    /^\/threads\/([0-9a-f-]+)\/evidence\/([0-9]+)\/frames$/,
     (_match) => ({
       frames: [
         {
@@ -1308,7 +1288,12 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/conversation\/observations$/, (match) => observationPage(match[1])]
+  ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/observations\/([0-9]+)$/,
+    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
+  ]
 );
 
 const FRESH: WatchHealth = {
@@ -1342,7 +1327,7 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected conversations use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
 class HarnessEventSource extends EventTarget {
   readonly url: string;
   readyState = 1;

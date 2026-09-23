@@ -69,14 +69,14 @@ it in group rooms.
 
 Two layers, and the split matters:
 
-1. **`app/networkpolicy-egress.yaml` is the enforcement.** The agent pod may
+1. **The app's `public-coder-agent-egress` NetworkPolicy is the enforcement.** The agent pod may
    reach DNS, the proxy on 8080, and in-cluster LiteLLM on 4000. Nothing else.
    The `HTTP_PROXY` variables in the Deployment are convenience — an agent that
    unsets them does not gain egress, it loses its only route out.
-2. **`proxy/cnp-egress.yaml` is the allowlist.** Enforced by Cilium `toFQDNs` on
+2. **The proxy's `allow-public-coder-agent-proxy-egress` policy is the allowlist.** Enforced by Cilium `toFQDNs` on
    the _proxy's_ egress, not by proxy configuration, so a CONNECT to a
    non-allowlisted host fails at the network layer. Every widening is a
-   reviewable diff in that one file.
+   reviewable diff in `cluster/cdk8s/public_coder_proxy.py`.
 
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
@@ -162,7 +162,7 @@ proxy environment handling.
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is
-  `app/networkpolicy-ingress.yaml`, which admits only the outpost's pods —
+  the app's `public-coder-agent-ingress` NetworkPolicy, which admits only the outpost's pods —
   without it any pod could forge `x-authentik-username`.
 
 ## Known gaps

@@ -9,7 +9,13 @@ import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import testing
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    FORGEJO_HAKU_POLICY,
+    GITHUB_PUBLIC_POLICY,
+    GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
+)
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
@@ -32,7 +38,7 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
 
 
-def test_testing_github_policy_has_its_credential_without_forgejo_access(
+def test_testing_github_policy_has_its_credential_and_no_real_account_credentials(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     manifests = agentplane_manifests[testing.ENV.namespace]
@@ -45,7 +51,8 @@ def test_testing_github_policy_has_its_credential_without_forgejo_access(
     )
     assert credential["spec"]["source"]["secretRef"]
     assert not any(
-        doc["kind"] in {"EgressCredential", "EgressPolicy"} and doc["metadata"]["name"] == "forgejo-haku"
+        doc["kind"] in {"EgressCredential", "EgressPolicy"}
+        and doc["metadata"]["name"] in {FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY}
         for doc in manifests
     )
 

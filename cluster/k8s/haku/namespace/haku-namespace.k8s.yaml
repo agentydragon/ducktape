@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: haku-sandbox
+    pod-security.kubernetes.io/enforce: baseline
+  name: haku-sandbox
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-sandbox-ingress
+  namespace: haku-sandbox
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+        - matchLabels:
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik

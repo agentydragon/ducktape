@@ -19,13 +19,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -55,7 +52,7 @@ class Credential:
 
 
 def add_external_secret(
-    scope: Construct, id: str, *, namespace: str, source_name: str, property_name: str, description: str
+    scope: Construct, id: str, *, namespace: str, source_name: str, properties: tuple[str, ...], description: str
 ) -> ExternalSecret:
     """Create a namespace-local ESO copy from the canonical external-creds source."""
     return ExternalSecret(
@@ -72,6 +69,7 @@ def add_external_secret(
                     secret_key=property_name,
                     remote_ref=ExternalSecretSpecDataRemoteRef(key=source_name, property=property_name),
                 )
+                for property_name in properties
             ],
             target=ExternalSecretSpecTarget(
                 name=source_name,
@@ -117,7 +115,10 @@ CREDENTIALS = (
     Credential(
         secret_file="coinbase-api-credentials.sops.yaml",
         secret_name="coinbase-api-credentials",
-        consumers=(ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),),
+        consumers=(
+            ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),
+            ApprovedConsumer("agentplane-staging", "coinbase-api-credentials-agentplane-staging-reader"),
+        ),
     ),
     Credential(
         secret_file="buildbuddy-api-key.sops.yaml",
@@ -191,7 +192,6 @@ CREDENTIALS = (
         secret_name="tana-agentydragon-gmail-com-account-pat",
         consumers=(
             ApprovedConsumer("agentplane-staging", "tana-agentydragon-gmail-com-account-pat-agentplane-staging-reader"),
-            ApprovedConsumer("haku-console", "tana-agentydragon-gmail-com-account-pat-haku-console-reader"),
             ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),
         ),
     ),
@@ -241,7 +241,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) -> Kustomization:
+def external_creds(
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, claude_rbac: Kustomization
+) -> Kustomization:
     """Generate credential grants and Kustomize wiring; source manifests stay hand-written."""
     resources = kustomize_resources()
     write_charts(root, OUTPUT_DIR, chart)
@@ -253,12 +255,10 @@ def external_creds(flux_chart: Chart, root: Path, claude_rbac: Kustomization) ->
         "external-creds",
         spec=KustomizationSpec(
             interval="10m",
-            path=f"./{OUTPUT_DIR}",
+            path=artifact_path(artifact),
             prune=True,
             decryption=sops_decryption(resources),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="external-creds", namespace=NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[flux_kustomization_depends_on(claude_rbac)],
             timeout="5m",
         ),

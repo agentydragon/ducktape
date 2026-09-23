@@ -1,0 +1,459 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-openclaw-spike
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: haku-openclaw-spike-gateway-password-generator
+  namespace: haku-openclaw-spike
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-openclaw-spike-gateway-password
+  namespace: haku-openclaw-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: haku-openclaw-spike-gateway-password-generator
+  refreshInterval: 8760h
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-openclaw-spike-gateway-password
+    template:
+      data:
+        password: "{{ .password }}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Persistent OpenClaw home, agent workspace, memory, and Claude Code session transcripts for the isolated Haku spike.
+  name: haku-openclaw-spike-state
+  namespace: haku-openclaw-spike
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+  storageClassName: local-path-ovh-hdd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating it off the ovh-ns103656 HDD (which fell over under I/O contention with etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync restore mover is created; it must not be mounted by the Deployment before the restore completes.
+  name: haku-openclaw-spike-state-v2
+  namespace: haku-openclaw-spike
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 40Gi
+  storageClassName: local-path-home-ssd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: haku-openclaw-spike
+  name: haku-openclaw-spike
+  namespace: haku-openclaw-spike
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-openclaw-spike
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: HOME
+              value: /home/openclaw
+            - name: NPM_CONFIG_PREFIX
+              value: /home/openclaw/.local
+            - name: NPM_CONFIG_CACHE
+              value: /home/openclaw/.cache/npm
+            - name: OPENCLAW_LOG_LEVEL
+              value: debug
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-openclaw-spike-gateway-password
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              value: sk-ant-oat01-proxy-haku-openclaw-placeholder
+            - name: OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV
+              value: CLAUDE_CODE_OAUTH_TOKEN
+            - name: HAKU_CONSOLE_TOKEN
+              value: proxy-haku-console-placeholder
+            - name: HAKU_GIT_USERNAME
+              value: haku
+            - name: HAKU_GIT_PASSWORD
+              value: proxy-haku-forgejo-placeholder
+            - name: GH_PAT
+              value: proxy-github-placeholder
+            - name: HAKU_STATE_REPO_URL
+              value: http://forgejo-http.forgejo:3000/haku/haku-state.git
+            - name: NODE_USE_ENV_PROXY
+              value: "1"
+            - name: HTTP_PROXY
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: HTTPS_PROXY
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: http_proxy
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: https_proxy
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
+              value: /etc/ssl/certs/ca-certificates.crt
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset
+          name: openclaw
+          ports:
+            - containerPort: 18789
+              name: gateway
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "4"
+              memory: 16Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /cfg
+              name: config
+              readOnly: true
+            - mountPath: /home/openclaw/.kube/config
+              name: kubeconfig
+              readOnly: true
+              subPath: config
+            - mountPath: /home/openclaw
+              name: state
+            - mountPath: /bazel-cache
+              name: bazel-cache
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: trust
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - |
+              set -eu
+              mkdir -p /home/openclaw/.openclaw /home/openclaw/.cache/npm /home/openclaw/.local
+              cp /cfg/openclaw.json /home/openclaw/.openclaw/openclaw.json
+              rm -f /home/openclaw/.openclaw/openclaw.json.last-good /home/openclaw/.openclaw/openclaw.json.bak*
+              if [ ! -e /home/openclaw/.claude.json ]; then
+                cp /cfg/claude.json /home/openclaw/.claude.json
+              fi
+
+              git config --global user.name haku
+              git config --global user.email haku@allegedly.works
+              umask 077
+              cat > /home/openclaw/.netrc <<NETRC
+              machine forgejo-http.forgejo
+              login ${HAKU_GIT_USERNAME}
+              password ${HAKU_GIT_PASSWORD}
+              machine github.com
+              login x-access-token
+              password ${GH_PAT}
+              NETRC
+
+              # Bazel's downloader uses the JVM trust store rather than the
+              # mounted system PEM bundle. Import the interception root into a
+              # small workspace-owned store and point the Bazel server at it.
+              truststore=/home/openclaw/egress-truststore.p12
+              rm -f "$truststore"
+              tmp="$(mktemp -d)"
+              csplit -sz -f "$tmp/c" -b '%02d.pem' /etc/ssl/certs/ca-certificates.crt \
+                '/-----BEGIN CERTIFICATE-----/' '{*}'
+              for cert in "$tmp"/c*.pem; do
+                if openssl x509 -noout -subject -in "$cert" 2>/dev/null \
+                  | grep -q haku-egress-proxy-root-ca; then
+                  keytool -importcert -noprompt -storepass changeit -storetype PKCS12 \
+                    -keystore "$truststore" -alias haku-egress-proxy -file "$cert"
+                fi
+              done
+              rm -rf "$tmp"
+              #
+              # rules_python shells out to a pip that trusts only its vendored
+              # certifi, so the container also exports PIP_CERT and friends.
+              # Repository rules inherit the pod environment anyway, but an
+              # undeclared variable never enters a repo's marker file, so a
+              # repository cached from a pre-fix TLS failure would keep serving
+              # that failure; --repo_env ties the cached fetch to the trust
+              # settings and refetches when they change.
+              cat > /home/openclaw/.bazelrc <<BAZELRC
+              startup --host_jvm_args=-Djavax.net.ssl.trustStore=$truststore
+              startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+              startup --host_jvm_args=-Djavax.net.ssl.trustStoreType=PKCS12
+              # Keep Bazel's output base + disk cache on the ephemeral /bazel-cache
+              # emptyDir, never the persistent state PVC: a single agent run accreted
+              # a 65G output base of regenerable build artifacts on the PVC before this
+              # migration. Ephemeral means re-fetched per pod start, and the volume's
+              # sizeLimit caps runaway growth (the enforcement gap in #4717).
+              startup --output_user_root=/bazel-cache/output
+              build --disk_cache=/bazel-cache/disk
+              build --repo_env=SSL_CERT_FILE
+              build --repo_env=REQUESTS_CA_BUNDLE
+              build --repo_env=PIP_CERT
+              BAZELRC
+          env:
+            - name: HOME
+              value: /home/openclaw
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              value: sk-ant-oat01-proxy-haku-openclaw-placeholder
+            - name: HAKU_GIT_USERNAME
+              value: haku
+            - name: HAKU_GIT_PASSWORD
+              value: proxy-haku-forgejo-placeholder
+            - name: GH_PAT
+              value: proxy-github-placeholder
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset
+          name: seed-state
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /cfg
+              name: config
+              readOnly: true
+            - mountPath: /home/openclaw
+              name: state
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: trust
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /tmp
+              name: tmp
+      nodeSelector:
+        topology.kubernetes.io/region: home
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: haku-openclaw-spike-config
+          name: config
+        - configMap:
+            name: haku-openclaw-spike-kubeconfig
+          name: kubeconfig
+        - name: state
+          persistentVolumeClaim:
+            claimName: haku-openclaw-spike-state-v2
+        - configMap:
+            name: haku-egress-proxy-ca-cert
+          name: trust
+        - emptyDir: {}
+          name: tmp
+        - emptyDir:
+            sizeLimit: 30Gi
+          name: bazel-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-openclaw-spike
+  namespace: haku-openclaw-spike
+spec:
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: gateway
+  selector:
+    app.kubernetes.io/name: haku-openclaw-spike
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: haku-openclaw-spike-ingress
+  namespace: haku-openclaw-spike
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
+      ports:
+        - port: 18789
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: haku-openclaw-spike-egress
+  namespace: haku-openclaw-spike
+spec:
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - ports:
+        - port: 8181
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-egress-proxy
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-openclaw-spike-proxy
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike
+  policyTypes:
+    - Egress
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Haku OpenClaw spike VolSync backup bucket.
+  name: haku-openclaw-spike-backups
+  namespace: haku-openclaw-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: haku-openclaw-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: haku-openclaw-spike-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Haku OpenClaw spike VolSync SeaweedFS credentials.
+  name: haku-openclaw-spike-backups
+  namespace: haku-openclaw-spike
+spec:
+  identityRef:
+    name: haku-openclaw-spike-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: haku-openclaw-spike-volsync-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: haku-openclaw-spike
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: haku-openclaw-spike
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: haku-openclaw-spike
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs

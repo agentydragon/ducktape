@@ -99,7 +99,7 @@ resource "authentik_group" "grafana_admins" {
 }
 
 # Forgejo site admins. The Forgejo OIDC source
-# (cluster/k8s/forgejo/app/helmrelease.yaml) maps this group's name -- carried in
+# (cluster/cdk8s/forgejo/app.py) maps this group's name -- carried in
 # the `groups` claim emitted by the default `profile` scope mapping -- to Forgejo
 # site-admin on login. Keep the name in sync with `adminGroup` there.
 resource "authentik_group" "forgejo_admins" {

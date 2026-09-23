@@ -1,12 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - storage/bucket.yaml
-  - storage/iam.yaml
-  - storage/seaweed-reference-grant.yaml
+  # cdk8s-generated (cluster/cdk8s/vm_images_publisher/publisher.py) -- see cluster/docs/cdk8s.md.
+  - vm-images-publisher.k8s.yaml
   - attic-reader-netrc.sops.yaml
-  - cronjob.yaml
 configMapGenerator:
   - name: vm-images-publisher-scripts
     namespace: vm-images-publisher

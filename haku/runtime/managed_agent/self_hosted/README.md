@@ -129,8 +129,8 @@ The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`)
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
 in-cluster `haku` SA) through `bash`. On top of that it has two native
 `mcp_toolset`s (Anthropic-side, shared-vault auth), identical to the cloud agent:
-`haku-console` (the console's aggregated MCP catalog — Tana + Grocy reads to
-start, plus approval-gated writes) and `kubectl-machine` (a machine-JWT cluster
+`haku-console` (the console's aggregated MCP catalog, with approval-gated
+writes) and `kubectl-machine` (a machine-JWT cluster
 path — redundant here with in-pod `kubectl`, kept for parity).
 
 ## k8s wiring

@@ -1,0 +1,235 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hubble-ui
+  namespace: authentik
+spec:
+  hostnames:
+    - hubble.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: alloy-otlp
+  namespace: authentik
+spec:
+  hostnames:
+    - alloy-otlp.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grocy-sf
+  namespace: authentik
+spec:
+  hostnames:
+    - grocy-sf.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grocy-vallejo
+  namespace: authentik
+spec:
+  hostnames:
+    - grocy-vallejo.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: activitywatch
+  namespace: authentik
+spec:
+  hostnames:
+    - activitywatch.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agents-mitmproxy
+  namespace: authentik
+spec:
+  hostnames:
+    - agents-mitmproxy.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: proxmox
+  namespace: authentik
+spec:
+  hostnames:
+    - atlas.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plaid-mcp
+  namespace: authentik
+spec:
+  hostnames:
+    - plaid-mcp.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: goldilocks-dashboard
+  namespace: authentik
+spec:
+  hostnames:
+    - goldilocks.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sdr
+  namespace: authentik
+spec:
+  hostnames:
+    - sdr.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: adsb
+  namespace: authentik
+spec:
+  hostnames:
+    - adsb.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: public-coder-agent
+  namespace: authentik
+spec:
+  hostnames:
+    - public-coder-agent.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+      timeouts:
+        backendRequest: 600s
+        request: 600s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-openclaw-spike
+  namespace: authentik
+spec:
+  hostnames:
+    - haku-openclaw-spike.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+      timeouts:
+        backendRequest: 600s
+        request: 600s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-ui
+  namespace: authentik
+spec:
+  hostnames:
+    - haku-ui.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Content-Security-Policy
+                value: "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://haku-ui.allegedly.works; worker-src 'self' blob:; form-action 'self'; frame-ancestors 'self' https://haku.allegedly.works; base-uri 'none'; object-src 'none'; webrtc 'block'"
+          type: ResponseHeaderModifier

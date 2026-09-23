@@ -24,7 +24,7 @@ Three-link chain:
    seconds-long DB blip becomes a minutes-long `auth.allegedly.works` 503
    window. Mitigated by relaxing the server livenessProbe
    (`failureThreshold: 8`, `periodSeconds: 15` — ride out ~2 min) in
-   `cluster/k8s/authentik/app/helmrelease.yaml`.
+   `cluster/cdk8s/authentik/app.py`.
 
 2. **FastMCP's OAuthProxy translates ANY upstream refresh failure into OAuth
    `invalid_grant`** (fastmcp 3.1.0,
@@ -108,7 +108,7 @@ shared.
    scraped via new metrics ports + ServiceMonitors on
    manifold/postscanmail/plaid-db facades and grocy MCP servers (tana already
    had one); central `McpUpstreamTokenRefreshFailed` alert in
-   `cluster/k8s/monitoring/rules/mcp-auth-prometheus-rule.yaml`.
+   `cluster/cdk8s/monitoring/rules.py`.
 3. **Authentik liveness relaxed** (see cause 1 above): `failureThreshold: 8`,
    `periodSeconds: 15`.
 

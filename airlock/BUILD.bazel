@@ -139,3 +139,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "//:conftest",
+        "//airlock/oauth:provider",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

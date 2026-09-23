@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def grocy_sf(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     cert_manager_issuer_config: Kustomization,
@@ -30,10 +28,8 @@ def grocy_sf(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/sf/app",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(
@@ -45,6 +41,7 @@ def grocy_sf(
 
 def grocy_mcp_sf(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
@@ -62,10 +59,8 @@ def grocy_mcp_sf(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/sf/mcp",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[
@@ -88,7 +83,9 @@ def grocy_mcp_sf(
     )
 
 
-def grocy_sf_user_perms(chart: Chart, forgejo_images: Kustomization, grocy_sf: Kustomization) -> Kustomization:
+def grocy_sf_user_perms(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_sf: Kustomization
+) -> Kustomization:
     name = "grocy-sf-user-perms"
     return flux_kustomization(
         chart,
@@ -97,10 +94,8 @@ def grocy_sf_user_perms(chart: Chart, forgejo_images: Kustomization, grocy_sf: K
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/sf/user-perms",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             # Run only after grocy-sf is up (and self-migrated via its postStart hook); the
             # Job-completion healthcheck makes this kustomization Ready only once the policy
@@ -119,6 +114,7 @@ def grocy_sf_user_perms(chart: Chart, forgejo_images: Kustomization, grocy_sf: K
 
 def grocy_vallejo(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     cert_manager_issuer_config: Kustomization,
@@ -134,10 +130,8 @@ def grocy_vallejo(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/vallejo/app",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             depends_on=flux_kustomization_depends_on_many(
@@ -149,6 +143,7 @@ def grocy_vallejo(
 
 def grocy_mcp_vallejo(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
@@ -166,10 +161,8 @@ def grocy_mcp_vallejo(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/vallejo/mcp",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[
@@ -193,7 +186,7 @@ def grocy_mcp_vallejo(
 
 
 def grocy_vallejo_user_perms(
-    chart: Chart, forgejo_images: Kustomization, grocy_vallejo: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_vallejo: Kustomization
 ) -> Kustomization:
     name = "grocy-vallejo-user-perms"
     return flux_kustomization(
@@ -203,10 +196,8 @@ def grocy_vallejo_user_perms(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/grocy/vallejo/user-perms",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
             # the Job-completion healthcheck makes this kustomization Ready only once the

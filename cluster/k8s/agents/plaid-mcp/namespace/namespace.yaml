@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: plaid-mcp
-  labels:
-    goldilocks.fairwinds.com/enabled: "false"
-    rbac.ducktape.io/agent-readable-logs: "true"
