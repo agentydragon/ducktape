@@ -128,6 +128,8 @@ _GENERATED_FILES = (
     "cluster/k8s/headlamp/kustomization.yaml",
     "cluster/k8s/proxmox-proxy/proxmox-proxy.k8s.yaml",
     "cluster/k8s/proxmox-proxy/kustomization.yaml",
+    "cluster/k8s/volsync/volsync.k8s.yaml",
+    "cluster/k8s/volsync/kustomization.yaml",
 )
 
 

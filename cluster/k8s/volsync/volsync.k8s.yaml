@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
+  name: volsync-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: volsync-metrics
+  namespace: volsync-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kubernetes.io/service-account.name: volsync-metrics
+  name: volsync-metrics-token
+  namespace: volsync-system
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: volsync-metrics-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: volsync-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: volsync-metrics
+    namespace: volsync-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: backube
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://backube.github.io/helm-charts/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: volsync
+  namespace: volsync-system
+spec:
+  chart:
+    spec:
+      chart: volsync
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: backube
+        namespace: flux-system
+      version: 0.16.0
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              - op: add
+                path: /spec/endpoints/0/authorization
+                value:
+                  type: Bearer
+                  credentials:
+                    name: volsync-metrics-token
+                    key: token
+            target:
+              kind: ServiceMonitor
+              name: volsync
+  upgrade:
+    crds: CreateReplace
+  values:
+    manageCRDs: true
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
