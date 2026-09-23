@@ -48,13 +48,17 @@ IDs are from <thread_sync_requirements.md>.
    change on the field's shape, so every follower of the field receives it: about twice the body
    under the proxy's `replica=full`, about once without it (`test_electric_chunk_compaction.py`).
    A reader already holding the body needs none of it, but Electric cannot know that.
-4. **The client needs working around in two places, and a refetch is ours to keep.** The
+4. **The client works against this use case in places.** The
    published `@electric-sql/client`:
    - **moves a live stream to a subset response's offset**, skipping changes to rows outside the
      subset. The store's fetch client rewrites that response header, the one place the store
      interprets Electric's protocol itself.
    - **withholds `up-to-date` for a minute after a shape is reopened**, so the store never waits
      on it.
+   - **falls back to long polling after three short SSE responses in a row**, and Electric answers
+     a reader that is behind the log with a short response rather than holding it open. So a shape
+     changing fast — the streaming case — can end up long-polled. Whether it does in practice is
+     unmeasured.
    - **drops a shape's rows on `409 must-refetch`**. Keeping them on screen (P5) is the store's
      own code.
 
