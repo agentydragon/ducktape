@@ -87,7 +87,7 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
+    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -130,6 +130,7 @@ flowchart TB
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE --> MCP_CONSOLE_INTERNAL
+    SANDBOX_EXEC_IMAGE --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
@@ -390,12 +391,27 @@ refused outside them; and removing the account or its label still disables the w
 
 **Planned image:** the configured `runner` environment stamps the integration app's runner
 template, which carries the egress sidecar, the interception CA and the proxy environment, so the
-path is real end to end. Its workload container is the runner image, and a box to run commands in
-wants neither the harnesses nor the state volume. Build the exec target as its own image and
-`SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
-([sandbox Actions](../docs/sandbox_actions.md)).
+path is real end to end. Its workload container is the runner image, which is both too much and too
+little for a box to run commands in: it brings the harnesses and the state volume, but its only
+tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `tea`, `gh` and
+`bazel` are not on `PATH` (checked 2026-09-19 and 2026-09-23). Build the exec target as its own
+image and `SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
+([sandbox Actions](../docs/sandbox_actions.md)), and offer it as a second environment beside
+`runner`.
 
-Its own clock: nothing waits on it, and the current environment is correct but oversized.
+**Candidate:** the Haku workspace image (`cluster/k8s/haku/workspaces/image/`) already bakes what
+`haku-state`'s tooling calls: `python3`, `jq`, `openssl`, `gh`, `kubectl`, `tea`, `ruff`, Bazel with a
+JRE, and `build-essential`. Its setup script takes the Forgejo login from environment variables fed
+by the `haku-forgejo-git` Secret; in a sandbox the `forgejo-haku` placeholder stands in for it.
+
+**What waits on it:**
+
+- Coinbase reads, whose recipe signs its ES256 JWT with the runner's hermetic interpreter, found by
+  its runfiles path, after installing `cryptography` from PyPI on every run.
+- `haku-state`'s `haku read` and validator, which need Bazel or a Python with their dependencies.
+- Most of a counterpart to the console's `sandbox` server (`MCP_CONSOLE_INTERNAL`): the `sandbox`
+  group already provisions boxes and runs commands in them; what a Haku run lacks there is this
+  environment.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
