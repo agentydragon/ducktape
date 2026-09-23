@@ -60,6 +60,18 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/kustomization.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
     "cluster/k8s/github-branch-protection/kustomization.yaml",
+    "cluster/k8s/forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
+    "cluster/k8s/forgejo/agentydragon/kustomization.yaml",
+    "cluster/k8s/forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",
+    "cluster/k8s/forgejo/agentydragon-repos/kustomization.yaml",
+    "cluster/k8s/forgejo/budget-ledger/budget-ledger.k8s.yaml",
+    "cluster/k8s/forgejo/budget-ledger/kustomization.yaml",
+    "cluster/k8s/forgejo/claude/forgejo-claude.k8s.yaml",
+    "cluster/k8s/forgejo/claude/kustomization.yaml",
+    "cluster/k8s/forgejo/cpap-data/cpap-data.k8s.yaml",
+    "cluster/k8s/forgejo/cpap-data/kustomization.yaml",
+    "cluster/k8s/forgejo/haku-state/haku-state.k8s.yaml",
+    "cluster/k8s/forgejo/haku-state/kustomization.yaml",
 )
 
 
