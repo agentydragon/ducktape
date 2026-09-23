@@ -19,6 +19,7 @@ from cluster.cdk8s import (
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
     github_branch_protection,
+    goldilocks,
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
@@ -86,7 +87,6 @@ from cluster.cdk8s.github_secrets_sync import (
     flux_kustomizations as github_secrets_sync_flux_kustomizations,
     gitops_module as github_secrets_sync_gitops_module,
 )
-from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
 from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
 from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
@@ -195,6 +195,7 @@ def generate_manifests(root: Path) -> None:
     keda.write_manifests(root)
     valkey.write_manifests(root)
     local_path_provisioner.write_manifests(root)
+    goldilocks.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -431,10 +432,8 @@ def generate_manifests(root: Path) -> None:
     external_creds_kustomization = external_creds.external_creds(
         flux_chart, external_creds_artifact, root, claude_rbac_kustomization
     )
-    goldilocks_artifact = artifact("goldilocks", "cluster/k8s/goldilocks")
-    goldilocks_kustomization = goldilocks_flux_kustomizations.goldilocks(
-        flux_chart, goldilocks_artifact, vpa_kustomization
-    )
+    goldilocks_artifact = artifact("goldilocks", goldilocks.OUTPUT_DIR)
+    goldilocks_kustomization = goldilocks.goldilocks(flux_chart, goldilocks_artifact, vpa_kustomization)
     clickhouse_schema_artifact = artifact("clickhouse-schema", clickhouse_schema.OUTPUT_DIR)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
         flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization

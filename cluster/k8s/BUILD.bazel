@@ -160,6 +160,8 @@ exports_files(
         "valkey/kustomization.yaml",
         "local-path-provisioner/local-path-provisioner.k8s.yaml",
         "local-path-provisioner/kustomization.yaml",
+        "goldilocks/goldilocks.k8s.yaml",
+        "goldilocks/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
