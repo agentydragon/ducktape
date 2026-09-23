@@ -18,15 +18,7 @@ import {
   type NativeFramePage,
   type ThreadView,
 } from "./client";
-import {
-  ThreadCollection,
-  CommandSelection,
-  decimalBigInt,
-  PayloadBody,
-  type ThreadEntity,
-  type ThreadHistory,
-  type PayloadRef,
-} from "./thread_store";
+import { decimalBigInt, useThreadSync, type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
@@ -60,20 +52,28 @@ function lifecyclePresentation(observation: string, event: unknown): { label: st
 
 function Body({ reference, plain = false }: { reference: PayloadRef | null; plain?: boolean }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
+  return <PayloadText reference={reference} plain={plain} />;
+}
+
+function PayloadText({ reference, plain }: { reference: PayloadRef; plain: boolean }): JSX.Element {
+  const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
-    <PayloadBody reference={reference}>
-      {(body) =>
-        body === null ? (
-          <Text c="dimmed">Loading complete revision…</Text>
-        ) : plain ? (
-          <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {body}
-          </Text>
-        ) : (
-          <Markdown source={body} />
-        )
-      }
-    </PayloadBody>
+    <>
+      {error && (
+        <p role="alert">
+          Payload synchronization stopped: {error} <button onClick={retry}>Retry payload synchronization</button>
+        </p>
+      )}
+      {body === null ? (
+        <Text c="dimmed">Loading complete revision…</Text>
+      ) : plain ? (
+        <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {body}
+        </Text>
+      ) : (
+        <Markdown source={body} />
+      )}
+    </>
   );
 }
 
@@ -392,14 +392,8 @@ function SelectedCommandOutcomes({
   errors: ReadonlyMap<string, string>;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element {
-  const ids = commands.slice(0, 128).map((value) => value.command.commandId);
-  return (
-    <CommandSelection commandIds={ids}>
-      {(rows) => (
-        <SelectedCommandRows rows={rows} commands={commands} store={store} errors={errors} deliver={deliver} />
-      )}
-    </CommandSelection>
-  );
+  const rows = useThreadSync().useCommandRows(commands.slice(0, 128).map((value) => value.command.commandId));
+  return <SelectedCommandRows rows={rows} commands={commands} store={store} errors={errors} deliver={deliver} />;
 }
 
 function SelectedCommandRows({
@@ -788,7 +782,7 @@ function ProjectedSessionBody({
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  history: ThreadHistory;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadOlder">;
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -970,7 +964,46 @@ function ProjectedSessionBody({
   );
 }
 
+function SyncedThread({
+  threadId,
+  thread,
+  available,
+}: {
+  threadId: string;
+  thread: ThreadView;
+  available: boolean;
+}): JSX.Element {
+  const { window: shown, error } = useThreadSync().useThread();
+  if (!shown) {
+    if (error) return <p role="alert">Thread sync failed: {error}</p>;
+    return <p role="status">Loading thread…</p>;
+  }
+  return (
+    <>
+      {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
+      {shown.error && (
+        <p role="alert">
+          Thread synchronization stopped: {shown.error} <button onClick={shown.refresh}>Refresh thread</button>
+        </p>
+      )}
+      {!shown.error && !shown.caughtUp && (
+        <p role="status" data-thread-catchup="true">
+          Catching up thread…
+        </p>
+      )}
+      <ProjectedSessionBody
+        threadId={threadId}
+        entities={shown.caughtUp ? shown.rows : []}
+        thread={thread}
+        history={shown}
+        available={available}
+      />
+    </>
+  );
+}
+
 export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
+  const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1033,17 +1066,9 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             </Text>
           )}
         {thread && (
-          <ThreadCollection key={threadId} threadId={threadId}>
-            {(rows, history) => (
-              <ProjectedSessionBody
-                threadId={threadId}
-                entities={rows}
-                thread={thread}
-                history={history}
-                available={sandboxAvailable}
-              />
-            )}
-          </ThreadCollection>
+          <sync.Thread key={threadId} threadId={threadId}>
+            <SyncedThread threadId={threadId} thread={thread} available={sandboxAvailable} />
+          </sync.Thread>
         )}
       </Stack>
     </ChronologicalDebugProvider>
