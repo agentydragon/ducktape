@@ -141,7 +141,7 @@ from cluster.cdk8s.study_casino import flux_kustomizations as study_casino_flux_
 from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
-from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
+from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
@@ -213,6 +213,7 @@ def generate_manifests(root: Path) -> None:
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr_openclaw.write_manifests(root)
+    tofu_controller_release.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -429,8 +430,8 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
         cert_manager_issuer_config_kustomization,
     )
-    tofu_controller_artifact = artifact("tofu-controller", "cluster/k8s/tofu-controller")
-    tofu_controller_kustomization = tofu_controller_flux_kustomizations.tofu_controller(
+    tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
+    tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     volsync_artifact = artifact("volsync", "cluster/k8s/volsync")
