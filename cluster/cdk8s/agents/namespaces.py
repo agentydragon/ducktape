@@ -17,12 +17,15 @@ def write_manifests(root: Path) -> None:
     )
     write_namespace(
         root,
-        "cluster/k8s/agents/haku-openclaw-spike/app",
-        name="haku-openclaw-spike",
+        "cluster/k8s/agents/haku-egress-proxy",
+        name="haku-egress-proxy",
         labels={
             "goldilocks.fairwinds.com/enabled": "true",
             "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": "haku-openclaw-spike",
+            "name": "haku-egress-proxy",
         },
+        "cluster/k8s/agents/haku-openclaw-spike/app",
+        name="haku-openclaw-spike",
+            "name": "haku-openclaw-spike",
         annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
     )
