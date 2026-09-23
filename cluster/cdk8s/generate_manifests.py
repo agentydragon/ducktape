@@ -70,6 +70,7 @@ from cluster.cdk8s.atuin import server as atuin_server, user_provisioner as atui
 from cluster.cdk8s.authentik import (
     app as authentik_app,
     db as authentik_db,
+    db_backups as authentik_db_backups,
     flux_kustomizations as authentik_flux_kustomizations,
     namespace as authentik_namespace,
     proxy_routes as authentik_proxy_routes,
@@ -225,6 +226,7 @@ def generate_manifests(root: Path) -> None:
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
+    authentik_db_backups.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)

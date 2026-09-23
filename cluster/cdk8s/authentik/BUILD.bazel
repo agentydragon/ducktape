@@ -71,6 +71,21 @@ py_library(
 )
 
 py_library(
+    name = "db_backups",
+    srcs = ["db_backups.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "proxy_routes",
     srcs = ["proxy_routes.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
