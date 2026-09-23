@@ -1069,6 +1069,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumclusterwidenetworkpolicies.yaml"],
 )
 
+# Match cluster/terraform/main/cilium.tf's local.cilium_version.
+http_file(
+    name = "cilium_envoyconfig_crd",
+    downloaded_file_path = "cilium.io_ciliumenvoyconfigs.yaml",
+    sha256 = "9641a7b9034508798ac8ecf58cf29fd2ae21e320df7ad59c8596bf7f414c420b",
+    urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumenvoyconfigs.yaml"],
+)
+
 # CloudNativePG CRDs follow the operator appVersion in cluster/cdk8s/cnpg_operator.py.
 http_file(
     name = "cnpg_cluster_crd",
