@@ -373,32 +373,6 @@ def haku_openclaw_spike_backup(
     )
 
 
-def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "kubectl-passthrough-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="kubectl-passthrough-mcp",
-                    namespace="kubectl-passthrough-mcp",
-                )
-            ],
-        ),
-    )
-
-
 def loki_read_proxy(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:

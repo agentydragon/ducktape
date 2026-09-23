@@ -144,6 +144,8 @@ exports_files(
         "authentik/sso-providers-tf/kustomization.yaml",
         "agents/shared-rbac/agent-shared-rbac.k8s.yaml",
         "agents/shared-rbac/kustomization.yaml",
+        "agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
+        "agents/kubectl-passthrough-mcp/app/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
