@@ -147,6 +147,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/shared-rbac/kustomization.yaml",
     "cluster/k8s/agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
     "cluster/k8s/agents/kubectl-passthrough-mcp/app/kustomization.yaml",
+    "cluster/k8s/agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
+    "cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml",
     "cluster/k8s/website/website.k8s.yaml",
     "cluster/k8s/website/kustomization.yaml",
     "cluster/k8s/ollama/ollama.k8s.yaml",

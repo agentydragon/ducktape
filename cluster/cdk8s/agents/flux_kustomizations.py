@@ -194,44 +194,6 @@ def authentik_jwt_rotation(
     )
 
 
-def claude_sandbox_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    claude_rbac: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "claude-sandbox-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="openclaw-telegram-bot-token",
-                    namespace="claude-sandbox",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="buildbuddy-api-key",
-                    namespace="claude-sandbox",
-                ),
-            ],
-        ),
-    )
-
-
 def forgejo_token_rotation(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

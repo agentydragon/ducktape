@@ -206,6 +206,8 @@ exports_files(
         "agents/shared-rbac/kustomization.yaml",
         "agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
         "agents/kubectl-passthrough-mcp/app/kustomization.yaml",
+        "agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
+        "agents/claude-sandbox-secrets/kustomization.yaml",
         "website/website.k8s.yaml",
         "website/kustomization.yaml",
         "ollama/ollama.k8s.yaml",

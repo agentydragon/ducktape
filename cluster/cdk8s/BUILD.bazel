@@ -284,6 +284,22 @@ py_library(
 )
 
 py_library(
+    name = "claude_sandbox_secrets",
+    srcs = ["claude_sandbox_secrets.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -873,6 +889,7 @@ py_library(
         ":agent_shared_rbac",
         ":aiquota",
         ":artifact_generators",
+        ":claude_sandbox_secrets",
         ":descheduler",
         ":dns_automation",
         ":egress_fences",
@@ -1092,6 +1109,8 @@ py_test(
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
+        "//cluster/k8s:agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
+        "//cluster/k8s:agents/claude-sandbox-secrets/kustomization.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/namespace.k8s.yaml",
