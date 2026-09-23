@@ -1,0 +1,5 @@
+# Kustomize transformer configuration, not a Kubernetes manifest: points `images:` at a
+# VirtualMachine's containerDisk, which the transformer does not reach by default.
+images:
+  - path: spec/template/spec/volumes[]/containerDisk/image
+    kind: VirtualMachine

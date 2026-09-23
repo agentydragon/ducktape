@@ -50,9 +50,6 @@ the Kustomization that owns it through `generation.write_namespace`.
   and the `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
-- Objects whose kind has no binding yet: kubevirt `VirtualMachine`
-  (`agents/public-coder-agent/devbox`, `cpap-sync`) and CDI `StorageProfile`
-  (`kubevirt/cdi`).
 - One-offs: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
   another repository, outside the generated graph); and the `airlock` and
   `study-casino` Deployments, which carry an image marker on an env value as well as on
@@ -128,7 +125,9 @@ Deployment carries the placeholder tag `unset`, and a hand-written
 `$imagepolicy`. Where a tag is also data a Pod reads (the console reports its own and its
 static shell's image tags), it lives in a hand-written sibling ConfigMap carrying the
 marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource in the root
-Kustomization and referenced by name from the workload.
+Kustomization and referenced by name from the workload. A KubeVirt `VirtualMachine`'s
+`containerDisk` image is outside the `images:` transformer's default field specs, so its
+Component also lists a `kustomizeconfig` naming that path (`cpap-sync/image-pins`).
 
 Argo CD Image Updater would need the identical carve-out: its `git` write-back mode
 writes a separate file, and its default `argocd` mode stores the override on the live
@@ -153,6 +152,9 @@ Flux version deployed by the repository.
 
 - `cdk8s import` takes one CRD per invocation; a bundled multi-document file
   (external-secrets) goes through the `devinfra/k8s/extract_crd.py` genrule first.
+  KubeVirt and CDI publish no YAML for the CRDs their operators create at runtime; the
+  same genrule extracts them from the generated Go files that embed them
+  (`crd_go_key`), wrapping KubeVirt's schema-only entries in a CRD (`crd_wrap_kind`).
 - A CRD group with a dash (`external-secrets.io`) keeps it in the jsii assembly's npm
   name but not in the Python package directory; `jsii_module_path` carries the second
   spelling.
