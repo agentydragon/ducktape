@@ -1,5 +1,6 @@
 # gazelle:resolve py cilium_crds //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cilium_clusterwide_crds //cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy
+# gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/crd_bindings/cilium:ciliumenvoyconfig
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
@@ -16,6 +17,14 @@ cdk8s_import(
     name = "ciliumclusterwidenetworkpolicy",
     crd = "@cilium_clusterwide_networkpolicy_crd//file",
     module_name = "cilium_clusterwide_crds",
+    module_path = "io/cilium",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "ciliumenvoyconfig",
+    crd = "@cilium_envoyconfig_crd//file",
+    module_name = "cilium_envoyconfig_crds",
     module_path = "io/cilium",
     visibility = ["//visibility:public"],
 )
