@@ -72,6 +72,7 @@ exports_files(
         "haku/forgejo-tea/kustomization.yaml",
         "haku/workloads/haku-workloads.k8s.yaml",
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
+        "haku/workspaces/app/kustomization.yaml",
         "haku/mailbox/haku-mailbox.k8s.yaml",
         "haku-ci/haku-ci.k8s.yaml",
         "agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
