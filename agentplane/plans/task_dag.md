@@ -86,7 +86,7 @@ flowchart TB
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
-    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>holds no RoleBinding; reaches Forgejo as haku"]:::future
+    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics reads only; reaches Forgejo as haku"]:::future
     SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
@@ -200,8 +200,7 @@ UID in its `extra` claims, which is the first end-to-end proof of the whole Kube
 path: the proxy verifying the API server against the cluster CA, `projectedWorkloadToken`
 substituting a credential the workload never holds, and `KUBERNETES_AUDIENCE` matching the
 cluster's `--api-audiences`. Not tested: `exec`, `attach`, `port-forward` and watches, which
-negotiate SPDY or WebSocket or stream chunked through a bumping proxy; and any authorized read,
-since the account holds no RoleBinding (`CLAUDE_AI_SA`).
+negotiate SPDY or WebSocket or stream chunked through a bumping proxy; and any authorized read.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
@@ -349,11 +348,11 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
 ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic,
-Kubernetes, `forgejo-haku` and `packages` policies, and an `ActionPolicyBinding` auto-approving
-reviewed GitHub reads plus the whole `sandbox-self` set. It holds **no RoleBinding at all**, so a sandbox
-authenticating to the API server arrives as an account with nothing beyond `system:authenticated`
-— reach without authorization, which is why the verified Kubernetes evidence is a
-`SelfSubjectReview` and not a read of any object.
+Kubernetes, `forgejo-haku`, `packages` and `google-readonly` policies, and an `ActionPolicyBinding`
+auto-approving reviewed GitHub, Home Assistant, Gmail and Calendar reads plus the whole
+`sandbox-self` set. Its only Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
+ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of non-sensitive cluster state; the
+verified Kubernetes evidence from a sandbox is still a `SelfSubjectReview`, not a read of any object.
 
 `forgejo-haku` is the deliberate part and the widest: at the operator's request, a sandbox of this
 caller's reaches the in-cluster Forgejo as the `haku` service account, by the proxy substituting
@@ -362,8 +361,9 @@ carries every repository haku owns and the web UI besides, and it is a second ag
 rather than this one's. That grant is decided; what it sharpens is the question below, because the
 account now holds authority whose blast radius is another agent's.
 
-**Kubernetes authority is RoleBindings on this ServiceAccount.** Decided; which roles, at what
-scope, is the open part and needs a conversation before anything is written. The two alternatives
+**Kubernetes authority is RoleBindings on this ServiceAccount.** Decided; which roles beyond the
+diagnostics reader, at what scope, is the open part and needs a conversation before anything is
+written. The two alternatives
 are rejected: binding haku's `haku-k8s` Authentik JWT on `kubeapi.allegedly.works` would make a
 sandbox `oidc-ksbx-groups:haku`, and the `claude-web-k8s` one `kubectl-sandbox-users`, but both
 hairpin out through the Gateway for an apiserver one hop away and, worse, layer a second identity
@@ -502,19 +502,20 @@ remains, each with what it needs; an entry leaves when its set is written.
 **The composition layer, which the list above omits.** Four of the console's twenty-four entries are
 `any_of` bundles rather than leaves, and they are what is actually bound to an agent:
 `public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
-(fourteen leaves), and `manual_review`, which is `type: never`.
+(thirteen leaves), and `manual_review`, which is `type: never`.
 
 These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
 set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
 `manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
 per-agent progress:
 
-- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` + `kubernetes_reads`
-  - `grants_self_introspection` + `grants_own_revoke`. The GitHub half is **fully ported** -- all
-    four leaves under `public_coder_github_reads` plus `github_identity_reads` are sets already. What
-    is left is the `grants` trio, which the list above puts behind the Action Service having its own
-    grant surface. That trio is the whole remaining distance for this agent, and it is the same
-    blocker `PC_EGRESS` meets from the other side.
+- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` +
+  `kubernetes_reads` + `grants_self_introspection` + `grants_own_revoke`. The GitHub half is
+  **fully ported** -- all four leaves under `public_coder_github_reads` plus
+  `github_identity_reads` are sets already. What is left is the `grants` trio, which the list
+  above puts behind the Action Service having its own grant surface. That trio is the whole
+  remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
+  side.
 - **`haku_v1`** = thirteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, Home
   Assistant, the console's `sandbox` server and the `grants` trio. What is left is `grocy_reads`,
   `tana_safe_tools`, `home_assistant_desk_light_control`, `managed_gmail_labels`,
