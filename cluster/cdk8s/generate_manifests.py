@@ -15,6 +15,7 @@ from cluster.cdk8s import (
     etcd,
     external_creds,
     forgejo_image_automation,
+    forgejo_images,
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
     github_branch_protection,
@@ -38,8 +39,10 @@ from cluster.cdk8s.artifact_generators import (
 )
 from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
 from cluster.cdk8s.authentik import (
+    db as authentik_db,
     flux_kustomizations as authentik_flux_kustomizations,
     namespace as authentik_namespace,
+    sso_providers,
 )
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
 from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
@@ -59,17 +62,21 @@ from cluster.cdk8s.flux_image_automation_ghcr import (
 )
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_kustomizations
-from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook_token_flux_kustomizations
+from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
+    db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
-from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
+from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
-from cluster.cdk8s.github_secrets_sync import flux_kustomizations as github_secrets_sync_flux_kustomizations
+from cluster.cdk8s.github_secrets_sync import (
+    flux_kustomizations as github_secrets_sync_flux_kustomizations,
+    gitops_module as github_secrets_sync_gitops_module,
+)
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
 from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
@@ -81,7 +88,7 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.hubble_ui import flux_kustomizations as hubble_ui_flux_kustomizations
-from cluster.cdk8s.infra_drift import flux_kustomizations as infra_drift_flux_kustomizations
+from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
@@ -119,10 +126,7 @@ from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
-from cluster.cdk8s.tofu_state import (
-    flux_kustomizations as tofu_state_flux_kustomizations,
-    namespace as tofu_state_namespace,
-)
+from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
@@ -164,14 +168,23 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
+    tofu_state_db.write_manifests(root)
     authentik_namespace.write_manifests(root)
+    authentik_db.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     forgejo_namespace.write_manifests(root)
+    forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    drift_watch.write_manifests(root)
+    github_secrets_sync_gitops_module.write_manifests(root)
+    forgejo_images.write_manifests(root)
+    gatus_sso.write_manifests(root)
+    flux_webhook_token.write_manifests(root)
+    sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -438,10 +451,8 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_filer_db_artifact, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
-    tofu_state_db_artifact = artifact("tofu-state-db", "cluster/k8s/tofu-state")
-    tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(
-        flux_chart, tofu_state_db_artifact, cnpg_kustomization
-    )
+    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
+    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
     seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", "cluster/k8s/seaweedfs/secrets")
     seaweedfs_secrets_kustomization = seaweedfs_flux_kustomizations.seaweedfs_secrets(
         flux_chart,
@@ -481,7 +492,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_modules.forgejo_agentydragon(
         flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
-    infra_drift_artifact = artifact("infra-drift", "cluster/k8s/infra-drift")
+    infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     infra_drift_flux_kustomizations.infra_drift(
         flux_chart, infra_drift_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
@@ -544,24 +555,24 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    sso_providers_tf_artifact = artifact("sso-providers-tf", "cluster/k8s/authentik/sso-providers-tf")
-    sso_providers_tf_kustomization = authentik_flux_kustomizations.sso_providers_tf(
+    sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
+    sso_providers_tf_kustomization = sso_providers.sso_providers_tf(
         flux_chart,
         sso_providers_tf_artifact,
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    gatus_sso_tf_artifact = artifact("gatus-sso-tf", "cluster/k8s/gatus/sso-tf")
-    gatus_flux_kustomizations.gatus_sso_tf(
+    gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
+    gatus_sso.gatus_sso_tf(
         flux_chart,
         gatus_sso_tf_artifact,
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    flux_webhook_token_artifact = artifact("flux-webhook-token", "cluster/k8s/flux-webhook-token")
-    flux_webhook_token_kustomization = flux_webhook_token_flux_kustomizations.flux_webhook_token(
+    flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
+    flux_webhook_token_kustomization = flux_webhook_token.flux_webhook_token(
         flux_chart,
         flux_webhook_token_artifact,
         tofu_controller_kustomization,
@@ -782,7 +793,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         claude_rbac_kustomization,
     )
-    forgejo_images_artifact = artifact("forgejo-images", "cluster/k8s/forgejo-images")
+    forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_kustomization = forgejo_images_flux_kustomizations.forgejo_images(
         flux_chart,
         forgejo_images_artifact,
@@ -920,8 +931,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         external_creds_kustomization,
     )
-    github_secrets_sync_artifact = artifact("github-secrets-sync", "cluster/k8s/github-secrets-sync")
-    github_secrets_sync_flux_kustomizations.github_secrets_sync(
+    github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
+    github_secrets_sync_gitops_module.github_secrets_sync(
         flux_chart,
         github_secrets_sync_artifact,
         tofu_controller_kustomization,

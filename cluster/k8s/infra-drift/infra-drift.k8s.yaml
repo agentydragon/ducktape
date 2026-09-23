@@ -1,0 +1,40 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  annotations:
+    description: Plan-only drift watch on cluster/terraform/main (the metal root). Never applies; `bazel run //cluster:bootstrap` remains the apply path.
+  name: infra-drift
+  namespace: flux-system
+spec:
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "main"
+      }
+  interval: 6h
+  path: ./cluster/terraform/main
+  planOnly: true
+  refreshBeforeApply: true
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: tofu-state-db-credentials
+        - name: SOPS_AGE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: age.agekey
+              name: sops-age-cluster-secrets
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: infra-drift-source
+    namespace: flux-system
+  storeReadablePlan: human
+  targets:
+    - ovh_dedicated_server.kimsufi
+    - ovh_dedicated_server.kimsufi_cp

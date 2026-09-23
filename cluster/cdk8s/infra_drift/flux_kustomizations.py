@@ -6,8 +6,10 @@ from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.infra_drift import drift_watch
 
 
 def infra_drift(
@@ -31,8 +33,8 @@ def infra_drift(
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
                     kind="Terraform",
-                    name="infra-drift",
-                    namespace="flux-system",
+                    name=drift_watch.NAME,
+                    namespace=terraform.NAMESPACE,
                 )
             ],
             depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),

@@ -10,49 +10,6 @@ from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def github_secrets_sync(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    github_secrets_sync_secrets: Kustomization,
-    forgejo_images: Kustomization,
-    seaweedfs_pr_visuals_bucket: Kustomization,
-) -> Kustomization:
-    name = "github-secrets-sync"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="github-secrets-sync",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                tofu_controller,
-                tofu_state_db,
-                github_secrets_sync_secrets,
-                # The Terraform module reads the canonical ducktape-ci registry credential
-                # from forgejo-images before publishing it to gaffer-private's GitHub Actions
-                # secrets.
-                forgejo_images,
-                seaweedfs_pr_visuals_bucket,
-            ),
-        ),
-    )
-
-
 def github_secrets_sync_secrets(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

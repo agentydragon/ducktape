@@ -1,30 +1,29 @@
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
-  name: gatus-sso
+  name: sso-providers
   namespace: flux-system
 spec:
-  interval: 15m
-  approvePlan: "auto"
-  refreshBeforeApply: true
-  path: ./tf/gitops/gatus-sso
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  serviceAccountName: tf-runner
+  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
-        schema_name = "gatus_sso"
+        schema_name = "sso_providers"
       }
+  interval: 15m
+  path: ./tf/gitops/sso-providers
+  refreshBeforeApply: true
   runnerPodTemplate:
     spec:
       env:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
               key: password
-  vars: []
+              name: tofu-state-db-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
