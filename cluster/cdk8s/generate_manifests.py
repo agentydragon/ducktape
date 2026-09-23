@@ -111,6 +111,7 @@ from cluster.cdk8s.monitoring import (
     cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
     grafana_helmrepository,
+    grafana_instance,
     grafana_operator,
     loki,
     mimir,
@@ -208,6 +209,7 @@ def generate_manifests(root: Path) -> None:
     loki.write_manifests(root)
     mimir.write_manifests(root)
     tempo.write_manifests(root)
+    grafana_instance.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

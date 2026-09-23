@@ -125,6 +125,7 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/mimir/kustomization.yaml",
     "cluster/k8s/monitoring/tempo/tempo.k8s.yaml",
     "cluster/k8s/monitoring/tempo/kustomization.yaml",
+    "cluster/k8s/monitoring/grafana-instance/grafana-instance.k8s.yaml",
 )
 
 

@@ -205,3 +205,21 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_library(
+    name = "grafana_instance",
+    srcs = ["grafana_instance.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "//cluster/cdk8s/crd_bindings/grafana_operator:grafana",
+        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource",
+        "@pypi//cdk8s",
+    ],
+)

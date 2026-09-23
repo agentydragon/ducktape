@@ -163,6 +163,7 @@ exports_files(
         "monitoring/mimir/kustomization.yaml",
         "monitoring/tempo/tempo.k8s.yaml",
         "monitoring/tempo/kustomization.yaml",
+        "monitoring/grafana-instance/grafana-instance.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
