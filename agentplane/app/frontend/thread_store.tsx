@@ -177,6 +177,23 @@ class Listeners {
   }
 }
 
+/**
+ * Keeps a stream where it is in its log when a subset answers. Electric's client moves a stream to
+ * a subset response's offset, which is right for a stream with no position yet (`now`) but, for one
+ * behind the subset, skips every change in between to rows outside the subset. The stream's own
+ * offset is on the request, so the response carries that back instead.
+ */
+// CLEANUP(added 2026-09-23): Drop once a released @electric-sql/client moves only a stream at `now`
+//   to a subset's offset; 1.5.28's requestSnapshot moves a live one too (LiveState.handleResponseMetadata).
+async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init);
+  const offset = new URL(input instanceof Request ? input.url : String(input)).searchParams.get("offset");
+  if (init?.method !== "POST" || !response.ok || offset === null || offset === "now") return response;
+  const headers = new Headers(response.headers);
+  headers.set("electric-offset", offset);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 /** One Electric shape from now: its rows arrive as subsets of it, and as its live changes. */
 class Shape {
   readonly #abort = new AbortController();
@@ -192,6 +209,7 @@ class Shape {
       log: "changes_only",
       subsetMethod: "POST",
       columnMapper: columns,
+      fetchClient: keepingOffset,
       signal: this.#abort.signal,
       onError: (error) => {
         if (!this.#abort.signal.aborted) onError(error);

@@ -150,7 +150,9 @@ class FakeSync {
   entities: Json[] = [];
   chunks: Json[] = [];
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
-  readonly #live = new Map<string, (response: Response) => void>();
+  readonly #live = new Map<string, { query: URLSearchParams; resolve: (response: Response) => void }>();
+  // Each subset answers from further along the log than any stream has read.
+  #snapshots = 0;
 
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -170,12 +172,12 @@ class FakeSync {
           data: rows.map((row) => change(relation, "insert", row)),
           metadata: { snapshot_mark: 1, database_lsn: "1", xip_list: [], xmin: "1", xmax: "1" },
         }),
-        { headers: headers(relation, handle) }
+        { headers: { ...headers(relation, handle), "electric-offset": `${++this.#snapshots}00_0` } }
       );
     }
     if (url.searchParams.get("live") !== "true") return log(relation, handle, []);
     return new Promise((resolve, reject) => {
-      this.#live.set(path, resolve);
+      this.#live.set(path, { query: url.searchParams, resolve });
       init?.signal?.addEventListener("abort", () => {
         this.#live.delete(path);
         reject(new DOMException("aborted", "AbortError"));
@@ -183,10 +185,16 @@ class FakeSync {
     });
   };
 
+  /** The offset the shape's waiting live request reads from. */
+  async liveOffset(path: string): Promise<string | null> {
+    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
+    return this.#live.get(path)!.query.get("offset");
+  }
+
   /** Answer the shape's waiting live request. */
   async respond(path: string, response: (relation: string) => Response): Promise<void> {
     await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    const resolve = this.#live.get(path)!;
+    const { resolve } = this.#live.get(path)!;
     this.#live.delete(path);
     await act(async () => resolve(response(path === "entities" ? "thread_entity" : "thread_payload_chunk")));
   }
@@ -322,6 +330,26 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-71@71"));
   expect(itemsShown(container)).toContain("item-70@71");
   expect(itemsShown(container).some((shown) => shown.startsWith("item-5@"))).toBe(false);
+});
+
+it("keeps reading the live log from where it was when a subset answers from further along", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  const container = await render(
+    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
+  );
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  const reading = await sync.liveOffset("entities");
+
+  await act(async () => container.querySelector("button")!.click());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+
+  // The stream reads on from where it was, so what the subset's position is past still reaches it.
+  expect(await sync.liveOffset("entities")).toBe(reading);
+  await sync.respond("entities", (relation) =>
+    log(relation, "entities-1", [change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" }))])
+  );
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
 });
 
 it("re-reads a retired epoch's scope and swaps windows under the same children", async () => {
