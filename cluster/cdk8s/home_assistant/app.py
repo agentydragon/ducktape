@@ -1,5 +1,5 @@
-"""Home Assistant: the Deployment with its Caddy metrics proxy, the onboarding Job and the
-CronJob that keep other workloads' tokens valid, the config volume and its VolSync backup, pull
+"""Home Assistant: the Deployment with its Caddy metrics proxy, the onboarding Job, the CronJob
+that keeps other workloads' tokens valid, the config volume and its VolSync backup, pull
 credentials, metrics token, route, the backup mover's egress policy, and the ServiceMonitor and
 PrometheusRule.
 
@@ -170,6 +170,7 @@ def _deployment(scope: Construct) -> None:
                             image=_PROVISIONER_IMAGE,
                             image_pull_policy="Always",
                             command=_PROVISIONER_COMMAND,
+                            args=["setup"],
                             env=[_CONFIG_FILE_ENV, _ONBOARDING_DISABLED_ENV],
                             volume_mounts=_provisioner_mounts(),
                         )
@@ -273,16 +274,14 @@ def _onboarding_job(scope: Construct) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     restart_policy="OnFailure",
                     node_selector=_NODE_SELECTOR,
-                    # Writes the token Secrets once onboarding has created the owner who mints them.
-                    service_account_name=_TOKEN_PROVISIONER,
-                    automount_service_account_token=True,
                     containers=[
                         k8s.Container(
                             name="onboarding",
                             image=_PROVISIONER_IMAGE,
                             image_pull_policy="Always",
                             command=_PROVISIONER_COMMAND,
-                            env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV, _TOKENS_ENV],
+                            args=["setup"],
+                            env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV],
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
                             ),
@@ -297,8 +296,9 @@ def _onboarding_job(scope: Construct) -> None:
 
 
 def _token_provisioner(scope: Construct) -> None:
-    """The identity that writes the token Secrets, and the CronJob that repairs them hourly after
-    expiry, revocation or a restore; the onboarding Job writes them first."""
+    """The identity that writes the token Secrets, and the CronJob that keeps them valid: it mints
+    each token that is missing, the first ones after a bootstrap included, and replaces one Home
+    Assistant refuses after expiry, revocation or a restore."""
     k8s.KubeServiceAccount(
         scope, "token-provisioner", metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)
     )
@@ -329,8 +329,9 @@ def _token_provisioner(scope: Construct) -> None:
         "token-provisioner-cronjob",
         metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE, labels=labels),
         spec=k8s.CronJobSpec(
-            # A valid token costs one request, so the hour bounds how long a broken one lasts.
-            schedule="17 * * * *",
+            # A valid token costs one request, so the interval is what bounds how long a missing or
+            # refused one lasts.
+            schedule="*/15 * * * *",
             concurrency_policy="Forbid",
             job_template=k8s.JobTemplateSpec(
                 spec=k8s.JobSpec(
@@ -351,15 +352,8 @@ def _token_provisioner(scope: Construct) -> None:
                                     image=_PROVISIONER_IMAGE,
                                     image_pull_policy="Always",
                                     command=_PROVISIONER_COMMAND,
-                                    env=[
-                                        _CONFIG_FILE_ENV,
-                                        _LOCAL_ADMIN_PASSWORD_ENV,
-                                        _TOKENS_ENV,
-                                        _ONBOARDING_DISABLED_ENV,
-                                        # Components install into the config volume, which only the
-                                        # Deployment's node mounts.
-                                        k8s.EnvVar(name=env_name(ProvisionerSettings, "components"), value="[]"),
-                                    ],
+                                    args=["tokens"],
+                                    env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV, _TOKENS_ENV],
                                     resources=k8s.ResourceRequirements(
                                         requests=_quantities(cpu="20m", memory="64Mi"),
                                         limits=_quantities(memory="256Mi"),

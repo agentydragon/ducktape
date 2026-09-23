@@ -65,6 +65,7 @@ py_library(
         ":tokens",
         "@pypi//httpx2",
         "@pypi//kubernetes",
+        "@pypi//typer",
     ],
 )
 

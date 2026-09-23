@@ -435,9 +435,7 @@ it("re-reads a retired epoch's scope and swaps windows under the same children",
 it("re-reads the scope as soon as the live log retires its epoch", async () => {
   const sync = stubSync();
   thread(sync, 3);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   const retired = sync.entities;
   const asked = sync.requests.length;
