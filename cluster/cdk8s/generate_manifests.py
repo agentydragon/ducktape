@@ -42,6 +42,7 @@ from cluster.cdk8s import (
     talos_cloud_controller_manager,
     user_agentydragon,
     valkey,
+    vector_talos_logs,
     volsync,
     vpa,
 )
@@ -133,7 +134,6 @@ from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flu
 from cluster.cdk8s.study_casino import flux_kustomizations as study_casino_flux_kustomizations
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
-from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
 from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
 from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
 from cluster.scripts import nebula_mesh
@@ -213,6 +213,7 @@ def generate_manifests(root: Path) -> None:
     nvidia_device_plugin.write_manifests(root)
     talos_cloud_controller_manager.write_manifests(root)
     kube_api_proxy.write_manifests(root)
+    vector_talos_logs.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -735,8 +736,8 @@ def generate_manifests(root: Path) -> None:
     langfuse_flux_kustomizations.langfuse(
         flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
     )
-    vector_talos_logs_artifact = artifact("vector-talos-logs", "cluster/k8s/vector-talos-logs")
-    vector_talos_logs_flux_kustomizations.vector_talos_logs(flux_chart, vector_talos_logs_artifact, loki_kustomization)
+    vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)
+    vector_talos_logs.vector_talos_logs(flux_chart, vector_talos_logs_artifact, loki_kustomization)
     monitoring_alloy_artifact = artifact("monitoring-alloy", "cluster/k8s/monitoring/alloy")
     monitoring_flux_kustomizations.alloy(
         flux_chart, monitoring_alloy_artifact, mimir_kustomization, grafana_helmrepository_kustomization
