@@ -107,8 +107,9 @@ def _bearer_credentials(scope: Construct) -> None:
     ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
     directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients.
 
-    agentplane-staging reads a copy through the `kubernetes-ha-mcp-secret-store`
-    ClusterSecretStore (cluster/cdk8s/external_secrets/config.py), not Reflector.
+    agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
+    token, which no store may reach.
     """
     Password(
         scope,

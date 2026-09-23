@@ -26,7 +26,12 @@ from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
+from cluster.cdk8s.agentplane.egress_credentials import (
+    STAGING_NAMESPACE,
+    EgressCredentials,
+    credential_external_secret,
+    single_secret_store,
+)
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -38,12 +43,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    password_generator,
-    remote_data,
-)
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
@@ -75,14 +75,11 @@ _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
 # ha-mcp and google-mcp each mint their bearer in their own namespace (cluster/cdk8s/ha_mcp.py,
-# google_mcp.py), and this namespace reads a copy through that backend's store; the Tana PAT is an
-# external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
+# google_mcp.py), and this namespace copies it through a store that can read that one Secret; the
+# Tana PAT is an external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
 _HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
-# cluster/cdk8s/external_secrets/config.py
-_HA_MCP_SECRET_STORE = "kubernetes-ha-mcp-secret-store"
-_GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -362,7 +359,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
-    ServiceAccount(
+    reader = ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )
     add_external_secret(
@@ -377,26 +374,25 @@ def chart(app: App) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
-    add_external_secret(
-        chart,
-        "google-mcp-bearer-external-secret",
-        name=_GOOGLE_MCP_BEARER_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=cluster_secret_store(_GOOGLE_MCP_SECRET_STORE),
-        data=[remote_data(_GOOGLE_MCP_BEARER_SECRET, "bearer-token")],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
-    )
-    credential_external_secret(
-        chart,
-        namespace=_NAMESPACE,
-        target=_HA_MCP_BEARER_SECRET,
-        source="ha-mcp-bearer",
-        key="bearer-token",
-        store=_HA_MCP_SECRET_STORE,
-    )
+    for backend, target, source in (
+        ("google-mcp", _GOOGLE_MCP_BEARER_SECRET, _GOOGLE_MCP_BEARER_SECRET),
+        ("ha-mcp", _HA_MCP_BEARER_SECRET, "ha-mcp-bearer"),
+    ):
+        credential_external_secret(
+            chart,
+            namespace=_NAMESPACE,
+            target=target,
+            source=source,
+            key="bearer-token",
+            store=single_secret_store(
+                chart,
+                f"agentplane-staging-{backend}-bearer",
+                reader=reader,
+                source_namespace=backend,
+                source_secret=source,
+                consumer_namespace=_NAMESPACE,
+            ),
+        )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
