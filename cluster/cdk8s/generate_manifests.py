@@ -54,7 +54,7 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
-from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
+from cluster.cdk8s.cpap_sync import app as cpap_sync_app, flux_kustomizations as cpap_sync_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
@@ -181,6 +181,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_installation.write_manifests(root)
     kubevirt_app.write_manifests(root)
     kubevirt_cdi.write_manifests(root)
+    cpap_sync_app.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
@@ -901,7 +902,7 @@ def generate_manifests(root: Path) -> None:
         sso_providers_tf_kustomization,
         forgejo_images_kustomization,
     )
-    cpap_sync_artifact = artifact("cpap-sync", "cluster/k8s/cpap-sync")
+    cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_kustomization = cpap_sync_flux_kustomizations.cpap_sync(
         flux_chart,
         cpap_sync_artifact,
