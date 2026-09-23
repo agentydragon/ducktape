@@ -881,8 +881,6 @@ py_library(
         ":vpa",
         "//cluster/cdk8s:cnpg_operator",
         "//cluster/cdk8s:ducktape_flux",
-        "//cluster/cdk8s:flux_kustomizations_dns_automation",
-        "//cluster/cdk8s:flux_kustomizations_forgejo_images",
         "//cluster/cdk8s:flux_kustomizations_gateway",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s/activitywatch:app",
