@@ -89,7 +89,8 @@ authorization proxy:
 - **Metadata and logs in explicitly classified namespaces**. GitOps-owned Namespace labels
   are the source of truth. The `generate-agent-diagnostics-readers` Kyverno policy generates
   namespaced RoleBindings for both Haku groups, the direct Haku ServiceAccount,
-  `kubectl-sandbox-users`, and the deploy-owned synthetic public-coder group.
+  `kubectl-sandbox-users`, the deploy-owned synthetic public-coder group, and `claude-ai`
+  (section 6).
 
 The labels are namespace-level access grants for the approved agent identities; the
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating
@@ -124,14 +125,15 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
-### 6. claude-ai (agentplane-staging) — diagnostics only
+### 6. claude-ai (agentplane-staging) — diagnostics and agent-readable namespaces
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
 every sandbox it stamps through the sandbox Action group runs as it
-(`agentplane/docs/sandbox_actions.md`). Its access is the same secret-free
-`cluster-diagnostics-reader` binding as agent-box Codex above, and nothing more: no writable
-namespace here, no `logs-configmaps-reader` class. Distinct from Haku's own identities
+(`agentplane/docs/sandbox_actions.md`). Its access is the secret-free
+`cluster-diagnostics-reader` binding plus the metadata and pod-log readers of the
+`agent-readable-*` namespaces (section 4): no writable namespace, no `logs-configmaps-reader`
+class. Distinct from Haku's own identities
 (`oidc-ksbx-groups:haku` et al.) even though a claude-ai sandbox may separately carry Haku's
 own Forgejo credential via `EgressBinding` — that authority is unrelated to this Kubernetes RBAC
 grant.

@@ -23,6 +23,7 @@ ALL_AGENT_SUBJECTS = [
     {"kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
     {"kind": "Group", "name": "oidc-ksbx-groups:kubectl-sandbox-users", "apiGroup": "rbac.authorization.k8s.io"},
     {"kind": "Group", "name": "haku:access-profile:public-coder", "apiGroup": "rbac.authorization.k8s.io"},
+    {"kind": "ServiceAccount", "name": "claude-ai", "namespace": "agentplane-staging"},
 ]
 
 
