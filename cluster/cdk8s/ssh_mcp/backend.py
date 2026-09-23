@@ -262,5 +262,14 @@ class SshMcp(Construct):
 
 def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    k8s.KubeNamespace(
+        chart,
+        "namespace",
+        metadata=k8s.ObjectMeta(
+            name=NAMESPACE,
+            labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
+            annotations={"description": "Standalone SSH MCP backend; private keys stay in this namespace."},
+        ),
+    )
     SshMcp(chart, NAME, config=config, mesh=mesh)
     return chart

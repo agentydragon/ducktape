@@ -59,9 +59,7 @@ def ssh_mcp(
     write_yaml(
         out_dir / "kustomization.yaml",
         kustomize_kustomization(
-            namespace=config.NAMESPACE,
-            resources=["./namespace", f"{config.NAME}.k8s.yaml", *_KEY_FILES],
-            components=["./image-pins"],
+            namespace=config.NAMESPACE, resources=[f"{config.NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]
         ),
     )
 

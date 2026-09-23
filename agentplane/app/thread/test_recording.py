@@ -7,7 +7,9 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
-from agentplane.app.conftest import SPEC, event_entry
+from agentplane.app.conftest import SPEC, Replica, event_entry
+from agentplane.app.ingestion import Ingestion
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.models import (
     ThreadCheckpoint,
@@ -28,13 +30,13 @@ from agentplane.runner import protocol_pb2
 
 
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
-    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
+    event_logs: EventLogStore, ingestion: Ingestion, replica: Replica, lease: IngestionLease
 ) -> None:
-    thread = await store.thread("sb-1", "s-operational", SPEC)
+    thread = await event_logs.open("sb-1", "s-operational", SPEC)
     attached = protocol_pb2.Attached(session_id="s-operational", spec=SPEC)
-    await store.set_attached(thread, attached, lease=lease)
-    await store.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
-    async with replica._sessions() as session:
+    await ingestion.set_attached(thread, attached, lease=lease)
+    await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
+    async with replica.store._sessions() as session:
         checkpoint_before = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_before is not None
         view_before = await session.get(
@@ -43,8 +45,8 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
-    await store.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3", error_cursor=3)
-    async with replica._sessions() as session:
+    await ingestion.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3", error_cursor=3)
+    async with replica.store._sessions() as session:
         checkpoint_after = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_after is not None
         view_after = await session.get(
@@ -60,10 +62,10 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
     }
 
-    await store.set_attached(
+    await ingestion.set_attached(
         thread, protocol_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1), lease=lease
     )
-    async with replica._sessions() as session:
+    async with replica.store._sessions() as session:
         view_reset = await session.get(
             ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
@@ -72,8 +74,8 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
     assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
-    await store.end_feed(thread, lease=lease, error="projection invariant failed")
-    async with replica._sessions() as session:
+    await ingestion.end_feed(thread, lease=lease, error="projection invariant failed")
+    async with replica.store._sessions() as session:
         unknown_failure = await session.get(
             ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
@@ -87,15 +89,17 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 
 
 async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(
-    store: ThreadStore, lease: IngestionLease
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
-    thread = await store.thread("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
     first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
     first.event.source_sequences.append(9007)
-    await store.record(
+    await ingestion.record(
         thread, [first, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
     )
-    await store.record(thread, [event_entry(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease)
+    await ingestion.record(
+        thread, [event_entry(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease
+    )
     async with store._sessions() as session:
         item = await session.scalar(
             select(ThreadEntity).where(
@@ -137,7 +141,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert {(row.entity_cursor, row.observation_cursor) for row in evidence} == {(1, 1), (1, 2), (1, 3)}
     assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
-    await store.record(
+    await ingestion.record(
         thread, [event_entry(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease
     )
     async with store._sessions() as session:
@@ -158,14 +162,14 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
 
     with pytest.raises(ThreadFoldError, match="cursor 5"):
-        await store.record(thread, [event_entry(5)], lease=lease)
-    assert await store.last_cursor(thread) == 4
+        await ingestion.record(thread, [event_entry(5)], lease=lease)
+    assert await event_logs.last_cursor(thread) == 4
 
 
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
-    store: ThreadStore, lease: IngestionLease
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
-    thread = await store.thread("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
     confirmed = event_entry(
         2,
@@ -174,7 +178,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
         ),
     )
     confirmed.event.source_sequences.extend([81, 82])
-    await store.record(
+    await ingestion.record(
         thread,
         [
             event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
@@ -183,7 +187,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
         ],
         lease=lease,
     )
-    await store.record(
+    await ingestion.record(
         thread,
         [
             event_entry(
@@ -243,10 +247,10 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 
 
 async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
-    store: ThreadStore, lease: IngestionLease
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
-    thread = await store.thread("sb-1", "s-1", SPEC)
-    await store.record(
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    await ingestion.record(
         thread,
         [
             event_entry(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
@@ -259,7 +263,7 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
         ],
         lease=lease,
     )
-    await store.record(
+    await ingestion.record(
         thread,
         [
             event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
@@ -278,11 +282,11 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
 
 
 async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
-    store: ThreadStore, lease: IngestionLease
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
     """The index is a position in the thread, so it is dense, ordered and fixed once given."""
-    thread = await store.thread("sb-1", "s-1", SPEC)
-    await store.record(
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    await ingestion.record(
         thread,
         [
             event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1)),
@@ -309,7 +313,7 @@ async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbere
     assert [entity_id for kind, entity_id, _ in first_pass if kind == "item"] == ["first", "second"]
 
     # A revision keeps its number; a new row takes the next one.
-    await store.record(
+    await ingestion.record(
         thread,
         [
             event_entry(4, text_delta=event_pb2.TextDelta(item_id="first", text="c")),

@@ -26,9 +26,10 @@ from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.content import ThreadEntityInterest, ThreadPayloadSelection
-from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.content import ContentStore, ThreadEntityInterest, ThreadPayloadSelection
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.views import EntityKind
 from agentplane.app.thread_fold import PayloadField
 from agentplane.protocol import event_pb2
@@ -59,7 +60,7 @@ def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
 
 
 @pytest.fixture
-async def seeded(store: ThreadStore) -> Seeded:
+async def seeded(event_logs: EventLogStore, content: ContentStore, ingestion: Ingestion) -> Seeded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
     started: dict[str, int] = {}
@@ -72,20 +73,20 @@ async def seeded(store: ThreadStore) -> Seeded:
         ).cursor
         for part in ("first ", f"body {index}"):
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=part)))
-    thread = await store.thread(sandbox, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(sandbox, timedelta(minutes=2))
+    thread = await event_logs.open(sandbox, SESSION, source.attached.spec)
+    lease = await ingestion.acquire(sandbox, timedelta(minutes=2))
     assert lease is not None
-    await store.set_attached(thread, source.attached, lease=lease)
-    await store.record(thread, source.entries, lease=lease)
+    await ingestion.set_attached(thread, source.attached, lease=lease)
+    await ingestion.record(thread, source.entries, lease=lease)
 
-    interest = await store.entity_interest(thread)
+    interest = await content.entity_interest(thread)
     assert interest is not None
     # Two deltas, so the generation the chain opened and the revision it has reached are different
     # cursors and a route cannot pass one where it means the other. Resolving them here makes the
     # projector's rule a checked fact: if it changes, this fixture fails instead of a case below.
     owner_id = f"item-{_ITEMS - 1}"
     owner_cursor = started[owner_id]
-    selection = await store.payload_selection(
+    selection = await content.payload_selection(
         thread,
         owner_cursor=owner_cursor,
         owner_id=owner_id,
@@ -98,10 +99,10 @@ async def seeded(store: ThreadStore) -> Seeded:
     return Seeded(thread, interest, selection)
 
 
-def make_app(upstream: httpx.MockTransport, store: ThreadStore) -> tuple[FastAPI, httpx.AsyncClient]:
+def make_app(upstream: httpx.MockTransport, content: ContentStore) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, store)
+    app.state.electric = ElectricProxy(electric, content)
     app.include_router(router)
     return app, electric
 
@@ -126,7 +127,7 @@ def payload_query(seeded: Seeded) -> dict[str, str]:
     }
 
 
-async def test_entity_shape_names_only_kinds_the_projection_writes(store: ThreadStore, seeded: Seeded) -> None:
+async def test_entity_shape_names_only_kinds_the_projection_writes(seeded: Seeded, content: ContentStore) -> None:
     """A kind in the predicate that nothing writes is dead, and rides in every shape's cache key."""
     seen: httpx.Request | None = None
 
@@ -135,7 +136,7 @@ async def test_entity_shape_names_only_kinds_the_projection_writes(store: Thread
         seen = request
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/entities", params=entity_query(seeded) | {"offset": "-1"}
@@ -150,7 +151,7 @@ async def test_entity_shape_names_only_kinds_the_projection_writes(store: Thread
     assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
 
 
-async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, seeded: Seeded) -> None:
+async def test_entity_shape_is_bounded_and_fixed_by_server(seeded: Seeded, content: ContentStore) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -162,7 +163,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, s
             headers={"electric-offset": "7_0", "electric-up-to-date": "true", "x-private": "no"},
         )
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/entities",
@@ -191,7 +192,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, s
     }
 
 
-async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: ThreadStore, seeded: Seeded) -> None:
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: Seeded, content: ContentStore) -> None:
     """Immutable history is cached and revalidated, never re-transferred and never served unchecked."""
     seen: list[httpx.Request] = []
 
@@ -201,7 +202,7 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
             return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         path = f"/threads/{seeded.thread}/sync/entities"
         first = await client.get(path, params=entity_query(seeded) | {"offset": "-1"})
@@ -220,11 +221,11 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
     assert [request.headers.get("if-none-match") for request in seen] == [None, '"shape-7_0"']
 
 
-async def test_stale_or_client_widened_interest_is_rejected(store: ThreadStore, seeded: Seeded) -> None:
+async def test_stale_or_client_widened_interest_is_rejected(seeded: Seeded, content: ContentStore) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected requests must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
+    app, electric = make_app(httpx.MockTransport(unexpected), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         path = f"/threads/{seeded.thread}/sync/entities"
         stale_tail = await client.get(path, params=entity_query(seeded) | {"tail_from": "0", "offset": "-1"})
@@ -237,11 +238,11 @@ async def test_stale_or_client_widened_interest_is_rejected(store: ThreadStore, 
     assert bad_log.status_code == 400
 
 
-async def test_old_entity_scope_is_rejected_before_forwarding(store: ThreadStore, seeded: Seeded) -> None:
+async def test_old_entity_scope_is_rejected_before_forwarding(seeded: Seeded, content: ContentStore) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("retired scopes must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
+    app, electric = make_app(httpx.MockTransport(unexpected), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/entities",
@@ -260,7 +261,7 @@ async def test_old_entity_scope_is_rejected_before_forwarding(store: ThreadStore
     ],
 )
 async def test_current_snapshot_cannot_change_fixed_shape(
-    subset: dict[str, str], store: ThreadStore, seeded: Seeded
+    subset: dict[str, str], seeded: Seeded, content: ContentStore
 ) -> None:
     seen: list[httpx.Request] = []
 
@@ -268,7 +269,7 @@ async def test_current_snapshot_cannot_change_fixed_shape(
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/entities",
@@ -302,12 +303,12 @@ async def test_current_snapshot_cannot_change_fixed_shape(
     ],
 )
 async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
-    query: str, store: ThreadStore, seeded: Seeded
+    query: str, seeded: Seeded, content: ContentStore
 ) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected snapshots must not reach Electric")
 
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
+    app, electric = make_app(httpx.MockTransport(unexpected), content)
     fixed = httpx.QueryParams(entity_query(seeded))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(f"/threads/{seeded.thread}/sync/entities?{fixed}&{query}")
@@ -315,7 +316,7 @@ async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision(store: ThreadStore, seeded: Seeded) -> None:
+async def test_payload_shape_uses_server_verified_exact_revision(seeded: Seeded, content: ContentStore) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -323,7 +324,7 @@ async def test_payload_shape_uses_server_verified_exact_revision(store: ThreadSt
         seen = request
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     selection = seeded.selection
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         interest = await client.get(f"/threads/{seeded.thread}/sync/payload-interest", params=payload_query(seeded))
@@ -352,7 +353,7 @@ async def test_payload_shape_uses_server_verified_exact_revision(store: ThreadSt
 
 
 async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(
-    store: ThreadStore, seeded: Seeded
+    seeded: Seeded, content: ContentStore
 ) -> None:
     seen: list[httpx.Request] = []
 
@@ -360,7 +361,7 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     scope = seeded.interest.scope
     params = [("projection_epoch", scope.projection_epoch), ("offset", "-1")]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
@@ -398,7 +399,7 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
 async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(
-    disconnect: str, store: ThreadStore, seeded: Seeded
+    disconnect: str, seeded: Seeded, content: ContentStore
 ) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
@@ -418,7 +419,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     async def upstream(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, stream=chunks)
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream), content)
     scope = {
         "type": "http",
         "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},
