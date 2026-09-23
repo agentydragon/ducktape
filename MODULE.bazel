@@ -1039,6 +1039,64 @@ http_file(
     urls = ["https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.5/sandbox-with-extensions.yaml"],
 )
 
+# Match the seaweedfs-operator chart version in cluster/k8s/seaweedfs/operator/helmrelease.yaml;
+# the chart's CRD template equals these per-kind files at the same tag.
+http_file(
+    name = "seaweed_adminscript_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_adminscripts.yaml",
+    sha256 = "9d5747462d1350493ca28a13dd76d38624b36ed17e7135f1a1dc0e97268d2e7d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_adminscripts.yaml"],
+)
+
+http_file(
+    name = "seaweed_bucket_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_buckets.yaml",
+    sha256 = "e4835613f02f0227ad7c801b3f6c08d147ae168621bfbb587761d74c21125358",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_buckets.yaml"],
+)
+
+http_file(
+    name = "seaweed_resourcereferencegrant_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_resourcereferencegrants.yaml",
+    sha256 = "13ae0ea9795ccb2f9ea9e56789b1ec9c3fed730a17c5db9079bd4bed5fe9c56d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_resourcereferencegrants.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3credentials_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3credentials.yaml",
+    sha256 = "c2c19138d7dd4d4ad5efef642176b0d2fefb8bf6c41581bba267b60160f19157",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3credentials.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3identity_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3identities.yaml",
+    sha256 = "e4cd566e32a6d9e52c21c088f6d522fdfe6013e559ff7c49d87b6a601fa3d9e8",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3identities.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3policy_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3policies.yaml",
+    sha256 = "104eb50ff5c0c3809163b453c2b26e15126ea8f3b1d765fe09b2cd57c01a0497",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3policies.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3policybinding_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3policybindings.yaml",
+    sha256 = "f2646bef91a267789676ce518cd6d74118422c64ebaa4649e692159d00840a49",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3policybindings.yaml"],
+)
+
+http_file(
+    name = "seaweed_seaweed_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_seaweeds.yaml",
+    sha256 = "8a01553289c42ef486aa5ba7da4dd39ddc691441fb7413caff7ea94c7225d76d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
