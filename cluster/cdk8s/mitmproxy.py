@@ -8,29 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import (
-    ContainerPort,
-    ContainerResources,
-    ContainerSecurityContextProps,
-    Cpu,
-    CpuResources,
-    Deployment,
-    ImagePullPolicy,
-    LabelExpression,
-    LabelSelector,
-    MemoryResources,
-    Namespaces,
-    NetworkPolicy,
-    NetworkPolicyPort,
-    Pods,
-    PodSecurityContextProps,
-    Secret,
-    Service,
-    ServicePort,
-    Volume,
-    VolumeMount,
-)
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
     Certificate,
     CertificateSpec,
@@ -92,28 +71,25 @@ _PROXY_PORT = 8080
 _WEB_PORT = 8081
 _NAMESPACE_NAME_LABEL = "kubernetes.io/metadata.name"
 
-# Kubernetes' own defaults, spelled out: cdk8s_plus_34 hardens both containers by default and
-# neither image's root needs have been audited (mitmproxy's entrypoint starts as root and drops
-# privileges itself).
-_UNHARDENED = ContainerSecurityContextProps(
-    ensure_non_root=False, read_only_root_filesystem=False, allow_privilege_escalation=True, privileged=False
-)
-
 
 class Mitmproxy(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         self._add_ca()
-        deployment = self._add_deployment()
-        Service(
+        self._add_deployment()
+        k8s.KubeService(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE),
-            selector=deployment,
-            ports=[
-                ServicePort(name="proxy", port=_PROXY_PORT, target_port=_PROXY_PORT),
-                ServicePort(name="web", port=_WEB_PORT, target_port=_WEB_PORT),
-            ],
+            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
+            spec=k8s.ServiceSpec(
+                selector=_LABELS,
+                ports=[
+                    k8s.ServicePort(
+                        name="proxy", port=_PROXY_PORT, target_port=k8s.IntOrString.from_number(_PROXY_PORT)
+                    ),
+                    k8s.ServicePort(name="web", port=_WEB_PORT, target_port=k8s.IntOrString.from_number(_WEB_PORT)),
+                ],
+            ),
         )
         self._add_ingress_policy()
         self._add_sandbox_egress_policy()
@@ -170,95 +146,120 @@ class Mitmproxy(Construct):
             ),
         )
 
-    def _add_deployment(self) -> Deployment:
-        deployment = Deployment(
+    def _add_deployment(self) -> None:
+        data_mount = k8s.VolumeMount(name="mitmproxy-data", mount_path="/mitmproxy-data")
+        k8s.KubeDeployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=1,
-            # A Deployment's selector is immutable: keeping the hand-written one lets Flux
-            # adopt the live object instead of failing the apply.
-            select=False,
-            automount_service_account_token=True,
-            security_context=PodSecurityContextProps(ensure_non_root=False),
-        )
-        deployment.select(LabelSelector.of(labels=_LABELS))
-        ca = Volume.from_secret(
-            self, "ca-volume", Secret.from_secret_name(self, "ca-ref", _CA_SECRET_NAME), name="mitmproxy-ca"
-        )
-        data = Volume.from_empty_dir(self, "data-volume", "mitmproxy-data")
-        deployment.add_init_container(
-            name="mitmproxy-ca-init",
-            image="busybox:1.38",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            command=[
-                "sh",
-                "-c",
-                "cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem\n"
-                "cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem\n",
-            ],
-            # No default requests: cdk8s_plus_34 otherwise reserves a full CPU for this one-shot copy.
-            resources=ContainerResources(),
-            security_context=_UNHARDENED,
-            volume_mounts=[
-                VolumeMount(path="/mitmproxy-ca", volume=ca, read_only=True),
-                VolumeMount(path="/mitmproxy-data", volume=data),
-            ],
-        )
-        deployment.add_container(
-            name=NAME,
-            # >=12.2.3 (mitmproxy#8214): the leaf's AuthorityKeyIdentifier copies the CA cert's
-            # SubjectKeyIdentifier instead of recomputing it as SHA-1. cert-manager mints CA SKIs
-            # per RFC 7093 (truncated SHA-256), so on <12.2.3 every intercepted leaf's AKID
-            # mismatched the CA SKI and strict clients rejected the chain ("unable to get local
-            # issuer certificate"). See
-            # cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
-            image="mitmproxy/mitmproxy:12.2.3",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            command=[
-                "mitmweb",
-                "--listen-host",
-                "0.0.0.0",
-                "--listen-port",
-                str(_PROXY_PORT),
-                "--web-host",
-                "0.0.0.0",
-                "--web-port",
-                str(_WEB_PORT),
-                "--set",
-                "confdir=/mitmproxy-data",
-            ],
-            ports=[ContainerPort(name="proxy", number=_PROXY_PORT), ContainerPort(name="web", number=_WEB_PORT)],
-            volume_mounts=[VolumeMount(path="/mitmproxy-data", volume=data)],
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+            metadata=k8s.ObjectMeta(
+                name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
             ),
-            security_context=_UNHARDENED,
+            spec=k8s.DeploymentSpec(
+                replicas=1,
+                selector=k8s.LabelSelector(match_labels=_LABELS),
+                template=k8s.PodTemplateSpec(
+                    metadata=k8s.ObjectMeta(labels=_LABELS),
+                    spec=k8s.PodSpec(
+                        init_containers=[
+                            k8s.Container(
+                                name="mitmproxy-ca-init",
+                                image="busybox:1.38",
+                                command=[
+                                    "sh",
+                                    "-c",
+                                    "cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem\n"
+                                    "cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem\n",
+                                ],
+                                volume_mounts=[
+                                    k8s.VolumeMount(name="mitmproxy-ca", mount_path="/mitmproxy-ca", read_only=True),
+                                    data_mount,
+                                ],
+                            )
+                        ],
+                        containers=[
+                            k8s.Container(
+                                name=NAME,
+                                # >=12.2.3 (mitmproxy#8214): the leaf's AuthorityKeyIdentifier copies the
+                                # CA cert's SubjectKeyIdentifier instead of recomputing it as SHA-1.
+                                # cert-manager mints CA SKIs per RFC 7093 (truncated SHA-256), so on
+                                # <12.2.3 every intercepted leaf's AKID mismatched the CA SKI and strict
+                                # clients rejected the chain ("unable to get local issuer certificate").
+                                # See cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
+                                image="mitmproxy/mitmproxy:12.2.3",
+                                command=[
+                                    "mitmweb",
+                                    "--listen-host",
+                                    "0.0.0.0",
+                                    "--listen-port",
+                                    str(_PROXY_PORT),
+                                    "--web-host",
+                                    "0.0.0.0",
+                                    "--web-port",
+                                    str(_WEB_PORT),
+                                    "--set",
+                                    "confdir=/mitmproxy-data",
+                                ],
+                                ports=[
+                                    k8s.ContainerPort(name="proxy", container_port=_PROXY_PORT),
+                                    k8s.ContainerPort(name="web", container_port=_WEB_PORT),
+                                ],
+                                volume_mounts=[data_mount],
+                                resources=k8s.ResourceRequirements(
+                                    requests={
+                                        "cpu": k8s.Quantity.from_string("50m"),
+                                        "memory": k8s.Quantity.from_string("128Mi"),
+                                    },
+                                    limits={
+                                        "cpu": k8s.Quantity.from_string("500m"),
+                                        "memory": k8s.Quantity.from_string("512Mi"),
+                                    },
+                                ),
+                            )
+                        ],
+                        volumes=[
+                            k8s.Volume(name="mitmproxy-ca", secret=k8s.SecretVolumeSource(secret_name=_CA_SECRET_NAME)),
+                            k8s.Volume(name="mitmproxy-data", empty_dir=k8s.EmptyDirVolumeSource()),
+                        ],
+                    ),
+                ),
+            ),
         )
-        return deployment
 
     def _add_ingress_policy(self) -> None:
         """Sandbox proxy clients reach the proxy port; the Authentik outpost reaches the mitmweb UI
         for proxy auth."""
-        policy = NetworkPolicy(
+        k8s.KubeNetworkPolicy(
             self,
             "ingress",
-            metadata=metadata("allow-authentik-mitmproxy-ingress", NAMESPACE),
-            selector=Pods.select(self, "proxy-pods", labels=_LABELS),
-        )
-        policy.add_ingress_rule(
-            Namespaces.select(
-                self,
-                "sandbox-namespaces",
-                expressions=[LabelExpression.in_(key=_NAMESPACE_NAME_LABEL, values=list(SANDBOX_NAMESPACES))],
+            metadata=k8s.ObjectMeta(name="allow-authentik-mitmproxy-ingress", namespace=NAMESPACE),
+            spec=k8s.NetworkPolicySpec(
+                pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+                ingress=[
+                    k8s.NetworkPolicyIngressRule(
+                        from_=[
+                            k8s.NetworkPolicyPeer(
+                                namespace_selector=k8s.LabelSelector(
+                                    match_expressions=[
+                                        k8s.LabelSelectorRequirement(
+                                            key=_NAMESPACE_NAME_LABEL, operator="In", values=list(SANDBOX_NAMESPACES)
+                                        )
+                                    ]
+                                )
+                            )
+                        ],
+                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROXY_PORT), protocol="TCP")],
+                    ),
+                    k8s.NetworkPolicyIngressRule(
+                        from_=[
+                            k8s.NetworkPolicyPeer(
+                                namespace_selector=k8s.LabelSelector(match_labels={_NAMESPACE_NAME_LABEL: "authentik"})
+                            )
+                        ],
+                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_WEB_PORT), protocol="TCP")],
+                    ),
+                ],
+                policy_types=["Ingress"],
             ),
-            [NetworkPolicyPort.tcp(_PROXY_PORT)],
-        )
-        policy.add_ingress_rule(
-            Namespaces.select(self, "authentik-namespace", labels={_NAMESPACE_NAME_LABEL: "authentik"}),
-            [NetworkPolicyPort.tcp(_WEB_PORT)],
         )
 
     def _add_sandbox_egress_policy(self) -> None:

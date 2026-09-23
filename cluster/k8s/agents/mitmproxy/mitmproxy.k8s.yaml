@@ -58,25 +58,15 @@ metadata:
   name: mitmproxy
   namespace: agents-mitmproxy
 spec:
-  minReadySeconds: 0
-  progressDeadlineSeconds: 600
   replicas: 1
-  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: mitmproxy
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mitmproxy
-        cdk8s.io/metadata.addr: mitmproxy-deployment-c83db97b
     spec:
-      automountServiceAccountToken: true
       containers:
         - command:
             - mitmweb
@@ -91,7 +81,6 @@ spec:
             - --set
             - confdir=/mitmproxy-data
           image: mitmproxy/mitmproxy:12.2.3
-          imagePullPolicy: IfNotPresent
           name: mitmproxy
           ports:
             - containerPort: 8080
@@ -105,16 +94,9 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: true
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: false
           volumeMounts:
             - mountPath: /mitmproxy-data
               name: mitmproxy-data
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
       initContainers:
         - command:
             - sh
@@ -123,32 +105,19 @@ spec:
               cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
               cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
           image: busybox:1.38
-          imagePullPolicy: IfNotPresent
           name: mitmproxy-ca-init
-          securityContext:
-            allowPrivilegeEscalation: true
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: false
           volumeMounts:
             - mountPath: /mitmproxy-ca
               name: mitmproxy-ca
               readOnly: true
             - mountPath: /mitmproxy-data
               name: mitmproxy-data
-      restartPolicy: Always
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsNonRoot: false
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
       volumes:
-        - emptyDir: {}
-          name: mitmproxy-data
         - name: mitmproxy-ca
           secret:
             secretName: mitmproxy-ca
+        - emptyDir: {}
+          name: mitmproxy-data
 ---
 apiVersion: v1
 kind: Service
@@ -156,7 +125,6 @@ metadata:
   name: mitmproxy
   namespace: agents-mitmproxy
 spec:
-  externalIPs: []
   ports:
     - name: proxy
       port: 8080
@@ -165,8 +133,7 @@ spec:
       port: 8081
       targetPort: 8081
   selector:
-    cdk8s.io/metadata.addr: mitmproxy-deployment-c83db97b
-  type: ClusterIP
+    app.kubernetes.io/name: mitmproxy
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -182,7 +149,6 @@ spec:
                 operator: In
                 values:
                   - claude-sandbox
-          podSelector: {}
       ports:
         - port: 8080
           protocol: TCP
@@ -190,7 +156,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: authentik
-          podSelector: {}
       ports:
         - port: 8081
           protocol: TCP
