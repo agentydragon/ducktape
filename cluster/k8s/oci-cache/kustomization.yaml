@@ -4,8 +4,6 @@ namespace: oci-cache
 resources:
   # cdk8s-generated (cluster/cdk8s/oci_cache/zot.py) -- see cluster/docs/cdk8s.md.
   - oci-cache.k8s.yaml
-  # Hand-written: no RedisReplication binding exists for cdk8s.
-  - valkey-instance.yaml
   - puller-credential.sops.yaml
 configMapGenerator:
   - name: oci-cache-zot-config
