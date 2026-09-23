@@ -194,7 +194,11 @@ async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Prom
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-/** One Electric shape from now: its rows arrive as subsets of it, and as its live changes. */
+/**
+ * One Electric shape from now: its rows arrive as subsets of it, and as its live changes, followed
+ * over SSE. Electric's client long-polls a shape instead once three SSE responses in a row have
+ * ended within a second, as Electric's answers to a reader behind the log do.
+ */
 class Shape {
   readonly #abort = new AbortController();
   readonly #stream: ShapeStream<Row>;
@@ -207,6 +211,7 @@ class Shape {
       url,
       offset: "now",
       log: "changes_only",
+      liveSse: true,
       subsetMethod: "POST",
       columnMapper: columns,
       fetchClient: keepingOffset,
@@ -487,10 +492,16 @@ class ThreadWindow extends Listeners {
 
   #apply(messages: Message<Row>[]): void {
     let changed = false;
+    let retired = false;
     for (const message of messages) {
       if (isChangeMessage(message)) {
         this.#refreshed?.add(message.key);
-        if (message.headers.operation === "delete") changed = this.#rows.delete(message.key) || changed;
+        if (message.headers.operation === "delete") {
+          // The fold never deletes a row: its view state leaves the shape when the epoch is retired.
+          // An SSE connection stays open, so this is sooner than the 410 its reconnect would get.
+          retired ||= this.#rows.get(message.key)?.entityKind === "view_state";
+          changed = this.#rows.delete(message.key) || changed;
+        }
         // Every row is new at the tail. A change to one older than the reader has loaded is not
         // its concern: loading that page reads the row as it is by then.
         else if (message.headers.operation === "insert" || this.#rows.has(message.key)) {
@@ -500,6 +511,7 @@ class ThreadWindow extends Listeners {
       } else if (message.headers.control === "must-refetch") void this.#refetch();
     }
     if (changed) this.#publish();
+    if (retired && !this.#closed) this.#onGone();
   }
 
   async #guard(load: () => Promise<unknown>): Promise<void> {

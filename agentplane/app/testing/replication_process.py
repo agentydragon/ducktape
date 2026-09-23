@@ -120,20 +120,34 @@ class GatedConversationDelivery:
             return
         thread_id = UUID(path.split("/")[2])
         messages: list[Message] = []
+        streaming = started = interrupted = False
 
         async def gated_send(message: Message) -> None:
-            messages.append(message)
-            if message["type"] != "http.response.body" or message.get("more_body", False):
+            nonlocal streaming, started, interrupted
+            if interrupted:
                 return
-            # Only these finite, bounded-interest responses are buffered. The real backend
-            # continues ingesting and Electric still owns snapshot/offset reconciliation.
+            messages.append(message)
+            if message["type"] == "http.response.start":
+                streaming = dict(message["headers"]).get(b"content-type", b"").startswith(b"text/event-stream")
+            # A finite, bounded-interest response is held whole. A live shape's SSE response does
+            # not finish, so each of its chunks is held as it comes. The real backend continues
+            # ingesting and Electric still owns snapshot/offset reconciliation.
+            if message["type"] != "http.response.body" or (message.get("more_body", False) and not streaming):
+                return
             cursor = await self._event_logs.last_cursor(thread_id)
             if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
+                interrupted = True
+                if started:
+                    # An SSE response under way ends; the client reconnects from its own offset.
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                    return
                 await send({"type": "http.response.start", "status": 503, "headers": []})
                 await send({"type": "http.response.body", "body": b"test transport interruption"})
                 return
+            started = True
             for buffered in messages:
                 await send(buffered)
+            messages.clear()
 
         await self._app(scope, receive, gated_send)
 
