@@ -13,6 +13,7 @@ exports_files(
         "0009_thread_entity_index.py",
         "0010_drop_unread_fold_state.py",
         "0011_event_log_identity.py",
+        "0012_unique_entity_index.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -108,4 +109,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0012_unique_entity_index",
+    srcs = ["0012_unique_entity_index.py"],
+    deps = ["@pypi//alembic"],
 )
