@@ -203,15 +203,6 @@ def chart(app: App) -> Chart:
         ],
         remote_namespace="forgejo-images",
     )
-    # google-mcp mints its own caller-facing bearer (cluster/cdk8s/google_mcp.py); only
-    # agentplane-staging's Action Service (the only caller) reads a copy.
-    _store(
-        chart, "kubernetes-google-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="google-mcp"
-    )
-    # Likewise ha-mcp (cluster/cdk8s/ha_mcp.py). ha-mcp also holds the Home Assistant token,
-    # which a namespace on this list can pull just as well: keep it to agentplane-staging,
-    # whose ExternalSecret names only the bearer.
-    _store(chart, "kubernetes-ha-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="ha-mcp")
     return chart
 
 

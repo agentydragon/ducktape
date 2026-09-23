@@ -89,10 +89,9 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 def _bearer_credentials(scope: Construct) -> None:
     """Mint this pod's caller-facing bearer here, in its own namespace.
 
-    agentplane-staging reads a copy through the `kubernetes-google-mcp-secret-store`
-    ClusterSecretStore (cluster/cdk8s/external_secrets/config.py) --
-    ESO's own cross-namespace read, the same mechanism Airlock's tokens and the Tana PAT
-    already use for agentplane-staging, not Stakater Reflector.
+    agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds the write-scoped Google
+    token, which no store may reach.
     """
     Password(
         scope,
