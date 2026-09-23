@@ -43,6 +43,10 @@ gotk-sync.yaml linguist-generated=true
 # directories.
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/db/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/secrets/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/artifact-generators/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
