@@ -77,7 +77,12 @@ from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_ku
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
-from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as litellm_keys, proxy as litellm_proxy
+from cluster.cdk8s.litellm import (
+    credentials as litellm_credentials,
+    keys as litellm_keys,
+    namespace as litellm_namespace,
+    proxy as litellm_proxy,
+)
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
@@ -141,6 +146,7 @@ def generate_manifests(root: Path) -> None:
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
+    litellm_namespace.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
     github_branch_protection.write_manifests(root)
