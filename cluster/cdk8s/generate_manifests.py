@@ -70,7 +70,7 @@ from cluster.cdk8s.forgejo import (
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
-from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
+from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import (
@@ -187,6 +187,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers.write_manifests(root)
     website.write_manifests(root)
     ollama_app.write_manifests(root)
+    gatus_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

@@ -107,6 +107,7 @@ _GENERATED_FILES = (
     "cluster/k8s/website/website.k8s.yaml",
     "cluster/k8s/website/kustomization.yaml",
     "cluster/k8s/ollama/ollama.k8s.yaml",
+    "cluster/k8s/gatus/gatus.k8s.yaml",
 )
 
 
