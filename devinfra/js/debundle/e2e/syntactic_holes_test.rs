@@ -1442,10 +1442,10 @@ export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
             &[Member::source_alpha_target(
                 "readDisplayValue",
                 "readDisplayValue",
-                r#"const ANYTHING = null,
+                r#"const ANYTHING = ANYTHING,
   buildDisplayValue = (value) => `build:${value}`,
   readDisplayValue = (value) => buildDisplayValue(value).toUpperCase(),
-  ANYTHING = null;"#,
+  ANYTHING = ANYTHING;"#,
             )],
         )],
     ));
@@ -1482,9 +1482,9 @@ export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
             &[Member::source_alpha_target(
                 "SelectedTarget",
                 "Target",
-                r#"const ANYTHING = null,
+                r#"const ANYTHING = ANYTHING,
   Target = makeTarget("value"),
-  ANYTHING = null;"#,
+  ANYTHING = ANYTHING;"#,
             )],
         )],
     ));
@@ -2979,9 +2979,9 @@ export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
         r#"const DECLARATORS_BEFORE = null,
   Target = makeTarget("value"),
   DECLARATORS_AFTER = null;"#,
-        r#"const ANYTHING = null,
+        r#"const ANYTHING = ANYTHING,
   Target = makeTarget("value"),
-  ANYTHING = null;"#,
+  ANYTHING = ANYTHING;"#,
     ] {
         let fixture = run_fixture(FixtureOpts::new(
             subject,
