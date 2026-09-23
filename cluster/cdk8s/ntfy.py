@@ -71,7 +71,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -82,7 +82,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     flux_kustomization,
@@ -404,30 +403,23 @@ def ntfy(
     kustomization = flux_kustomization(
         flux_chart,
         NAME,
+        artifact,
         description="Self-hosted ntfy for Android and cluster alert notifications.",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            decryption=sops_decryption(resources),
-            health_checks=health_checks(
-                rendered_chart,
-                (
-                    "Namespace",
-                    "ClusterSecretStore",
-                    "Cluster",
-                    "ExternalSecret",
-                    "Deployment",
-                    "HTTPRoute",
-                    "ServiceMonitor",
-                ),
+        timeout="10m",
+        decryption=sops_decryption(resources),
+        health_checks=health_checks(
+            rendered_chart,
+            (
+                "Namespace",
+                "ClusterSecretStore",
+                "Cluster",
+                "ExternalSecret",
+                "Deployment",
+                "HTTPRoute",
+                "ServiceMonitor",
             ),
-            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
         ),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return kustomization

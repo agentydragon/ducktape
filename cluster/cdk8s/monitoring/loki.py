@@ -41,7 +41,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -72,7 +72,6 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -744,25 +743,20 @@ def loki(
     return flux_kustomization(
         chart,
         "loki",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
-                ),
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
-        ),
+        artifact,
+        wait=None,
+        decryption=SOPS_DECRYPTION,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
+            ),
+        ],
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
     )

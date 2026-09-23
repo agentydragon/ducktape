@@ -23,7 +23,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     Receiver,
     ReceiverSpec,
@@ -34,7 +33,6 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
@@ -110,15 +108,12 @@ def haku_ui_image_webhook(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
-                # and the Forgejo package webhook that targets this receiver.
-                flux_kustomization_depends_on(haku_state)
-            ],
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        depends_on=[
+            # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
+            # and the Forgejo package webhook that targets this receiver.
+            flux_kustomization_depends_on(haku_state)
+        ],
     )

@@ -5,11 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 
@@ -37,22 +36,15 @@ def flux_webhook_token(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name=NAME,
-                    namespace=terraform.NAMESPACE,
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, github_secrets_sync_secrets),
-        ),
+        artifact,
+        timeout="5m",
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="infra.contrib.fluxcd.io/v1alpha2",
+                kind="Terraform",
+                name=NAME,
+                namespace=terraform.NAMESPACE,
+            )
+        ],
+        depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, github_secrets_sync_secrets),
     )

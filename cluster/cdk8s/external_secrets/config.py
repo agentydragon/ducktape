@@ -29,10 +29,9 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 
@@ -223,23 +222,18 @@ def external_secrets_config(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m0s",
-            retry_interval="30s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m0s",
-            wait=True,
-            # Health-check a representative shared ClusterSecretStore before dependents run.
-            # Application-scoped stores are owned and checked by their app Kustomizations.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ClusterSecretStore",
-                    name="kubernetes-flux-system-secret-store",
-                )
-            ],
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        ),
+        artifact,
+        interval="10m0s",
+        retry_interval="30s",
+        timeout="5m0s",
+        # Health-check a representative shared ClusterSecretStore before dependents run.
+        # Application-scoped stores are owned and checked by their app Kustomizations.
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ClusterSecretStore",
+                name="kubernetes-flux-system-secret-store",
+            )
+        ],
+        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )

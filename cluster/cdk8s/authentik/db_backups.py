@@ -26,7 +26,7 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecMethod,
     ScheduledBackupSpecPluginConfiguration,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -57,7 +57,6 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -197,41 +196,31 @@ def authentik_db_backups(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="15m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="authentik-db-backups",
-                    namespace="authentik",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Identity",
-                    name="authentik-db-backups",
-                    namespace="authentik",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="authentik-db-backups",
-                    namespace="authentik",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="barmancloud.cnpg.io/v1",
-                    kind="ObjectStore",
-                    name="authentik-db-ovh",
-                    namespace="authentik",
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_cluster),
-        ),
+        artifact,
+        timeout="15m",
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1",
+                kind="Bucket",
+                name="authentik-db-backups",
+                namespace="authentik",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1",
+                kind="S3Identity",
+                name="authentik-db-backups",
+                namespace="authentik",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1",
+                kind="S3Credentials",
+                name="authentik-db-backups",
+                namespace="authentik",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="barmancloud.cnpg.io/v1", kind="ObjectStore", name="authentik-db-ovh", namespace="authentik"
+            ),
+        ],
+        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_cluster),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )

@@ -13,10 +13,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -135,20 +134,13 @@ def vector_talos_logs(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, lo
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[
-                # loki-write is the log sink.
-                flux_kustomization_depends_on(loki)
-            ],
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="apps/v1", kind="DaemonSet", name=NAME, namespace=NAMESPACE)
-            ],
-        ),
+        artifact,
+        timeout="2m",
+        depends_on=[
+            # loki-write is the log sink.
+            flux_kustomization_depends_on(loki)
+        ],
+        health_checks=[
+            KustomizationSpecHealthChecks(api_version="apps/v1", kind="DaemonSet", name=NAME, namespace=NAMESPACE)
+        ],
     )

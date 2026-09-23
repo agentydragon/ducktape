@@ -24,7 +24,6 @@ py_library(
     ],
     deps = [
         ":config",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:model_rosters",
@@ -55,7 +54,6 @@ py_library(
     srcs = ["proxy.py"],
     deps = [
         ":config",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",

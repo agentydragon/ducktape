@@ -19,11 +19,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -115,18 +114,12 @@ def talos_cloud_controller_manager(chart: Chart, artifact: ArtifactGeneratorSpec
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="30m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            target_namespace=NAMESPACE,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-        ),
+        artifact,
+        interval="30m",
+        target_namespace=NAMESPACE,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
+            )
+        ],
     )

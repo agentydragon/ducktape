@@ -39,10 +39,8 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
     ImageUpdateAutomationSpecUpdate,
     ImageUpdateAutomationSpecUpdateStrategy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -145,10 +143,4 @@ def write_manifests(root: Path) -> None:
 
 def flux_image_automation_ghcr(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "flux-image-automation-ghcr"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m", path=artifact_path(artifact), prune=True, source_ref=artifact_source_ref(artifact)
-        ),
-    )
+    return flux_kustomization(chart, name, artifact, retry_interval=None, wait=None)

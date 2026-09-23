@@ -12,7 +12,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecHealthChecks
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -25,7 +25,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -311,15 +310,12 @@ def claude_rbac(
     return flux_kustomization(
         flux_chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        depends_on=[flux_kustomization_depends_on(kyverno_policies)],
+        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
         description=(
             "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
             "ClusterRoles. Must not depend on service or database kustomizations."

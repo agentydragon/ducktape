@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
@@ -25,29 +20,20 @@ def oci_cache(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            # Do not delete the cache namespace if this Flux owner is removed later.
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="zot", namespace="oci-cache"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                # Namespace, app, and ServiceMonitor are managed together here.
-                valkey,
-                # S3 backend: tenant-local Bucket and operator-generated credentials.
-                seaweedfs_registry_cache_bucket,
-                monitoring_crds,
-            ),
+        artifact,
+        timeout="5m",
+        # Do not delete the cache namespace if this Flux owner is removed later.
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        health_checks=[
+            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="zot", namespace="oci-cache")
+        ],
+        depends_on=flux_kustomization_depends_on_many(
+            # Namespace, app, and ServiceMonitor are managed together here.
+            valkey,
+            # S3 backend: tenant-local Bucket and operator-generated credentials.
+            seaweedfs_registry_cache_bucket,
+            monitoring_crds,
         ),
         description="Zot OCI pull-through cache and its namespace-local monitoring.",
     )

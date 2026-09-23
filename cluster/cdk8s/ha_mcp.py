@@ -69,7 +69,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -79,7 +79,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
@@ -514,27 +513,20 @@ def ha_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                ),
-                KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                home_assistant,
-                # the ServiceMonitor CRD
-                monitoring_crds,
+        artifact,
+        timeout="5m",
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
             ),
+            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
+        ],
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            forgejo_images,
+            home_assistant,
+            # the ServiceMonitor CRD
+            monitoring_crds,
         ),
     )
     write_yaml(
