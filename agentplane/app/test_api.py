@@ -104,12 +104,14 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(content: ContentStore) -> AsyncIterator[ElectricProxy]:
+async def electric(
+    content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates
+) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(client, content)
+        yield ElectricProxy(client, content, event_logs=event_logs, thread_changes=thread_updates.changes)
 
 
 @pytest.fixture

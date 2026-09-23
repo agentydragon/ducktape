@@ -34,6 +34,8 @@ owes the browser, with IDs; the list below is the whole view's.
 - The runner persists semantic batches before forwarding them; the app commits projected
   state before publication to browsers. Multiple replicas and listeners share committed
   state. Disconnecting a reader does not interrupt execution.
+- A reader learns of changes over a held request or a stream (long poll, SSE, WebSocket),
+  never by asking again on a timer. Only a failed request waits before the next.
 - Raw capture is independently optional in the target storage model. Retained evidence is
   accessible at the item or turn that produced it, as well as in original chronology.
 
@@ -170,12 +172,11 @@ SSE responses in a row have ended within a second. Electric answers a reader beh
 rather than holding the connection, so a shape that changes faster than the client reconnects can
 drop to long polling. Both read the same log.
 
-Against the [requirements](thread_sync_requirements.md), it falls short in four places:
+Against the [requirements](thread_sync_requirements.md), it falls short in three places:
 
 - **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
 - **O2:** Electric runs one active instance per replication slot, with shape logs on local disk.
 - **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
-- **E6:** a thread with no fold yet has its scope re-read on a one-second timer.
 
 Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
 What Electric itself cannot do for following an agent, and where this design therefore stops:
@@ -344,6 +345,11 @@ to the sampled projection position through the engine. Selected text loads from 
 payload reference; loading is explicit until its whole revision is available. Follow
 concurrent changes using engine sync tokens. No replay of old token Events and no hidden
 background history load.
+
+A thread whose runner has recorded nothing yet has no fold to pin a shape to. Its scope
+read is a long poll: the proxy holds it until the first fold commits, for as long as
+Electric holds a live request (20 seconds), and answers 204 if there is still none; the
+store asks again at once.
 
 ### Scroll upward while an old item changes
 

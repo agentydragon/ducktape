@@ -572,11 +572,8 @@ class ThreadEpochs extends Listeners {
     try {
       const scope = await threadScope(this.#threadId, resolving.signal);
       if (resolving.signal.aborted || this.#closed) return;
-      if (scope === null) {
-        // No fold yet: the thread has one once its runner's first events are recorded.
-        this.#retry = window.setTimeout(this.refresh, 1_000);
-        return;
-      }
+      // The runner has recorded nothing for the whole of the server's hold: hold another read.
+      if (scope === null) return this.refresh();
       this.#next?.close();
       const next = new EpochWindow(this.#threadId, scope, this.refresh);
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
@@ -595,6 +592,7 @@ class ThreadEpochs extends Listeners {
     } catch (error) {
       if (resolving.signal.aborted || this.#closed) return;
       this.#set({ ...this.#state, error: displayableError(error) });
+      // A failed read reconnects after a pause; an answered one never waits.
       this.#retry = window.setTimeout(this.refresh, 1_000);
     }
   }
