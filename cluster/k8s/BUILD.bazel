@@ -97,6 +97,8 @@ exports_files(
         "flux/ducktape-flux/ducktape-flux.k8s.yaml",
         "flux-webhook/flux-webhook.k8s.yaml",
         "flux-image-automation-ghcr/openclaw-image.k8s.yaml",
+        "tofu-controller/tofu-controller.k8s.yaml",
+        "tofu-controller/kustomization.yaml",
         "agentplane-index/agentplane-index.k8s.yaml",
         "atuin/atuin.k8s.yaml",
         "atuin/kustomization.yaml",

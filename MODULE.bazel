@@ -947,7 +947,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/image-reflector-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imagepolicies.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/tofu-controller/tofu-controller.yaml.
+# Match the deployed version in cluster/cdk8s/tofu_controller/release.py.
 http_file(
     name = "tofu_controller_terraform_crd",
     downloaded_file_path = "infra.contrib.fluxcd.io_terraforms.yaml",
