@@ -155,6 +155,7 @@ exports_files(
         "grocy/sf/mcp/grocy-mcp-sf.k8s.yaml",
         "grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
         "grocy/user-perms-base/grocy-user-perms.k8s.yaml",
+        "oci-cache/oci-cache.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

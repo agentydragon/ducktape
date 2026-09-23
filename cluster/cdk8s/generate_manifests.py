@@ -115,7 +115,7 @@ from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustom
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
 from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
-from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
+from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
@@ -194,6 +194,7 @@ def generate_manifests(root: Path) -> None:
     grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)
+    oci_cache_zot.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
