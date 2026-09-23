@@ -13,7 +13,7 @@ The Action round trip (`list_actions` → `get_action_policy` → `request_actio
 documented, and credential substitution makes the Kubernetes API and Forgejo usable from the box
 with nothing to set up inside it. It is not yet a substitute for Haku's own perimeter
 (`oidc-ksbx-groups:haku` plus haku-console's `haku_v1` profile): `claude-ai` has no writable
-namespace or Secrets and narrower standing approvals (finding 4), its one exec environment lacks
+namespace, reads one Secret, and lacks part of Haku's reach (finding 4), its one exec environment lacks
 Haku's tools (3), and its sandboxes hold a small shared quota until someone disposes them (1, 2).
 
 ## What works end-to-end (verified live)
@@ -106,34 +106,29 @@ with the tools above rather than the harness image.
 ### 4. `claude-ai`'s reach still falls short of Haku's
 
 Haku's perimeter, as `cluster/k8s/agents/agent-rbac-base/README.md` and `haku-state`'s
-`memory/credentials.md` and `memory/procedures/run.md` describe it: full CRUD in `haku-sandbox`
-and the Secrets there (Plaid Postgres, Google Drive/Tasks, ActivityWatch, the haku mailbox JWT,
-the haku-console MCP token), cluster-wide diagnostics, metadata and logs in agent-readable
-namespaces, and haku-console's MCP servers under `haku_v1`'s standing approvals
-(`cluster/cdk8s/haku/console_config.py`). What `claude-ai` lacks of it on `devel`:
+`memory/credentials.md` describe it: full CRUD in `haku-sandbox` and the Secrets there (Plaid
+Postgres, ActivityWatch, the haku mailbox JWT, the haku-console MCP token), cluster-wide
+diagnostics, metadata and logs in agent-readable namespaces, and what haku-console still fronts
+(`github`, `ssh`, `kubectl_passthrough_mcp`, its `sandbox` and `grants`) under `haku_v1`. What
+`claude-ai` lacks of it on `devel`, as of 2026-09-23:
 
-- **Kubernetes:** it holds only `cluster-diagnostics-reader`
-  (`cluster/k8s/agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`). No role
-  in `haku-sandbox`, so no Plaid query Pod and none of its Secrets beyond the Forgejo password the
-  proxy substitutes; and it is not a subject of the Kyverno-generated metadata and log readers
-  (`cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml`).
-- **Egress:** Forgejo, the Kubernetes API, the package mirrors and Google's read APIs
-  (`google-readonly`) are bound. GitHub is not (`TODO(github-egress)` in
-  `cluster/cdk8s/agentplane/actions_staging_policies.py`), nor Grocy (read-only Grocy egress is
-  #7572, open), and nothing reaches Plaid, ActivityWatch, the mailbox or haku-console.
-- **Actions:** `cluster/cdk8s/agentplane/staging.py` configures a group for every haku-console MCP
-  server except `grants`, which has no Action Service counterpart. Live on 2026-09-23, `grocy_sf`
-  offered no Actions (`linkage_unavailable`) and neither did `gmail` or `google_calendar`
-  (`connect_failed`: the `google-mcp` Pod is in `ImagePullBackOff`). `claude-ai-reads`
-  auto-approves the GitHub, Home Assistant, Gmail and Calendar reads and the sandbox set;
-  `haku_v1`'s Tana and Grocy reads, its Home Assistant desk-light control and its `haku/` Gmail
-  labels wait for a human here.
-- **Run loop:** `haku-state`'s run procedure sweeps approved tool-call results from haku-console,
-  which a sandbox cannot reach. The counterpart here is the Action Service, which the `basic`
-  policy admits from inside the box as `claude-ai`.
+- **Kubernetes:** it holds `cluster-diagnostics-reader`, the metadata and log readers of the
+  `agent-readable-*` namespaces, and `get` on the one Secret
+  `agentplane-staging/coinbase-api-credentials` (`agent-rbac-base/README.md` section 6). No role
+  in `haku-sandbox`, so no Plaid query Pod and none of its Secrets.
+- **Egress:** Forgejo as `haku`, the Kubernetes API, the package mirrors, Google's read APIs
+  (`google-readonly`), Grocy SF reads (`grocy-sf-readonly`) and Coinbase are bound. GitHub is not
+  (`TODO(github-egress)` in `cluster/cdk8s/agentplane/actions_staging_policies.py`), and nothing
+  reaches Plaid, ActivityWatch, the mailbox or haku-console.
+- **Actions:** `cluster/cdk8s/agentplane/staging.py` configures a group for every server that left
+  haku-console, plus `github`, `kubernetes` and `ssh`; `grants` has no Action Service counterpart.
+  `claude-ai-reads` auto-approves the GitHub, Home Assistant, Gmail, Calendar and Tana reads and the
+  sandbox set; every write waits for a human. Live at 17:04Z, `grocy_sf`, `gmail` and
+  `google_calendar` listed no Actions: `grocy_sf` waits for the operator's account link, and the
+  Google groups for the `google-write` consent in Airlock.
 
-**Recommendation:** decide the scope and write it down. Either extend `claude-ai` deliberately,
-action by action, to the parts of this perimeter a Haku run needs, or, if the intent is narrower,
-say so in `haku-state` with a runtime-specific entrypoint like
-`haku/runtime/claude_web_env/run.md`, so a run under this method does not hunt for Plaid, mailbox
-or console access that is not wired.
+**Recommendation:** the scope is now written down, in `haku/runtime/claude_web_env/run.md` and
+`haku-state`'s `sources/` guides, and a run sweeps agentplane requests as it did console tool calls
+(`haku-state` `memory/procedures/tool_calls.md`). What is left is deliberate: Plaid, ActivityWatch
+and the mailbox have no route, `grants` waits on `ELEVATE` (`agentplane/plans/task_dag.md`), and the
+exec environment is finding 3.
