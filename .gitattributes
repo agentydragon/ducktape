@@ -123,6 +123,7 @@ cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml linguist-genera
 cluster/k8s/flux-grafana-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/grafana-operator/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/cilium/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/rules/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/loki/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/mimir/kustomization.yaml linguist-generated=true

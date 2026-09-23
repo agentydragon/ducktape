@@ -11,12 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def alloy(
@@ -87,24 +82,5 @@ def grafana_instance(
             ],
             timeout="5m",
             depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
-        ),
-    )
-
-
-def monitoring_rules(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "monitoring-rules",
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # PrometheusRule
-                flux_kustomization_depends_on(monitoring_crds)
-            ],
         ),
     )

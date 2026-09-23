@@ -405,8 +405,8 @@ exports_files(
         "github-api-proxy/app/prometheus-rule.yaml",
         "kustomization.yaml",
         "agentplane-testing/litellm-credentials.k8s.yaml",
-        "monitoring/rules/github-quota-prometheus-rule.yaml",
-        "monitoring/rules/roaming-node-prometheus-rule.yaml",
+        "monitoring/rules/kustomization.yaml",
+        "monitoring/rules/monitoring-rules.k8s.yaml",
     ],
     visibility = [
         "//agentplane/crds:__pkg__",

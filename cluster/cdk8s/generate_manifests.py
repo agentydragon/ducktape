@@ -201,6 +201,7 @@ from cluster.cdk8s.monitoring import (
     loki,
     mimir,
     namespace as monitoring_namespace,
+    rules as monitoring_rules,
     stack as monitoring_stack,
     tempo,
 )
@@ -339,6 +340,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_publisher.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    monitoring_rules.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
     loki.write_manifests(root)
@@ -543,10 +545,8 @@ def generate_manifests(root: Path) -> None:
     cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
-    monitoring_rules_artifact = artifact("monitoring-rules", "cluster/k8s/monitoring/rules")
-    monitoring_flux_kustomizations.monitoring_rules(
-        flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization
-    )
+    monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
+    monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart, grafana_operator_artifact, monitoring_namespace_kustomization
