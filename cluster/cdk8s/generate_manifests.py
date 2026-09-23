@@ -121,6 +121,7 @@ from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
     external_credentials as seaweedfs_external_credentials,
+    filer_db as seaweedfs_filer_db,
     flux_kustomizations as seaweedfs_flux_kustomizations,
     forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
@@ -208,6 +209,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_pr_visuals_bucket.write_manifests(root)
     seaweedfs_operator_release.write_manifests(root)
     seaweedfs_external_credentials.write_manifests(root)
+    seaweedfs_filer_db.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -470,8 +472,8 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
-    seaweedfs_filer_db_artifact = artifact("seaweedfs-filer-db", "cluster/k8s/seaweedfs/db")
-    seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
+    seaweedfs_filer_db_artifact = artifact("seaweedfs-filer-db", seaweedfs_filer_db.OUTPUT_DIR)
+    seaweedfs_filer_db_kustomization = seaweedfs_filer_db.seaweedfs_filer_db(
         flux_chart, seaweedfs_filer_db_artifact, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
