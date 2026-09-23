@@ -23,6 +23,10 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
+from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
@@ -32,7 +36,6 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.event_stream import follow
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -41,9 +44,6 @@ from agentplane.app.runners import Runners
 from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore, FeedError
-from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.app.thread.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
@@ -560,7 +560,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
     monkeypatch.setattr(content, "admitted_command", observed_lookup)
-    monkeypatch.setattr("agentplane.app.ingestion.notify", drop_notification)
+    monkeypatch.setattr("agentplane.app.agent_runtime.ingestion.notify", drop_notification)
     monkeypatch.setattr("agentplane.app.bridge.ADMISSION_REREAD_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
@@ -856,7 +856,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     live_index: LiveIndex,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
-    monkeypatch.setattr("agentplane.app.ingestion.RECONCILE_S", 3600)
+    monkeypatch.setattr("agentplane.app.agent_runtime.ingestion.RECONCILE_S", 3600)
     runners = Runners(live_index, runner.port)
     discovered = asyncio.Event()
     running = runners.running

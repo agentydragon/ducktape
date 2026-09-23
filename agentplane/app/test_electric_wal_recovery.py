@@ -14,8 +14,8 @@ import asyncpg
 import httpx
 import pytest_bazel
 
+from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.database import connect
-from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.thread.event_log import EventLogStore

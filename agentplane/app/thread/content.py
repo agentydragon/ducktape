@@ -13,8 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app import thread_fold
-from agentplane.app.thread.event_log import ThreadNotFoundError
-from agentplane.app.thread.models import (
+from agentplane.app.agent_runtime.models import (
     Event,
     EventLog,
     ThreadCheckpoint,
@@ -23,6 +22,7 @@ from agentplane.app.thread.models import (
     ThreadNativeLink,
     ThreadPayloadManifest,
 )
+from agentplane.app.thread.event_log import ThreadNotFoundError
 from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
 from agentplane.app.thread_debug import (
     EvidenceObservation,

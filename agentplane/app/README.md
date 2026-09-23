@@ -41,14 +41,14 @@ bbr test //agentplane/app/...
   `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
-- `bridge.py`: runner-first sessions and commands. `runners.py` is the runner in each sandbox as
-  the cluster index shows it: which sandboxes run one, and a client to reach each. `ingestion.py`
-  copies the running sandboxes' runner sessions into the event log: the `Ingester` holds one lease
-  per sandbox across replicas and runs a `Feed` per session, which batches the runner's events for
-  `Ingestion` to record, the event log's and the fold's writes in one transaction under the lease.
-  `event_stream.py` streams a thread's stored event log as SSE from the database, so any replica
-  serves it without a runner. `api.py` is the REST surface and the OpenAPI schema
-  `export_schema.py` emits for the frontend's generated client.
+- `bridge.py`: runner-first sessions and commands. `runners.py` is the runner in each sandbox as the
+  cluster index shows it: which sandboxes run one, and a client to reach each.
+  `agent_runtime/ingestion.py` copies the running sandboxes' runner sessions into the event log: the
+  `Ingester` holds one lease per sandbox across replicas and runs a `Feed` per session, which
+  batches the runner's events for `Ingestion` to record, the event log's and the fold's writes in
+  one transaction under the lease. `event_stream.py` streams a thread's stored event log as SSE from
+  the database, so any replica serves it without a runner. `api.py` is the REST surface and the
+  OpenAPI schema `export_schema.py` emits for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
@@ -58,16 +58,16 @@ bbr test //agentplane/app/...
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
-  thread entities, and immutable content chunks/manifests. Each ingestion transaction
-  folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  Layered bottom-up, one store per level: `models.py` (the tables) and `views.py` (the rows' client
+- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized thread
+  entities, and immutable content chunks/manifests. Each ingestion transaction folds only the batch
+  and its touched entities, then commits all projection writes and checkpoint. Layered bottom-up,
+  one store per level, over the tables in `agent_runtime/models.py`: `views.py` (the rows' client
   contract); `event_log.py` (`EventLogStore`: the copied runner events and the feed state) and
-  `ingestion_lease.py` (which replica ingests a sandbox); `rows.py` (fold records to and from
-  entity rows) and `payloads.py` (insert-only bodies); `recording.py` (the fold write path) and
-  `content.py` (`ContentStore`: reads of what the fold assembled); `store.py` (`ThreadStore`: a
-  thread over its event log, with the name and archive state an operator sets). `updates.py`
-  turns committed PostgreSQL notifications into replica-local wakeups.
+  `ingestion_lease.py` (which replica ingests a sandbox); `rows.py` (fold records to and from entity
+  rows) and `payloads.py` (insert-only bodies); `recording.py` (the fold write path) and
+  `content.py` (`ContentStore`: reads of what the fold assembled); `agent_runtime/thread/store.py`
+  (`ThreadStore`: a thread over its event log, with the name and archive state an operator sets).
+  `agent_runtime/updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
 - `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
@@ -78,9 +78,9 @@ bbr test //agentplane/app/...
 - `database.py`: the app's one connection pool; `main.py` builds it and hands it to each store and
   to the thread update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
-  in `operator_sessions.py` and reused by `thread/models.py`'s tables. Migrations run separately through
-  `:migrate`; the server itself never creates or checks tables at startup. `:image` and
-  `:migration_image` are separate OCI targets.
+  in `operator_sessions.py` and reused by `agent_runtime/models.py`'s tables. Migrations run
+  separately through `:migrate`; the server itself never creates or checks tables at startup.
+  `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 

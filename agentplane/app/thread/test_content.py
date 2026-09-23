@@ -7,8 +7,8 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
+from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.conftest import SPEC, event_entry
-from agentplane.app.ingestion import Ingestion
 from agentplane.app.thread.content import CommandIdConflictError, ContentStore
 from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.thread.ingestion_lease import IngestionLease

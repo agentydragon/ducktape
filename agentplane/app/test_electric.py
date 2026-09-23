@@ -24,9 +24,9 @@ from starlette.requests import ClientDisconnect
 from starlette.types import Message
 from testcontainers.postgres import PostgresContainer
 
+from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
-from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.thread.content import ContentStore, ThreadEntityInterest, ThreadPayloadSelection
 from agentplane.app.thread.event_log import EventLogStore

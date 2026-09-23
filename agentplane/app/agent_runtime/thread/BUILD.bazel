@@ -1,0 +1,38 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        "//agentplane/app/agent_runtime:models",
+        "//agentplane/app/agent_runtime:updates",
+        "//agentplane/app/thread:event_log",
+        "//agentplane/app/thread:views",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    size = "medium",
+    srcs = ["test_store.py"],
+    deps = [
+        ":store",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:presets",
+        "//agentplane/app/agent_runtime:ingestion",
+        "//agentplane/app/thread:event_log",
+        "//agentplane/app/thread:ingestion_lease",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

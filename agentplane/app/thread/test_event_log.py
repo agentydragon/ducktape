@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 
 import pytest_bazel
 
+from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.ingestion import Ingestion
 from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.protocol import event_pb2

@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.changes import Changes
-from agentplane.app.ingestion import Ingester
 from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError
 from agentplane.app.presets import PresetCatalog
 from agentplane.app.runners import Runners

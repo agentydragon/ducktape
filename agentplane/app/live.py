@@ -45,6 +45,8 @@ from agentplane.app.action_policy import (
     ActionPolicyUnavailable,
     ActionPolicyView,
 )
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.changes import Changes
 from agentplane.app.egress import (
     BINDINGS_PLURAL,
@@ -64,8 +66,6 @@ from agentplane.app.inventory import (
     sandbox_views,
 )
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.app.thread.views import ThreadView
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
