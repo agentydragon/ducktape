@@ -350,3 +350,41 @@ spec:
       app.kubernetes.io/name: home-assistant-config-restic
   policyTypes:
     - Egress
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  endpoints:
+    - authorization:
+        credentials:
+          key: password
+          name: home-assistant-metrics-token
+        type: Bearer
+      path: /api/prometheus
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-assistant
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  groups:
+    - name: home-assistant
+      rules:
+        - alert: HomeAssistantUnavailable
+          annotations:
+            description: Prometheus has been unable to scrape Home Assistant for 10 minutes.
+            summary: Home Assistant is unavailable
+          expr: up{namespace="home-assistant", service="home-assistant"} == 0
+          for: 10m
+          labels:
+            severity: warning

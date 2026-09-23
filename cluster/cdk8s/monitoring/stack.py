@@ -210,7 +210,7 @@ def _alertmanager_config() -> dict[str, object]:
                 },
                 # Same category, but specifically the fallout of roaming laptops
                 # leaving the cluster. Unlike KubeNodeNotReady/KubeNodeUnreachable
-                # (now forked in cluster/k8s/monitoring/rules/roaming-node-prometheus-rule.yaml
+                # (now forked in cluster/cdk8s/monitoring/rules.py
                 # and excluded by taint), these carry no `node` label -- only namespace and
                 # pod -- so there is no way to say "on a roaming node" at the routing
                 # layer. Suppressing by namespace would blind us to real failures in
@@ -281,7 +281,7 @@ def _values() -> dict[str, object]:
             # storage used by Kubernetes workloads. Kubernetes filesystem alerts
             # should not care about it; node-exporter still exposes its raw metrics.
             "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/colibri"'},
-            # Forked into cluster/k8s/monitoring/rules/roaming-node-prometheus-rule.yaml so
+            # Forked into cluster/cdk8s/monitoring/rules.py so
             # roaming laptops (iguana/rugged) can be excluded by taint. Denying these two by
             # alertname in the route below would also have silenced them for the
             # control-plane nodes, which is the opposite of what we want.

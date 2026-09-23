@@ -3,15 +3,15 @@
 
 Hand-written beside the output (`kustomization.yaml` lists both): `deployment.yaml`, whose
 `AIRLOCK_IMAGE_TAG` env value carries a Flux image-automation marker that an `images:`
-Component cannot set; the two ClusterExternalSecrets, which have no CRD binding; the SOPS
-client credentials; and `config.yaml`, rendered into the Deployment's ConfigMap.
+Component cannot set; the SOPS client credentials; and `config.yaml`, rendered into the
+Deployment's ConfigMap.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -21,6 +21,16 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
+    ClusterExternalSecret,
+    ClusterExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpecDataFrom,
+    ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
+    ClusterExternalSecretSpecExternalSecretSpecTarget,
+)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
     ExternalSecretSpec,
@@ -80,6 +90,31 @@ def _session_secret(chart: Chart) -> None:
                 immutable=True,
                 name=_SESSION_SECRET,
                 template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
+            ),
+        ),
+    )
+
+
+def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
+    """Mirror the Secret `name` Airlock writes into the `airlock` namespace into `namespaces`."""
+    ClusterExternalSecret(
+        chart,
+        name,
+        metadata=ApiObjectMetadata(name=name),
+        spec=ClusterExternalSecretSpec(
+            namespaces=namespaces,
+            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
+                refresh_interval="1m",
+                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
+                    name="kubernetes-airlock-secret-store",
+                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
+                ),
+                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=name),
+                data_from=[
+                    ClusterExternalSecretSpecExternalSecretSpecDataFrom(
+                        extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=name)
+                    )
+                ],
             ),
         ),
     )
@@ -181,6 +216,27 @@ def chart(app: App) -> Chart:
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.HOST),
         ],
     )
+    # google-access-token carries read-only Google scopes. Never mirrored into a namespace an agent
+    # can read Secrets in (docs/personal_agents/verdicts.md): agents reach Google through a proxy
+    # that presents the token for them.
+    _mirror(
+        chart,
+        "google-access-token",
+        # agentplane-staging's egress proxy substitutes this into a sandbox's Google read requests
+        # (cluster/cdk8s/agentplane/egress_staging_credentials.py's `google-readonly`
+        # EgressCredential). The proxy's Secret watch is scoped to its isolated credentials
+        # namespace (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE), not the
+        # app namespace. Not agentplane-testing: testing reaches no real account.
+        ["agentplane-staging-egress-credentials"],
+    )
+    # google-write-access-token (write-scoped Gmail/Calendar) goes into google-mcp only -- the
+    # standalone MCP server that fronts it behind agentplane's approval-gated ActionGroups
+    # (x/google_mcp_server, cluster/cdk8s/google_mcp.py). Deliberately not mirrored into
+    # claude-sandbox, haku-sandbox, or agentplane-staging directly: unlike google-access-token,
+    # which an egress proxy may present on a sandbox's reads, this token can send mail and mutate
+    # Gmail/Calendar, so it must never reach a namespace the agent's own execution can read from
+    # directly. See plans/personal_agents/personal_data_agent.md and docs/personal_agents/verdicts.md.
+    _mirror(chart, "google-write-access-token", ["google-mcp"])
     return chart
 
 

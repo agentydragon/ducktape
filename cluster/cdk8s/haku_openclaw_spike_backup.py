@@ -1,8 +1,6 @@
 """The haku-openclaw-spike state backup: Restic snapshots through VolSync into the app's
-SeaweedFS bucket (`haku_openclaw_spike_config._backup_bucket`).
-
-`repository-secret-store.yaml` (the SecretStore and the identity it reads with) stays
-hand-written beside the generated file: no namespaced `SecretStore` CRD binding exists.
+SeaweedFS bucket (`haku_openclaw_spike_config._backup_bucket`). The SOPS-encrypted Restic
+password beside the output stays hand-written.
 """
 
 from __future__ import annotations
@@ -25,6 +23,19 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMergePolicy,
     ExternalSecretSpecTargetTemplateTemplateFrom,
 )
+from external_secrets_secretstore_crds.io.external_secrets import (
+    SecretStore,
+    SecretStoreSpec,
+    SecretStoreSpecProvider,
+    SecretStoreSpecProviderKubernetes,
+    SecretStoreSpecProviderKubernetesAuth,
+    SecretStoreSpecProviderKubernetesAuthServiceAccount,
+    SecretStoreSpecProviderKubernetesServer,
+    SecretStoreSpecProviderKubernetesServerCaProvider,
+    SecretStoreSpecProviderKubernetesServerCaProviderType,
+)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
     ReplicationSourceSpec,
@@ -40,7 +51,15 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-openclaw-spike-backup"
@@ -50,8 +69,8 @@ _MOVER_LABELS = {"app.kubernetes.io/name": "haku-openclaw-spike-volsync"}
 _REPOSITORY_SECRET_NAME = "haku-openclaw-spike-volsync-restic"
 # The app's Bucket.
 _BUCKET_NAME = "haku-openclaw-spike-backups"
-# Hand-written in repository-secret-store.yaml.
 _SECRET_STORE_NAME = "haku-openclaw-spike-volsync-s3"
+_REPOSITORY_READER = "haku-openclaw-spike-volsync-repository-reader"
 # Written by the app's S3Credentials.
 _S3_CREDENTIALS_SECRET_NAME = "haku-openclaw-spike-volsync-s3-credentials"
 # SOPS-encrypted in repository.sops.yaml.
@@ -100,6 +119,59 @@ def _network_policy(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8333), protocol="TCP")],
                 ),
             ],
+        ),
+    )
+
+
+def _repository_store(scope: Construct) -> None:
+    """S3Credentials and the SOPS-managed Restic password create source Secrets in this
+    namespace. ESO narrows its access to exactly those Secrets and renders the combined
+    repository Secret VolSync requires."""
+    k8s.KubeServiceAccount(
+        scope, "repository-reader-sa", metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE)
+    )
+    k8s.KubeRole(
+        scope,
+        "repository-reader-role",
+        metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[_S3_CREDENTIALS_SECRET_NAME, _RESTIC_PASSWORD_SECRET_NAME],
+                verbs=["get"],
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        scope,
+        "repository-reader-rolebinding",
+        metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_REPOSITORY_READER),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_REPOSITORY_READER, namespace=_NAMESPACE)],
+    )
+    SecretStore(
+        scope,
+        "repository-store",
+        metadata=metadata(_SECRET_STORE_NAME, _NAMESPACE),
+        spec=SecretStoreSpec(
+            provider=SecretStoreSpecProvider(
+                kubernetes=SecretStoreSpecProviderKubernetes(
+                    server=SecretStoreSpecProviderKubernetesServer(
+                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name="kube-root-ca.crt",
+                            key="ca.crt",
+                        )
+                    ),
+                    auth=SecretStoreSpecProviderKubernetesAuth(
+                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=_REPOSITORY_READER, namespace=_NAMESPACE
+                        )
+                    ),
+                    remote_namespace=_NAMESPACE,
+                )
+            )
         ),
     )
 
@@ -202,6 +274,7 @@ def _replication_source(scope: Construct) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _network_policy(chart)
+    _repository_store(chart)
     _repository(chart)
     _replication_source(chart)
     return chart
@@ -209,3 +282,43 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "repository.sops.yaml"]),
+    )
+
+
+def haku_openclaw_spike_backup(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_operator: Kustomization,
+    volsync: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="5m",
+            wait=True,
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
+            depends_on=flux_kustomization_depends_on_many(
+                # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
+                # The Bucket and S3Credentials remain app-owned, but their readiness is
+                # retried by the ExternalSecret rather than coupling this Kustomization to
+                # the app Deployment health check.
+                external_secrets_operator,
+                volsync,
+            ),
+        ),
+        description=(
+            "Restic/VolSync backup of the Haku OpenClaw spike state to its "
+            "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
+            "into the optiplex worker PVC that migrates the state off the control "
+            "plane."
+        ),
+    )

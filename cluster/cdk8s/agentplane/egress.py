@@ -104,7 +104,7 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
 # the Gateway and back for a Service one hop away, which is why haku's own agent has no public
-# route either (cluster/k8s/agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml). Plain HTTP on
+# route either (haku_egress_proxy.py's haku-agent-runner-egress policy). Plain HTTP on
 # 3000, so the proxy reads the request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000

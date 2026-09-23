@@ -1,6 +1,5 @@
-"""OpenEBS LVM LocalPV on the Proxmox node and its StorageClasses, written beside the
-hand-written VolumeSnapshotClass (no `snapshot.storage.k8s.io` binding yet) that the
-directory's `kustomization.yaml` also lists.
+"""OpenEBS LVM LocalPV on the Proxmox node, its StorageClasses and default
+VolumeSnapshotClass, and the directory's Flux Kustomization.
 
 No class here constrains provisioning to Proxmox nodes: the LVM CSI driver advertises only
 the `kubernetes.io/hostname` and `openebs.io/nodename` topology keys, so an
@@ -13,9 +12,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot import (
+    VolumeSnapshotClass,
+    VolumeSnapshotClassDeletionPolicy,
+)
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
     HelmReleaseSpec,
@@ -26,8 +29,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
@@ -36,6 +43,7 @@ NAMESPACE = "openebs"
 RELEASE = "openebs-lvm-localpv"
 OUTPUT_DIR = "cluster/k8s/openebs-lvm"
 _PROXMOX = {"topology.kubernetes.io/region": "proxmox"}
+_DRIVER = "local.csi.openebs.io"
 
 
 def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -> None:
@@ -43,7 +51,7 @@ def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -
         scope,
         name,
         metadata=k8s.ObjectMeta(name=name),
-        provisioner="local.csi.openebs.io",
+        provisioner=_DRIVER,
         reclaim_policy="Delete",
         volume_binding_mode="WaitForFirstConsumer",
         allow_volume_expansion=True,
@@ -108,8 +116,38 @@ def chart(app: App) -> Chart:
         ),
     )
     _storage_classes(chart)
+    VolumeSnapshotClass(
+        chart,
+        "snapshot-class",
+        metadata=ApiObjectMetadata(
+            name="openebs-lvm-snapclass", annotations={"snapshot.storage.kubernetes.io/is-default-class": "true"}
+        ),
+        driver=_DRIVER,
+        deletion_policy=VolumeSnapshotClassDeletionPolicy.DELETE,
+    )
     return chart
 
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def openebs_lvm(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=RELEASE, namespace=NAMESPACE
+                )
+            ],
+        ),
+    )

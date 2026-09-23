@@ -367,7 +367,7 @@ resource "kubernetes_secret" "forgejo_webhook_token" {
 # `package` event catches the CI image landing (registry scan), the `push` event catches both
 # ImageUpdateAutomation's tag-bump commit and ordinary haku-state pushes (GitRepository fetch →
 # workloads apply). The receiver is `generic` and force-reconciles all its listed resources on
-# any hit (see cluster/k8s/haku/ui-image-webhook/receiver.yaml), so both events share one hook
+# any hit (see cluster/cdk8s/haku/ui_image_webhook.py), so both events share one hook
 # URL. The generic receiver doesn't validate a signature, so the unguessable sha256(token) path
 # is the secret — no `secret` in the webhook config.
 #

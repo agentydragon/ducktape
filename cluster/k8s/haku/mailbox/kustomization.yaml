@@ -8,8 +8,6 @@ resources:
   - haku-mailbox.k8s.yaml
   - haku-mailbox-admin.sops.yaml
   - haku-mail-token.sops.yaml
-  # Hand-written: no ClusterExternalSecret binding exists for cdk8s yet.
-  - haku-mail-token-eso.yaml
 components:
   - ./image-pins
 configMapGenerator:

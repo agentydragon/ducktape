@@ -4,10 +4,6 @@ namespace: github-api-proxy
 resources:
   # cdk8s-generated (cluster/cdk8s/github_api_proxy/proxy.py).
   - github-api-proxy.k8s.yaml
-  # Hand-written: no typed Gateway/TLSRoute, PodMonitor or PrometheusRule bindings yet.
-  - gateway.yaml
-  - podmonitor.yaml
-  - prometheus-rule.yaml
   - wyrm2-credentials.sops.yaml
   - rugged-credentials.sops.yaml
 components:

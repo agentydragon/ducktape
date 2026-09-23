@@ -7,7 +7,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def seaweedfs_cluster(
@@ -37,56 +37,5 @@ def seaweedfs_cluster(
             ),
             wait=False,
             timeout="5m",
-        ),
-    )
-
-
-def seaweedfs_monitoring(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_cluster: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    name = "seaweedfs-monitoring"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_cluster,
-                # PrometheusRule
-                monitoring_crds,
-            ),
-        ),
-    )
-
-
-def seaweedfs_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_namespace: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "seaweedfs-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_namespace,
-                # ExternalSecret + SecretStore CRDs + ESO controller
-                external_secrets_operator,
-            ),
         ),
     )

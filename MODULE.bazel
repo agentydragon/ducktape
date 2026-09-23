@@ -934,6 +934,13 @@ http_file(
 )
 
 http_file(
+    name = "flux_gitrepository_crd",
+    downloaded_file_path = "source.toolkit.fluxcd.io_gitrepositories.yaml",
+    sha256 = "bd0c08183287b2eea0d885751fc686bc4b2b583e919de6bd57859170b8d1727f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_gitrepositories.yaml"],
+)
+
+http_file(
     name = "flux_imagerepository_crd",
     downloaded_file_path = "image.toolkit.fluxcd.io_imagerepositories.yaml",
     sha256 = "122a58bcaa78770fdeffef9246576513df4bc4452a98b5dba4c2bbbaf7d0f2c9",
@@ -947,6 +954,34 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/image-reflector-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imagepolicies.yaml"],
 )
 
+http_file(
+    name = "flux_imageupdateautomation_crd",
+    downloaded_file_path = "image.toolkit.fluxcd.io_imageupdateautomations.yaml",
+    sha256 = "f12d1ee34ac92b0055a18152e55f91742c08c228aeedaa93b9ee4b72325c44cf",
+    urls = ["https://raw.githubusercontent.com/fluxcd/image-automation-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imageupdateautomations.yaml"],
+)
+
+http_file(
+    name = "flux_receiver_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_receivers.yaml",
+    sha256 = "4c8be1ad7789b78f0727557d01e5f33eef9447a1f4aa9b830a3c1cc8a1508a9b",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_receivers.yaml"],
+)
+
+http_file(
+    name = "flux_provider_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_providers.yaml",
+    sha256 = "243ad33ac88ed965c6cd72b342dc5a93ecf5eefde2e03f4c2ea026b52d872135",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_providers.yaml"],
+)
+
+http_file(
+    name = "flux_alert_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_alerts.yaml",
+    sha256 = "2b8f79249b39881bd23c49868f114c44c6e632dfcda451da576adfa16c64226f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
+)
+
 # Match the deployed version in cluster/cdk8s/tofu_controller/release.py.
 http_file(
     name = "tofu_controller_terraform_crd",
@@ -956,12 +991,26 @@ http_file(
 )
 
 # Match kube-prometheus-stack's operator version tracked by
-# cluster/k8s/flux/sources/monitoring.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "prometheus_operator_servicemonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
     sha256 = "10a5f90038608d9a2758d5a8700e1be5adbaff5d6355a52fa7b6e8488b71156d",
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
+)
+
+http_file(
+    name = "prometheus_operator_prometheusrule_crd",
+    downloaded_file_path = "monitoring.coreos.com_prometheusrules.yaml",
+    sha256 = "2f2015458b5f70695efc918e2c5ca063563e1dd4c9b1324a28f7a0367de26e88",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml"],
+)
+
+http_file(
+    name = "prometheus_operator_podmonitor_crd",
+    downloaded_file_path = "monitoring.coreos.com_podmonitors.yaml",
+    sha256 = "96fcdcd7f9b4e3f37d8fd1e0848d3cfd25de6691ca8412c4f5db294027574242",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml"],
 )
 
 # Match gateway_api_version in cluster/terraform/main/cilium.tf. Cilium 1.19 requires
@@ -973,8 +1022,22 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
+http_file(
+    name = "gateway_api_gateway_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_gateways.yaml",
+    sha256 = "ecb21e3a23757108e74399c49365864f5e0d87c694679d63e4c34c7ccf579e2a",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_gateways.yaml"],
+)
+
+http_file(
+    name = "gateway_api_tlsroute_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_tlsroutes.yaml",
+    sha256 = "6a74bbe019916d1b53ec270634185aec2eeee1a4e100d6029a53f63ae448f77c",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml"],
+)
+
 # Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
-# cluster/k8s/flux/sources/external-secrets.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "external_secrets_crds_bundle",
     downloaded_file_path = "external-secrets-crds-bundle.yaml",
@@ -1006,6 +1069,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumclusterwidenetworkpolicies.yaml"],
 )
 
+# Match cluster/terraform/main/cilium.tf's local.cilium_version.
+http_file(
+    name = "cilium_envoyconfig_crd",
+    downloaded_file_path = "cilium.io_ciliumenvoyconfigs.yaml",
+    sha256 = "9641a7b9034508798ac8ecf58cf29fd2ae21e320df7ad59c8596bf7f414c420b",
+    urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumenvoyconfigs.yaml"],
+)
+
 # CloudNativePG CRDs follow the operator appVersion in cluster/cdk8s/cnpg_operator.py.
 http_file(
     name = "cnpg_cluster_crd",
@@ -1021,12 +1092,42 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_databases.yaml"],
 )
 
+http_file(
+    name = "cnpg_scheduledbackup_crd",
+    downloaded_file_path = "postgresql.cnpg.io_scheduledbackups.yaml",
+    sha256 = "1dffb969a92ed6b09abe59d9c848ff97c6646c7824e75f8e0b8379df8473a145",
+    urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_scheduledbackups.yaml"],
+)
+
+# Match the plugin-barman-cloud chart 0.8.0 (appVersion v0.15.0) in cluster/cdk8s/cnpg_operator.py;
+# the chart ships this CRD unchanged.
+http_file(
+    name = "barman_cloud_objectstore_crd",
+    downloaded_file_path = "barmancloud.cnpg.io_objectstores.yaml",
+    sha256 = "2d8be9265b99571a560e80f2a54dbbcc19cbfb2254575ff2e7bba9dc4429e99e",
+    urls = ["https://raw.githubusercontent.com/cloudnative-pg/plugin-barman-cloud/v0.15.0/config/crd/bases/barmancloud.cnpg.io_objectstores.yaml"],
+)
+
 # Match the deployed version in cluster/cdk8s/cert_manager/app.py.
 http_file(
     name = "cert_manager_certificate_crd",
     downloaded_file_path = "cert-manager.io_certificates.yaml",
     sha256 = "7ad91029c00ec959d54215b19d3b1a9b7e0247eaa60f987151c2b70d8661f8af",
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificates.yaml"],
+)
+
+http_file(
+    name = "cert_manager_clusterissuer_crd",
+    downloaded_file_path = "cert-manager.io_clusterissuers.yaml",
+    sha256 = "30008001b78aafb8e110af61359561104b5fafc3a4dc6ac0013245d0ee3fe4ca",
+    urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_clusterissuers.yaml"],
+)
+
+http_file(
+    name = "cert_manager_issuer_crd",
+    downloaded_file_path = "cert-manager.io_issuers.yaml",
+    sha256 = "05e37efb02777e0362d24269fa103c2fc11419f9c85e31854ef873e5d9e5c5cc",
+    urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_issuers.yaml"],
 )
 
 # Match the deployed version in cluster/cdk8s/cert_manager/trust.py.
@@ -1163,6 +1264,14 @@ http_file(
     downloaded_file_path = "volsync.backube_replicationsources.yaml",
     sha256 = "597e68a855277fe5bfb86f1239ab472dda1fe4660fca22fa932ff2f13b72d29b",
     urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
+)
+
+# Match the external-snapshotter tag in cluster/cdk8s/flux_sources.py.
+http_file(
+    name = "external_snapshotter_volumesnapshotclass_crd",
+    downloaded_file_path = "snapshot.storage.k8s.io_volumesnapshotclasses.yaml",
+    sha256 = "75e6565aac2c0f2949ed13ea884bbaa388cb7be576b558b709cf1168e011828d",
+    urls = ["https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.6.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml"],
 )
 
 # The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings

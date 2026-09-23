@@ -2,9 +2,8 @@
 (haku@allegedly.works), its Postgres store, STARTTLS certificate, public HTTP route and the
 per-public-node SMTP ingress.
 
-Hand-written beside the output: the SOPS Secrets, the ClusterExternalSecret mirroring the mail
-token (no ClusterExternalSecret binding yet), the `configMapGenerator` inputs and the directory's
-`kustomization.yaml` (its generator options are not expressible here), and
+Hand-written beside the output: the SOPS Secrets, the `configMapGenerator` inputs and the
+directory's `kustomization.yaml` (its generator options are not expressible here), and
 `image-pins/kustomization.yaml`, which overrides the Stalwart image's `unset` tag.
 """
 
@@ -12,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
@@ -33,6 +32,16 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecStorage,
+)
+from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
+    ClusterExternalSecret,
+    ClusterExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpecData,
+    ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
+    ClusterExternalSecretSpecExternalSecretSpecTarget,
 )
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
@@ -478,6 +487,35 @@ def chart(app: App) -> Chart:
         timeout="60s",
         hsts=False,
         listener=None,
+    )
+    # Mirror the rotator-published mailbox JWT into haku-sandbox, where Haku reads it to
+    # authenticate to its mailbox over JMAP (base/sources/mailbox.md). Same ESO pattern as the
+    # grocy-sf token (haku/managed-agent/grocy-token-eso.yaml): it sources the flux-system Secret
+    # the rotator writes (k8s_secret output) and refreshes continuously, so the rotated token
+    # propagates without any rotator-side distribution config.
+    ClusterExternalSecret(
+        chart,
+        "mail-token",
+        metadata=ApiObjectMetadata(name="haku-mail-token"),
+        spec=ClusterExternalSecretSpec(
+            namespaces=[namespace.NAMESPACE],
+            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
+                refresh_interval="1m",
+                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
+                    name="kubernetes-flux-system-secret-store",
+                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
+                ),
+                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name="haku-mail-token"),
+                data=[
+                    ClusterExternalSecretSpecExternalSecretSpecData(
+                        secret_key="jwt",
+                        remote_ref=ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef(
+                            key="haku-mail-token", property="jwt"
+                        ),
+                    )
+                ],
+            ),
+        ),
     )
     return chart
 

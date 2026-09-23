@@ -61,3 +61,18 @@ spec:
         - configMap:
             name: dcgm-counters
           name: counters
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    app: dcgm-exporter
+  name: dcgm-exporter
+  namespace: dcgm-exporter
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: dcgm-exporter

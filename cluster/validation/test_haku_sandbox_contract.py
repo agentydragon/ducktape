@@ -44,7 +44,11 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     url = one(re.findall(r"HAKU_STATE_URL:-http://([a-z0-9-]+)\.([a-z0-9-]+):(\d+)/", script))
     _, namespace, port = url
 
-    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml").read_text())
+    egress = _object(
+        k8s_dir / "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
+        "CiliumClusterwideNetworkPolicy",
+        "haku-agent-runner-egress",
+    )
     allowed = {
         (rule["toEndpoints"][0]["matchLabels"]["k8s:io.kubernetes.pod.namespace"], ports["port"])
         for rule in egress["spec"]["egress"]

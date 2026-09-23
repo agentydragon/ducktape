@@ -5,6 +5,25 @@ metadata:
     name: ducktape-flux
   name: ducktape-flux
 ---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: ducktape
+  namespace: ducktape-flux
+spec:
+  interval: 1m
+  ref:
+    branch: devel
+  sparseCheckout:
+    - cluster/k8s/
+    - cluster/charts/browsertrix/
+    - haku/x/dispatch/deploy/
+    - haku/runtime/managed_agent/self_hosted/deploy/
+    - loom/wayback/deploy/
+    - props/deploy/
+    - tf/gitops/
+  url: https://github.com/agentydragon/ducktape.git
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

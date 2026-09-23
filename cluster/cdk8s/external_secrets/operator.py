@@ -1,8 +1,7 @@
-"""The External Secrets operator: its Namespace, HelmRepository and HelmRelease.
-
-Hand-written beside the generated output: `issuer.yaml`, the self-signed cert-manager
-Issuer for the webhook's certificate, since no cdk8s binding covers Issuer. The CRDs come
-from the `external-secrets-crds` Kustomization, straight from the upstream repository.
+"""The External Secrets operator: its Namespace, HelmRepository and HelmRelease, the
+self-signed cert-manager Issuer for the webhook's certificate, and its Flux Kustomization.
+The CRDs come from the `external-secrets-crds` Kustomization, straight from the upstream
+repository.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -13,6 +12,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
     HelmReleaseSpec,
@@ -23,8 +23,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
@@ -38,7 +42,7 @@ _CONTROL_PLANE_TOLERATION = {
 }
 
 
-def _values() -> dict[str, object]:
+def _values(webhook_issuer: str) -> dict[str, object]:
     return {
         # CRDs installed separately via external-secrets-crds Kustomization
         # This ensures kustomize-controller has CRDs in its cache
@@ -83,7 +87,7 @@ def _values() -> dict[str, object]:
         # Service account used by the Kubernetes-provider ClusterSecretStores to read
         # secrets across namespaces.
         "serviceAccount": {"create": True, "name": "external-secrets"},
-        # Webhook certificates come from cert-manager (issuer.yaml), so the chart's own
+        # Webhook certificates come from cert-manager, so the chart's own
         # cert-controller is off.
         "webhook": {
             "create": True,
@@ -92,13 +96,7 @@ def _values() -> dict[str, object]:
             "tolerations": [_CONTROL_PLANE_TOLERATION],
             "certManager": {
                 "enabled": True,
-                "cert": {
-                    "issuerRef": {
-                        "group": "cert-manager.io",
-                        "kind": "Issuer",
-                        "name": "external-secrets-selfsigned-issuer",
-                    }
-                },
+                "cert": {"issuerRef": {"group": "cert-manager.io", "kind": "Issuer", "name": webhook_issuer}},
             },
         },
         "certController": {"create": False},
@@ -108,6 +106,12 @@ def _values() -> dict[str, object]:
 def chart(app: App) -> Chart:
     chart = Chart(app, "external-secrets-operator", disable_resource_name_hashes=True)
     k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
+    webhook_issuer = Issuer(
+        chart,
+        "webhook-issuer",
+        metadata=metadata("external-secrets-selfsigned-issuer", NAMESPACE),
+        spec=IssuerSpec(self_signed=IssuerSpecSelfSigned()),
+    )
     repository = HelmRepository(
         chart,
         "repository",
@@ -132,7 +136,7 @@ def chart(app: App) -> Chart:
                     ),
                 )
             ),
-            values=_values(),
+            values=_values(webhook_issuer.name),
         ),
     )
     return chart
@@ -140,3 +144,62 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def external_secrets_operator(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_crds: Kustomization,
+    cert_manager: Kustomization,
+) -> Kustomization:
+    name = "external-secrets-operator"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m0s",
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+            timeout="5m0s",
+            wait=True,
+            depends_on=flux_kustomization_depends_on_many(
+                # CRDs must be in kustomize-controller cache first
+                external_secrets_crds,
+                # ESO uses Issuer resources
+                cert_manager,
+            ),
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="helm.toolkit.fluxcd.io/v2",
+                    kind="HelmRelease",
+                    name="external-secrets",
+                    namespace="external-secrets-system",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="apps/v1",
+                    kind="Deployment",
+                    name="external-secrets",
+                    namespace="external-secrets-system",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="apps/v1",
+                    kind="Deployment",
+                    name="external-secrets-webhook",
+                    namespace="external-secrets-system",
+                ),
+                # Ensure both webhook configurations are registered before dependents create resources
+                KustomizationSpecHealthChecks(
+                    api_version="admissionregistration.k8s.io/v1",
+                    kind="ValidatingWebhookConfiguration",
+                    name="externalsecret-validate",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="admissionregistration.k8s.io/v1",
+                    kind="ValidatingWebhookConfiguration",
+                    name="secretstore-validate",
+                ),
+            ],
+        ),
+    )

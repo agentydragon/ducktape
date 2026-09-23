@@ -49,41 +49,6 @@ def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifa
     )
 
 
-def agent_workspaces_app(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    agent_sandbox_controller: Kustomization,
-    kyverno_policies: Kustomization,
-) -> Kustomization:
-    name = "agent-workspaces-app"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # CRDs + controller
-                agent_sandbox_controller,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-            ),
-        ),
-        description=(
-            "Disposable agent workspace template + warm pool in agent-workspaces. "
-            "See agents/agent-sandbox/README.md for usage."
-        ),
-    )
-
-
 def airlock(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
@@ -107,36 +72,6 @@ def airlock(
                 )
             ],
             depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        ),
-    )
-
-
-def alloy_otlp_bearer(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    claude_rbac: Kustomization,
-    haku_rbac: Kustomization,
-) -> Kustomization:
-    name = "alloy-otlp-bearer"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                # ClusterSecretStore + CRDs
-                external_secrets_config,
-                # claude-sandbox namespace
-                claude_rbac,
-                # haku-sandbox namespace
-                haku_rbac,
-            ),
-            timeout="2m",
-            decryption=SOPS_DECRYPTION,
         ),
     )
 
@@ -270,43 +205,6 @@ def haku_openclaw_spike_app(
     )
 
 
-def haku_openclaw_spike_backup(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    volsync: Kustomization,
-) -> Kustomization:
-    name = "haku-openclaw-spike-backup"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            wait=True,
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
-                # The Bucket and S3Credentials remain app-owned, but their readiness is
-                # retried by the ExternalSecret rather than coupling this Kustomization to
-                # the app Deployment health check.
-                external_secrets_operator,
-                volsync,
-            ),
-        ),
-        description=(
-            "Restic/VolSync backup of the Haku OpenClaw spike state to its "
-            "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
-            "into the optiplex worker PVC that migrates the state off the control "
-            "plane."
-        ),
-    )
-
-
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
@@ -419,57 +317,6 @@ def public_coder_agent_app(
         description=(
             "OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; "
             "devbox and backups reconcile separately."
-        ),
-    )
-
-
-def public_coder_agent_backup(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_public_coder_agent_backups_bucket: Kustomization,
-    external_secrets_config: Kustomization,
-    volsync: Kustomization,
-) -> Kustomization:
-    name = "public-coder-agent-backup"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            wait=True,
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="public-coder-agent-backups",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="public-coder-agent-backups",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="public-coder-agent-state-v2-restic",
-                    namespace="public-coder-agent",
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
-            ),
-        ),
-        description=(
-            "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
-            "to its dedicated private SeaweedFS S3 bucket."
         ),
     )
 

@@ -185,7 +185,7 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
 
 def _google_readonly(scope: Construct, *, namespace: str) -> None:
     # The Secret itself arrives by Airlock's ClusterExternalSecret
-    # (cluster/k8s/agents/airlock/google-access-token-eso.yaml).
+    # (cluster/cdk8s/airlock.py).
     EgressCredential(
         scope,
         "egresscredential-google-readonly",

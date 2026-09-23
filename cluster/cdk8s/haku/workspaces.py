@@ -1,8 +1,8 @@
 """haku-workspaces: the Haku exec-target sandbox template in haku-sandbox, the credentials its
 pods and runtimes read, the claim/exec Role Console hands sandboxes out with, and the janitor.
 
-Hand-written beside the output: `sandboxwarmpool-haku.yaml` (no SandboxWarmPool binding yet)
-and `image-pins/kustomization.yaml`, which overrides the workspace image's `unset` tag.
+Also the warm pool. Hand-written beside the output: `image-pins/kustomization.yaml`, which
+overrides the workspace image's `unset` tag.
 """
 
 from __future__ import annotations
@@ -34,6 +34,13 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
+from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
+    SandboxWarmPool,
+    SandboxWarmPoolSpec,
+    SandboxWarmPoolSpecSandboxTemplateRef,
+    SandboxWarmPoolSpecUpdateStrategy,
+    SandboxWarmPoolSpecUpdateStrategyType,
+)
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
@@ -50,6 +57,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -60,9 +68,17 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAny,
     CleanupPolicySpecMatchAnyResources,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.metadata import metadata
 
@@ -155,7 +171,7 @@ def _external_secrets(chart: Chart) -> None:
     )
 
 
-def _sandbox_template(chart: Chart) -> None:
+def _sandbox_template(chart: Chart) -> SandboxTemplate:
     """The Haku sandbox: an in-cluster EXEC TARGET haku-console hands out through its in-process
     `sandbox` server. The agent (Claude Code web / claude.ai / a managed agent) execs
     `bazel run //cli:...` / `bazel test //...` in here THROUGH Console, against a git-synced
@@ -176,7 +192,7 @@ def _sandbox_template(chart: Chart) -> None:
     the kubeconfig-less external harness (a plain claude.ai chat), which can only reach the box
     THROUGH Console.
     """
-    SandboxTemplate(
+    return SandboxTemplate(
         chart,
         "sandbox-template",
         metadata=metadata(TEMPLATE_NAME, NAMESPACE),
@@ -361,7 +377,20 @@ def chart(app: App) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
-    _sandbox_template(chart)
+    sandbox_template = _sandbox_template(chart)
+    # One pre-warmed Haku sandbox so a SandboxClaim (from the sandbox-provisioning MCP) is ready
+    # in seconds instead of a cold image pull + PVC bind. Costs one idle pod (1 cpu / 2Gi
+    # requests) inside the namespace quota; bump replicas only if claims routinely outpace warmup.
+    SandboxWarmPool(
+        chart,
+        "warm-pool",
+        metadata=metadata("haku", NAMESPACE),
+        spec=SandboxWarmPoolSpec(
+            replicas=1,
+            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
+            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=sandbox_template.name),
+        ),
+    )
     # Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim whose owner
     # forgot shutdownTime would otherwise pin quota forever. Reaping is at the CR level (the
     # controller recreates a Sandbox's pod, so a pod-level janitor just churns). Warm-pool
@@ -399,3 +428,45 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
+    )
+
+
+def haku_workspaces(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    agent_sandbox_controller: Kustomization,
+    haku_rbac: Kustomization,
+    haku_egress_proxy: Kustomization,
+    kyverno_policies: Kustomization,
+    external_secrets_config: Kustomization,
+) -> Kustomization:
+    name = "haku-workspaces"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            source_ref=artifact_source_ref(artifact),
+            depends_on=flux_kustomization_depends_on_many(
+                # shared CRDs + controller
+                agent_sandbox_controller,
+                # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+                haku_rbac,
+                # the fence haku-sandbox is opted into
+                haku_egress_proxy,
+                # CleanupPolicy CRD and cleanup-controller permissions
+                kyverno_policies,
+                # ESO CRDs and shared ClusterSecretStore
+                external_secrets_config,
+            ),
+        ),
+        description="General Haku workspaces in haku-sandbox.",
+    )

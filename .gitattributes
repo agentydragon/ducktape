@@ -51,6 +51,7 @@ cluster/k8s/artifact-generators/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/db/kustomization.yaml linguist-generated=true
+cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/proxy-routes/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
@@ -107,6 +108,7 @@ cluster/k8s/seaweedfs/pr-visuals-bucket/kustomization.yaml linguist-generated=tr
 cluster/k8s/seaweedfs/registry-cache-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/forgejo-bucket/kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/monitoring/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/loom-gym-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/drivefs-artifacts-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/namespace/kustomization.yaml linguist-generated=true
@@ -123,6 +125,7 @@ cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml linguist-genera
 cluster/k8s/flux-grafana-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/grafana-operator/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/cilium/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/rules/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/loki/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/mimir/kustomization.yaml linguist-generated=true
@@ -163,6 +166,15 @@ cluster/k8s/kube-system/kustomization.yaml linguist-generated=true
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
+cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generated=true
+cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/secrets/kustomization.yaml linguist-generated=true
+cluster/k8s/authentik/db-backups/kustomization.yaml linguist-generated=true
+cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true

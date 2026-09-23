@@ -129,6 +129,18 @@ spec:
         storageClassName: seaweedfs-ovh
   volumeClaimTemplatesPolicy: Overrides
 ---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: codex
+  namespace: agent-workspaces
+spec:
+  replicas: 1
+  sandboxTemplateRef:
+    name: codex
+  updateStrategy:
+    type: Recreate
+---
 apiVersion: kyverno.io/v2
 kind: CleanupPolicy
 metadata:

@@ -19,9 +19,6 @@ resources:
   # (it is an optional secretKeyRef), iron-proxy has nothing to substitute, and
   # kubectl reaches the apiserver carrying the literal placeholder and 401s.
   - openclaw-spike-kube-token.sops.yaml
-  # Hand-written: no CiliumClusterwideNetworkPolicy CRD binding exists for cdk8s yet.
-  - ccnp-haku-proxy-egress.yaml
-  - ccnp-haku-agent-egress.yaml
 components:
   - ./image-pins
 

@@ -1,9 +1,8 @@
 """Authentik itself, rendered into `cluster/k8s/authentik/app`: the Helm release, its host
-ConfigMap, the public HTTPRoute and the server's ingress policy.
+ConfigMap, the public HTTPRoute, the server's ingress policy and its PodMonitor.
 
-The hand-written `kustomization.yaml` there lists this file beside the SOPS Secrets, the
-`podmonitor.yaml` (no PodMonitor CRD binding yet) and the `authentik-sso-blueprints`
-configMapGenerator over `blueprints/`.
+The hand-written `kustomization.yaml` there lists this file beside the SOPS Secrets and the
+`authentik-sso-blueprints` configMapGenerator over `blueprints/`.
 """
 
 from __future__ import annotations
@@ -36,6 +35,12 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifier,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
     HttpRouteSpecRulesFiltersType,
+)
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
 )
 
 from cluster.cdk8s import cilium
@@ -295,12 +300,26 @@ def _network_policy(chart: Chart) -> None:
     )
 
 
+def _pod_monitor(chart: Chart) -> None:
+    PodMonitor(
+        chart,
+        "server-podmonitor",
+        metadata=metadata("authentik-server", NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
+            # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics")],
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _helm_release(chart)
     _host_config_map(chart)
     _http_route(chart)
     _network_policy(chart)
+    _pod_monitor(chart)
     return chart
 
 
