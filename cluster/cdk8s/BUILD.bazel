@@ -686,6 +686,22 @@ py_library(
 )
 
 py_library(
+    name = "vpa",
+    srcs = ["vpa.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -731,6 +747,7 @@ py_library(
         ":user_agentydragon",
         ":valkey",
         ":volsync",
+        ":vpa",
         "//cluster/cdk8s:flux_kustomizations_cnpg",
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s:flux_kustomizations_forgejo_images",
@@ -812,7 +829,6 @@ py_library(
         "//cluster/cdk8s/tofu_state:namespace",
         "//cluster/cdk8s/vector_talos_logs:flux_kustomizations",
         "//cluster/cdk8s/vm_images_publisher:flux_kustomizations",
-        "//cluster/cdk8s/vpa:flux_kustomizations",
         "//cluster/cdk8s/website:flux_kustomizations",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
@@ -976,6 +992,8 @@ py_test(
         "//cluster/k8s:valkey/valkey.k8s.yaml",
         "//cluster/k8s:volsync/kustomization.yaml",
         "//cluster/k8s:volsync/volsync.k8s.yaml",
+        "//cluster/k8s:vpa/kustomization.yaml",
+        "//cluster/k8s:vpa/vpa.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:kustomization.yaml",
