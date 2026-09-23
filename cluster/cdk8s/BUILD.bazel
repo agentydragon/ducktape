@@ -782,6 +782,22 @@ py_library(
 )
 
 py_library(
+    name = "kube_api_proxy",
+    srcs = ["kube_api_proxy.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":gateway",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -813,6 +829,7 @@ py_library(
         ":headlamp",
         ":hubble_ui",
         ":keda",
+        ":kube_api_proxy",
         ":kube_system",
         ":local_path_provisioner",
         ":metrics_server",
@@ -883,7 +900,6 @@ py_library(
         "//cluster/cdk8s/home_assistant:namespace",
         "//cluster/cdk8s/infra_drift:drift_watch",
         "//cluster/cdk8s/infra_drift:flux_kustomizations",
-        "//cluster/cdk8s/kube_api_proxy:flux_kustomizations",
         "//cluster/cdk8s/kubevirt:flux_kustomizations",
         "//cluster/cdk8s/kyverno:flux_kustomizations",
         "//cluster/cdk8s/langfuse:flux_kustomizations",
@@ -1075,6 +1091,8 @@ py_test(
         "//cluster/k8s:infra-drift/infra-drift.k8s.yaml",
         "//cluster/k8s:keda/keda.k8s.yaml",
         "//cluster/k8s:keda/kustomization.yaml",
+        "//cluster/k8s:kube-api-proxy/kube-api-proxy.k8s.yaml",
+        "//cluster/k8s:kube-api-proxy/kustomization.yaml",
         "//cluster/k8s:kube-system/kube-system.k8s.yaml",
         "//cluster/k8s:kube-system/kustomization.yaml",
         "//cluster/k8s:litellm/db/kustomization.yaml",

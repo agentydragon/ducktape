@@ -193,6 +193,8 @@ exports_files(
         "node-feature-discovery/kustomization.yaml",
         "nvidia-device-plugin/nvidia-device-plugin.k8s.yaml",
         "nvidia-device-plugin/kustomization.yaml",
+        "kube-api-proxy/kube-api-proxy.k8s.yaml",
+        "kube-api-proxy/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

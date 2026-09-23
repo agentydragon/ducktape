@@ -158,6 +158,8 @@ _GENERATED_FILES = (
     "cluster/k8s/talos-cloud-controller-manager/helmrelease.k8s.yaml",
     "cluster/k8s/talos-cloud-controller-manager/helmrepository.k8s.yaml",
     "cluster/k8s/talos-cloud-controller-manager/kustomization.yaml",
+    "cluster/k8s/kube-api-proxy/kube-api-proxy.k8s.yaml",
+    "cluster/k8s/kube-api-proxy/kustomization.yaml",
 )
 
 
