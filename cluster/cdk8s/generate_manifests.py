@@ -26,6 +26,7 @@ from cluster.cdk8s import (
     headlamp,
     hubble_ui,
     keda,
+    kube_api_proxy,
     kube_system,
     local_path_provisioner,
     metrics_server,
@@ -104,7 +105,6 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
-from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
@@ -202,6 +202,7 @@ def generate_manifests(root: Path) -> None:
     node_feature_discovery.write_manifests(root)
     nvidia_device_plugin.write_manifests(root)
     talos_cloud_controller_manager.write_manifests(root)
+    kube_api_proxy.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -241,8 +242,8 @@ def generate_manifests(root: Path) -> None:
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart, haku_namespace_artifact)
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
     hubble_ui.hubble_ui(flux_chart, hubble_ui_artifact)
-    kube_api_proxy_artifact = artifact("kube-api-proxy", "cluster/k8s/kube-api-proxy")
-    kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
+    kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
+    kube_api_proxy.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", "cluster/k8s/kubevirt/cdi-operator")
     cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart, kubevirt_cdi_operator_artifact)
     kubevirt_operator_artifact = artifact("kubevirt-operator", "cluster/k8s/kubevirt/operator")

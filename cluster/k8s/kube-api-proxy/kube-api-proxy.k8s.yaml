@@ -1,9 +1,32 @@
-# nginx reverse proxy that bridges HTTP → HTTPS to the Kubernetes API.
-#
-# Cilium Gateway API doesn't support backend TLS re-encryption
-# (no BackendTLSPolicy, no appProtocol: https). This nginx pod accepts
-# plain HTTP from the gateway (after TLS termination) and proxies to
-# the apiserver over HTTPS, preserving the Authorization header.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: |
+      HTTPRoute for the Kubernetes API at kubeapi.allegedly.works. The Cilium
+      Gateway terminates the wildcard LE cert at the `https-wildcard` listener,
+      then forwards to the `kubeapi-proxy` nginx pod which re-encrypts to the
+      apiserver over HTTPS (Cilium doesn't support backend TLS natively).
+
+      Purpose: works through Claude Code web's L7 TLS-terminating egress proxy,
+      which rejects the cluster-CA-signed cert that api.allegedly.works presents
+      on the direct API endpoint (:6443). See ../docs/lessons_learned/ for the full story.
+      Auth is bearer-JWT only (client certs die at the MITM boundary; see the
+      kubeconfig.py docstring in devinfra/k8s/kubeconfig.py).
+  name: kubeapi-allegedly-works
+  namespace: default
+spec:
+  hostnames:
+    - kubeapi.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: kubeapi-proxy
+          port: 8080
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -50,15 +73,14 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubeapi-proxy
-  namespace: default
   annotations:
-    # Restart pods when kubeapi-proxy-config changes (subPath mounts don't hot-reload).
-    reloader.stakater.com/auto: "true"
     description: |
       nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.
       Bridges the gap between Cilium Gateway (TLS terminate) and the
       apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.
+    reloader.stakater.com/auto: "true"
+  name: kubeapi-proxy
+  namespace: default
 spec:
   replicas: 2
   selector:
@@ -71,45 +93,46 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - name: nginx
-          image: nginxinc/nginx-unprivileged:1.31-alpine
+        - image: nginxinc/nginx-unprivileged:1.31-alpine
+          name: nginx
           ports:
             - containerPort: 8080
-          volumeMounts:
-            - name: config
-              mountPath: /etc/nginx/nginx.conf
-              subPath: nginx.conf
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
-            - name: cache
-              mountPath: /var/cache/nginx
           resources:
+            limits:
+              memory: 64Mi
             requests:
               cpu: 10m
               memory: 16Mi
-            limits:
-              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - mountPath: /etc/nginx/nginx.conf
+              name: config
+              readOnly: true
+              subPath: nginx.conf
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/cache/nginx
+              name: cache
       volumes:
-        - name: config
-          configMap:
+        - configMap:
             name: kubeapi-proxy-config
-        - name: tmp
-          emptyDir:
+          name: config
+        - emptyDir:
             medium: Memory
             sizeLimit: 1Mi
-        - name: cache
-          emptyDir:
+          name: tmp
+        - emptyDir:
             medium: Memory
             sizeLimit: 8Mi
+          name: cache
 ---
 apiVersion: v1
 kind: Service
@@ -117,10 +140,10 @@ metadata:
   name: kubeapi-proxy
   namespace: default
 spec:
-  selector:
-    app: kubeapi-proxy
   ports:
     - name: http
       port: 8080
-      targetPort: 8080
       protocol: TCP
+      targetPort: 8080
+  selector:
+    app: kubeapi-proxy

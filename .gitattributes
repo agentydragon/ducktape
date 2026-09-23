@@ -75,6 +75,7 @@ cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/kube-api-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/talos-cloud-controller-manager/kustomization.yaml linguist-generated=true
 cluster/k8s/nvidia-device-plugin/kustomization.yaml linguist-generated=true
 cluster/k8s/node-feature-discovery/kustomization.yaml linguist-generated=true
