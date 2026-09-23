@@ -6,8 +6,6 @@ resources:
   - namespace.k8s.yaml
   - haku-openclaw-spike-config.k8s.yaml
   - haku-openclaw-spike.k8s.yaml
-  # Hand-written: no SeaweedFS CRD binding exists for cdk8s yet.
-  - seaweed.yaml
 components:
   - ./image-pins
 
