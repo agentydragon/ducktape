@@ -3417,10 +3417,30 @@ spec:
           - list_events
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
+  name: tana-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        tana:
+          - get_children
+          - get_or_create_calendar_node
+          - get_tag_schema
+          - list_tags
+          - list_workspaces
+          - read_node
+          - search_nodes
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-reads
   namespace: agentplane-staging
 spec:
@@ -3434,6 +3454,7 @@ spec:
     - home-assistant-reads
     - gmail-reads
     - google-calendar-reads
+    - tana-reads
 ---
 apiVersion: v1
 kind: Namespace
