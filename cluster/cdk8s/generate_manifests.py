@@ -73,6 +73,8 @@ from cluster.cdk8s.authentik import (
     namespace as authentik_namespace,
     sso_providers,
 )
+from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
+from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
     cluster_ca as cert_manager_cluster_ca,
@@ -81,7 +83,6 @@ from cluster.cdk8s.cert_manager import (
     issuer_config as cert_manager_issuer_config,
     trust as cert_manager_trust,
 )
-from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
 from cluster.cdk8s.clickhouse import (
     flux_kustomizations as clickhouse_flux_kustomizations,
     namespace as clickhouse_namespace,
@@ -234,6 +235,7 @@ def generate_manifests(root: Path) -> None:
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
+    cli_proxy_api.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     cert_manager_app.write_manifests(root)
     cert_manager_trust.write_manifests(root)
@@ -959,8 +961,8 @@ def generate_manifests(root: Path) -> None:
         valkey_kustomization,
         monitoring_crds_kustomization,
     )
-    cli_proxy_api_artifact = artifact("cli-proxy-api", "cluster/k8s/cli-proxy-api")
-    cli_proxy_api_kustomization = cli_proxy_api_flux_kustomizations.cli_proxy_api(
+    cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
+    cli_proxy_api_kustomization = cli_proxy_api.cli_proxy_api(
         flux_chart,
         cli_proxy_api_artifact,
         external_secrets_config_kustomization,

@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/cli-proxy-api
+    newTag: devel-20260915034644-a114cad # {"$imagepolicy": "flux-system:cli-proxy-api:tag"}
