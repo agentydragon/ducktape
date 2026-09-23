@@ -106,8 +106,9 @@ How a spec's selectors become a claim map — one IR, one joint CP-SAT solve, wi
 That doc records a measured rejection: encoding tree-shape matching as
 finite-domain constraints over AST nodes, so `source_match` lowers natively
 instead of through the matcher. Do not reopen it without a measurement that
-beats <debug/perf/2026_09_17_matcher_vs_native_lowering.md>. Remaining selector
-work is language, not architecture: <plans/relational_selectors.md>.
+beats <debug/perf/2026_09_17_matcher_vs_native_lowering.md>. The native path
+still exists as a fallback and in some commands; <plans/selector_engine.md>
+removes it so every command resolves through the matcher and one CP-SAT solve.
 
 ## Soundness over completeness
 

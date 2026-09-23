@@ -10,20 +10,11 @@ it; they retry until the Cluster accepts connections.
 from __future__ import annotations
 
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
     Database,
@@ -43,8 +34,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 from cluster.cdk8s.metadata import metadata
 
@@ -65,49 +56,40 @@ class Db(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         self._add_indexer_credential()
-        Cluster(
+        cnpg.cluster(
             self,
             "cluster",
+            name=CLUSTER_NAME,
+            namespace=NAMESPACE,
             # CNPG owns the data PVCs through this object, and nothing backs this database
             # up, so a prune is unrecoverable. The annotation exempts it whichever
             # Kustomization's inventory lists it (cluster/cdk8s/AGENTS.md) -- including
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
-            metadata=metadata(CLUSTER_NAME, NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}),
-            spec=ClusterSpec(
-                instances=2,
-                image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-                probes=ClusterSpecProbes(
-                    liveness=ClusterSpecProbesLiveness(
-                        isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
+            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
+            affinity=cnpg.affinity(
+                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE}, tolerate_control_plane=False
+            ),
+            storage_class="local-path-ovh",
+            size="2Gi",
+            initdb=ClusterSpecBootstrapInitdb(database=DATABASE, owner=DATABASE),
+            managed=ClusterSpecManaged(
+                roles=[
+                    # The haku-indexer worker's narrow credential: recall-index read/write.
+                    # CNPG owns role existence and password sync; the object GRANTs are
+                    # applied by the console Kustomization's indexer-role provisioner Job,
+                    # since they target the recall_index schema the migration Job creates.
+                    ClusterSpecManagedRoles(
+                        name=INDEXER_ROLE,
+                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                        login=True,
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=INDEXER_SECRET),
+                        comment=(
+                            "haku-indexer worker: recall_index schema read/write "
+                            "(see cluster/k8s/haku/console/indexer-role.sql)"
+                        ),
                     )
-                ),
-                affinity=ClusterSpecAffinity(
-                    node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                    topology_key="kubernetes.io/hostname",
-                    node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-                ),
-                storage=ClusterSpecStorage(storage_class="local-path-ovh", size="2Gi"),
-                monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-                bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=DATABASE, owner=DATABASE)),
-                managed=ClusterSpecManaged(
-                    roles=[
-                        # The haku-indexer worker's narrow credential: recall-index read/write.
-                        # CNPG owns role existence and password sync; the object GRANTs are
-                        # applied by the console Kustomization's indexer-role provisioner Job,
-                        # since they target the recall_index schema the migration Job creates.
-                        ClusterSpecManagedRoles(
-                            name=INDEXER_ROLE,
-                            ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                            login=True,
-                            password_secret=ClusterSpecManagedRolesPasswordSecret(name=INDEXER_SECRET),
-                            comment=(
-                                "haku-indexer worker: recall_index schema read/write "
-                                "(see cluster/k8s/haku/console/indexer-role.sql)"
-                            ),
-                        )
-                    ]
-                ),
+                ]
             ),
         )
         # Declares the `vector` extension for the semantic index (`haku/recall_index`), whose

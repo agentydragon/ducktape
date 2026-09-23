@@ -34,6 +34,8 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     PolicyEvidence,
     Principal,
+    ProviderVerdict,
+    ProviderVote,
     ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
@@ -383,9 +385,14 @@ class ActionStore:
         body: ActionRequestInput,
         principal: CallerPrincipal,
         *,
+        request_id: UUID,
+        vote: ProviderVote | None,
         external_grant: ExternalGrantProvenance | None = None,
     ) -> ActionRequestView:
         """Persist an admitted request; ActionService resolves its group/action before calling here.
+
+        A decisive `vote` from admission's provider evaluation commits with the insert, so the
+        request is never visible as pending: `decision_pending` only ever means waiting for a human.
 
         A grant, where one is presented, has to still authorize this exact caller. Whether a caller
         needed a grant at all is settled before this: a Connection's bearer only ever resolves
@@ -400,7 +407,6 @@ class ActionStore:
             ):
                 raise ExternalGrantNotAuthorizedError("external grant is not authorized")
             now = datetime.now(UTC)
-            request_id = uuid4()
             inserted_id = await session.scalar(
                 pg_insert(ActionRequestRow)
                 .values(
@@ -431,6 +437,20 @@ class ActionStore:
             if row is None:
                 raise RuntimeError("inserted ActionRequest is unreadable")
             _record_event(session, row, now)
+            if vote is not None:
+                _record_decision(
+                    session,
+                    row,
+                    now,
+                    verdict=Verdict.ALLOW if vote.outcome.verdict is ProviderVerdict.ALLOW else Verdict.DENY,
+                    provider=vote.provider,
+                    operator=None,
+                    idempotency_key=f"auto:{row.id}",
+                    reason_code=vote.outcome.reason_code,
+                    reason_description=vote.outcome.reason_description,
+                    policy_evidence=vote.outcome.evidence,
+                )
+                await session.flush()
             return await self._view(session, row, principal)
 
     async def list_requests(
@@ -520,114 +540,40 @@ class ActionStore:
         self, request_id: UUID, body: DecisionInput, principal: OperatorPrincipal, *, provider: str
     ) -> tuple[ActionRequestView, bool]:
         """Human/operator Decision route; only an operator has one to make."""
-        return await self._commit_decision(
-            request_id,
-            principal,
-            verdict=body.verdict,
-            provider=provider,
-            operator=principal,
-            idempotency_key=body.idempotency_key,
-            expected_version=body.expected_version,
-            decision_note=body.decision_note,
-        )
-
-    async def decide_by_provider(
-        self,
-        request_id: UUID,
-        caller_principal: Principal,
-        *,
-        verdict: Verdict,
-        provider: str,
-        idempotency_key: str,
-        expected_version: int,
-        reason_code: str,
-        reason_description: str | None,
-        policy_evidence: PolicyEvidence | None,
-    ) -> tuple[ActionRequestView, bool]:
-        """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
-
-        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection). It
-        is never the decider: the Decision records no operator, and `provider` names what decided.
-        """
-        return await self._commit_decision(
-            request_id,
-            caller_principal,
-            verdict=verdict,
-            provider=provider,
-            operator=None,
-            idempotency_key=idempotency_key,
-            expected_version=expected_version,
-            reason_code=reason_code,
-            reason_description=reason_description,
-            policy_evidence=policy_evidence,
-        )
-
-    async def _commit_decision(
-        self,
-        request_id: UUID,
-        principal: Principal,
-        *,
-        verdict: Verdict,
-        provider: str,
-        operator: OperatorPrincipal | None,
-        idempotency_key: str,
-        expected_version: int,
-        decision_note: str | None = None,
-        reason_code: str | None = None,
-        reason_description: str | None = None,
-        policy_evidence: PolicyEvidence | None = None,
-    ) -> tuple[ActionRequestView, bool]:
         async with self._sessions.begin() as session:
             row = await session.scalar(
                 select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
             )
             if row is None:
                 raise ActionNotFoundError(str(request_id))
-            operator_issuer = None if operator is None else operator.issuer
-            operator_subject = None if operator is None else operator.subject
             prior_key = await session.scalar(
                 select(DecisionRow).where(
                     DecisionRow.provider == provider,
-                    DecisionRow.operator_issuer == operator_issuer,
-                    DecisionRow.operator_subject == operator_subject,
-                    DecisionRow.idempotency_key == idempotency_key,
+                    DecisionRow.operator_issuer == principal.issuer,
+                    DecisionRow.operator_subject == principal.subject,
+                    DecisionRow.idempotency_key == body.idempotency_key,
                 )
             )
             if prior_key is not None:
-                if prior_key.request_id != request_id or prior_key.verdict != verdict.value:
+                if prior_key.request_id != request_id or prior_key.verdict != body.verdict.value:
                     raise ActionConflictError("decision idempotency key was already used for another decision")
                 return await self._view(session, row, principal), False
-            if row.version != expected_version:
+            if row.version != body.expected_version:
                 raise ActionConflictError(
-                    f"request changed: expected version {expected_version}, current version {row.version}"
+                    f"request changed: expected version {body.expected_version}, current version {row.version}"
                 )
             if row.state != ActionState.DECISION_PENDING.value:
                 raise ActionConflictError(f"request was already decided; current state is {row.state}")
-            now = datetime.now(UTC)
-            session.add(
-                DecisionRow(
-                    request_id=row.id,
-                    verdict=verdict.value,
-                    provider=provider,
-                    operator_issuer=operator_issuer,
-                    operator_subject=operator_subject,
-                    decision_note=decision_note,
-                    reason_code=reason_code,
-                    reason_description=reason_description,
-                    policy_evidence=policy_evidence.model_dump(mode="json") if policy_evidence is not None else None,
-                    idempotency_key=idempotency_key,
-                    decided_at=now,
-                )
+            should_dispatch = _record_decision(
+                session,
+                row,
+                datetime.now(UTC),
+                verdict=body.verdict,
+                provider=provider,
+                operator=principal,
+                idempotency_key=body.idempotency_key,
+                decision_note=body.decision_note,
             )
-            row.state = ActionState.ALLOWED.value if verdict is Verdict.ALLOW else ActionState.DENIED.value
-            row.version += 1
-            row.updated_at = now
-            _record_event(session, row, now)
-            should_dispatch = verdict is Verdict.ALLOW
-            if should_dispatch:
-                session.add(
-                    ExecutionRow(request_id=row.id, state=ExecutionState.PENDING_DISPATCH.value, created_at=now)
-                )
             await session.flush()
             return await self._view(session, row, principal), should_dispatch
 
@@ -918,6 +864,46 @@ def _record_event(
             actor=None if actor is None else actor.model_dump(mode="json"),
         )
     )
+
+
+def _record_decision(
+    session: AsyncSession,
+    row: ActionRequestRow,
+    now: datetime,
+    *,
+    verdict: Verdict,
+    provider: str,
+    operator: OperatorPrincipal | None,
+    idempotency_key: str,
+    decision_note: str | None = None,
+    reason_code: str | None = None,
+    reason_description: str | None = None,
+    policy_evidence: PolicyEvidence | None = None,
+) -> bool:
+    """Decide a pending `row` in the caller's transaction; returns whether it now awaits dispatch."""
+    session.add(
+        DecisionRow(
+            request_id=row.id,
+            verdict=verdict.value,
+            provider=provider,
+            operator_issuer=None if operator is None else operator.issuer,
+            operator_subject=None if operator is None else operator.subject,
+            decision_note=decision_note,
+            reason_code=reason_code,
+            reason_description=reason_description,
+            policy_evidence=policy_evidence.model_dump(mode="json") if policy_evidence is not None else None,
+            idempotency_key=idempotency_key,
+            decided_at=now,
+        )
+    )
+    row.state = ActionState.ALLOWED.value if verdict is Verdict.ALLOW else ActionState.DENIED.value
+    row.version += 1
+    row.updated_at = now
+    _record_event(session, row, now)
+    should_dispatch = verdict is Verdict.ALLOW
+    if should_dispatch:
+        session.add(ExecutionRow(request_id=row.id, state=ExecutionState.PENDING_DISPATCH.value, created_at=now))
+    return should_dispatch
 
 
 def _decision_view(row: DecisionRow | None) -> DecisionView | None:
