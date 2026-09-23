@@ -13,7 +13,7 @@ def test_github_quota_rules(tmp_path: Path) -> None:
     manifests = {
         manifest["metadata"]["name"]: manifest
         for manifest in yaml.safe_load_all(
-            get_required_path("_main/cluster/k8s/monitoring/rules/monitoring-rules.k8s.yaml").read_text()
+            get_required_path("_main/cluster/generated/monitoring/rules/monitoring-rules.k8s.yaml").read_text()
         )
     }
     for name in ("github-quota", "roaming-node"):

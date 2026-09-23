@@ -9,11 +9,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loom-gym"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/loom-gym-bucket"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/loom-gym-bucket"
 _CHART = "loom-gym-bucket"
 
 

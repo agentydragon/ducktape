@@ -226,7 +226,7 @@ def _values() -> dict[str, object]:
                 # default to per-instance backends (memory / leveldb on the pod's PVC):
                 # with >1 replica each instance would keep its own cache (stale reads) and,
                 # worse, two leveldb queues on one shared volume would corrupt. Both move
-                # to the shared, replicated forgejo-valkey-ovh (cluster/k8s/forgejo/cache)
+                # to the shared, replicated forgejo-valkey-ovh (cluster/generated/forgejo/cache)
                 # so the deployment can scale to 2 replicas. (Switching the queue backend
                 # abandons any in-flight leveldb queue items on the next restart — fine for
                 # this instance's transient queues: webhook deliveries, mirror syncs.)

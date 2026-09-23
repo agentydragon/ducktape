@@ -1,4 +1,4 @@
-"""Cluster-scoped agent RBAC (cluster/k8s/agents/shared-rbac): the ClusterRoleBinding that
+"""Cluster-scoped agent RBAC (cluster/generated/agents/shared-rbac): the ClusterRoleBinding that
 grants every agent identity the secret-free cluster-diagnostics-reader ClusterRole.
 Namespace-scoped RoleBindings live in per-service agent-rbac/ directories
 (cluster/k8s/agents/agent-rbac-base/README.md).
@@ -14,10 +14,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-shared-rbac"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/shared-rbac"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/shared-rbac"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
 

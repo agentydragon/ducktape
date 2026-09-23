@@ -13,7 +13,7 @@ from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 CLAUDE = "forgejo-claude"
 HAKU_STATE = "haku-state"
@@ -21,12 +21,12 @@ BUDGET_LEDGER = "budget-ledger"
 CPAP_DATA = "cpap-data"
 AGENTYDRAGON_REPOS = "forgejo-agentydragon-repos"
 AGENTYDRAGON = "forgejo-agentydragon"
-CLAUDE_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/claude"
-HAKU_STATE_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/haku-state"
-BUDGET_LEDGER_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/budget-ledger"
-CPAP_DATA_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/cpap-data"
-AGENTYDRAGON_REPOS_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/agentydragon-repos"
-AGENTYDRAGON_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/agentydragon"
+CLAUDE_DIR = f"{GENERATED_ROOT}/forgejo/claude"
+HAKU_STATE_DIR = f"{GENERATED_ROOT}/forgejo/haku-state"
+BUDGET_LEDGER_DIR = f"{GENERATED_ROOT}/forgejo/budget-ledger"
+CPAP_DATA_DIR = f"{GENERATED_ROOT}/forgejo/cpap-data"
+AGENTYDRAGON_REPOS_DIR = f"{GENERATED_ROOT}/forgejo/agentydragon-repos"
+AGENTYDRAGON_DIR = f"{GENERATED_ROOT}/forgejo/agentydragon"
 
 
 def _write(

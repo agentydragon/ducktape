@@ -44,7 +44,7 @@ flake output is retained, but its current evaluation failure is noted above.
   _activation_ script that never runs in this activation-less image.
 - **Former CI**: see [Historical image build workflow](#historical-image-build-workflow).
 - **Former auto-roll**: the `ImageRepository` and `ImagePolicy` have been removed from
-  `cluster/k8s/flux-image-automation-forgejo/`. The archived Deployment keeps its last
+  `cluster/generated/flux-image-automation-forgejo/`. The archived Deployment keeps its last
   published image tag without an automation marker; restore the marker and policy when
   reactivating the experiment.
 - **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
@@ -151,7 +151,7 @@ this non-root image pod has not) and no boot-time render script:
   no resource. The workarounds are bespoke/fragile: a raw-API `data http` POST
   creating a `ducktape-ci` user webhook (no provider resource ⇒ no drift detection
   or clean delete), or giving `ducktape-ci` a repo + linking the package to it
-  (haku's painful path — `cluster/k8s/haku/ui-image-webhook` +
+  (haku's painful path — `cluster/generated/haku/ui-image-webhook` +
   `tf/gitops/haku-state`, incl. the out-of-band package-link). Not worth it for a
   dev pod; revisit if the provider gains a user/org webhook resource.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to

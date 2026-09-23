@@ -65,7 +65,7 @@ since there's no first-class Forgejo provider in OpenHands.
 
 ## Proxmox drift watch
 
-`cluster/k8s/infra-drift/` plans the OVH half of `cluster/terraform/main` and
+`cluster/generated/infra-drift/` plans the OVH half of `cluster/terraform/main` and
 deliberately leaves the Proxmox resources out: the `proxmox` provider
 authenticates as `root@pam!tofu`, a full-root API token, and putting that in a
 tf-runner pod is a bigger step than the scoped OVH credentials the CR already
@@ -223,7 +223,7 @@ staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 ## Haku `haku-ui` / workloads pipe — hardening follow-ups
 
-The `cluster/k8s/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
+The `cluster/generated/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
 Authentik route work; these tighten them (operator-approved as follow-ups):
 
 - [ ] **Read-only deploy key for the `haku-state` GitRepository.** The pipe's

@@ -145,13 +145,13 @@ evaluated, in `locals` and in resource arguments alike. So the rule is not
 
 All five call sites, and the file each needs:
 
-| Call                                    | Where                    | Reads                                                             |
-| --------------------------------------- | ------------------------ | ----------------------------------------------------------------- |
-| `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                    |
-| `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/k8s/talos-cloud-controller-manager/helmrelease.k8s.yaml` |
-| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-components.yaml`               |
-| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-sync.yaml`                     |
-| `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                      |
+| Call                                    | Where                    | Reads                                                                   |
+| --------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
+| `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                          |
+| `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/generated/talos-cloud-controller-manager/helmrelease.k8s.yaml` |
+| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-components.yaml`                     |
+| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-sync.yaml`                           |
+| `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                            |
 
 The `ignore` rules carry all of them. The rest of `cluster/k8s` (10 MB) is read
 by nothing and stays out. `cluster/scripts/configure_game_mitigation.py` also

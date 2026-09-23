@@ -908,7 +908,7 @@ creation_rules:
           - *iguana-agentydragon
 
   # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node).
-  # cluster-secrets: the infra-drift tf-runner (cluster/k8s/infra-drift) needs
+  # cluster-secrets: the infra-drift tf-runner (cluster/generated/infra-drift) needs
   # the ovh provider to configure during a plan. tf-runner-role already grants
   # cluster-wide secret read, so a narrow key here would buy nothing the runner
   # cannot already take.

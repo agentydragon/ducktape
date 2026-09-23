@@ -17,12 +17,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cilium-monitoring"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/cilium"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/cilium"
 
 
 def _labels(name: str) -> dict[str, str]:

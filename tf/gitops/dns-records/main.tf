@@ -2,7 +2,7 @@
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
 # var.public_nodes is the mesh roster's projection, set on the generated Terraform CR
-# (cluster/k8s/dns-automation/dns-records.k8s.yaml) from the repo-root nebula-mesh.json.
+# (cluster/generated/dns-automation/dns-records.k8s.yaml) from the repo-root nebula-mesh.json.
 
 terraform {
   required_version = ">= 1.0"

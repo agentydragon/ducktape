@@ -32,13 +32,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
 NAMESPACE = "flux-system"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-image-automation-forgejo"
+OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-forgejo"
 _REGISTRY = "git.allegedly.works/ducktape-ci"
 _SCAN_INTERVAL = "5m"
 # The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;

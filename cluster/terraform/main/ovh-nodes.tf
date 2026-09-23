@@ -357,7 +357,7 @@ locals {
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -385,7 +385,7 @@ locals {
         }
         # Topology labels set explicitly — no CCM for OVH bare metal.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -452,7 +452,7 @@ locals {
   }
 
   # Kubelet --cloud-provider=external opt-in. The installed talos-CCM
-  # (k8s/talos-cloud-controller-manager, configured with `publicIPDiscovery: true` for
+  # (generated/talos-cloud-controller-manager, configured with `publicIPDiscovery: true` for
   # `region=hil`) only acts on nodes whose kubelet was started with
   # `--cloud-provider=external` — that's the flag that makes kubelet apply the
   # `node.cloudprovider.kubernetes.io/uninitialized:NoSchedule` taint at first
@@ -513,7 +513,7 @@ locals {
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone

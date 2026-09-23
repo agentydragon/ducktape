@@ -3,7 +3,7 @@ sensitive grants are sourced from the set of `*rolebinding-*.yaml` files under:
 
 - `cluster/k8s/**/agent-rbac/`
 - `cluster/k8s/**/gateway-agent-rbac/`
-- `cluster/k8s/agents/shared-rbac/`
+- `cluster/generated/agents/shared-rbac/`
 
 Use `roleRef.name` in those files to determine which permission class is bound:
 `namespace-diagnostics-reader`, `agent-readable-namespace-metadata`,

@@ -17,12 +17,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import flux_kustomization
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-namespace"
 NAMESPACE = "haku-sandbox"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/namespace"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku/namespace"
 
 
 def chart(app: App) -> Chart:

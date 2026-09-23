@@ -42,9 +42,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/kyverno/policies"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
 _CREATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE
 _UPDATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.UPDATE
@@ -86,7 +86,7 @@ def require_gitops_chart(app: App) -> Chart:
         # The haku-state workload pipe: Flux applies Haku's self-authored workloads by
         # impersonating this SA (Kustomization spec.serviceAccountName), so admission
         # attributes the request to it rather than kustomize-controller. It is a GitOps
-        # path, Role-bounded to haku-sandbox (see cluster/k8s/haku/workloads/README.md).
+        # path, Role-bounded to haku-sandbox (see cluster/cdk8s/haku/workloads.md).
         ("haku-state-reconciler", "flux-system"),
         # Kyverno itself (for admission webhooks)
         ("kyverno-admission-controller", "kyverno"),

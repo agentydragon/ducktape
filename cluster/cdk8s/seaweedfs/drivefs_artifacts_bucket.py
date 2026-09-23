@@ -10,11 +10,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "drivefs-artifacts"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/drivefs-artifacts-bucket"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/drivefs-artifacts-bucket"
 _CHART = "drivefs-artifacts-bucket"
 
 

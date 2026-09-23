@@ -15,10 +15,10 @@ from cluster.cdk8s import external_creds, terraform
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.scripts import nebula_mesh
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/dns-automation"
+OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
 _NAMESPACE = "flux-system"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"

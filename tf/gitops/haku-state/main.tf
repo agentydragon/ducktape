@@ -102,7 +102,7 @@ resource "forgejo_collaborator" "claude" {
 #     placeholder.
 #   - flux-system: basic auth for the haku-state GitRepository, which the
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
-#     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
+#     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
 #   - haku-runtime-sandbox: the Console-owned Claude runner writes it into ~/.netrc and
 #     checks haku-state out into its workspace, so that session has Haku's manual. Same

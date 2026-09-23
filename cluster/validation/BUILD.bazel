@@ -197,6 +197,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -237,7 +238,7 @@ py_test(
     srcs = ["test_github_quota_rules.py"],
     data = [
         "testdata/github_quota_rules.yaml",
-        "//cluster/k8s:monitoring/rules/monitoring-rules.k8s.yaml",
+        "//cluster:generated/monitoring/rules/monitoring-rules.k8s.yaml",
         "@multitool//tools/promtool",
     ],
     deps = [
@@ -449,7 +450,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//cluster/k8s/talos-cloud-controller-manager:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -724,7 +724,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//cluster/k8s/talos-cloud-controller-manager:manifests",
     ],
     deps = [
         ":flux",

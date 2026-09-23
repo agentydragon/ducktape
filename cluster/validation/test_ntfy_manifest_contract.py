@@ -9,7 +9,7 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 
-_FLUX_WEBHOOK_MANIFESTS = "_main/cluster/k8s/flux-webhook/flux-webhook.k8s.yaml"
+_FLUX_WEBHOOK_MANIFESTS = "_main/cluster/generated/flux-webhook/flux-webhook.k8s.yaml"
 _NTFY_MANIFESTS = "_main/cluster/k8s/ntfy/ntfy.k8s.yaml"
 
 

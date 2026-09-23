@@ -1,6 +1,6 @@
 # Kyverno policy tests
 
-Tests for the ClusterPolicies in <../../k8s/kyverno/policies/> (and the zone
+Tests for the ClusterPolicies in <../../generated/kyverno/policies/> (and the zone
 injector in <../../../haku/x/zones/deploy/zones/policies/>), driven by the real `kyverno` CLI
 from the multitool lockfile — so they exercise the policy engine itself, not a
 model of it.

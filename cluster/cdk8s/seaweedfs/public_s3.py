@@ -41,7 +41,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import (
     cluster,
@@ -53,7 +53,7 @@ from cluster.cdk8s.seaweedfs import (
 )
 
 NAME = "public-s3"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/public-s3"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
 _PORT = 8333
 _METRICS_PORT = 9327
 _CONFIG_MAP = "public-s3-bootstrap-config"
