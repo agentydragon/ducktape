@@ -21,6 +21,13 @@ intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, 
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
 refusals and other server failures are not startup readiness signals.
 
+## Thread latency
+
+`test_thread_latency` times a one-word turn at low reasoning effort against a three-second target,
+then the browser's reads to open that thread, per stage, cold and warm, against regression
+ceilings; its module docstring defines each interval. Each run writes its timings to
+`bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
+
 ## MCP integration
 
 `//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
@@ -112,7 +119,7 @@ bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_
 ```
 
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
-`:test_instructions`, and `:test_mcp`.
+`:test_instructions`, `:test_mcp`, and `:test_thread_latency`.
 
 By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
