@@ -158,7 +158,9 @@ no persistent browser cache.
 **Deviation:** the live log carries every change in the thread, including rows outside a
 reader's window, which the client discards. Electric's client withholds a shape's
 `up-to-date` from a stream that reopens a shape it followed within the last minute, so the
-store gates subsets on the first subset's response, never on that message.
+store gates subsets on the first subset's response, never on that message. It also moves a live
+stream to a subset response's offset, which skips changes to rows outside the subset; the store's
+fetch client hands a subset response the stream's own offset back.
 
 Acceptance must still establish:
 
