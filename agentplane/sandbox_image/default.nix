@@ -62,7 +62,6 @@ pkgs.dockerTools.buildLayeredImage {
   contents = sandboxEnv;
   maxLayers = 100;
 
-  enableFakechroot = true;
   fakeRootCommands = ''
     ${substrate.fakeRootCommands}
     mkdir -p etc/ssl/certs home/runner
