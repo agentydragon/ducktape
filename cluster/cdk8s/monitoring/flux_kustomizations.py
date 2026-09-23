@@ -99,22 +99,6 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     )
 
 
-def grafana_helmrepository(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "grafana-helmrepository",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            timeout="5m",
-        ),
-    )
-
-
 def grafana_instance(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grafana_operator: Kustomization, cnpg: Kustomization
 ) -> Kustomization:

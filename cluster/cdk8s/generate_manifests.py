@@ -108,6 +108,7 @@ from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_f
 from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
     flux_kustomizations as monitoring_flux_kustomizations,
+    grafana_helmrepository,
     namespace as monitoring_namespace,
 )
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
@@ -185,6 +186,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
     monitoring_namespace.write_manifests(root)
+    grafana_helmrepository.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
     forgejo_images.write_manifests(root)
@@ -246,10 +248,8 @@ def generate_manifests(root: Path) -> None:
         flux_chart, local_path_provisioner_artifact
     )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
-    grafana_helmrepository_artifact = artifact(
-        "grafana-helmrepository", "cluster/k8s/monitoring/grafana-helmrepository"
-    )
-    grafana_helmrepository_kustomization = monitoring_flux_kustomizations.grafana_helmrepository(
+    grafana_helmrepository_artifact = artifact("grafana-helmrepository", grafana_helmrepository.OUTPUT_DIR)
+    grafana_helmrepository_kustomization = grafana_helmrepository.grafana_helmrepository(
         flux_chart, grafana_helmrepository_artifact
     )
     monitoring_namespace_artifact = artifact("monitoring-namespace", monitoring_namespace.OUTPUT_DIR)

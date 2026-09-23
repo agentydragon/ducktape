@@ -108,6 +108,8 @@ _GENERATED_FILES = (
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
     "cluster/k8s/monitoring/namespace/namespace.k8s.yaml",
     "cluster/k8s/monitoring/namespace/kustomization.yaml",
+    "cluster/k8s/monitoring/grafana-helmrepository/helmrepository.k8s.yaml",
+    "cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml",
 )
 
 

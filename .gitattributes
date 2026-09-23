@@ -77,6 +77,7 @@ cluster/k8s/github-secrets-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/namespace/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
