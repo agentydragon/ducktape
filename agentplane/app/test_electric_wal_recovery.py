@@ -14,9 +14,11 @@ import asyncpg
 import httpx
 import pytest_bazel
 
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -34,7 +36,8 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
             electric_storage_dir=Path(state_dir),
         ) as service:
-            store = ThreadStore.connect(service.database_url)
+            engine = connect(service.database_url)
+            store = ThreadStore(engine)
             try:
                 thread, source, lease = await _project_initial_item(store)
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
@@ -126,7 +129,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     resnapshot.raise_for_status()
                     assert {row["entity_id"] for row in _values(resnapshot)} >= {"first", "during-outage"}
             finally:
-                await store.close()
+                await engine.dispose()
 
 
 async def _project_initial_item(store: ThreadStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
