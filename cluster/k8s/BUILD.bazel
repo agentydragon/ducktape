@@ -82,6 +82,7 @@ exports_files(
         "descheduler/kustomization.yaml",
         "descheduler/rbac.k8s.yaml",
         "dns-automation/dns-records.k8s.yaml",
+        "dns-automation/kustomization.yaml",
         "external-creds/external-creds.k8s.yaml",
         "external-creds/kustomization.yaml",
         "haku/console/db/haku-console-db.k8s.yaml",
