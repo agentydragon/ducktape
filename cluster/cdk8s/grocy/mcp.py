@@ -23,36 +23,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
-from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
-    RedisReplication,
-    RedisReplicationSpec,
-    RedisReplicationSpecAffinity,
-    RedisReplicationSpecAffinityNodeAffinity,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecAffinityPodAntiAffinity,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
-    RedisReplicationSpecKubernetesConfig,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesLimits,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
-    RedisReplicationSpecStorage,
-    RedisReplicationSpecStorageVolumeClaimTemplate,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
-)
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.valkey import valkey_instance
 
 BASE_DIR = "cluster/k8s/grocy/mcp-base"
 SERVICEMONITOR_BASE_DIR = "cluster/k8s/grocy/mcp-servicemonitor-base"
@@ -208,93 +185,6 @@ def servicemonitor_base_chart(app: App) -> Chart:
     return chart
 
 
-def _valkey(chart: Chart, *, household: str, display_name: str, namespace: str) -> None:
-    name = f"grocy-{household}-valkey-ovh"
-    RedisReplication(
-        chart,
-        "valkey",
-        metadata=metadata(
-            name,
-            namespace,
-            annotations={"description": f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state"},
-        ),
-        spec=RedisReplicationSpec(
-            cluster_size=2,
-            kubernetes_config=RedisReplicationSpecKubernetesConfig(
-                image="valkey/valkey:9-alpine",
-                image_pull_policy="IfNotPresent",
-                resources=RedisReplicationSpecKubernetesConfigResources(
-                    requests={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
-                    },
-                    limits={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
-                        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
-                        # request and upper bound — double the old limit. This valkey backs the
-                        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
-                        # than a working set, so check the eviction policy.
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("384Mi"),
-                    },
-                ),
-            ),
-            storage=RedisReplicationSpecStorage(
-                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
-                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
-                        access_modes=["ReadWriteOnce"],
-                        storage_class_name="local-path-ovh",
-                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
-                            requests={
-                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
-                                    "1Gi"
-                                )
-                            }
-                        ),
-                    )
-                )
-            ),
-            affinity=RedisReplicationSpecAffinity(
-                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
-                                    )
-                                ]
-                            )
-                        ]
-                    ),
-                    # Prefer ordinary workers when this workload tolerates control planes.
-                    preferred_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-                            weight=100,
-                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                ),
-                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
-                    required_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                                match_labels={"app": name}
-                            ),
-                            topology_key="kubernetes.io/hostname",
-                        )
-                    ]
-                ),
-            ),
-        ),
-    )
-
-
 def household_chart(app: App, *, household: str, display_name: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, f"grocy-mcp-{household}", disable_resource_name_hashes=True)
@@ -312,7 +202,22 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
         hsts=False,
         listener=None,
     )
-    _valkey(chart, household=household, display_name=display_name, namespace=namespace)
+    valkey_instance(
+        chart,
+        name=f"grocy-{household}-valkey-ovh",
+        namespace=namespace,
+        description=f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state",
+        memory_request="64Mi",
+        cpu_limit="200m",
+        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
+        # request and upper bound — double the old limit. This valkey backs the
+        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
+        # than a working set, so check the eviction policy.
+        memory_limit="384Mi",
+        max_memory_percent_of_limit=None,
+        storage_class="local-path-ovh",
+        storage_size="1Gi",
+    )
     return chart
 
 

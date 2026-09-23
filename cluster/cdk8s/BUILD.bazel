@@ -686,9 +686,9 @@ py_library(
         ":gateway",
         ":generation",
         ":metadata",
+        ":valkey",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
-        "//cluster/cdk8s/crd_bindings/redis_operator:redisreplication",
         "//cluster/cdk8s/external_secrets:external_secret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -951,6 +951,7 @@ py_library(
 py_library(
     name = "valkey",
     srcs = ["valkey.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
         ":flux",
@@ -960,9 +961,11 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/redis_operator:redisreplication",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 

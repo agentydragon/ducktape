@@ -142,8 +142,6 @@ once per module. Each item below is its own PR, proven by `render_diff.py` print
 `identical`. A helper earns its place where the shape truly repeats; a module that
 differs keeps building the object directly.
 
-- **`valkey_instance(...)`** for the six `RedisReplication`s (~80 near-identical
-  lines each): size, storage class, zone affinity and description differ.
 - **`seaweed_bucket(...)`** for the Bucket + S3Identity + S3Credentials +
   ResourceReferenceGrant bundle repeated in ~14 modules (~890 lines). It is also the
   one place to hold the operator's rules (`seaweed_operator` skill).
