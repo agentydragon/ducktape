@@ -1130,11 +1130,7 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
     )
-    haku_openclaw_spike_app_artifact = artifact(
-        "haku-openclaw-spike-app",
-        "cluster/k8s/agents/haku-openclaw-spike/app",
-        "cluster/k8s/agents/haku-openclaw-spike/namespace",
-    )
+    haku_openclaw_spike_app_artifact = artifact("haku-openclaw-spike-app", "cluster/k8s/agents/haku-openclaw-spike/app")
     agents_flux_kustomizations.haku_openclaw_spike_app(
         flux_chart,
         haku_openclaw_spike_app_artifact,
