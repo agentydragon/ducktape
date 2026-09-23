@@ -144,6 +144,7 @@ exports_files(
         "authentik/db/authentik-db-ovh.k8s.yaml",
         "authentik/db/kustomization.yaml",
         "authentik/namespace.k8s.yaml",
+        "authentik/app/authentik.k8s.yaml",
         "agents/mitmproxy/namespace.k8s.yaml",
         "forgejo/namespace.k8s.yaml",
         "forgejo/db/forgejo-db-ssd.k8s.yaml",

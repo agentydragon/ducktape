@@ -26,6 +26,9 @@ from cluster.cdk8s.metadata import metadata
 
 NAME = "authentik-db-ovh"
 OUTPUT_DIR = "cluster/k8s/authentik/db"
+# The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
+# selects the same zone to stay beside it.
+NODE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 
 
 def chart(app: App) -> Chart:
@@ -43,7 +46,7 @@ def chart(app: App) -> Chart:
                 )
             ),
             affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                node_selector=NODE_SELECTOR,
                 tolerations=[
                     ClusterSpecAffinityTolerations(
                         key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
