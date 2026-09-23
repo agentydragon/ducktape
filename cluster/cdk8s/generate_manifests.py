@@ -141,7 +141,14 @@ from cluster.cdk8s.github_secrets_sync import (
     secrets as github_secrets_sync_secrets,
 )
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
-from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
+from cluster.cdk8s.grocy import (
+    app as grocy_app,
+    flux_kustomizations as grocy_flux_kustomizations,
+    mcp as grocy_mcp,
+    user_perms as grocy_user_perms,
+)
+from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
+from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
@@ -151,7 +158,6 @@ from cluster.cdk8s.haku import (
     rbac as haku_rbac,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
-)
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
@@ -260,6 +266,9 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    grocy_app.write_manifests(root)
+    grocy_mcp.write_manifests(root)
+    grocy_user_perms.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)

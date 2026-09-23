@@ -3,11 +3,11 @@ kind: ServiceMonitor
 metadata:
   name: grocy-mcp-server
 spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+      scrapeTimeout: 10s
   selector:
     matchLabels:
-      app.kubernetes.io/name: grocy-mcp
       app.kubernetes.io/component: server
-  endpoints:
-    - port: metrics
-      path: /metrics
-      scrapeTimeout: 10s
+      app.kubernetes.io/name: grocy-mcp
