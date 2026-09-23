@@ -85,6 +85,7 @@ cluster/k8s/atuin/kustomization.yaml linguist-generated=true
 cluster/k8s/atuin/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/proxmox-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/headlamp/kustomization.yaml linguist-generated=true
 cluster/k8s/goldilocks/kustomization.yaml linguist-generated=true
 cluster/k8s/local-path-provisioner/kustomization.yaml linguist-generated=true
