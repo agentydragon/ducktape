@@ -29,6 +29,7 @@ from cluster.cdk8s import (
     goldilocks,
     google_mcp,
     ha_mcp,
+    haku_egress_proxy,
     haku_openclaw_spike_config,
     kubectl_passthrough_mcp,
     loki_read_proxy,
@@ -242,6 +243,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
@@ -1239,7 +1241,7 @@ def generate_manifests(root: Path) -> None:
         haku_state_kustomization,
         forgejo_agentydragon_repos_kustomization,
     )
-    haku_egress_proxy_artifact = artifact("haku-egress-proxy", "cluster/k8s/agents/haku-egress-proxy")
+    haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,
         haku_egress_proxy_artifact,
