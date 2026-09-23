@@ -4,8 +4,8 @@ resources:
   # cdk8s-generated (cluster/cdk8s/study_casino/app.py).
   - study-casino.k8s.yaml
   - readonly-secret.sops.yaml
-  # Hand-written: its image and STUDY_CASINO_IMAGE_TAG carry Flux image-automation markers.
-  - deployment.yaml
+components:
+  - ./image-pins
 configMapGenerator:
   - name: study-casino-db-readonly-sql
     namespace: study-casino
