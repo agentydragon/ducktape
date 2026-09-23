@@ -111,8 +111,8 @@ resource "forgejo_collaborator" "claude" {
 #     repo's history by which harness happened to be running.
 #   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
 #     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
-# Agentplane staging reads only the password through ESO, with an exact-name source
-# grant in cluster/cdk8s/agentplane/egress_credentials.py; it is not a Reflector target.
+# Agentplane staging reads only the password through ESO, with an exact-name source grant
+# in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
 # The canonical copy serves in-cluster scan runs / the self-hosted worker + the
 # haku-ui backend (operator clicks/feedback → Forgejo writes).
 resource "kubernetes_secret" "haku_forgejo_git" {
