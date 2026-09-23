@@ -35,19 +35,13 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import forgejo_images
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
@@ -78,29 +72,15 @@ def _read_token(chart: Chart) -> None:
         metadata=metadata(_READ_TOKEN, NAME),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "read-token",
-        metadata=metadata(_READ_TOKEN, NAME),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_READ_TOKEN,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=_READ_TOKEN,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_READ_TOKEN,
+        namespace=NAME,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(_READ_TOKEN)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 

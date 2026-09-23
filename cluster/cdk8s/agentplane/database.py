@@ -34,19 +34,17 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromSourceRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 
 _CLUSTER_NAME = "postgres"
 _IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
@@ -82,36 +80,32 @@ def _role_credentials(
         metadata=ApiObjectMetadata(name=f"{secret_name}-generator", namespace=namespace),
         spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         id,
-        metadata=ApiObjectMetadata(name=secret_name, namespace=namespace),
-        spec=ExternalSecretSpec(
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name=secret_name,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="kubernetes.io/basic-auth",
-                    data={
-                        "username": role,
-                        "password": "{{ .password }}",
-                        "host": host,
-                        "port": str(POSTGRES_PORT),
-                        "dbname": database,
-                        "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{database}",
-                    },
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=f"{secret_name}-generator",
-                        )
+        name=secret_name,
+        namespace=namespace,
+        refresh="8760h",
+        data_from=[
+            ExternalSecretSpecDataFrom(
+                source_ref=ExternalSecretSpecDataFromSourceRef(
+                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                        name=f"{secret_name}-generator",
                     )
                 )
-            ],
+            )
+        ],
+        template=ExternalSecretSpecTargetTemplate(
+            type="kubernetes.io/basic-auth",
+            data={
+                "username": role,
+                "password": "{{ .password }}",
+                "host": host,
+                "port": str(POSTGRES_PORT),
+                "dbname": database,
+                "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{database}",
+            },
         ),
     )
 

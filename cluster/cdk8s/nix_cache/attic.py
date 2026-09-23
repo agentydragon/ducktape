@@ -28,13 +28,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -67,8 +60,9 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecSeaweedRef,
 )
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -301,29 +295,17 @@ def _rotation(scope: Construct) -> None:
     )
     # The rotator's GitHub PAT, copied from the canonical external-creds source
     # (external_creds.py approves nix-cache as a consumer).
-    ExternalSecret(
+    add_external_secret(
         scope,
         "github-pat",
-        metadata=metadata(_GITHUB_PAT_SECRET, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_GITHUB_PAT_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque"),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="github-agentydragon-2", property="token"),
-                )
-            ],
-        ),
+        name=_GITHUB_PAT_SECRET,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data("github-agentydragon-2", "token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque"),
     )
     k8s.KubeServiceAccount(
         scope,

@@ -9,21 +9,12 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "trust-manager"
@@ -40,34 +31,24 @@ def chart(app: App) -> Chart:
         metadata=metadata("cert-manager", NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="trust-manager",
-                    version="0.25.*",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                "replicaCount": 1,
-                # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
-                # rather than degrading. Same treatment as the other blocking-webhook backends.
-                "priorityClassName": "system-cluster-critical",
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}
-                ],
-            },
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="trust-manager",
+        version="0.25.*",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            "replicaCount": 1,
+            # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
+            # rather than degrading. Same treatment as the other blocking-webhook backends.
+            "priorityClassName": "system-cluster-critical",
+            "tolerations": [
+                {"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}
+            ],
+        },
     )
     return chart
 

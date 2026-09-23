@@ -59,6 +59,7 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",

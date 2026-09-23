@@ -7,21 +7,12 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "kyverno"
@@ -143,28 +134,18 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, _FLUX_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, _FLUX_NAMESPACE),
-        spec=HelmReleaseSpec(
-            target_namespace=namespace.name,
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="kyverno",
-                    # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
-                    version="3.9.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
-        ),
+        NAME,
+        _FLUX_NAMESPACE,
+        repository=repository,
+        chart="kyverno",
+        # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
+        version="3.9.1",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        target_namespace=namespace.name,
+        values=_values(),
     )
     return chart
 

@@ -40,13 +40,6 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -62,6 +55,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -163,38 +157,26 @@ class Aiquota(Construct):
         self._add_service_monitor()
 
     def _add_bearer_mirror(self, mirror: BearerMirror) -> None:
-        ExternalSecret(
+        add_external_secret(
             self,
             f"bearer-{mirror.consumer}",
-            metadata=metadata(mirror.secret_name, NAMESPACE),
-            spec=ExternalSecretSpec(
-                refresh_interval="1h",
-                secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                    kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                    name="kubernetes-cli-proxy-api-secret-store",
-                ),
-                target=ExternalSecretSpecTarget(
-                    name=mirror.secret_name,
-                    creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                    deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                    template=ExternalSecretSpecTargetTemplate(
-                        metadata=ExternalSecretSpecTargetTemplateMetadata(
-                            annotations={
-                                "description": mirror.description,
-                                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
-                                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
-                            }
-                        )
-                    ),
-                ),
-                data=[
-                    ExternalSecretSpecData(
-                        secret_key=_BEARER_KEY,
-                        remote_ref=ExternalSecretSpecDataRemoteRef(key=BEARER_SECRET_NAME, property=_BEARER_KEY),
-                    )
-                ],
+            name=mirror.secret_name,
+            namespace=NAMESPACE,
+            refresh="1h",
+            store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+            data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            template=ExternalSecretSpecTargetTemplate(
+                metadata=ExternalSecretSpecTargetTemplateMetadata(
+                    annotations={
+                        "description": mirror.description,
+                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
+                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
+                    }
+                )
             ),
         )
 

@@ -12,12 +12,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -26,6 +20,8 @@ from external_secrets_crds.io.external_secrets import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -34,7 +30,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 NAME = "github-secrets-sync-secrets"
 OUTPUT_DIR = "cluster/k8s/github-secrets-sync/secrets"
@@ -51,28 +46,17 @@ def _external_secret(
     source: str,
     template: ExternalSecretSpecTargetTemplate | None = None,
 ) -> ExternalSecret:
-    return ExternalSecret(
+    return add_external_secret(
         chart,
         id,
-        metadata=metadata(name, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=name,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=template,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=secret_key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=secret_key)
-                )
-            ],
-        ),
+        name=name,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(source, secret_key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=template,
     )
 
 

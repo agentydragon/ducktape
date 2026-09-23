@@ -965,6 +965,7 @@ py_library(
     srcs = ["electric.py"],
     deps = [
         "//agentplane/app/agent_runtime/view:content",
+        "//agentplane/app/agent_runtime/view:fold",
         "//agentplane/app/agent_runtime/view:views",
         "@pypi//anyio",
         "@pypi//fastapi",
@@ -985,8 +986,6 @@ py_test(
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/view:content",
-        "//agentplane/app/agent_runtime/view:fold",
-        "//agentplane/app/agent_runtime/view:views",
         "//agentplane/app/testing:replication_source",
         "//agentplane/protocol:event_pb2",
         "@pypi//fastapi",
@@ -1066,7 +1065,6 @@ py_test(
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
-        "//agentplane/app/agent_runtime/view:content",
         "//agentplane/app/testing:electric_service",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
@@ -1094,6 +1092,7 @@ py_test(
         ":conftest",
         ":test_thread_browser",
         "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
@@ -1107,6 +1106,30 @@ py_library(
     srcs = ["database.py"],
     deps = [
         "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_electric_subset_window",
+    size = "medium",
+    srcs = ["test_electric_subset_window.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database",
+        "//:conftest",
+        "//agentplane/app/agent_runtime:ingestion",
+        "//agentplane/app/agent_runtime:models",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/events:ingestion_lease",
+        "//agentplane/app/agent_runtime/view:recording",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
