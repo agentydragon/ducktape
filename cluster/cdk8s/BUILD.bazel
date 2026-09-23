@@ -598,6 +598,7 @@ py_library(
         ":gateway",
         ":generation",
         ":metadata",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

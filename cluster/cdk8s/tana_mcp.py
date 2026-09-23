@@ -1,13 +1,13 @@
 """tana-mcp: Tana Desktop under Xvfb with its MCP proxy and Firebase re-signing sidecars, and the
 public Authentik-backed MCP facade in front of it, with their config, RBAC, credentials,
-Services, HTTPRoute and ServiceMonitor.
+Services, HTTPRoute, ServiceMonitor and PrometheusRule.
 
 The images' tags are the placeholder "unset"; the hand-written `image-pins/kustomization.yaml`
 overrides them at `kustomize build` time via Flux's image-automation markers
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker). Also hand-written beside the generated
 output: `kustomization.yaml` (its configMapGenerator renders `nginx-auth-proxy.conf`), the
-refresh-token SOPS Secret, the facade's OAuth-state `RedisReplication` and its
-`PrometheusRule`, which have no binding.
+refresh-token SOPS Secret and the facade's OAuth-state `RedisReplication`, which has no
+binding.
 """
 
 from __future__ import annotations
@@ -21,6 +21,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroups,
+    PrometheusRuleSpecGroupsRules,
+    PrometheusRuleSpecGroupsRulesExpr,
 )
 
 from cluster.cdk8s.external_creds import add_external_secret
@@ -372,6 +379,68 @@ def _facade(chart: Chart) -> None:
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
             endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
+        ),
+    )
+    PrometheusRule(
+        chart,
+        "facade-prometheusrule",
+        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        spec=PrometheusRuleSpec(
+            groups=[
+                PrometheusRuleSpecGroups(
+                    name=_FACADE,
+                    rules=[
+                        # The facade can be "up" (process healthy) while serving zero tools
+                        # because the upstream Tana MCP rejects the server-held PAT. These
+                        # alerts fire on that condition — the recurring failure that silently
+                        # leaves claude.ai with no Tana tools.
+                        PrometheusRuleSpecGroupsRules(
+                            alert="TanaMcpFacadeUpstreamDown",
+                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string("mcp_facade_upstream_up == 0"),
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            annotations={
+                                "summary": "MCP facade {{ $labels.facade }} cannot reach its upstream",
+                                "description": (
+                                    "The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no "
+                                    "tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the "
+                                    "firebase-resigner logs and the tana-mcp pod sign-in.\n"
+                                ),
+                            },
+                        ),
+                        PrometheusRuleSpecGroupsRules(
+                            alert="TanaMcpFacadeNoTools",
+                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+                                "mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0"
+                            ),
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            annotations={
+                                "summary": "MCP facade {{ $labels.facade }} reachable but exposes zero tools",
+                                "description": (
+                                    "Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP "
+                                    "server is up but empty.\n"
+                                ),
+                            },
+                        ),
+                        PrometheusRuleSpecGroupsRules(
+                            alert="TanaMcpFacadeProbeStale",
+                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+                                "time() - mcp_facade_upstream_last_success_timestamp_seconds > 600"
+                            ),
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            annotations={
+                                "summary": "MCP facade {{ $labels.facade }} has no recent successful probe",
+                                "description": (
+                                    "No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream "
+                                    "persistently failing).\n"
+                                ),
+                            },
+                        ),
+                    ],
+                )
+            ]
         ),
     )
 

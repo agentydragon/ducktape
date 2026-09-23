@@ -408,3 +408,42 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: tana-mcp-facade
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: tana-mcp-facade
+  namespace: tana-mcp
+spec:
+  groups:
+    - name: tana-mcp-facade
+      rules:
+        - alert: TanaMcpFacadeUpstreamDown
+          annotations:
+            description: |
+              The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the firebase-resigner logs and the tana-mcp pod sign-in.
+            summary: MCP facade {{ $labels.facade }} cannot reach its upstream
+          expr: mcp_facade_upstream_up == 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: TanaMcpFacadeNoTools
+          annotations:
+            description: |
+              Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP server is up but empty.
+            summary: MCP facade {{ $labels.facade }} reachable but exposes zero tools
+          expr: mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: TanaMcpFacadeProbeStale
+          annotations:
+            description: |
+              No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream persistently failing).
+            summary: MCP facade {{ $labels.facade }} has no recent successful probe
+          expr: time() - mcp_facade_upstream_last_success_timestamp_seconds > 600
+          for: 5m
+          labels:
+            severity: warning
