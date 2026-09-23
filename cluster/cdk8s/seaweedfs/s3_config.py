@@ -1,9 +1,8 @@
 """The s3 gateway's `seaweedfs-s3-config` Secret, assembled by ESO from the per-tenant
-`s3-identity-*-json` Secrets, and the ServiceAccount the `seaweedfs-identities` SecretStore
+`s3-identity-*-json` Secrets, the `seaweedfs-identities` SecretStore and the ServiceAccount it
 reads them as.
 
-Hand-written beside the output: `secretstore.yaml` (no namespaced `SecretStore` binding
-yet), the per-tenant `identities/*.sops.yaml` and the directory's `kustomization.yaml`.
+Hand-written beside the output: the per-tenant `identities/*.sops.yaml`.
 """
 
 from __future__ import annotations
@@ -24,8 +23,29 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
+from external_secrets_secretstore_crds.io.external_secrets import (
+    SecretStore,
+    SecretStoreSpec,
+    SecretStoreSpecProvider,
+    SecretStoreSpecProviderKubernetes,
+    SecretStoreSpecProviderKubernetesAuth,
+    SecretStoreSpecProviderKubernetesAuthServiceAccount,
+    SecretStoreSpecProviderKubernetesServer,
+    SecretStoreSpecProviderKubernetesServerCaProvider,
+    SecretStoreSpecProviderKubernetesServerCaProviderType,
+)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
@@ -34,7 +54,6 @@ SECRET_KEY = "seaweedfs_s3_config.json"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/secrets"
 _CHART = "s3-config"
 _READER = "eso-reader"
-# Hand-written in secretstore.yaml.
 _SECRET_STORE = "seaweedfs-identities"
 
 
@@ -54,6 +73,41 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name=_READER, namespace=namespace.NAME),
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_READER, namespace=namespace.NAME)],
+    )
+    # In-namespace SecretStore that the global + per-tenant ExternalSecrets read from. Provider =
+    # kubernetes (looks back at the same cluster).
+    SecretStore(
+        chart,
+        "secret-store",
+        metadata=metadata(
+            _SECRET_STORE,
+            namespace.NAME,
+            annotations={
+                "description": (
+                    "Reads per-tenant s3-identity-* Secrets and the per-tenant intermediate Secrets that the "
+                    "assembly ExternalSecrets produce."
+                )
+            },
+        ),
+        spec=SecretStoreSpec(
+            provider=SecretStoreSpecProvider(
+                kubernetes=SecretStoreSpecProviderKubernetes(
+                    server=SecretStoreSpecProviderKubernetesServer(
+                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name="kube-root-ca.crt",
+                            key="ca.crt",
+                        )
+                    ),
+                    auth=SecretStoreSpecProviderKubernetesAuth(
+                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=_READER, namespace=namespace.NAME
+                        )
+                    ),
+                    remote_namespace=namespace.NAME,
+                )
+            )
+        ),
     )
     # Concatenates the per-tenant intermediate Secrets' pre-rendered identity JSON snippets
     # into the blob the s3 gateway consumes. `creationPolicy: Owner` so ESO creates the
@@ -107,3 +161,36 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        # Per-tenant credentials. Legacy entries also contain an ExternalSecret that renders static
+        # gateway JSON. Migrated entries contain only the SOPS Secret; their S3Identity/S3Credentials
+        # CRs live with the corresponding Bucket CR.
+        kustomize_kustomization(resources=[f"{_CHART}.k8s.yaml", "identities/admin.sops.yaml"]),
+    )
+
+
+def seaweedfs_secrets(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    seaweedfs_namespace: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
+    name = "seaweedfs-secrets"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            suspend=False,
+            interval="10m",
+            path=artifact_path(artifact),
+            prune=True,
+            decryption=SOPS_DECRYPTION,
+            source_ref=artifact_source_ref(artifact),
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_namespace,
+                # ExternalSecret + SecretStore CRDs + ESO controller
+                external_secrets_operator,
+            ),
+        ),
+    )

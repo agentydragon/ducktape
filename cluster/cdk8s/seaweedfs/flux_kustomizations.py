@@ -39,29 +39,3 @@ def seaweedfs_cluster(
             timeout="5m",
         ),
     )
-
-
-def seaweedfs_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_namespace: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "seaweedfs-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_namespace,
-                # ExternalSecret + SecretStore CRDs + ESO controller
-                external_secrets_operator,
-            ),
-        ),
-    )

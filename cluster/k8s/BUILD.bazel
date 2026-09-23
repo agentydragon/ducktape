@@ -195,6 +195,7 @@ exports_files(
         "seaweedfs/public-s3/public-s3.k8s.yaml",
         "seaweedfs/public-s3/kustomization.yaml",
         "seaweedfs/secrets/s3-config.k8s.yaml",
+        "seaweedfs/secrets/kustomization.yaml",
         "seaweedfs/db/seaweedfs-filer-db-ssd.k8s.yaml",
         "seaweedfs/db/kustomization.yaml",
         "seaweedfs/external-credentials/external-credentials.k8s.yaml",
