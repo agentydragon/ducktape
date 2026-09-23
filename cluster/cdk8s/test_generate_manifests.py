@@ -231,6 +231,7 @@ _GENERATED_FILES = (
     "cluster/k8s/github-exporter/github-exporter.k8s.yaml",
     "cluster/k8s/langfuse/langfuse.k8s.yaml",
     "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
+    "cluster/k8s/forgejo/app/kustomization.yaml",
     "cluster/k8s/forgejo/budget-namespace/namespace.k8s.yaml",
     "cluster/k8s/forgejo/budget-namespace/kustomization.yaml",
     "cluster/k8s/home-assistant/app/home-assistant.k8s.yaml",
