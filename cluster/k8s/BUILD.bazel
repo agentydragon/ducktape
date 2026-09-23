@@ -102,6 +102,8 @@ exports_files(
         "agents/plaid-mcp/namespace.k8s.yaml",
         "tofu-state/namespace.k8s.yaml",
         "agents/haku-egress-proxy/namespace.k8s.yaml",
+        "authentik/db/authentik-db-ovh.k8s.yaml",
+        "authentik/db/kustomization.yaml",
         "authentik/namespace.k8s.yaml",
         "agents/mitmproxy/namespace.k8s.yaml",
         "forgejo/namespace.k8s.yaml",

@@ -46,6 +46,7 @@ cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/artifact-generators/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
+cluster/k8s/authentik/db/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image

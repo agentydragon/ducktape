@@ -61,6 +61,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/plaid-mcp/namespace.k8s.yaml",
     "cluster/k8s/tofu-state/namespace.k8s.yaml",
     "cluster/k8s/agents/haku-egress-proxy/namespace.k8s.yaml",
+    "cluster/k8s/authentik/db/authentik-db-ovh.k8s.yaml",
+    "cluster/k8s/authentik/db/kustomization.yaml",
     "cluster/k8s/authentik/namespace.k8s.yaml",
     "cluster/k8s/clickhouse/operator/namespace.k8s.yaml",
     "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
