@@ -62,7 +62,9 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.thread.store import CommandIdConflictError, ThreadNotFoundError, ThreadScopeResetError, ThreadStore
+from agentplane.app.thread.content import CommandIdConflictError, ThreadScopeResetError
+from agentplane.app.thread.event_log import ThreadNotFoundError
+from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.views import ThreadView
 from agentplane.app.thread_debug import (
     ArchivedObservationEntry,

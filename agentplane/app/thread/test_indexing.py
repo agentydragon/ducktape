@@ -12,8 +12,9 @@ import pytest_bazel
 from sqlalchemy import event, select
 
 from agentplane.app.conftest import SPEC, event_entry
+from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.models import ThreadEntity
-from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
