@@ -117,10 +117,7 @@ from cluster.cdk8s.external_secrets import (
 )
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
-from cluster.cdk8s.flux_image_automation_ghcr import (
-    flux_kustomizations as flux_image_automation_ghcr_flux_kustomizations,
-    openclaw as flux_image_automation_ghcr_openclaw,
-)
+from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import (
     chart as flux_webhook_chart,
@@ -388,7 +385,7 @@ def generate_manifests(root: Path) -> None:
     external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
-    flux_image_automation_ghcr_openclaw.write_manifests(root)
+    flux_image_automation_ghcr.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
     gateway.write_manifests(root)
@@ -438,13 +435,9 @@ def generate_manifests(root: Path) -> None:
     coredns_custom_artifact = artifact("coredns-custom", "cluster/k8s/coredns-custom")
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart, coredns_custom_artifact)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
-    flux_image_automation_ghcr_artifact = artifact(
-        "flux-image-automation-ghcr", "cluster/k8s/flux-image-automation-ghcr"
-    )
-    flux_image_automation_ghcr_kustomization = (
-        flux_image_automation_ghcr_flux_kustomizations.flux_image_automation_ghcr(
-            flux_chart, flux_image_automation_ghcr_artifact
-        )
+    flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
+    flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
+        flux_chart, flux_image_automation_ghcr_artifact
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(flux_chart, budget_namespace_artifact)
