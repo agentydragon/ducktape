@@ -68,6 +68,7 @@ cluster/k8s/forgejo/claude/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/cpap-data/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/haku-state/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.

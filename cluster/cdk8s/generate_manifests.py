@@ -61,7 +61,7 @@ from cluster.cdk8s.flux_image_automation_ghcr import (
 )
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_kustomizations
-from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook_token_flux_kustomizations
+from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -175,6 +175,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
@@ -564,8 +565,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    flux_webhook_token_artifact = artifact("flux-webhook-token", "cluster/k8s/flux-webhook-token")
-    flux_webhook_token_kustomization = flux_webhook_token_flux_kustomizations.flux_webhook_token(
+    flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
+    flux_webhook_token_kustomization = flux_webhook_token.flux_webhook_token(
         flux_chart,
         flux_webhook_token_artifact,
         tofu_controller_kustomization,
