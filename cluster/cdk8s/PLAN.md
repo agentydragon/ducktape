@@ -69,7 +69,13 @@ derived roster is not written until every node it would touch is a construct.
 
 ## Wave 2: split the trees
 
-One PR, because each half is broken alone.
+Runs after Wave 4's first tranche, through its pause: no conversion depends on it, it is
+the one step that can prune live objects, and the floor is decided from a smaller
+remainder. Until then, progress is measured per directory (generated vs hand-written
+files), not by looking at `cluster/k8s`.
+
+One PR for the move, because each half is broken alone; the sparse-checkout change below
+lands and reconciles before it.
 
 - cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
   hand-written files only. Each artifact gets a second copy op from the generated
@@ -77,6 +83,13 @@ One PR, because each half is broken alone.
   `.gitattributes` collapses to one glob. A test helper overlays the two trees the way
   the artifact does, for `test_flux_build` and `test_cluster_integration`. Exit:
   artifact contents byte-identical per Kustomization before and after the move.
+- Before the move: add `cluster/generated/k8s/` to the `ducktape` GitRepository's
+  `sparseCheckout`. Landing the move first rebuilds artifacts without the generated
+  files, and their Kustomizations prune those objects (CNPG Clusters included).
+- Three generated outputs are read without an artifact and stay in `cluster/k8s` unless
+  bootstrap changes: `flux/kustomizations.k8s.yaml` and `external-creds` (the
+  `flux-system` GitRepository, whose `sparseCheckout` is in `gotk-sync.yaml`), and
+  `artifact-generators` (read from the `ducktape` GitRepository directly).
 
 **Pause after Wave 2.** With `cluster/k8s` showing only what is still hand-written:
 
@@ -109,9 +122,15 @@ Decide from the count Wave 3 reports, not before.
 Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, then
 node taking values, then dependents).
 
+- **Single-`Terraform`-CR directories** through `terraform.gitops_terraform`
+  (`forgejo/{agentydragon,agentydragon-repos,budget-ledger,claude,cpap-data,haku-state}`,
+  `github-branch-protection`, `agents/machine-access-tf`,
+  `monitoring/alloy-otlp-bearer-token-tf`), one exemplar then the rest.
 - **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
   at most an ExternalSecret) need either conversion or consolidation into their
   application's owner. SSH-MCP includes its namespace in the application owner.
+- **Single-CNPG-`Cluster` directories** (`forgejo/db`, `tofu-state/db`, `authentik/db`):
+  identical rendered objects, no rename or ownership change.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
   `agents/haku-egress-proxy` (one `IronProxy` construct for its two iron deployments and
   `public-coder-agent/proxy`), `agents/haku-openclaw-spike/app`,
