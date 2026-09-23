@@ -1097,6 +1097,36 @@ http_file(
     urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
 )
 
+# Match the grafana-operator release deployed by cluster/k8s/monitoring/grafana-operator/helmrelease.yaml
+# (chart `~5.22`, resolved to 5.22.2); the chart ships these CRD files unchanged.
+http_file(
+    name = "grafana_grafana_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanas.yaml",
+    sha256 = "d57db09cb69ae181ee6f3dd93a974ef2cc5fb8d4feb5de60d101159b76690b70",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanas.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanadashboard_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanadashboards.yaml",
+    sha256 = "e0a76978377eb49e4d082d352b2a4c1a168c54f6c4d7c64dd911a54f0f780813",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanadashboards.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanadatasource_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanadatasources.yaml",
+    sha256 = "7c97903e50ace55b6cd94a2066c8398e12ce1dd7453942604c67401fd09565df",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanadatasources.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanaserviceaccount_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanaserviceaccounts.yaml",
+    sha256 = "35422e22bb8c1f5be563484cd24eda0d93c64a8cabc9a794272d1f31e5323dae",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanaserviceaccounts.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
