@@ -166,6 +166,7 @@ _GENERATED_FILES = (
     "cluster/k8s/grocy/sf/mcp/grocy-mcp-sf.k8s.yaml",
     "cluster/k8s/grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
     "cluster/k8s/grocy/user-perms-base/grocy-user-perms.k8s.yaml",
+    "cluster/k8s/oci-cache/oci-cache.k8s.yaml",
     "cluster/k8s/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
     "cluster/k8s/agents/shared-rbac/kustomization.yaml",
     "cluster/k8s/agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",

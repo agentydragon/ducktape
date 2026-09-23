@@ -225,6 +225,7 @@ exports_files(
         "grocy/sf/mcp/grocy-mcp-sf.k8s.yaml",
         "grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
         "grocy/user-perms-base/grocy-user-perms.k8s.yaml",
+        "oci-cache/oci-cache.k8s.yaml",
         "agents/shared-rbac/agent-shared-rbac.k8s.yaml",
         "agents/shared-rbac/kustomization.yaml",
         "agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
