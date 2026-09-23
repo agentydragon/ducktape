@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.app import thread_fold
+from agentplane.app.agent_runtime.view import fold
 from agentplane.app.presets import Harness
 
 
@@ -32,7 +32,7 @@ class ThreadPayloadReference(BaseModel):
     projection_epoch: str
     owner_cursor: str
     owner_id: str
-    field: thread_fold.PayloadField
+    field: fold.PayloadField
     revision_cursor: str
     generation: str
 
@@ -96,7 +96,7 @@ class ThreadCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
-    outcome: thread_fold.CommandOutcome
+    outcome: fold.CommandOutcome
     outcome_cursor: str | None
     outcome_reason: str | None
 

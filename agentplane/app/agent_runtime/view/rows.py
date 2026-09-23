@@ -8,8 +8,8 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.app import thread_fold
-from agentplane.app.thread.views import (
+from agentplane.app.agent_runtime.view import fold
+from agentplane.app.agent_runtime.view.views import (
     EntityKind,
     ThreadCommandEntityView,
     ThreadCommandState,
@@ -28,8 +28,8 @@ from agentplane.app.thread.views import (
 )
 
 
-def fold_item(view: ThreadItemEntityView) -> thread_fold.Item:
-    return thread_fold.Item(
+def fold_item(view: ThreadItemEntityView) -> fold.Item:
+    return fold.Item(
         view.projection_epoch,
         view.entity_id,
         view.cursor,
@@ -44,19 +44,19 @@ def fold_item(view: ThreadItemEntityView) -> thread_fold.Item:
     )
 
 
-def _fold_completion(state: ThreadItemState) -> thread_fold.Completion | None:
+def _fold_completion(state: ThreadItemState) -> fold.Completion | None:
     match state.completion, state.tool_succeeded:
         case None, None:
             return None
         case "text", None:
-            return thread_fold.TextCompletion()
+            return fold.TextCompletion()
         case "tool", bool(succeeded):
-            return thread_fold.ToolCompletion(succeeded)
+            return fold.ToolCompletion(succeeded)
     raise ValueError(f"invalid item completion: {state.completion=} {state.tool_succeeded=}")
 
 
-def command_summary(view: ThreadCommandEntityView) -> thread_fold.CommandSummary:
-    return thread_fold.CommandSummary(
+def command_summary(view: ThreadCommandEntityView) -> fold.CommandSummary:
+    return fold.CommandSummary(
         view.projection_epoch,
         view.entity_id,
         view.cursor,
@@ -68,10 +68,10 @@ def command_summary(view: ThreadCommandEntityView) -> thread_fold.CommandSummary
     )
 
 
-def _fold_ref(reference: ThreadPayloadReference | None) -> thread_fold.PayloadRef | None:
+def _fold_ref(reference: ThreadPayloadReference | None) -> fold.PayloadRef | None:
     if reference is None:
         return None
-    return thread_fold.PayloadRef(
+    return fold.PayloadRef(
         reference.projection_epoch,
         int(reference.owner_cursor),
         reference.owner_id,
@@ -82,7 +82,7 @@ def _fold_ref(reference: ThreadPayloadReference | None) -> thread_fold.PayloadRe
 
 
 def ordered_entity_rows(
-    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
+    thread_id: UUID, result: fold.ProjectionBatch, operational: ThreadOperationalState | None = None
 ) -> list[dict[str, object]]:
     """A batch's rows in thread order, which is the order they are numbered.
 
@@ -97,7 +97,7 @@ def ordered_entity_rows(
 
 
 def _entity_rows(
-    thread_id: UUID, result: thread_fold.ProjectionBatch, operational: ThreadOperationalState | None = None
+    thread_id: UUID, result: fold.ProjectionBatch, operational: ThreadOperationalState | None = None
 ) -> list[dict[str, object]]:
     entities: list[ThreadEntityView] = [_view_state_entity(thread_id, result.state, operational)]
     entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
@@ -108,7 +108,7 @@ def _entity_rows(
 
 
 def _view_state_entity(
-    thread_id: UUID, state: thread_fold.ViewState, operational: ThreadOperationalState | None = None
+    thread_id: UUID, state: fold.ViewState, operational: ThreadOperationalState | None = None
 ) -> ThreadViewStateEntityView:
     return ThreadViewStateEntityView(
         thread_id=thread_id,
@@ -137,8 +137,8 @@ def _view_state_entity(
     )
 
 
-def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityView:
-    tool = item.completion if isinstance(item.completion, thread_fold.ToolCompletion) else None
+def _item_entity(thread_id: UUID, item: fold.Item) -> ThreadItemEntityView:
+    tool = item.completion if isinstance(item.completion, fold.ToolCompletion) else None
     return ThreadItemEntityView(
         thread_id=thread_id,
         projection_epoch=item.projection_epoch,
@@ -161,7 +161,7 @@ def _item_entity(thread_id: UUID, item: thread_fold.Item) -> ThreadItemEntityVie
     )
 
 
-def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
+def _confirmed_input_entity(thread_id: UUID, value: fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
     return ThreadConfirmedInputEntityView(
         thread_id=thread_id,
         projection_epoch=value.projection_epoch,
@@ -181,7 +181,7 @@ def _confirmed_input_entity(thread_id: UUID, value: thread_fold.ConfirmedInput) 
     )
 
 
-def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> ThreadLifecycleEntityView:
+def _lifecycle_entity(thread_id: UUID, value: fold.LifecycleSegment) -> ThreadLifecycleEntityView:
     return ThreadLifecycleEntityView(
         thread_id=thread_id,
         projection_epoch=value.projection_epoch,
@@ -199,7 +199,7 @@ def _lifecycle_entity(thread_id: UUID, value: thread_fold.LifecycleSegment) -> T
     )
 
 
-def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> ThreadCommandEntityView:
+def _command_entity(thread_id: UUID, value: fold.CommandSummary) -> ThreadCommandEntityView:
     return ThreadCommandEntityView(
         thread_id=thread_id,
         projection_epoch=value.projection_epoch,
@@ -207,7 +207,7 @@ def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> Threa
         entity_id=value.command_id,
         cursor=value.admission_cursor,
         revision_cursor=value.outcome_cursor or value.admission_cursor,
-        pending=value.outcome is thread_fold.CommandOutcome.PENDING,
+        pending=value.outcome is fold.CommandOutcome.PENDING,
         turn_id=None,
         state=ThreadCommandState(
             operation=value.operation,
@@ -222,7 +222,7 @@ def _command_entity(thread_id: UUID, value: thread_fold.CommandSummary) -> Threa
     )
 
 
-def _reference(reference: thread_fold.PayloadRef | None) -> ThreadPayloadReference | None:
+def _reference(reference: fold.PayloadRef | None) -> ThreadPayloadReference | None:
     if reference is None:
         return None
     return ThreadPayloadReference(

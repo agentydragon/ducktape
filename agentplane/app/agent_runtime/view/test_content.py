@@ -9,9 +9,9 @@ import pytest_bazel
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore
 from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.ingestion import Ingestion
-from agentplane.app.thread.content import CommandIdConflictError, ContentStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
