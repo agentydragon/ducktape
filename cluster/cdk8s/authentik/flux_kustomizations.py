@@ -93,34 +93,3 @@ def authentik_db_backups(
         ),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )
-
-
-def sso_providers_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    authentik: Kustomization,
-) -> Kustomization:
-    name = "sso-providers-tf"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="sso-providers",
-                    namespace="flux-system",
-                )
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, authentik),
-        ),
-    )

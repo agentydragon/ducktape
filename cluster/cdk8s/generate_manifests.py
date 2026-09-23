@@ -40,6 +40,7 @@ from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
 from cluster.cdk8s.authentik import (
     flux_kustomizations as authentik_flux_kustomizations,
     namespace as authentik_namespace,
+    sso_providers,
 )
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
 from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
@@ -172,6 +173,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -544,8 +546,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    sso_providers_tf_artifact = artifact("sso-providers-tf", "cluster/k8s/authentik/sso-providers-tf")
-    sso_providers_tf_kustomization = authentik_flux_kustomizations.sso_providers_tf(
+    sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
+    sso_providers_tf_kustomization = sso_providers.sso_providers_tf(
         flux_chart,
         sso_providers_tf_artifact,
         tofu_controller_kustomization,
