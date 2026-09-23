@@ -3,6 +3,21 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "backup",
+    srcs = ["backup.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],

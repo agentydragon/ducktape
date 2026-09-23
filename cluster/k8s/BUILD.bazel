@@ -148,6 +148,7 @@ exports_files(
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
         "forgejo/budget-namespace/kustomization.yaml",
+        "home-assistant/backup/home-assistant-backups.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
