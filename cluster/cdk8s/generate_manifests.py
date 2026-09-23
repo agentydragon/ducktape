@@ -573,7 +573,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_cache_artifact, valkey_kustomization, local_path_provisioner_kustomization
     )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
-    haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, root, haku_rbac_kustomization)
+    haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, haku_rbac_kustomization)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, claude_rbac_artifact, root, kyverno_policies_kustomization

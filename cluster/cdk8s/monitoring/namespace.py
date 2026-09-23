@@ -10,8 +10,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, Kustom
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.generation import write_charts
 
 NAMESPACE = "monitoring"
 OUTPUT_DIR = "cluster/k8s/monitoring/namespace"
@@ -39,7 +39,6 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml"]))
 
 
 def monitoring_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:

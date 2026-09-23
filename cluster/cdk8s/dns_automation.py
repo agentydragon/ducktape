@@ -22,13 +22,8 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
 
@@ -88,7 +83,6 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
 
 def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
     write_charts(root, OUTPUT_DIR, lambda app: chart(app, mesh))
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["dns-records.k8s.yaml"]))
 
 
 def dns_automation(

@@ -106,17 +106,23 @@ lands and reconciles before it.
 
 ## Wave 3: skip Kustomize where nothing is kustomized
 
-- Verify kustomize-controller's generated-`kustomization.yaml` rule on one directory
-  (which files it includes, how it treats subdirectories such as `image-pins/`), then
-  remove `kustomization.yaml` from every directory with no `components`,
-  `configMapGenerator` or ordering-sensitive hand-written siblings. The PR's report
-  names every directory that still needs one and why.
+Single-resource directories carry no `kustomization.yaml` any more; kustomize-controller
+generates one (<../docs/cdk8s.md> § Shapes of a directory). Still wrapping one resource:
+
+- **A subdirectory is its own Flux node** (`atuin` over `user-provisioner/`,
+  `github-secrets-sync` over `secrets/`): a generated kustomization would pull the
+  subdirectory in. Move the subdirectory out first.
+- **Another kustomization lists the directory as a resource** (`authentik/{db,proxy-routes}`,
+  `litellm/db`, `grocy/{app-base,mcp-servicemonitor-base}`,
+  `github-api-proxy/identity`, `agents/plaid-mcp/servicemonitor`,
+  `agents/public-coder-agent/namespace`, `cert-manager/cluster-ca/base`,
+  `flux/ducktape-flux`): Kustomize needs the file there. Folding the resource into its
+  referrer removes it.
 
 **Pause after Wave 3.** Image pinning. The 31 `image-pins/` Components exist because
 Flux image automation commits tags into a file the generator would otherwise own.
 Options: keep the Component and a `kustomization.yaml` in those directories
 indefinitely; or tags move into Python with CI regenerating after the bot commits.
-Decide from the count Wave 3 reports, not before.
 
 ## Wave 4: close the graph
 

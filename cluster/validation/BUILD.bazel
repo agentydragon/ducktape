@@ -256,6 +256,16 @@ py_test(
 )
 
 py_test(
+    name = "test_kustomize",
+    srcs = ["test_kustomize.py"],
+    deps = [
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_checks",
     srcs = ["test_checks.py"],
     deps = [

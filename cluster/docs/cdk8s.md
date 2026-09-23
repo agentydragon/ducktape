@@ -14,17 +14,22 @@ Nearly every directory under `cluster/k8s` is generated, rendered identically to
 it replaced (checked with `cluster/cdk8s/render_diff.py`, <../cdk8s/AGENTS.md> § Testing a
 generator).
 
-1. **Generated `kustomization.yaml`** (every one `.gitattributes` marks
+1. **No `kustomization.yaml`**, where a Flux `spec.path` holds a single manifest file:
+   kustomize-controller generates the kustomization, listing every `.yaml`/`.yml` file
+   under the path recursively and a subdirectory holding a kustomization as a whole
+   (fluxcd/pkg `kustomize.scanManifests`). A directory another kustomization references
+   as a resource keeps its file; kustomize requires one there.
+2. **Generated `kustomization.yaml`** (every one `.gitattributes` marks
    `linguist-generated=true`): `flux.kustomize_kustomization`, a Pydantic model (the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest), listing one `<name>.k8s.yaml` per chart and the
    hand-written siblings below.
-2. **Hand-written `kustomization.yaml` over generated resources**, where the directory
+3. **Hand-written `kustomization.yaml` over generated resources**, where the directory
    keeps something the generator does not own (a `configMapGenerator` with
    `configurations:` or `generatorOptions`, a remote-release patch, an object from
    § What stays hand-written). It lists each `<name>.k8s.yaml` as a resource with a
    comment naming the generator module.
-3. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
+4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
    `parked/`.
 
 Every directory's Flux Kustomization object is created in topo order by

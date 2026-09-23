@@ -16,8 +16,8 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import flux_kustomization
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-namespace"
@@ -87,7 +87,6 @@ def chart(app: App) -> Chart:
 
 def haku_namespace(flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path) -> Kustomization:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
     return flux_kustomization(
         flux_chart,
         NAME,

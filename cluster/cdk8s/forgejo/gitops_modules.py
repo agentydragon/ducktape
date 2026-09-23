@@ -14,13 +14,7 @@ from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 CLAUDE = "forgejo-claude"
 HAKU_STATE = "haku-state"
@@ -51,7 +45,6 @@ def _write(
         schema=schema,
     )
     app.synth()
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{name}.k8s.yaml"]))
     return module
 
 
