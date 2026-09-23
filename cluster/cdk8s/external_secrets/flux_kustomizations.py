@@ -5,14 +5,11 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
 def external_secrets_crds(chart: Chart) -> Kustomization:
@@ -33,64 +30,5 @@ def external_secrets_crds(chart: Chart) -> Kustomization:
             prune=False,  # Don't delete CRDs on uninstall (safety)
             wait=True,
             timeout="2m",
-        ),
-    )
-
-
-def external_secrets_operator(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_crds: Kustomization,
-    cert_manager: Kustomization,
-) -> Kustomization:
-    name = "external-secrets-operator"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m0s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m0s",
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(
-                # CRDs must be in kustomize-controller cache first
-                external_secrets_crds,
-                # ESO uses Issuer resources
-                cert_manager,
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="external-secrets",
-                    namespace="external-secrets-system",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="external-secrets",
-                    namespace="external-secrets-system",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="external-secrets-webhook",
-                    namespace="external-secrets-system",
-                ),
-                # Ensure both webhook configurations are registered before dependents create resources
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="externalsecret-validate",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="secretstore-validate",
-                ),
-            ],
         ),
     )

@@ -599,8 +599,8 @@ def generate_manifests(root: Path) -> None:
     )
     cnpg_artifact = artifact("cnpg", cnpg_operator.OUTPUT_DIR)
     cnpg_kustomization = cnpg_operator.cnpg(flux_chart, cnpg_artifact, cert_manager_kustomization)
-    external_secrets_operator_artifact = artifact("external-secrets-operator", "cluster/k8s/external-secrets/operator")
-    external_secrets_operator_kustomization = external_secrets_flux_kustomizations.external_secrets_operator(
+    external_secrets_operator_artifact = artifact("external-secrets-operator", external_secrets_operator.OUTPUT_DIR)
+    external_secrets_operator_kustomization = external_secrets_operator.external_secrets_operator(
         flux_chart, external_secrets_operator_artifact, external_secrets_crds_kustomization, cert_manager_kustomization
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
