@@ -136,14 +136,14 @@ from cluster.cdk8s.forgejo import (
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
-from cluster.cdk8s.github_exporter import (
-    app as github_exporter_app,
-    flux_kustomizations as github_exporter_flux_kustomizations,
-)
 from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
+)
+from cluster.cdk8s.github_exporter import (
+    app as github_exporter_app,
+    flux_kustomizations as github_exporter_flux_kustomizations,
 )
 from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
@@ -189,7 +189,7 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
-from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
+from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.monitoring import (
     alloy,
     alloy_otlp_bearer_token,
@@ -204,7 +204,7 @@ from cluster.cdk8s.monitoring import (
     stack as monitoring_stack,
     tempo,
 )
-from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
+from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import (
@@ -212,6 +212,7 @@ from cluster.cdk8s.openebs_lvm import (
     storage as openebs_lvm_storage,
 )
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
+from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -228,7 +229,6 @@ from cluster.cdk8s.seaweedfs import (
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
     s3_config as seaweedfs_s3_config,
 )
-from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs_csi import (
     driver as seaweedfs_csi_driver,
     flux_kustomizations as seaweedfs_csi_flux_kustomizations,
