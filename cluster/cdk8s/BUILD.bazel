@@ -306,6 +306,7 @@ py_library(
         ":generation",
         ":metadata",
         ":stateful_infra",
+        ":tana_mcp",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -362,6 +363,21 @@ py_library(
         ":terraform",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "tana_mcp",
+    srcs = ["tana_mcp.py"],
+    deps = [
+        ":external_creds",
+        ":forgejo_images",
+        ":gateway",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -723,6 +739,7 @@ py_test(
         "//cluster/k8s:agents/public-coder-agent/namespace/kustomization.yaml",
         "//cluster/k8s:agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
+        "//cluster/k8s:agents/tana-mcp/tana-mcp.k8s.yaml",
         "//cluster/k8s:aiquota/aiquota.k8s.yaml",
         "//cluster/k8s:aiquota/kustomization.yaml",
         "//cluster/k8s:artifact-generators/artifact-generators.k8s.yaml",

@@ -27,6 +27,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_devbox,
     stateful_infra,
+    tana_mcp,
 )
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
@@ -199,6 +200,7 @@ def generate_manifests(root: Path) -> None:
     plaid_mcp_app.write_manifests(root)
     plaid_mcp_db.write_manifests(root)
     plaid_mcp_reader.write_manifests(root)
+    tana_mcp.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

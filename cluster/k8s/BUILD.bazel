@@ -163,6 +163,7 @@ exports_files(
         "agents/plaid-mcp/reader/plaid-db-mcp.k8s.yaml",
         "agents/plaid-mcp/servicemonitor/plaid-db-mcp.k8s.yaml",
         "agents/plaid-mcp/servicemonitor/kustomization.yaml",
+        "agents/tana-mcp/tana-mcp.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
