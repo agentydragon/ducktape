@@ -11,6 +11,16 @@ import yaml
 from more_itertools import one
 
 
+def _object(path: Path, kind: str, name: str) -> dict[str, Any]:
+    return one(
+        obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == kind and obj["metadata"]["name"] == name
+    )
+
+
+def _haku_template(k8s_dir: Path) -> dict[str, Any]:
+    return _object(k8s_dir / "haku/workspaces/app/haku-workspaces.k8s.yaml", "SandboxTemplate", "haku")
+
+
 def sandbox_env(template: dict[str, object]) -> dict[str, dict[str, Any]]:
     container = cast(dict[str, Any], template["spec"]["podTemplate"]["spec"]["containers"][0])  # type: ignore[index]
     return {entry["name"]: entry for entry in container.get("env", [])}
@@ -48,8 +58,9 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
 
 def test_haku_sandbox_reaches_kubernetes_only_through_console(k8s_dir: Path) -> None:
     """The haku-sandbox exec target reaches Kubernetes only through the Console-mediated proxy."""
-    binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
-    role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
+    rbac = k8s_dir / "haku/rbac/haku-rbac.k8s.yaml"
+    binding = _object(rbac, "RoleBinding", "haku")
+    role = _object(rbac, "Role", "haku-sandbox-admin")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
     subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
     # The ServiceAccount subject stays: ordinary pods that do carry a credential — the
