@@ -58,9 +58,9 @@ tests.
    to end (`e2e/global_selector_assignment_test.rs`,
    `e2e/intrinsic_alias_lowering_test.rs`).
 5. **One engine.** Delete native `source_match` lowering, the three `run`
-   fallbacks in `lowering/materialize/plan_builder.rs`, `FactDomains`, and
-   validate's native lowerability audit. `match-selector`, `validate
---source-file` and the synthesis proofs call the shared resolve.
+   fallbacks in `lowering/materialize/plan_builder.rs`, and `FactDomains`.
+   `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
+   call the shared resolve.
 6. **Truthful outcomes.**
    - Prove uniqueness with one extra solve that forbids the found assignment,
      instead of enumerating every solution. Search per entity for at most N
