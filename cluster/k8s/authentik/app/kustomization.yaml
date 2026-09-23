@@ -3,8 +3,6 @@ kind: Kustomization
 resources:
   # cdk8s-generated (cluster/cdk8s/authentik/app.py) -- see cluster/docs/cdk8s.md.
   - authentik.k8s.yaml
-  # Hand-written: no PodMonitor CRD binding exists for cdk8s yet.
-  - podmonitor.yaml
   - admin-password.sops.yaml
   - secret-key.sops.yaml
   - bootstrap-token.sops.yaml
