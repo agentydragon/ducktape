@@ -79,6 +79,7 @@ exports_files(
         "descheduler/helmrelease.k8s.yaml",
         "descheduler/kustomization.yaml",
         "descheduler/rbac.k8s.yaml",
+        "agentplane-index/agentplane-index.k8s.yaml",
         "atuin/atuin.k8s.yaml",
         "atuin/kustomization.yaml",
         "atuin/user-provisioner/atuin-user-provisioner.k8s.yaml",
