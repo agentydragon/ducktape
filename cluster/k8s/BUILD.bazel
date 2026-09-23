@@ -107,6 +107,8 @@ exports_files(
         "authentik/namespace.k8s.yaml",
         "agents/mitmproxy/namespace.k8s.yaml",
         "forgejo/namespace.k8s.yaml",
+        "forgejo/db/forgejo-db-ssd.k8s.yaml",
+        "forgejo/db/kustomization.yaml",
         "agents/haku-openclaw-spike/app/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",
