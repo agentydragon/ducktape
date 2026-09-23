@@ -453,12 +453,11 @@ ownership: an account's bindings must not fight a reconciler for the same object
 **Deferred migration:** the Haku console's `auto_approval_policies`
 (`cluster/cdk8s/haku/console_config.py`) is the reviewed authority the Action policy model
 replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
-remains, each with what it needs; an entry leaves when its set is written.
+remains, each with what it needs; an entry leaves when its set is written or another route
+replaces it.
 
-- **`exact_tools` over an existing ActionGroup**: `grocy_reads` (`grocy_sf`) and
-  `tana_safe_tools` (`tana`), each a plain `exact_actions` set over its group. For `grocy_reads`,
-  claude-ai's sandboxes take the egress path instead: the `grocy-sf-readonly` route, GET-only on
-  Grocy's REST API.
+- **`exact_tools` over an existing ActionGroup**: `tana_safe_tools` (`tana`), a plain
+  `exact_actions` set over its group.
 - **`exact_tools` for servers with no ActionGroup**: the console's own in-process `sandbox`
   (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`, `grants_whoami`,
   `grants_own_revoke`) have no Action Service counterpart at all; they need an equivalent surface
@@ -517,7 +516,7 @@ per-agent progress:
   remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
   side.
 - **`haku_v1`** = thirteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, Home
-  Assistant, the console's `sandbox` server and the `grants` trio. What is left is `grocy_reads`,
+  Assistant, the console's `sandbox` server and the `grants` trio. What is left is
   `tana_safe_tools`, `home_assistant_desk_light_control`, `managed_gmail_labels`,
   `haku_sandbox_control` and the `grants` trio, which makes it the long pole.
 
