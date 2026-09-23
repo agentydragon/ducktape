@@ -31,6 +31,7 @@ from cluster.cdk8s import (
     goldilocks,
     google_mcp,
     ha_mcp,
+    haku_openclaw_spike_backup,
     haku_egress_proxy,
     haku_openclaw_spike_config,
     kubectl_passthrough_mcp,
@@ -247,6 +248,7 @@ def generate_manifests(root: Path) -> None:
     haku_console_resource_chart = haku_charts.write_console_manifests(root)
     haku_console_health_checks = flux_health_checks(haku_console_resource_chart, ("Cluster", "Job"))
     haku_openclaw_spike_config.write_manifests(root)
+    haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
     haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
