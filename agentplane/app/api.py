@@ -62,6 +62,8 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
+from agentplane.app.thread.store import CommandIdConflictError, ThreadNotFoundError, ThreadScopeResetError, ThreadStore
+from agentplane.app.thread.views import ThreadView
 from agentplane.app.thread_debug import (
     ArchivedObservationEntry,
     EvidencePage,
@@ -71,13 +73,6 @@ from agentplane.app.thread_debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.thread_fold import CommandOutcome
-from agentplane.app.trajectory import (
-    CommandIdConflictError,
-    ThreadNotFoundError,
-    ThreadScopeResetError,
-    ThreadView,
-    TrajectoryStore,
-)
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -284,14 +279,14 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-def _store(request: Request) -> TrajectoryStore:
+def _store(request: Request) -> ThreadStore:
     store = request.app.state.store
-    if not isinstance(store, TrajectoryStore):
-        raise TypeError(f"app.state.store is {type(store).__name__}, not TrajectoryStore")
+    if not isinstance(store, ThreadStore):
+        raise TypeError(f"app.state.store is {type(store).__name__}, not ThreadStore")
     return store
 
 
-Store = Annotated[TrajectoryStore, Depends(_store)]
+Store = Annotated[ThreadStore, Depends(_store)]
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
@@ -764,7 +759,7 @@ async def thread_event_stream(
 def create_app(
     inventory: SandboxInventory,
     bridge: runner_bridge.RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     catalog: ModelCatalog,
     egress: EgressInventory,
     decisions: DecisionsClient,

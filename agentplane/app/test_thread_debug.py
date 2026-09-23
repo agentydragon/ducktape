@@ -16,7 +16,7 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,7 +25,7 @@ from agentplane.protocol import command_pb2, event_pb2
 async def test_lazy_scoped_evidence_and_native_expansion(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,

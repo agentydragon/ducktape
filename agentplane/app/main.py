@@ -34,7 +34,7 @@ from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     action_federation: ActionFederationSettings | None = None
-    database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
     electric_url: str | None = Field(
         default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
     )
@@ -252,7 +252,7 @@ async def async_main(settings: Settings) -> None:
             sandbox_namespace=settings.sandbox_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        store = TrajectoryStore.connect(settings.database_url)
+        store = ThreadStore.connect(settings.database_url)
         await store.start_updates()
 
         async def running_sandboxes() -> list[str]:
@@ -325,7 +325,7 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, bridge: RunnerBridge, store: TrajectoryStore, sandboxes: DiscoverSandboxes
+    server: uvicorn.Server, *, bridge: RunnerBridge, store: ThreadStore, sandboxes: DiscoverSandboxes
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the bridge's lease release and the store's

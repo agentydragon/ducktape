@@ -12,7 +12,8 @@ import pytest_bazel
 from sqlalchemy import event, select
 
 from agentplane.app.conftest import SPEC, event_entry
-from agentplane.app.trajectory import IngestionLease, ThreadEntity, TrajectoryStore
+from agentplane.app.thread.models import ThreadEntity
+from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -26,7 +27,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
     ids=["one-hundred-items", "two-thousand-items", "twenty-thousand-items"],
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
-    store: TrajectoryStore,
+    store: ThreadStore,
     lease: IngestionLease,
     history_size: int,
     materialized_item_count: int,
@@ -129,7 +130,7 @@ def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.E
 
 
 async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
-    store: TrajectoryStore, lease: IngestionLease, request: pytest.FixtureRequest
+    store: ThreadStore, lease: IngestionLease, request: pytest.FixtureRequest
 ) -> None:
     """Tail-window bounds do not walk settled commands that sort after the last segment."""
     assert await store.renew_ingestion(lease, timedelta(minutes=10))

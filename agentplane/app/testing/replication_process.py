@@ -41,7 +41,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.trajectory import IngestionLease, TrajectoryStore
+from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -99,7 +99,7 @@ class ReplayGate:
 
 
 class GatedConversationDelivery:
-    def __init__(self, app: ASGIApp, *, gate: ReplayGate, store: TrajectoryStore) -> None:
+    def __init__(self, app: ASGIApp, *, gate: ReplayGate, store: ThreadStore) -> None:
         self._app = app
         self._gate = gate
         self._store = store
@@ -163,7 +163,7 @@ class GatedSession(AsyncSession):
         return GatedTransaction(self)
 
 
-class GatedStore(TrajectoryStore):
+class GatedStore(ThreadStore):
     def __init__(self, database_url: str, gate: Gate, cursor: int) -> None:
         engine = create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
         super().__init__(engine)
@@ -231,7 +231,7 @@ async def _serve(
     electric_url: str | None,
 ) -> None:
     store = (
-        TrajectoryStore.connect(database_url)
+        ThreadStore.connect(database_url)
         if boundary is None
         else GatedStore(database_url, Gate(boundary, connection), cursor)
     )

@@ -37,7 +37,7 @@ py_library(
         "//agentplane/app:inventory",
         "//agentplane/app:live",
         "//agentplane/app:presets",
-        "//agentplane/app:trajectory",
+        "//agentplane/app/thread:store",
         "//agentplane/protocol:event_log_pb2",
         "@pypi//asyncpg",
         "@pypi//fastapi",

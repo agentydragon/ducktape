@@ -34,7 +34,8 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import THREAD_FOLD_EPOCH, TrajectoryStore
+from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -97,7 +98,7 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
+async def electric(store: ThreadStore) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
@@ -109,7 +110,7 @@ async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
 def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -479,7 +480,7 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -679,7 +680,7 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -716,7 +717,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -783,7 +784,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -815,7 +816,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,

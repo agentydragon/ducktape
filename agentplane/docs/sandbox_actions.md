@@ -5,7 +5,7 @@ callers outside the cluster — Claude Code web and claude.ai, bound by OAuth to
 which have no Pod and so no other way to reach an in-cluster box.
 
 These Sandboxes are not the integration app's. The app stamps one to _host an agent_: a runner
-container, a harness, a Thread, a trajectory. This surface stamps one to _run commands in_, driven
+container, a harness, a Thread. This surface stamps one to _run commands in_, driven
 by an agent that lives elsewhere. Same CRD, different operation, different component.
 
 ## The contract

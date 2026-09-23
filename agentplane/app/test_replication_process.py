@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -35,7 +36,7 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
     return entry
 
 
-async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> protocol_pb2.Attached:
+async def wait_snapshot(store: ThreadStore, thread: UUID, cursor: int) -> protocol_pb2.Attached:
     changed = asyncio.Event()
     with store.changes.subscribe(changed):
         while True:
@@ -48,7 +49,7 @@ async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> pr
 
 @pytest.mark.parametrize("boundary", list(CommitBoundary))
 async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
-    db_url: str, store: TrajectoryStore, boundary: CommitBoundary
+    db_url: str, store: ThreadStore, boundary: CommitBoundary
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))

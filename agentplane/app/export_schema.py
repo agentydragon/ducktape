@@ -22,7 +22,8 @@ from agentplane.app.electric import EntityInterestResponse, PayloadInterestRespo
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
-from agentplane.app.trajectory import ThreadEntityView, TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.views import ThreadEntityView
 
 
 async def _unreachable(name: str) -> str:
@@ -33,7 +34,7 @@ def openapi_document() -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
     inventory = SandboxInventory(namespace="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
-    store = TrajectoryStore.connect("postgresql+asyncpg://schema@localhost/schema")
+    store = ThreadStore.connect("postgresql+asyncpg://schema@localhost/schema")
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(address_of=_unreachable, store=store),

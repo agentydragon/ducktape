@@ -30,7 +30,7 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.trajectory import IngestionLease, TrajectoryStore
+from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -92,8 +92,8 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 
 
 @pytest.fixture
-async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    store = TrajectoryStore.connect(db_url)
+async def store(db_url: str) -> AsyncIterator[ThreadStore]:
+    store = ThreadStore.connect(db_url)
     await store.start_updates()
     try:
         yield store
@@ -102,8 +102,8 @@ async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
 
 
 @pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    replica = TrajectoryStore.connect(db_url)
+async def replica(db_url: str) -> AsyncIterator[ThreadStore]:
+    replica = ThreadStore.connect(db_url)
     await replica.start_updates()
     try:
         yield replica
@@ -117,7 +117,7 @@ SPEC = protocol_pb2.SessionSpec(
 
 
 @pytest.fixture
-async def lease(store: TrajectoryStore) -> IngestionLease:
+async def lease(store: ThreadStore) -> IngestionLease:
     lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
@@ -144,7 +144,7 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def bridge(store: TrajectoryStore) -> RunnerBridge:
+def bridge(store: ThreadStore) -> RunnerBridge:
     """A bridge with nothing to dial, for the inventory and thread routes."""
 
     async def unreachable(name: str) -> str:

@@ -1,4 +1,4 @@
-"""Replica-local invalidations of durable trajectory state, including reconnect gaps."""
+"""Replica-local invalidations of durable thread state, including reconnect gaps."""
 
 from __future__ import annotations
 
@@ -8,15 +8,17 @@ from contextlib import suppress
 from typing import Any
 
 import asyncpg
+from sqlalchemy import func, select
 from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.changes import Changes
 
-CHANNEL = "agentplane_trajectory_updates"
+CHANNEL = "agentplane_thread_updates"
 logger = logging.getLogger(__name__)
 
 
-class TrajectoryUpdates:
+class ThreadUpdates:
     def __init__(self, database_url: URL, changes: Changes) -> None:
         self._dsn = database_url.set(drivername="postgresql").render_as_string(hide_password=False)
         self._changes = changes
@@ -37,20 +39,20 @@ class TrajectoryUpdates:
 
     async def start(self) -> None:
         if self._task is not None:
-            raise RuntimeError("trajectory update listener already started")
+            raise RuntimeError("thread update listener already started")
         await self._connect()
         self._task = asyncio.create_task(self._recover())
 
     async def _connect(self) -> None:
         self._lost.clear()
         connection = await asyncpg.connect(
-            self._dsn, timeout=10, server_settings={"application_name": "agentplane-trajectory-updates"}
+            self._dsn, timeout=10, server_settings={"application_name": "agentplane-thread-updates"}
         )
         try:
             connection.add_termination_listener(self._terminated)
             await connection.add_listener(CHANNEL, self._notified)
             if connection.is_closed():
-                raise ConnectionError("trajectory listener disconnected during startup")
+                raise ConnectionError("thread listener disconnected during startup")
         except BaseException:
             await connection.close(timeout=2)
             raise
@@ -68,7 +70,7 @@ class TrajectoryUpdates:
                 await self._connect()
             except Exception:
                 self._lost.set()
-                logger.exception("trajectory listener reconnect failed")
+                logger.exception("thread listener reconnect failed")
 
     async def _disconnect(self) -> None:
         if self._connection is not None:
@@ -89,3 +91,8 @@ class TrajectoryUpdates:
     def _terminated(self, _connection: object) -> None:
         self._lost.set()
         self._changes.notify()
+
+
+async def notify(session: AsyncSession) -> None:
+    # PostgreSQL delivers NOTIFY only on commit; payloads carry no thread or identity data.
+    await session.execute(select(func.pg_notify(CHANNEL, "")))
