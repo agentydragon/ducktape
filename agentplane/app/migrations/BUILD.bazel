@@ -25,7 +25,6 @@ py_library(
     srcs = ["env.py"],
     deps = [
         "//agentplane/app:database_migrate",
-        "//agentplane/app/agent_runtime:models",
         "@pypi//alembic",
     ],
 )

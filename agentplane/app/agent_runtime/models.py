@@ -13,7 +13,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKe
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from agentplane.app.operator_sessions import Base
+from agentplane.app.database import Base
 from agentplane.app.presets import Harness
 
 
