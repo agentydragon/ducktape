@@ -1,3 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager-trust
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -14,24 +18,22 @@ metadata:
   name: trust-manager
   namespace: cert-manager-trust
 spec:
-  interval: 30m
-  install:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: trust-manager
-      version: "0.25.*"
       sourceRef:
         kind: HelmRepository
         name: cert-manager
         namespace: cert-manager-trust
+      version: 0.25.*
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
   values:
-    replicaCount: 1
-    # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
-    # rather than degrading. Same treatment as the other blocking-webhook backends.
     priorityClassName: system-cluster-critical
+    replicaCount: 1
     tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
         operator: Exists

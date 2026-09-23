@@ -104,6 +104,16 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-webhook-token/kustomization.yaml",
     "cluster/k8s/authentik/sso-providers-tf/sso-providers.k8s.yaml",
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
+    "cluster/k8s/cert-manager/app/cert-manager.k8s.yaml",
+    "cluster/k8s/cert-manager/app/kustomization.yaml",
+    "cluster/k8s/cert-manager/trust/trust-manager.k8s.yaml",
+    "cluster/k8s/cert-manager/trust/kustomization.yaml",
+    "cluster/k8s/cert-manager/issuer-config/cert-manager-issuer-config.k8s.yaml",
+    "cluster/k8s/cert-manager/issuer-config/kustomization.yaml",
+    "cluster/k8s/cert-manager/environment/environment.k8s.yaml",
+    "cluster/k8s/cert-manager/environment/kustomization.yaml",
+    "cluster/k8s/cert-manager/config/base/letsencrypt-root-cas.k8s.yaml",
+    "cluster/k8s/cert-manager/cluster-ca/base/cluster-ca.k8s.yaml",
 )
 
 
