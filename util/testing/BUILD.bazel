@@ -52,6 +52,14 @@ py_library(
 )
 
 py_library(
+    name = "sharding",
+    testonly = True,
+    srcs = ["sharding.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pytest"],
+)
+
+py_library(
     name = "postgres",
     testonly = True,
     srcs = ["postgres.py"],
@@ -211,6 +219,17 @@ py_test(
         ":visual_review",
         "//:conftest",
         "//util:visual_review",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sharding",
+    srcs = ["test_sharding.py"],
+    deps = [
+        "//:conftest",
+        "//util/testing:sharding",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
