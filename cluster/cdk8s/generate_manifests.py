@@ -39,6 +39,7 @@ from cluster.cdk8s import (
     reflector,
     reloader,
     stateful_infra,
+    talos_cloud_controller_manager,
     user_agentydragon,
     valkey,
     volsync,
@@ -126,9 +127,6 @@ from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_co
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import flux_kustomizations as study_casino_flux_kustomizations
-from cluster.cdk8s.talos_cloud_controller_manager import (
-    flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
-)
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
@@ -203,6 +201,7 @@ def generate_manifests(root: Path) -> None:
     vpa.write_manifests(root)
     node_feature_discovery.write_manifests(root)
     nvidia_device_plugin.write_manifests(root)
+    talos_cloud_controller_manager.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -291,13 +290,9 @@ def generate_manifests(root: Path) -> None:
     )
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     talos_cloud_controller_manager_artifact = artifact(
-        "talos-cloud-controller-manager", "cluster/k8s/talos-cloud-controller-manager"
+        "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
     )
-    (
-        talos_cloud_controller_manager_flux_kustomizations.talos_cloud_controller_manager(
-            flux_chart, talos_cloud_controller_manager_artifact
-        )
-    )
+    talos_cloud_controller_manager.talos_cloud_controller_manager(flux_chart, talos_cloud_controller_manager_artifact)
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)

@@ -736,6 +736,22 @@ py_library(
 )
 
 py_library(
+    name = "talos_cloud_controller_manager",
+    srcs = ["talos_cloud_controller_manager.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -780,6 +796,7 @@ py_library(
         ":reflector",
         ":reloader",
         ":stateful_infra",
+        ":talos_cloud_controller_manager",
         ":user_agentydragon",
         ":valkey",
         ":volsync",
@@ -857,7 +874,6 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",
         "//cluster/cdk8s/study_casino:flux_kustomizations",
-        "//cluster/cdk8s/talos_cloud_controller_manager:flux_kustomizations",
         "//cluster/cdk8s/tofu_controller:flux_kustomizations",
         "//cluster/cdk8s/tofu_state:db",
         "//cluster/cdk8s/tofu_state:namespace",
@@ -1036,6 +1052,9 @@ py_test(
         "//cluster/k8s/agents/ha-mcp/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:litellm.k8s.yaml",
+        "//cluster/k8s/talos-cloud-controller-manager:helmrelease.k8s.yaml",
+        "//cluster/k8s/talos-cloud-controller-manager:helmrepository.k8s.yaml",
+        "//cluster/k8s/talos-cloud-controller-manager:kustomization.yaml",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},

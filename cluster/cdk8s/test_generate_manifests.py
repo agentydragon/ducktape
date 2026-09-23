@@ -138,6 +138,9 @@ _GENERATED_FILES = (
     "cluster/k8s/node-feature-discovery/kustomization.yaml",
     "cluster/k8s/nvidia-device-plugin/nvidia-device-plugin.k8s.yaml",
     "cluster/k8s/nvidia-device-plugin/kustomization.yaml",
+    "cluster/k8s/talos-cloud-controller-manager/helmrelease.k8s.yaml",
+    "cluster/k8s/talos-cloud-controller-manager/helmrepository.k8s.yaml",
+    "cluster/k8s/talos-cloud-controller-manager/kustomization.yaml",
 )
 
 
