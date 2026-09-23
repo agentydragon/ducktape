@@ -107,6 +107,7 @@ _GENERATED_FILES = (
     "cluster/k8s/authentik/sso-providers-tf/sso-providers.k8s.yaml",
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
     "cluster/k8s/langfuse/langfuse.k8s.yaml",
+    "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
 )
 
 

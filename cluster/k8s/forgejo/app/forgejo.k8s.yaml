@@ -1,0 +1,342 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  interval: 24h
+  type: oci
+  url: oci://code.forgejo.org/forgejo-helm
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  chart:
+    spec:
+      chart: forgejo
+      sourceRef:
+        kind: HelmRepository
+        name: forgejo
+        namespace: forgejo
+      version: 17.1.6
+  install:
+    remediation:
+      retries: -1
+  interval: 15m
+  timeout: 15m
+  upgrade:
+    remediation:
+      retries: -1
+  values:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+            weight: 100
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: forgejo
+                app.kubernetes.io/name: forgejo
+            topologyKey: kubernetes.io/hostname
+    deployment:
+      annotations:
+        reloader.stakater.com/auto: "true"
+      env:
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
+    extraContainerVolumeMounts:
+      - mountPath: /etc/ssl/certs/cluster-ca
+        name: cluster-ca
+        readOnly: true
+    extraInitVolumeMounts:
+      - mountPath: /etc/ssl/certs/cluster-ca
+        name: cluster-ca
+        readOnly: true
+    extraVolumes:
+      - configMap:
+          name: cluster-internal-ca-bundle
+        name: cluster-ca
+    gitea:
+      additionalConfigFromEnvs:
+        - name: FORGEJO__metrics__TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: forgejo-metrics-token
+        - name: FORGEJO__storage__MINIO_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: accessKey
+              name: forgejo-s3-credentials
+        - name: FORGEJO__storage__MINIO_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secretKey
+              name: forgejo-s3-credentials
+      admin:
+        email: admin@allegedly.works
+        existingSecret: forgejo-admin-password
+        passwordMode: initialOnlyNoReset
+      config:
+        APP_NAME: "Forgejo: Beyond coding. We forge."
+        RUN_MODE: prod
+        actions:
+          ENABLED: true
+        cache:
+          ADAPTER: redis
+          ENABLED: true
+          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+        database:
+          DB_TYPE: postgres
+          HOST: forgejo-db-ssd-rw.forgejo:5432
+          NAME: forgejo
+          USER: forgejo
+        indexer:
+          ISSUE_INDEXER_TYPE: db
+        metrics:
+          ENABLED: true
+        oauth2_client:
+          ACCOUNT_LINKING: login
+          ENABLE_AUTO_REGISTRATION: true
+          REGISTER_EMAIL_CONFIRM: false
+          UPDATE_AVATAR: true
+          USERNAME: nickname
+        queue:
+          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+          TYPE: redis
+        security:
+          INSTALL_LOCK: true
+          SECRET_KEY: change-this-secret-key-in-production
+        server:
+          DISABLE_SSH: false
+          DOMAIN: git.allegedly.works
+          HTTP_PORT: 3000
+          LFS_START_SERVER: true
+          ROOT_URL: https://git.allegedly.works
+          SSH_DOMAIN: git.allegedly.works
+          SSH_PORT: 2222
+          START_SSH_SERVER: true
+        session:
+          PROVIDER: db
+        storage:
+          MINIO_BUCKET: forgejo
+          MINIO_BUCKET_LOOKUP: path
+          MINIO_ENDPOINT: seaweedfs-s3.seaweedfs.svc:8333
+          MINIO_LOCATION: us-east-1
+          MINIO_USE_SSL: false
+          STORAGE_TYPE: minio
+      oauth:
+        - adminGroup: forgejo-admins
+          autoDiscoverUrl: https://auth.allegedly.works/application/o/forgejo/.well-known/openid-configuration
+          existingSecret: forgejo-oauth-client-secret
+          groupClaimName: groups
+          iconUrl: https://auth.allegedly.works/static/dist/assets/icons/icon.png
+          name: authentik
+          provider: openidConnect
+          scopes: email profile
+    global:
+      imageRegistry: ""
+    memcached:
+      enabled: false
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    persistence:
+      accessModes:
+        - ReadWriteMany
+      claimName: forgejo-git-rwx-ssd
+      create: false
+      enabled: true
+    postgresql:
+      enabled: false
+    postgresql-ha:
+      enabled: false
+    redis-cluster:
+      enabled: false
+    replicaCount: 2
+    resources:
+      limits:
+        cpu: "4"
+        memory: 8Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+    service:
+      http:
+        port: 3000
+        type: ClusterIP
+      ssh:
+        port: 2222
+        type: ClusterIP
+    serviceAccount:
+      create: true
+    strategy:
+      rollingUpdate:
+        maxUnavailable: 1
+      type: RollingUpdate
+    valkey-cluster:
+      enabled: false
+  valuesFrom:
+    - kind: Secret
+      name: forgejo-db-ssd-creds
+      targetPath: gitea.config.database.PASSWD
+      valuesKey: password
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  hostnames:
+    - git.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: forgejo-http
+          port: 3000
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA
+  name: forgejo-git-rwx-ssd
+  namespace: forgejo
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: seaweedfs-ovh-ssd
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: forgejo
+      app.kubernetes.io/name: forgejo
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Forgejo packages, LFS, attachments, and artifacts.
+  name: forgejo
+  namespace: forgejo
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: forgejo
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: forgejo
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Forgejo's SeaweedFS S3 credentials.
+  name: forgejo
+  namespace: forgejo
+spec:
+  identityRef:
+    name: forgejo
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: accessKey
+    name: forgejo-s3-credentials
+    secretKeyField: secretKey
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: forgejo
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: forgejo
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: forgejo
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  endpoints:
+    - bearerTokenSecret:
+        key: token
+        name: forgejo-metrics-token
+      path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: forgejo
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: forgejo-metrics-token
+  namespace: forgejo
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-metrics-token
+  namespace: forgejo
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: forgejo-metrics-token
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: forgejo-metrics-token
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
