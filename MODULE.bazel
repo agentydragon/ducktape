@@ -1142,6 +1142,21 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
+# Match the volsync chart 0.16.0 in cluster/k8s/volsync/helmrelease.yaml; the chart templates these CRDs verbatim.
+http_file(
+    name = "volsync_replicationdestination_crd",
+    downloaded_file_path = "volsync.backube_replicationdestinations.yaml",
+    sha256 = "503cb28f7eafc73b9c3332cdc084aca3149f8520e3b265769caf02a47f51251d",
+    urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationdestinations.yaml"],
+)
+
+http_file(
+    name = "volsync_replicationsource_crd",
+    downloaded_file_path = "volsync.backube_replicationsources.yaml",
+    sha256 = "597e68a855277fe5bfb86f1239ab472dda1fe4660fca22fa932ff2f13b72d29b",
+    urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
