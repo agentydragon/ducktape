@@ -2276,8 +2276,8 @@ data:
         client_id: configured-by-secret
         client_secret_file: /etc/agentplane-github/client_secret
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
-      kubernetes:
-        server_id: kubernetes
+      kubernetes_admin:
+        server_id: kubernetes_admin
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
@@ -2298,16 +2298,16 @@ data:
             url: https://api.githubcopilot.com/mcp/
             server_id: github
             auth: oauth
-      kubernetes:
-        title: Kubernetes MCP
-        description: Kubernetes passthrough MCP tools; every Action remains subject to operator approval.
+      kubernetes_admin:
+        title: Kubernetes admin
+        description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
         executor:
           kind: mcp
-          description: Kubernetes MCP executed with the linked operator Kubernetes identity.
+          description: kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.
           config:
             transport: streamable-http
             url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-            server_id: kubernetes
+            server_id: kubernetes_admin
             auth: oauth
       grocy_sf:
         title: Grocy SF MCP
