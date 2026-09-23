@@ -226,6 +226,7 @@ exports_files(
         "authentik/proxy-routes/proxy-routes.k8s.yaml",
         "authentik/proxy-routes/kustomization.yaml",
         "authentik/db-backups/db-backups.k8s.yaml",
+        "authentik/db-backups/kustomization.yaml",
         "agents/mitmproxy/namespace.k8s.yaml",
         "forgejo/namespace.k8s.yaml",
         "forgejo/db/forgejo-db-ssd.k8s.yaml",

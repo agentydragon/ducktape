@@ -1464,6 +1464,7 @@ py_test(
         "//cluster/k8s:atuin/user-provisioner/kustomization.yaml",
         "//cluster/k8s:authentik/app/authentik.k8s.yaml",
         "//cluster/k8s:authentik/db-backups/db-backups.k8s.yaml",
+        "//cluster/k8s:authentik/db-backups/kustomization.yaml",
         "//cluster/k8s:authentik/db/authentik-db-ovh.k8s.yaml",
         "//cluster/k8s:authentik/db/kustomization.yaml",
         "//cluster/k8s:authentik/namespace.k8s.yaml",

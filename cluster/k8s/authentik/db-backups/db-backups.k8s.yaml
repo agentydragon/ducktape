@@ -70,3 +70,43 @@ spec:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
       name: seaweedfs
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for Authentik CNPG base backups and WAL.
+  name: authentik-db-ovh
+  namespace: authentik
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://authentik-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: authentik-db-backup-s3
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: authentik-db-backup-s3
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  annotations:
+    description: Daily physical Authentik database backup; WAL archiving provides continuous recovery points.
+  name: authentik-db-ovh-daily
+  namespace: authentik
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: authentik-db-ovh
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 0 2 * * *
