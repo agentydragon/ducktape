@@ -88,6 +88,8 @@ _GENERATED_FILES = (
     "cluster/k8s/forgejo/haku-state/kustomization.yaml",
     "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
     "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
+    "cluster/k8s/gatus/sso-tf/gatus-sso.k8s.yaml",
+    "cluster/k8s/gatus/sso-tf/kustomization.yaml",
     "cluster/k8s/flux-webhook-token/flux-webhook-token.k8s.yaml",
     "cluster/k8s/flux-webhook-token/kustomization.yaml",
     "cluster/k8s/authentik/sso-providers-tf/sso-providers.k8s.yaml",

@@ -68,7 +68,7 @@ from cluster.cdk8s.forgejo import (
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
-from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
+from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import flux_kustomizations as github_secrets_sync_flux_kustomizations
@@ -175,6 +175,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
@@ -557,8 +558,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         authentik_kustomization,
     )
-    gatus_sso_tf_artifact = artifact("gatus-sso-tf", "cluster/k8s/gatus/sso-tf")
-    gatus_flux_kustomizations.gatus_sso_tf(
+    gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
+    gatus_sso.gatus_sso_tf(
         flux_chart,
         gatus_sso_tf_artifact,
         tofu_controller_kustomization,
