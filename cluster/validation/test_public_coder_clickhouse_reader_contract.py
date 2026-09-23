@@ -38,7 +38,8 @@ def iron(k8s_dir: Path) -> dict[str, Any]:
 @pytest.fixture
 def network_policies(k8s_dir: Path) -> list[dict[str, Any]]:
     return cast(
-        list[dict[str, Any]], list(yaml.safe_load_all((k8s_dir / "clickhouse/cluster/networkpolicy.yaml").read_text()))
+        list[dict[str, Any]],
+        list(yaml.safe_load_all((k8s_dir / "clickhouse/cluster/networkpolicy.k8s.yaml").read_text())),
     )
 
 

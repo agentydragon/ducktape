@@ -55,6 +55,20 @@ py_library(
 )
 
 py_library(
+    name = "installation",
+    srcs = ["installation.py"],
+    deps = [
+        ":client",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhouseinstallation",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhousekeeperinstallation",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "operator",
     srcs = ["operator.py"],
     deps = [

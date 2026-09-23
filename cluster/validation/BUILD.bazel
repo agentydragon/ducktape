@@ -454,7 +454,7 @@ py_test(
     # Synthesizes the clickhouse-schema and aiquota charts in memory, which needs jsii's
     # Node runtime.
     data = [
-        "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
+        "//cluster/k8s:clickhouse/cluster/clickhouse.k8s.yaml",
         "//cluster/k8s:kustomization.yaml",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -481,8 +481,8 @@ py_test(
         "//cluster/k8s:agents/public-coder-agent/proxy/cnp-egress.yaml",
         "//cluster/k8s:agents/public-coder-agent/proxy/deployment.yaml",
         "//cluster/k8s:agents/public-coder-agent/proxy/iron.yaml",
-        "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
-        "//cluster/k8s:clickhouse/cluster/networkpolicy.yaml",
+        "//cluster/k8s:clickhouse/cluster/clickhouse.k8s.yaml",
+        "//cluster/k8s:clickhouse/cluster/networkpolicy.k8s.yaml",
         "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
         "//cluster/k8s:kustomization.yaml",
     ],

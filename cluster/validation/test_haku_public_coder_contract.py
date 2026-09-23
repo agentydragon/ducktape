@@ -65,7 +65,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
 
     sources: dict[str, list[dict[str, Any]] | None] = {
-        "clickhouse/cluster/agent-diagnostics-rbac.yaml": None,
+        "clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml": None,
         "haku-console chart": haku_console_objects,
         "agents/public-coder-agent/app/extended-diagnostics-reader.yaml": None,
     }

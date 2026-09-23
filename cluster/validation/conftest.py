@@ -20,7 +20,7 @@ def k8s_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.yaml").read_text()))
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.k8s.yaml").read_text()))
 
 
 @pytest.fixture(scope="session")
