@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    app.kubernetes.io/part-of: flux
+  name: flux-system
+  namespace: flux-system
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: http-prom
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux

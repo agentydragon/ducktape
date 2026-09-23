@@ -292,6 +292,7 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-webhook/flux-webhook.k8s.yaml",
     "cluster/k8s/flux-image-automation-ghcr/image-update-automation.k8s.yaml",
     "cluster/k8s/flux-image-automation-ghcr/openclaw-image.k8s.yaml",
+    "cluster/k8s/flux-monitoring/flux-monitoring.k8s.yaml",
     "cluster/k8s/tofu-controller/tofu-controller.k8s.yaml",
     "cluster/k8s/tofu-controller/kustomization.yaml",
     "cluster/k8s/cnpg/cnpg.k8s.yaml",
