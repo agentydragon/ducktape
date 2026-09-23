@@ -54,6 +54,7 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/backup/haku-openclaw-spike-backup.k8s.yaml",
+    "cluster/k8s/agents/public-coder-agent/backup/public-coder-agent-backup.k8s.yaml",
     "cluster/k8s/descheduler/helmrelease.k8s.yaml",
     "cluster/k8s/descheduler/rbac.k8s.yaml",
     "cluster/k8s/descheduler/kustomization.yaml",
