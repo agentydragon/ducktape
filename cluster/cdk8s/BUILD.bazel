@@ -630,6 +630,7 @@ py_test(
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/kustomization.yaml",
         "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
+        "//cluster/k8s:agents/mitmproxy/namespace.k8s.yaml",
         "//cluster/k8s:agents/plaid-mcp/namespace.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/devbox/kustomization.yaml",
