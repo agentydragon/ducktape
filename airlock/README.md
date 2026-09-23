@@ -97,4 +97,5 @@ oauth:
 | `AIRLOCK_OIDC_SESSION_SECRET`   | yes      | Signs the Airlock browser session cookie                      |
 | `session_seconds` in YAML       | no       | Maximum browser session lifetime (default 8 hours)            |
 
-All other settings live in the YAML config file.
+`<PROVIDER_NAME>` is the provider's `name` uppercased, with `-` as `_` (`google-write` →
+`GOOGLE_WRITE_CLIENT_ID`). All other settings live in the YAML config file.
