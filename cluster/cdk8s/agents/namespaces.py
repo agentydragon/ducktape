@@ -23,8 +23,15 @@ def write_manifests(root: Path) -> None:
             "goldilocks.fairwinds.com/enabled": "true",
             "goldilocks.fairwinds.com/vpa-update-mode": "auto",
             "name": "haku-egress-proxy",
+        },
+    )
+    write_namespace(
+        root,
         "cluster/k8s/agents/mitmproxy",
         name="agents-mitmproxy",
+        labels={
+            "goldilocks.fairwinds.com/enabled": "true",
+            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
             "name": "agents-mitmproxy",
         },
     )
