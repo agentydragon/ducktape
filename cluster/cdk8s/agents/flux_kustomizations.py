@@ -49,41 +49,6 @@ def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifa
     )
 
 
-def agent_workspaces_app(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    agent_sandbox_controller: Kustomization,
-    kyverno_policies: Kustomization,
-) -> Kustomization:
-    name = "agent-workspaces-app"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # CRDs + controller
-                agent_sandbox_controller,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-            ),
-        ),
-        description=(
-            "Disposable agent workspace template + warm pool in agent-workspaces. "
-            "See agents/agent-sandbox/README.md for usage."
-        ),
-    )
-
-
 def airlock(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:

@@ -1410,8 +1410,8 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_config_kustomization,
     )
-    agent_workspaces_app_artifact = artifact("agent-workspaces-app", "cluster/k8s/agents/agent-sandbox/workspaces")
-    agents_flux_kustomizations.agent_workspaces_app(
+    agent_workspaces_app_artifact = artifact("agent-workspaces-app", agent_workspaces.OUTPUT_DIR)
+    agent_workspaces.agent_workspaces_app(
         flux_chart,
         agent_workspaces_app_artifact,
         external_secrets_config_kustomization,
