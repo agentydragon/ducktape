@@ -1367,8 +1367,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    haku_workspaces_app_artifact = artifact("haku-workspaces-app", "cluster/k8s/haku/workspaces/app")
-    haku_flux_kustomizations.haku_workspaces(
+    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
+    haku_workspaces.haku_workspaces(
         flux_chart,
         haku_workspaces_app_artifact,
         agent_sandbox_controller_kustomization,

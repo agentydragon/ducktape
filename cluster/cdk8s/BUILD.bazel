@@ -1582,6 +1582,7 @@ py_test(
         "//cluster/k8s:haku/rbac/kustomization.yaml",
         "//cluster/k8s:haku/workloads/haku-workloads.k8s.yaml",
         "//cluster/k8s:haku/workspaces/app/haku-workspaces.k8s.yaml",
+        "//cluster/k8s:haku/workspaces/app/kustomization.yaml",
         "//cluster/k8s:headlamp/headlamp.k8s.yaml",
         "//cluster/k8s:headlamp/kustomization.yaml",
         "//cluster/k8s:home-assistant/backup/home-assistant-backups.k8s.yaml",
