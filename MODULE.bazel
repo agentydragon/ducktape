@@ -934,6 +934,13 @@ http_file(
 )
 
 http_file(
+    name = "flux_gitrepository_crd",
+    downloaded_file_path = "source.toolkit.fluxcd.io_gitrepositories.yaml",
+    sha256 = "bd0c08183287b2eea0d885751fc686bc4b2b583e919de6bd57859170b8d1727f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_gitrepositories.yaml"],
+)
+
+http_file(
     name = "flux_imagerepository_crd",
     downloaded_file_path = "image.toolkit.fluxcd.io_imagerepositories.yaml",
     sha256 = "122a58bcaa78770fdeffef9246576513df4bc4452a98b5dba4c2bbbaf7d0f2c9",
@@ -945,6 +952,34 @@ http_file(
     downloaded_file_path = "image.toolkit.fluxcd.io_imagepolicies.yaml",
     sha256 = "52e875110e00fff8f0ca865112bda52fed87b74c96ef36bf1d501909a0203480",
     urls = ["https://raw.githubusercontent.com/fluxcd/image-reflector-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imagepolicies.yaml"],
+)
+
+http_file(
+    name = "flux_imageupdateautomation_crd",
+    downloaded_file_path = "image.toolkit.fluxcd.io_imageupdateautomations.yaml",
+    sha256 = "f12d1ee34ac92b0055a18152e55f91742c08c228aeedaa93b9ee4b72325c44cf",
+    urls = ["https://raw.githubusercontent.com/fluxcd/image-automation-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imageupdateautomations.yaml"],
+)
+
+http_file(
+    name = "flux_receiver_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_receivers.yaml",
+    sha256 = "4c8be1ad7789b78f0727557d01e5f33eef9447a1f4aa9b830a3c1cc8a1508a9b",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_receivers.yaml"],
+)
+
+http_file(
+    name = "flux_provider_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_providers.yaml",
+    sha256 = "243ad33ac88ed965c6cd72b342dc5a93ecf5eefde2e03f4c2ea026b52d872135",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_providers.yaml"],
+)
+
+http_file(
+    name = "flux_alert_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_alerts.yaml",
+    sha256 = "2b8f79249b39881bd23c49868f114c44c6e632dfcda451da576adfa16c64226f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
 )
 
 # Match the deployed version in cluster/cdk8s/tofu_controller/release.py.
