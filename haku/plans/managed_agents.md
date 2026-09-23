@@ -92,9 +92,8 @@ none is live)" — **not** `sessions.create()` per event:
 ## MCP servers + vaults (the "nicely handled auth" path)
 
 Haku's sources today are reached ad hoc: Plaid over `psql` (in-cluster pod),
-Grocy over haku-console's aggregated MCP catalog (`fastmcp` to
-`https://haku.allegedly.works/mcp`, since superseding its earlier dedicated
-credential — <../TODO.md>). There is no `.mcp.json`. The PLAN north star (<../TODO.md>)
+console-mediated tools over haku-console's aggregated MCP catalog (`fastmcp` to
+`https://haku.allegedly.works/mcp`). There is no `.mcp.json`. The PLAN north star (<../TODO.md>)
 is to give Haku **native MCP tools**.
 
 Managed Agents does this cleanly, and its **vaults** are precisely the
@@ -110,9 +109,8 @@ headless-MCP-auth mechanism the PLAN's _MCP auth provisioning_ spike was for:
   "does the facade accept service-account JWTs" spike.
 
 Candidate servers to wire (each already has or could expose a gated public route):
-`haku-console` (already wired this way for Grocy: a `static_bearer` bound to the
-console's aggregated `/mcp`, superseding a per-source dedicated credential), the Google
-Workspace MCP, and the
+`haku-console` (already wired this way: a `static_bearer` bound to the console's
+aggregated `/mcp`), the Google Workspace MCP, and the
 `cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor as
 a single endpoint.
 

@@ -85,31 +85,6 @@ def _static_bearer_server(server_id: str, url: str) -> dict[str, Any]:
 # policy below.
 def _auto_approval_policies() -> list[dict[str, Any]]:
     return [
-        _exact_tools(
-            "grocy_reads",
-            "grocy-sf",
-            [
-                "entities_get",
-                "entities_list",
-                "file_get",
-                "get_below_minimum_stock",
-                "get_current_user",
-                "get_db_changed_time",
-                "get_expired_stock",
-                "get_expiring_stock",
-                "get_product_stock",
-                "get_system_info",
-                "list_volatile_stock",
-                "locations_list",
-                "product_groups_list",
-                "products_list",
-                "quantity_units_list",
-                "shopping_list_get",
-                "shopping_lists_list",
-                "stock_entries_list",
-                "stock_get",
-            ],
-        ),
         # GitHub MCP's normal endpoint exposes its default catalog, including writes. This is
         # the explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally
         # stay manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
@@ -238,7 +213,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         ),
         _any_of(
             "haku_v1",
-            "grocy_reads",
             "github_reads",
             "github_identity_reads",
             "haku_sandbox_control",
@@ -294,9 +268,6 @@ def _mcp_servers() -> dict[str, Any]:
                 },
             },
         },
-        "grocy_sf": _remote_oauth_server(
-            "grocy-sf", "https://grocy-mcp-sf.allegedly.works/mcp", {"kind": "dynamic", "client_name": "Haku Console"}
-        ),
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
         # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
