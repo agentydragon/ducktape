@@ -124,6 +124,7 @@ from cluster.cdk8s.seaweedfs import (
     forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     namespace as seaweedfs_namespace,
+    public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
 )
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
@@ -198,6 +199,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_drivefs_artifacts_bucket.write_manifests(root)
     seaweedfs_loom_gym_bucket.write_manifests(root)
     seaweedfs_forgejo_bucket.write_manifests(root)
+    seaweedfs_public_coder_agent_backups_bucket.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -679,10 +681,10 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_cluster_kustomization
     )
     seaweedfs_public_coder_agent_backups_bucket_artifact = artifact(
-        "seaweedfs-public-coder-agent-backups-bucket", "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket"
+        "seaweedfs-public-coder-agent-backups-bucket", seaweedfs_public_coder_agent_backups_bucket.OUTPUT_DIR
     )
     seaweedfs_public_coder_agent_backups_bucket_kustomization = (
-        seaweedfs_flux_kustomizations.seaweedfs_public_coder_agent_backups_bucket(
+        seaweedfs_public_coder_agent_backups_bucket.seaweedfs_public_coder_agent_backups_bucket(
             flux_chart, seaweedfs_public_coder_agent_backups_bucket_artifact, seaweedfs_cluster_kustomization
         )
     )
