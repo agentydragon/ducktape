@@ -17,3 +17,39 @@ spec:
   selector:
     kubevirt.io/domain: public-coder-devbox
   type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Separately deletable local Bazel output, repository, and action cache for public-coder-devbox. Stop the VM before deleting this claim to reset it.
+  name: public-coder-devbox-bazel-cache
+  namespace: public-coder-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: lvm-proxmox-hdd-block
+  volumeMode: Block
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: public-coder-agent
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
