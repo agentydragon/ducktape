@@ -135,6 +135,25 @@ retiring a test means deriving both sides from one value.
 - **`haku/mailbox`** — `test_mailbox_plan.py`'s init/prod image equality and
   configMapGenerator-name-vs-mount-name checks, now against `haku/mailbox.py`.
 
+## Deduplicate what the one-to-one conversion copied per module
+
+The conversion kept every module's objects literal, so repeated shapes were copied
+once per module. Each item below is its own PR, proven by `render_diff.py` printing
+`identical`. A helper earns its place where the shape truly repeats; a module that
+differs keeps building the object directly.
+
+- **`valkey_instance(...)`** for the six `RedisReplication`s (~80 near-identical
+  lines each): size, storage class, zone affinity and description differ.
+- **`seaweed_bucket(...)`** for the Bucket + S3Identity + S3Credentials +
+  ResourceReferenceGrant bundle repeated in ~14 modules (~890 lines). It is also the
+  one place to hold the operator's rules (`seaweed_operator` skill).
+- **`helm_release(...)`** for the HelmRepository + HelmRelease pair in ~33 modules
+  (~1,500 lines); values stay a plain dict. One call shape also gives the Renovate
+  annotation one place to live.
+- **ExternalSecrets onto `add_external_secret`**: 46 built directly in 39 modules
+  (~1,300 lines); 3 use the helper. Move the ones whose shape it covers.
+- **CNPG `Cluster`s onto `cnpg.py`**: 18 built in 18 modules (~670 lines).
+
 ## Parked — lower priority
 
 - **`haku/x/dispatch/` (`test_haku_dispatch_zones_contract.py`)** — `zones.yaml`'s
