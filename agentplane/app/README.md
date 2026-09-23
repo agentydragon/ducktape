@@ -63,16 +63,18 @@ bbr test //agentplane/app/...
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
-  thread entities, and immutable content chunks/manifests. Each ingestion transaction
-  folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  Layered bottom-up over the event log in `agent_runtime/events/`, one store per level: `models.py`
-  (the tables) and `views.py` (the rows' client contract); `rows.py` (fold records to and from
-  entity rows) and `payloads.py` (insert-only bodies); `recording.py` (the fold write path) and
-  `content.py` (`ContentStore`: reads of what the fold assembled); `store.py` (`ThreadStore`: a
-  thread over its event log, with the name and archive state an operator sets). `updates.py`
-  turns committed PostgreSQL notifications into replica-local wakeups.
-- `thread_fold.py`: typed deterministic event fold with independent item revisions.
+- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized thread
+  entities, and immutable content chunks/manifests. Each ingestion transaction folds only the batch
+  and its touched entities, then commits all projection writes and checkpoint. Layered bottom-up
+  over the event log in `agent_runtime/events/`, one store per level: `models.py` (the tables); the
+  fold over them in `agent_runtime/view/`; `store.py` (`ThreadStore`: a thread over its event log,
+  with the name and archive state an operator sets). `updates.py` turns committed PostgreSQL
+  notifications into replica-local wakeups.
+- `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
+  typed deterministic event fold with independent item revisions), `views.py` (the rows' client
+  contract), `rows.py` (fold records to and from entity rows), `payloads.py` (insert-only bodies),
+  `recording.py` (the fold write path) and `content.py` (`ContentStore`: reads of what the fold
+  assembled).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies.

@@ -27,6 +27,8 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedErr
 from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.views import ThreadOperationalState
 from agentplane.app.api import create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
@@ -40,11 +42,9 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import pod, sandbox
-from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
-from agentplane.app.thread.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError

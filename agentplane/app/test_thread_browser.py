@@ -28,13 +28,14 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.app.database import connect
 from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.models import (
     FeedState,
     ThreadCheckpoint,
@@ -45,7 +46,6 @@ from agentplane.app.thread.models import (
     ThreadPayloadManifest,
 )
 from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable

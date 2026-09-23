@@ -43,7 +43,7 @@ py_library(
         "//agentplane/app/agent_runtime/events:ingestion_lease",
         "//agentplane/app/agent_runtime/runner:bridge",
         "//agentplane/app/agent_runtime/runner:runners",
-        "//agentplane/app/thread:content",
+        "//agentplane/app/agent_runtime/view:content",
         "//agentplane/app/thread:store",
         "//agentplane/app/thread:updates",
         "//agentplane/protocol:event_log_pb2",

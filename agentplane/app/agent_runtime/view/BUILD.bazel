@@ -1,0 +1,136 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+py_library(
+    name = "fold",
+    srcs = ["fold.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_library(
+    name = "recording",
+    srcs = ["recording.py"],
+    deps = [
+        ":fold",
+        ":payloads",
+        ":rows",
+        ":views",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/thread:models",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "rows",
+    srcs = ["rows.py"],
+    deps = [
+        ":fold",
+        ":views",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "payloads",
+    srcs = ["payloads.py"],
+    deps = [
+        ":fold",
+        "//agentplane/app/thread:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "content",
+    srcs = ["content.py"],
+    deps = [
+        ":fold",
+        ":views",
+        "//agentplane/app/agent_runtime/events:debug",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/thread:models",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "views",
+    srcs = ["views.py"],
+    deps = [
+        ":fold",
+        "//agentplane/app:presets",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_fold",
+    srcs = ["test_fold.py"],
+    deps = [
+        ":fold",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_recording",
+    size = "medium",
+    srcs = ["test_recording.py"],
+    deps = [
+        ":recording",
+        ":views",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/events:ingestion_lease",
+        "//agentplane/app/thread:models",
+        "//agentplane/app/thread:store",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_content",
+    size = "medium",
+    srcs = ["test_content.py"],
+    deps = [
+        ":content",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/events:ingestion_lease",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
