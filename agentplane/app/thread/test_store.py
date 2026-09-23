@@ -15,18 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.presets import Harness
+from agentplane.app.thread.content import CommandIdConflictError
+from agentplane.app.thread.event_log import EventReplicationError, FeedEnd, FeedError, ThreadNotFoundError
+from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.thread.models import SandboxIngestion
-from agentplane.app.thread.recording import EventReplicationError
-from agentplane.app.thread.store import (
-    CommandIdConflictError,
-    FeedEnd,
-    FeedError,
-    IngestionLease,
-    IngestionLeaseLostError,
-    ThreadNotFoundError,
-    ThreadStore,
-)
-from agentplane.app.thread.updates import notify
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates, notify
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -343,10 +337,10 @@ async def test_concurrent_replicas_choose_one_ingester(store: ThreadStore, repli
 
 
 async def test_commits_wake_another_replica_and_leave_durable_replay(
-    store: ThreadStore, replica: ThreadStore, lease: IngestionLease
+    store: ThreadStore, replica: ThreadStore, thread_updates: ThreadUpdates, lease: IngestionLease
 ) -> None:
     changed = asyncio.Event()
-    with replica.changes.subscribe(changed):
+    with thread_updates.changes.subscribe(changed):
         thread = await store.thread("sb-1", "s-1", SPEC)
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert (await replica.list_threads())[0].id == thread
@@ -576,13 +570,13 @@ async def test_record_rechecks_expiry_after_waiting_for_the_lease_row(
 
 
 async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
-    store: ThreadStore, replica: ThreadStore, lease: IngestionLease, db_url: str
+    store: ThreadStore, replica: ThreadStore, thread_updates: ThreadUpdates, lease: IngestionLease, db_url: str
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     engine = create_async_engine(db_url)
     changed = asyncio.Event()
     try:
-        with replica.changes.subscribe(changed):
+        with thread_updates.changes.subscribe(changed):
             async with engine.begin() as connection:
                 await connection.execute(
                     text(
@@ -592,12 +586,12 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
                 )
             # Wait on the termination callback itself, rather than an untagged Changes wakeup:
             # a previous database notification can arrive after the subscription starts.
-            await asyncio.wait_for(replica._updates.wait_until_disconnected(), timeout=5)
-            assert not replica.updates_connected
+            await asyncio.wait_for(thread_updates.wait_until_disconnected(), timeout=5)
+            assert not thread_updates.connected
             changed.clear()
             await store.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
             await asyncio.wait_for(changed.wait(), timeout=5)
-            assert replica.updates_connected
+            assert thread_updates.connected
             assert [entry.cursor for entry in await replica.events(thread, limit=10)] == [1]
             # Establish another live write still wakes this replica after it reconnects.
             changed.clear()

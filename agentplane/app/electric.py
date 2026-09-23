@@ -15,12 +15,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.thread.store import (
-    ThreadEntityInterest,
-    ThreadInterestExpiredError,
-    ThreadPayloadSelection,
-    ThreadStore,
-)
+from agentplane.app.thread.content import ThreadEntityInterest, ThreadInterestExpiredError, ThreadPayloadSelection
+from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind
 
 logger = logging.getLogger(__name__)

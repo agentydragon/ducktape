@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app import thread_fold
+from agentplane.app.thread.event_log import EventReplicationError
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.app.thread.payloads import write_payloads
 from agentplane.app.thread.rows import command_summary, fold_item, ordered_entity_rows
@@ -29,14 +30,6 @@ from agentplane.protocol import event_log_pb2
 
 
 THREAD_FOLD_EPOCH = "v1"
-
-
-class EventReplicationError(ValueError):
-    """The runner stream conflicts with the archived prefix or skips an entry."""
-
-    def __init__(self, message: str, *, cursor: int | None = None) -> None:
-        super().__init__(message)
-        self.cursor = cursor
 
 
 class ThreadFoldError(EventReplicationError):
