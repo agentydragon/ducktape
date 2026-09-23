@@ -11,25 +11,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEgressToPortsRules,
-    CiliumNetworkPolicySpecEgressToPortsRulesDns,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
+from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
@@ -65,6 +47,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -77,7 +60,7 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _DB_NAME = "gatus-db"
 _ZONE = "hil-ovh"
 _HELM_REPOSITORY = "twin"
-_PORT = "8080"
+_PORT = 8080
 
 
 def _namespace(scope: Construct) -> None:
@@ -205,41 +188,22 @@ def _helm_release(scope: Construct) -> None:
 
 
 def _network_policies(scope: Construct) -> None:
-    endpoint_selector = CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS)
-    http_port = CiliumNetworkPolicySpecIngressToPorts(
-        ports=[
-            CiliumNetworkPolicySpecIngressToPortsPorts(
-                port=_PORT, protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-            )
-        ]
-    )
     # Restrict Gatus ingress to the Cilium gateway and Prometheus scraping. With native
     # OIDC, auth is handled by Gatus itself — gateway passes traffic directly.
     #
     # Uses CiliumNetworkPolicy because standard K8s NetworkPolicy cannot match Cilium
     # Gateway API traffic (reserved:ingress identity via hostNetwork Envoy).
-    CiliumNetworkPolicy(
+    cilium.network_policy(
         scope,
         "ingress",
         metadata=metadata("gatus-ingress", _NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=endpoint_selector,
-            ingress=[
-                # Cilium Gateway API (reserved:ingress identity) → Gatus
-                CiliumNetworkPolicySpecIngress(
-                    from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS], to_ports=[http_port]
-                ),
-                # Prometheus → Gatus (ServiceMonitor scraping)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=[
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={"k8s:io.kubernetes.pod.namespace": "monitoring"}
-                        )
-                    ],
-                    to_ports=[http_port],
-                ),
-            ],
-        ),
+        selector=_LABELS,
+        ingress=[
+            # Cilium Gateway API (reserved:ingress identity) → Gatus
+            cilium.ingress_from_gateway(_PORT),
+            # Prometheus → Gatus (ServiceMonitor scraping)
+            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+        ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
     # (`hubble_dns_queries_total`) and the FQDN cache populates — which is what lets
@@ -250,46 +214,26 @@ def _network_policies(scope: Construct) -> None:
     # policy, and a policy enforces. This one is written to enforce nothing — an
     # egress rule flips the endpoint to default-deny, so the second rule has to
     # re-admit everything Gatus reaches.
-    CiliumNetworkPolicy(
+    cilium.network_policy(
         scope,
         "dns-visibility",
         metadata=metadata("gatus-dns-visibility", _NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=endpoint_selector,
-            egress=[
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.ANY
-                                )
-                            ],
-                            rules=CiliumNetworkPolicySpecEgressToPortsRules(
-                                dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                            ),
-                        )
-                    ],
-                ),
-                # Everything else, deliberately unrestricted.
-                #
-                # No `toPorts`: egress to a ClusterIP is matched on the backend `targetPort`,
-                # not the Service port, because socket-LB rewrites before policy is enforced
-                # (cluster/docs/cilium_network_policy.md). Gatus probes 13 in-cluster
-                # Services across as many namespaces, so enumerating their targetPorts would
-                # be a list that silently rots.
-                #
-                # `all`, not `world`: the nine `*.allegedly.works` endpoints Gatus checks all
-                # resolve to node ExternalIPs, which carry `reserved:remote-node` or
-                # `reserved:host` — Cilium carves those out of `world`.
-                CiliumNetworkPolicySpecEgress(to_entities=[CiliumNetworkPolicySpecEgressToEntities.ALL]),
-            ],
-        ),
+        selector=_LABELS,
+        egress=[
+            cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
+            # Everything else, deliberately unrestricted.
+            #
+            # No `toPorts`: egress to a ClusterIP is matched on the backend `targetPort`,
+            # not the Service port, because socket-LB rewrites before policy is enforced
+            # (cluster/docs/cilium_network_policy.md). Gatus probes 13 in-cluster
+            # Services across as many namespaces, so enumerating their targetPorts would
+            # be a list that silently rots.
+            #
+            # `all`, not `world`: the nine `*.allegedly.works` endpoints Gatus checks all
+            # resolve to node ExternalIPs, which carry `reserved:remote-node` or
+            # `reserved:host` — Cilium carves those out of `world`.
+            CiliumNetworkPolicySpecEgress(to_entities=[CiliumNetworkPolicySpecEgressToEntities.ALL]),
+        ],
     )
 
 

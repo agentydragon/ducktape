@@ -36,6 +36,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
