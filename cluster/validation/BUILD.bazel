@@ -662,6 +662,7 @@ py_test(
     data = ["//cluster/k8s:cluster_all_files"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
