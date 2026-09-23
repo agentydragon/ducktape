@@ -46,9 +46,13 @@ bbr test //agentplane/app/...
   copies the running sandboxes' runner sessions into the event log: the `Ingester` holds one lease
   per sandbox across replicas and runs a `Feed` per session, which batches the runner's events for
   `Ingestion` to record, the event log's and the fold's writes in one transaction under the lease.
-  `event_stream.py` streams a thread's stored event log as SSE from the database, so any replica
-  serves it without a runner. `api.py` is the REST surface and the OpenAPI schema
-  `export_schema.py` emits for the frontend's generated client.
+  `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
+  generated client.
+- `agent_runtime/events/`: the app's copy of each runner session's event log. `event_log.py`
+  (`EventLogStore`: the copied runner events and the feed state), `ingestion_lease.py` (which
+  replica ingests a sandbox), `stream.py` (a thread's stored event log as SSE from the database, so
+  any replica serves it without a runner) and `debug.py` (the typed, paginated observation and
+  evidence reads).
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
@@ -58,14 +62,13 @@ bbr test //agentplane/app/...
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
-  thread entities, and immutable content chunks/manifests. Each ingestion transaction
-  folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  Layered bottom-up, one store per level: `models.py` (the tables); `event_log.py`
-  (`EventLogStore`: the copied runner events and the feed state) and `ingestion_lease.py` (which
-  replica ingests a sandbox); the fold over them in `agent_runtime/view/`; `store.py`
-  (`ThreadStore`: a thread over its event log, with the name and archive state an operator sets). `updates.py`
-  turns committed PostgreSQL notifications into replica-local wakeups.
+- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized thread
+  entities, and immutable content chunks/manifests. Each ingestion transaction folds only the batch
+  and its touched entities, then commits all projection writes and checkpoint. Layered bottom-up
+  over the event log in `agent_runtime/events/`, one store per level: `models.py` (the tables); the
+  fold over them in `agent_runtime/view/`; `store.py` (`ThreadStore`: a thread over its event log,
+  with the name and archive state an operator sets). `updates.py` turns committed PostgreSQL
+  notifications into replica-local wakeups.
 - `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
   typed deterministic event fold with independent item revisions), `views.py` (the rows' client
   contract), `rows.py` (fold records to and from entity rows), `payloads.py` (insert-only bodies),

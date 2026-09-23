@@ -12,9 +12,17 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.app.agent_runtime.events.debug import (
+    EvidenceObservation,
+    EvidencePage,
+    NativeFrame,
+    NativeFramePage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
+from agentplane.app.agent_runtime.events.event_log import ThreadNotFoundError
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
-from agentplane.app.thread.event_log import ThreadNotFoundError
 from agentplane.app.thread.models import (
     Event,
     EventLog,
@@ -23,14 +31,6 @@ from agentplane.app.thread.models import (
     ThreadEvidence,
     ThreadNativeLink,
     ThreadPayloadManifest,
-)
-from agentplane.app.thread_debug import (
-    EvidenceObservation,
-    EvidencePage,
-    NativeFrame,
-    NativeFramePage,
-    ThreadEvidenceNotFoundError,
-    ThreadScopeChangedError,
 )
 from agentplane.protocol import command_pb2, event_log_pb2
 

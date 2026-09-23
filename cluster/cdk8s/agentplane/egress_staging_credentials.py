@@ -45,7 +45,9 @@ from cluster.cdk8s.agentplane.egress_credentials import (
 )
 from cluster.cdk8s.metadata import metadata
 
-_FORGEJO_STORE = "kubernetes-agentplane-staging-forgejo-secret-store"
+# Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
+# service account whose app password it holds.
+_GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
@@ -61,35 +63,43 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
-    _grocy_sf_readonly(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
-def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+def _source_store(
+    scope: Construct,
+    id: str,
+    *,
+    reader: ServiceAccount,
+    source_namespace: str,
+    source_secret: str,
+    credentials_namespace: str,
+) -> str:
+    """A ClusterSecretStore through which `credentials_namespace` reads `source_secret` out of
+    `source_namespace`, returning the store's name. It authenticates as the credentials namespace's
+    own `reader`, which a Role in `source_namespace` lets get that one Secret and nothing else."""
+    reader_role = f"agentplane-staging-egress-{id}-reader"
     source_role = Role(
         scope,
-        "forgejo-source-role",
-        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
+        f"{id}-source-role",
+        metadata=metadata(reader_role, source_namespace),
         rules=[
-            RolePolicyRule(
-                resources=[Secret.from_secret_name(scope, "forgejo-source", "haku-forgejo-git")], verbs=["get"]
-            )
+            RolePolicyRule(resources=[Secret.from_secret_name(scope, f"{id}-source", source_secret)], verbs=["get"])
         ],
     )
     RoleBinding(
-        scope,
-        "forgejo-source-binding",
-        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
-        role=source_role,
+        scope, f"{id}-source-binding", metadata=metadata(reader_role, source_namespace), role=source_role
     ).add_subjects(reader)
+    store = f"kubernetes-agentplane-staging-{id}-secret-store"
     ClusterSecretStore(
         scope,
-        "forgejo-store",
-        metadata=ApiObjectMetadata(name=_FORGEJO_STORE),
+        f"{id}-store",
+        metadata=ApiObjectMetadata(name=store),
         spec=ClusterSecretStoreSpec(
             conditions=[ClusterSecretStoreSpecConditions(namespaces=[credentials_namespace])],
             provider=ClusterSecretStoreSpecProvider(
                 kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    remote_namespace="haku-sandbox",
+                    remote_namespace=source_namespace,
                     auth=ClusterSecretStoreSpecProviderKubernetesAuth(
                         service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
                             name=EXTERNAL_CREDS_READER
@@ -107,13 +117,24 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             ),
         ),
     )
+    return store
+
+
+def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
         target="haku-forgejo-git",
         source="haku-forgejo-git",
         key="password",
-        store=_FORGEJO_STORE,
+        store=_source_store(
+            scope,
+            "forgejo",
+            reader=reader,
+            source_namespace="haku-sandbox",
+            source_secret="haku-forgejo-git",
+            credentials_namespace=credentials_namespace,
+        ),
     )
     EgressCredential(
         scope,
@@ -230,14 +251,21 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
     )
 
 
-def _grocy_sf_readonly(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
         target="grocy-sf-readonly",
-        source="grocy-sf-readonly-token",
-        key="token",
-        store="kubernetes-flux-system-secret-store",
+        source=_GROCY_SF_ACCOUNT,
+        key="password",
+        store=_source_store(
+            scope,
+            "grocy-sf",
+            reader=reader,
+            source_namespace="agents-infra",
+            source_secret=_GROCY_SF_ACCOUNT,
+            credentials_namespace=credentials_namespace,
+        ),
     )
     EgressCredential(
         scope,
@@ -245,20 +273,21 @@ def _grocy_sf_readonly(scope: Construct, *, namespace: str, credentials_namespac
         metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
         spec=EgressCredentialSpec(
             description=(
-                "An Authentik-outpost-scoped bearer token minted and refreshed by the "
-                "authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into "
-                "this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP "
-                "server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works "
-                "outpost accepts. The proxy does not narrow what the token itself may do -- "
-                "`grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read "
-                "routes."
+                f"The app password of `{_GROCY_SF_ACCOUNT}`, an Authentik service account admitted to "
+                "the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into "
+                "this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the "
+                "account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the "
+                "password only on GETs to Grocy's read routes."
             ),
             source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="token")
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="password")
             ),
+            # The grocy-sf.allegedly.works outpost turns HTTP Basic into a client_credentials grant
+            # against its own proxy provider, so the placeholder travels as the password half. A
+            # client sends the username itself; only the password is substituted here.
             targets=[
                 EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
                 )
             ],
         ),

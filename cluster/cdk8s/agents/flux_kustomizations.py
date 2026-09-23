@@ -192,8 +192,6 @@ def authentik_jwt_rotation(
                 )
             ],
             timeout="2m",
-            # grocy-sf-readonly-token.sops.yaml's seed placeholder.
-            decryption=SOPS_DECRYPTION,
         ),
     )
 

@@ -13,13 +13,13 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.app.agent_runtime.events import event_log, ingestion_lease
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedError
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.recording import ThreadFoldError, record_thread_fold, set_operational
 from agentplane.app.inventory import SandboxNotFoundError
 from agentplane.app.runners import Runners, SandboxNotReachableError
-from agentplane.app.thread import event_log, ingestion_lease
-from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedError
-from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.thread.updates import notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2

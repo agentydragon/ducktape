@@ -7,12 +7,12 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.view.recording import ThreadFoldError
 from agentplane.app.agent_runtime.view.views import EntityKind, ThreadOperationalState
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.ingestion import Ingestion
-from agentplane.app.thread.event_log import EventLogStore
-from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.models import (
     ThreadCheckpoint,
     ThreadEntity,
