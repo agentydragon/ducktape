@@ -10,8 +10,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.generation import write_charts
 
 NAME = "nvidia-runtimeclass"
 OUTPUT_DIR = "cluster/k8s/nvidia-runtimeclass"
@@ -26,7 +26,6 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def nvidia_runtimeclass(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
