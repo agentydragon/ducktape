@@ -85,6 +85,7 @@ from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
     forgejo_tea as haku_forgejo_tea,
+    mailbox as haku_mailbox,
     namespace as haku_namespace,
     rbac as haku_rbac,
     workloads as haku_workloads,
@@ -169,6 +170,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_config.write_manifests(root)
     haku_workloads.write_manifests(root)
     haku_workspaces.write_manifests(root)
+    haku_mailbox.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)

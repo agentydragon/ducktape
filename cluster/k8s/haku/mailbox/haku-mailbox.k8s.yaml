@@ -1,0 +1,428 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: haku-mailbox
+    pod-security.kubernetes.io/enforce: privileged
+  name: haku-mailbox
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: haku-mailbox-db
+  namespace: haku-mailbox
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: stalwart
+      owner: stalwart
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 10Gi
+    storageClass: local-path-ovh
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-mailbox
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    description: STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs (Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the receiver when cert-manager rotates this.
+  name: mx-allegedly-works
+  namespace: haku-mailbox
+spec:
+  dnsNames:
+    - mx.allegedly.works
+  issuerRef:
+    kind: ClusterIssuer
+    name: ${LETSENCRYPT_ISSUER}
+  secretName: mx-allegedly-works-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: haku-mailbox
+  name: haku-mailbox
+  namespace: haku-mailbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-mailbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - /usr/local/bin/stalwart
+            - --config
+            - /etc/stalwart/config.json
+          env:
+            - name: STALWART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-mailbox-db-app
+            - name: STALWART_PUBLIC_URL
+              value: https://haku-mailbox.allegedly.works
+          image: git.allegedly.works/ducktape-ci/stalwart:unset
+          livenessProbe:
+            exec:
+              command:
+                - curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8080/healthz/live
+            periodSeconds: 30
+          name: stalwart
+          ports:
+            - containerPort: 2525
+              name: smtp
+            - containerPort: 8080
+              name: http
+            - containerPort: 1143
+              name: imap
+          readinessProbe:
+            exec:
+              command:
+                - curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8080/healthz/ready
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            exec:
+              command:
+                - curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8080/healthz/live
+            failureThreshold: 30
+            periodSeconds: 5
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /etc/stalwart
+              name: config
+              readOnly: true
+            - mountPath: /tls
+              name: tls
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - /bin/sh
+            - /etc/stalwart/initialize.sh
+          env:
+            - name: STALWART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-mailbox-db-app
+            - name: STALWART_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-mailbox-admin
+            - name: STALWART_PUBLIC_URL
+              value: https://haku-mailbox.allegedly.works
+          image: git.allegedly.works/ducktape-ci/stalwart:unset
+          name: initialize
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - NET_BIND_SERVICE
+              drop:
+                - ALL
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /etc/stalwart
+              name: config
+              readOnly: true
+            - mountPath: /tls
+              name: tls
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      volumes:
+        - configMap:
+            defaultMode: 365
+            name: haku-mailbox-config
+          name: config
+        - name: tls
+          secret:
+            secretName: mx-allegedly-works-tls
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Cluster-internal SMTP backend for the per-node haku-mailbox-smtp-ingress proxies. The proxies carry the sending MTA address in PROXY protocol so Stalwart can evaluate SPF against the real peer.
+  name: haku-mailbox-smtp
+  namespace: haku-mailbox
+spec:
+  ports:
+    - name: smtp
+      port: 2525
+      targetPort: smtp
+  selector:
+    app.kubernetes.io/name: haku-mailbox
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: "Stalwart's cluster-internal listeners: HTTP (JMAP + management API, exposed publicly only via the cluster-gateway HTTPRoute haku-mailbox.allegedly.works) and plaintext IMAP for haku-sandbox clients (himalaya) — no route, no externalIPs, OAUTHBEARER-only auth."
+  name: haku-mailbox
+  namespace: haku-mailbox
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: imap
+      port: 1143
+      targetPort: imap
+  selector:
+    app.kubernetes.io/name: haku-mailbox
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    description: Per-public-node port-25 TCP ingress. Preserves the sending MTA address through PROXY protocol so Stalwart's SPF gate remains meaningful.
+    reloader.stakater.com/auto: "true"
+  name: haku-mailbox-smtp-ingress
+  namespace: haku-mailbox
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox-smtp-ingress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-mailbox-smtp-ingress
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9
+          livenessProbe:
+            periodSeconds: 30
+            tcpSocket:
+              port: smtp
+          name: nginx
+          ports:
+            - containerPort: 2525
+              hostPort: 25
+              name: smtp
+              protocol: TCP
+          readinessProbe:
+            periodSeconds: 10
+            tcpSocket:
+              port: smtp
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - mountPath: /etc/nginx/nginx.conf
+              name: config
+              readOnly: true
+              subPath: nginx.conf
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/cache/nginx
+              name: cache
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - configMap:
+            name: haku-mailbox-smtp-ingress
+          name: config
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+          name: tmp
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+          name: cache
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-mailbox-smtp-ingress
+  namespace: haku-mailbox
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-mailbox
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox-smtp-ingress
+  ingress:
+    - fromEntities:
+        - world
+        - host
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-mailbox
+  namespace: haku-mailbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-mailbox-smtp-ingress
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "1143"
+              protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: "Public route to Stalwart's HTTP listener: JMAP for haku (authenticated with its Authentik-issued bearer, validated by the server's OIDC directory) plus the management API/WebUI (admin credential only, which haku cannot read). SMTP (:25) enters through the per-node TCP ingress DaemonSet, not the HTTP gateway."
+  name: haku-mailbox
+  namespace: haku-mailbox
+spec:
+  hostnames:
+    - haku-mailbox.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: haku-mailbox
+          port: 8080
+      timeouts:
+        backendRequest: 60s
+        request: 60s
