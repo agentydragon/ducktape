@@ -116,6 +116,8 @@ _GENERATED_FILES = (
     "cluster/k8s/metrics-server/kustomization.yaml",
     "cluster/k8s/reflector/reflector.k8s.yaml",
     "cluster/k8s/reflector/kustomization.yaml",
+    "cluster/k8s/keda/keda.k8s.yaml",
+    "cluster/k8s/keda/kustomization.yaml",
 )
 
 

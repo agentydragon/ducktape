@@ -9,9 +9,10 @@ import yaml
 
 
 def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path) -> None:
-    keda_repository, keda_release = list(
-        yaml.safe_load_all((k8s_dir / "keda/helmrelease.yaml").read_text(encoding="utf-8"))
-    )
+    keda = {
+        doc["kind"]: doc for doc in yaml.safe_load_all((k8s_dir / "keda/keda.k8s.yaml").read_text(encoding="utf-8"))
+    }
+    keda_repository, keda_release = keda["HelmRepository"], keda["HelmRelease"]
     auth, scaled_job = list(yaml.safe_load_all((k8s_dir / "haku-ci/scaledjob.yaml").read_text(encoding="utf-8")))
     source_ref = keda_release["spec"]["chart"]["spec"]["sourceRef"]
     assert (source_ref["name"], source_ref["namespace"]) == (

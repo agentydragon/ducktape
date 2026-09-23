@@ -23,6 +23,7 @@ from cluster.cdk8s import (
     ha_mcp,
     haku_openclaw_spike_config,
     hubble_ui,
+    keda,
     kube_system,
     metrics_server,
     ntfy,
@@ -94,7 +95,6 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
-from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
@@ -192,6 +192,7 @@ def generate_manifests(root: Path) -> None:
     hubble_ui.write_manifests(root)
     metrics_server.write_manifests(root)
     reflector.write_manifests(root)
+    keda.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -304,8 +305,8 @@ def generate_manifests(root: Path) -> None:
     )
     descheduler_artifact = artifact("descheduler", descheduler.OUTPUT_DIR)
     descheduler.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
-    keda_artifact = artifact("keda", "cluster/k8s/keda")
-    keda_kustomization = keda_flux_kustomizations.keda(flux_chart, keda_artifact, kyverno_kustomization)
+    keda_artifact = artifact("keda", keda.OUTPUT_DIR)
+    keda_kustomization = keda.keda(flux_chart, keda_artifact, kyverno_kustomization)
     kyverno_policies_artifact = artifact("kyverno-policies", "cluster/k8s/kyverno/policies")
     kyverno_policies_kustomization = kyverno_flux_kustomizations.kyverno_policies(
         flux_chart, kyverno_policies_artifact, kyverno_kustomization

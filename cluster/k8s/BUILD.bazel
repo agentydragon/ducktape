@@ -154,6 +154,8 @@ exports_files(
         "metrics-server/kustomization.yaml",
         "reflector/reflector.k8s.yaml",
         "reflector/kustomization.yaml",
+        "keda/keda.k8s.yaml",
+        "keda/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
@@ -247,7 +249,7 @@ filegroup(
         "haku/rbac/rolebinding-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/image/haku-sandbox-setup.sh",
-        "keda/helmrelease.yaml",
+        "keda/keda.k8s.yaml",
         "kustomization.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
