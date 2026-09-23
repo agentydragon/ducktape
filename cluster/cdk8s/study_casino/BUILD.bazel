@@ -15,3 +15,21 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)

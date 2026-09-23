@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: study-casino
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: study-casino
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: CNPG Postgres for study-casino state.
+  name: study-casino-db
+  namespace: study-casino
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: studycasino
+      owner: studycasino
+  instances: 3
+  managed:
+    roles:
+      - comment: Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)
+        ensure: present
+        login: true
+        name: study_casino_ro
+        passwordSecret:
+          name: study-casino-db-readonly
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 1Gi
+    storageClass: local-path-ovh
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Applies the read-only object GRANTs for study_casino_ro. The role itself is managed declaratively by CNPG (Cluster.spec.managed.roles).
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: study-casino-db-readonly-provisioner
+  namespace: study-casino
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: study-casino-db-readonly-provisioner
+    spec:
+      containers:
+        - args:
+            - |
+              set -x
+              echo "PGUSER=${PGUSER:-<unset>}"
+              echo "PGHOST=${PGHOST:-<unset>}"
+              echo "PGDATABASE=${PGDATABASE:-<unset>}"
+              echo "PGPASSWORD set: ${PGPASSWORD:+yes}"
+              exec psql \
+                --set=ON_ERROR_STOP=1 \
+                -f /sql/readonly-role.sql
+          command:
+            - /bin/bash
+            - -c
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: study-casino-db-app
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: study-casino-db-app
+            - name: PGHOST
+              value: study-casino-db-rw.study-casino.svc
+            - name: PGDATABASE
+              value: studycasino
+          image: ghcr.io/cloudnative-pg/postgresql:18.6
+          name: psql
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /sql
+              name: sql
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      restartPolicy: Never
+      volumes:
+        - configMap:
+            name: study-casino-db-readonly-sql
+          name: sql
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: study-casino
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: study-casino
+  namespace: study-casino
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: study-casino
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: study-casino
+  namespace: study-casino
+spec:
+  hostnames:
+    - casino.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: study-casino
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Cache-Control
+                value: public, max-age=31536000, immutable
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: PathPrefix
+            value: /fonts/
+    - backendRefs:
+        - name: study-casino
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Cache-Control
+                value: public, max-age=31536000, immutable
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: PathPrefix
+            value: /assets/
+    - backendRefs:
+        - name: study-casino
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Cache-Control
+                value: no-store
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-secrets-reader
+  namespace: study-casino
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: secrets-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users

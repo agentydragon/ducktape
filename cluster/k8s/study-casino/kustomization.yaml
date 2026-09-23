@@ -1,15 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - postgres-cluster.yaml
+  # cdk8s-generated (cluster/cdk8s/study_casino/app.py).
+  - study-casino.k8s.yaml
   - readonly-secret.sops.yaml
-  - readonly-role-provisioner-job.yaml
-  - forgejo-images-creds-eso.yaml
+  # Hand-written: its image and STUDY_CASINO_IMAGE_TAG carry Flux image-automation markers.
   - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - rolebinding-secrets-reader.yaml
 configMapGenerator:
   - name: study-casino-db-readonly-sql
     namespace: study-casino

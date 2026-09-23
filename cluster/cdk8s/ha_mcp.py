@@ -245,7 +245,7 @@ class HaMcpCredentialsProvisioner(Construct):
                     # Deliberately NOT applied to change-driven provisioners (the
                     # readonly-role GRANT Jobs): for those the TTL would convert a
                     # run-on-change script into a run-on-schedule one. See
-                    # study-casino/readonly-role-provisioner-job.yaml.
+                    # cluster/cdk8s/study_casino/app.py (the readonly provisioner Job).
                     "kustomize.toolkit.fluxcd.io/force": "enabled",
                 },
             ),
