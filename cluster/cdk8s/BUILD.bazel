@@ -140,10 +140,16 @@ py_library(
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
     deps = [
         ":config_format",
+        ":forgejo_images",
         ":generation",
+        ":metadata",
         ":model_rosters",
         ":openclaw_gateway",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 
@@ -643,6 +649,7 @@ py_test(
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/namespace.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
+        "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/namespace.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
