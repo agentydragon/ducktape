@@ -25,18 +25,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, create_app
-from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.ingestion import Ingestion
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.runners import Runners
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
@@ -265,18 +266,13 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
-
-        async def running_sandboxes() -> list[str]:
-            return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
-
+        runners = Runners(live, settings.runner_port)
         bridge = RunnerBridge(
-            address_of=runner_address(live, settings.runner_port),
+            runners=runners,
             event_logs=event_logs,
             ingestion=Ingestion(engine),
             content=content,
             thread_changes=thread_updates.changes,
-            discover_sandboxes=running_sandboxes,
-            sandbox_changes=live.changes,
         )
 
         operator_actions = (
@@ -334,9 +330,9 @@ async def async_main(settings: Settings) -> None:
                     drain_of(app),
                 ),
                 bridge=bridge,
+                runners=runners,
                 thread_updates=thread_updates,
                 engine=engine,
-                sandboxes=running_sandboxes,
             )
         finally:
             watch_task.cancel()
@@ -347,18 +343,19 @@ async def serve_then_close(
     server: uvicorn.Server,
     *,
     bridge: RunnerBridge,
+    runners: Runners,
     thread_updates: ThreadUpdates,
     engine: AsyncEngine,
-    sandboxes: DiscoverSandboxes,
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the bridge's lease release and closing the
-    database have the rest of the Pod's grace period to themselves."""
+    runner connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        await bridge.start(await sandboxes())
+        await bridge.start()
         await server.serve()
     finally:
         await bridge.close()
+        await runners.close()
         await thread_updates.close()
         await engine.dispose()
 

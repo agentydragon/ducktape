@@ -65,9 +65,9 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     events = f"/threads/{thread_id}/events/stream"
-    async with asyncio.timeout(45), source.serve() as target:
+    async with asyncio.timeout(45), source.serve() as runner_port:
         async with (
-            app_process(db_url, target, boundary=boundary, cursor=4) as first,
+            app_process(db_url, runner_port, boundary=boundary, cursor=4) as first,
             httpx.AsyncClient(base_url=first.url, timeout=None) as browser,
             aconnect_sse(browser, "GET", events) as connection,
         ):
@@ -148,7 +148,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-item", text="retained text")))
             async with (
-                app_process(db_url, target) as successor,
+                app_process(db_url, runner_port) as successor,
                 httpx.AsyncClient(base_url=successor.url, timeout=None) as reconnected,
             ):
                 # Discovery first inspects the runner, then reattaches including the archived

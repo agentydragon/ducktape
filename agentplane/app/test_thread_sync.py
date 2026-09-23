@@ -117,8 +117,8 @@ async def _cross_replica_sync(
 ) -> None:
     async with (
         asyncio.timeout(60),
-        app_process(service.database_url, "unused", sandbox_state=None, electric_url=service.url) as first,
-        app_process(service.database_url, "unused", sandbox_state=None, electric_url=service.url) as second,
+        app_process(service.database_url, runner_port=0, sandbox_state=None, electric_url=service.url) as first,
+        app_process(service.database_url, runner_port=0, sandbox_state=None, electric_url=service.url) as second,
         httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
         httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
     ):

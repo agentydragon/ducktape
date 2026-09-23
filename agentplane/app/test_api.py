@@ -24,6 +24,7 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.runners import Runners
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -500,29 +501,22 @@ def test_a_runner_that_does_not_answer_is_a_503(
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
-    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
-    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    live_index.sandboxes["live"] = sandbox("live")
+    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
 
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
-        address = f"127.0.0.1:{closed_port.getsockname()[1]}"
-
-        async def nobody_listens(name: str) -> str:
-            return address
-
         app = create_app(
             inventory,
             RunnerBridge(
-                address_of=nobody_listens,
+                runners=Runners(live_index, closed_port.getsockname()[1]),
                 event_logs=event_logs,
                 ingestion=ingestion,
                 content=content,

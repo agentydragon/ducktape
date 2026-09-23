@@ -17,16 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.ingestion import Ingestion
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.runners import Runners
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -195,16 +196,23 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
+async def runners(live_index: LiveIndex) -> AsyncIterator[Runners]:
+    """The runners `live_index` shows, dialled on a port nothing listens on."""
+    runners = Runners(live_index, port=1)
+    yield runners
+    await runners.close()
+
+
+@pytest.fixture
 def bridge(
-    event_logs: EventLogStore, ingestion: Ingestion, content: ContentStore, thread_updates: ThreadUpdates
+    runners: Runners,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    content: ContentStore,
+    thread_updates: ThreadUpdates,
 ) -> RunnerBridge:
-    """A bridge with nothing to dial, for the inventory and thread routes."""
-
-    async def unreachable(name: str) -> str:
-        raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
-
     return RunnerBridge(
-        address_of=unreachable,
+        runners=runners,
         event_logs=event_logs,
         ingestion=ingestion,
         content=content,

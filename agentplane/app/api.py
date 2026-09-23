@@ -61,6 +61,7 @@ from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
+from agentplane.app.runners import SandboxNotReachableError
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.thread.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
@@ -916,8 +917,8 @@ def create_app(
     async def _unknown_policy_set(_request: Request, error: UnknownPolicySetError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
-    @app.exception_handler(runner_bridge.SandboxNotReachableError)
-    async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
+    @app.exception_handler(SandboxNotReachableError)
+    async def _not_reachable(_request: Request, error: SandboxNotReachableError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)

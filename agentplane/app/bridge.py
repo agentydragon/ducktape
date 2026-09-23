@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
@@ -18,9 +17,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.changes import Changes
 from agentplane.app.ingestion import Ingestion, event_batches
-from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
-from agentplane.app.live import LiveIndex
+from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError
 from agentplane.app.presets import PresetCatalog
+from agentplane.app.runners import Runners, SandboxNotReachableError
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedError, ThreadNotFoundError
 from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
@@ -35,14 +34,6 @@ logger = logging.getLogger(__name__)
 RECONCILE_S = 2
 COMMAND_ADMISSION_S = 15
 LEASE_DURATION = timedelta(seconds=30)
-AddressOf = Callable[[str], Awaitable[str]]
-DiscoverSandboxes = Callable[[], Awaitable[list[str]]]
-
-
-class SandboxNotReachableError(Exception):
-    def __init__(self, name: str, state: ProvisioningState) -> None:
-        super().__init__(f"sandbox {name=} has no reachable runner: it is {state}")
-        self.name = name
 
 
 class MalformedMessageError(Exception):
@@ -62,18 +53,6 @@ class NewSession(BaseModel):
     spec: dict[str, object] = Field(
         description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
     )
-
-
-def runner_address(index: LiveIndex, port: int) -> AddressOf:
-    async def address_of(name: str) -> str:
-        view = index.sandbox_view(name)
-        if view is None:
-            raise SandboxNotFoundError(name)
-        if view.state is not ProvisioningState.RUNNING or view.pod is None or view.pod.ip is None:
-            raise SandboxNotReachableError(name, view.state)
-        return f"{view.pod.ip}:{port}"
-
-    return address_of
 
 
 class Feed:
@@ -156,53 +135,37 @@ class RunnerBridge:
     def __init__(
         self,
         *,
-        address_of: AddressOf,
+        runners: Runners,
         event_logs: EventLogStore,
         ingestion: Ingestion,
         content: ContentStore,
         thread_changes: Changes,
-        discover_sandboxes: DiscoverSandboxes | None = None,
-        sandbox_changes: Changes | None = None,
     ) -> None:
-        self._address_of = address_of
+        self._runners = runners
         self._event_logs = event_logs
         self._ingestion = ingestion
         self._content = content
         self._thread_changes = thread_changes
-        self._discover_sandboxes = discover_sandboxes
-        self._sandbox_changes = sandbox_changes
-        self._clients: dict[str, RunnerClient] = {}
         self._feeds: dict[tuple[str, str], Feed] = {}
         self._leases: dict[str, IngestionLease] = {}
-        self._sandboxes: set[str] = set()
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
 
-    async def _client(self, sandbox: str) -> RunnerClient:
-        address = await self._address_of(sandbox)
-        if address not in self._clients:
-            self._clients[address] = RunnerClient(address)
-        return self._clients[address]
-
-    async def start(self, running_sandboxes: list[str]) -> None:
-        self._sandboxes.update(running_sandboxes)
+    async def start(self) -> None:
+        """Start the ingestion coordinator, or wake it to reconcile now."""
         if self._coordinator is None:
             self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
         self._changed.set()
 
     async def _coordinate(self) -> None:
-        with contextlib.ExitStack() as subscriptions:
-            if self._sandbox_changes is not None:
-                subscriptions.enter_context(self._sandbox_changes.subscribe(self._changed))
+        with self._runners.changes.subscribe(self._changed):
             await self._coordinate_subscribed()
 
     async def _coordinate_subscribed(self) -> None:
         while True:
             self._changed.clear()
             try:
-                if self._discover_sandboxes is not None:
-                    self._sandboxes = set(await self._discover_sandboxes())
                 await self.reconcile()
             except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
                 logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
@@ -210,12 +173,13 @@ class RunnerBridge:
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
 
     async def reconcile(self) -> None:
-        """Renew ownership and discover sessions opened through any replica."""
+        """Renew ownership of the running sandboxes and discover sessions opened through any replica."""
         async with self._reconcile_lock:
-            for sandbox in set(self._leases) - self._sandboxes:
+            running = self._runners.running()
+            for sandbox in set(self._leases) - running:
                 await self._release(sandbox)
             async with asyncio.TaskGroup() as tasks:
-                for sandbox in sorted(self._sandboxes):
+                for sandbox in sorted(running):
                     tasks.create_task(self._reconcile_sandbox(sandbox))
 
     async def _reconcile_sandbox(self, sandbox: str) -> None:
@@ -232,7 +196,7 @@ class RunnerBridge:
                     self._leases[sandbox] = lease
                 try:
                     async with asyncio.timeout(5):
-                        client = await self._client(sandbox)
+                        client = self._runners.client(sandbox)
                         summaries = await client.list_sessions()
                     for summary in summaries:
                         key = (sandbox, summary.session_id)
@@ -276,11 +240,11 @@ class RunnerBridge:
         await self._ingestion.release(self._leases.pop(sandbox))
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
-        return await (await self._client(sandbox)).list_sessions()
+        return await self._runners.client(sandbox).list_sessions()
 
     async def initialize(self, sandbox: str, script: str) -> protocol_pb2.InitializeResult:
         try:
-            result = await (await self._client(sandbox)).initialize(script)
+            result = await self._runners.client(sandbox).initialize(script)
         except grpc.aio.AioRpcError as error:
             if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
                 raise RunnerError(f"sandbox bootstrap refused: {error.details()}") from error
@@ -300,14 +264,14 @@ class RunnerBridge:
             snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
+        attachment = await self._runners.client(sandbox).attach(session_id, spec=spec)
         try:
             attached = attachment.attached
         finally:
             # Open has completed when Attached arrives. This caller needs no history replay.
             attachment.cancel()
         thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
-        await self.start([sandbox])
+        await self.start()
         # In particular, do not return a resumed session while the database still says its
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
         waiter = asyncio.Event()
@@ -332,7 +296,7 @@ class RunnerBridge:
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # A runner rejection can still have followed earlier events the archive has not copied.
         # Start its feed before relaying so the rejection path cannot strand that prefix.
-        await self.start([runner_session.sandbox])
+        await self.start()
         try:
             await self._command(
                 runner_session.sandbox,
@@ -345,7 +309,7 @@ class RunnerBridge:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
-        attachment = await (await self._client(sandbox)).attach(session_id, after_cursor=after_cursor)
+        attachment = await self._runners.client(sandbox).attach(session_id, after_cursor=after_cursor)
         try:
             if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")
@@ -391,7 +355,6 @@ class RunnerBridge:
             self._coordinator = None
         for sandbox in list(self._leases):
             await self._release(sandbox)
-        await asyncio.gather(*(client.close() for client in self._clients.values()))
 
 
 def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
