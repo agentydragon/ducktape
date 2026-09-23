@@ -86,7 +86,7 @@ flowchart TB
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
-    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics reads only; reaches Forgejo as haku"]:::future
+    CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
     SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
@@ -348,11 +348,13 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
 ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic,
-Kubernetes, `forgejo-haku`, `packages` and `google-readonly` policies, and an `ActionPolicyBinding`
-auto-approving reviewed GitHub, Home Assistant, Gmail and Calendar reads plus the whole
-`sandbox-self` set. Its only Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
-ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of non-sensitive cluster state; the
-verified Kubernetes evidence from a sandbox is still a `SelfSubjectReview`, not a read of any object.
+Kubernetes, `forgejo-haku`, `packages`, `google-readonly` and `grocy-sf-readonly` policies, and an
+`ActionPolicyBinding` auto-approving reviewed GitHub, Home Assistant, Gmail and Calendar reads plus
+the whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
+`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of
+non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
+labelled `agent-readable-*`; the verified Kubernetes evidence from a sandbox is still a
+`SelfSubjectReview`, not a read of any object.
 
 `forgejo-haku` is the deliberate part and the widest: at the operator's request, a sandbox of this
 caller's reaches the in-cluster Forgejo as the `haku` service account, by the proxy substituting
