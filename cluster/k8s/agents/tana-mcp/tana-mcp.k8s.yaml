@@ -447,3 +447,53 @@ spec:
           for: 5m
           labels:
             severity: warning
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: Replacement OVH Valkey for Tana MCP facade OAuth state
+  name: mcp-valkey-ovh
+  namespace: tana-mcp
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: mcp-valkey-ovh
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: local-path-ovh

@@ -1274,6 +1274,15 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.6.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml"],
 )
 
+# The redis-operator chart's CRD bundle. Chart 0.26.1 (cluster/cdk8s/valkey.py) ships the same
+# crds.yaml as the operator repo's v0.26.0 tag, which is the raw URL this pins.
+http_file(
+    name = "redis_operator_crds",
+    downloaded_file_path = "crds.yaml",
+    sha256 = "64b5dbd6eb96a1970e53e37e6b8f17195ea030ddbdc5789d26da2a4d2a7803e2",
+    urls = ["https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/charts/redis-operator/crds/crds.yaml"],
+)
+
 # The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
 # BUILD extracts the operator CRs' CRDs. The operators create their other CRDs
 # (VirtualMachine, StorageProfile) at runtime, and upstream publishes no YAML for them.

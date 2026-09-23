@@ -1,10 +1,10 @@
 """The Zot OCI pull-through cache: its Namespace, Deployment (Zot plus the nginx basic-auth
-sidecar for the public endpoint), Service, HTTPRoute and ServiceMonitor.
+sidecar for the public endpoint), Service, HTTPRoute, ServiceMonitor and dedupe-cache
+`RedisReplication`.
 
 Hand-written beside the generated output (cluster/k8s/oci-cache): `kustomization.yaml`
-(its configMapGenerator renders `config.json` and `public-auth-proxy.conf`),
-`puller-credential.sops.yaml`, and the dedupe-cache `RedisReplication`, which has no
-binding.
+(its configMapGenerator renders `config.json` and `public-auth-proxy.conf`) and
+`puller-credential.sops.yaml`.
 """
 
 from __future__ import annotations
@@ -19,6 +19,31 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
+    RedisReplication,
+    RedisReplicationSpec,
+    RedisReplicationSpecAffinity,
+    RedisReplicationSpecAffinityNodeAffinity,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecAffinityPodAntiAffinity,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    RedisReplicationSpecKubernetesConfig,
+    RedisReplicationSpecKubernetesConfigResources,
+    RedisReplicationSpecKubernetesConfigResourcesLimits,
+    RedisReplicationSpecKubernetesConfigResourcesRequests,
+    RedisReplicationSpecRedisConfig,
+    RedisReplicationSpecStorage,
+    RedisReplicationSpecStorageVolumeClaimTemplate,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
+)
 
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -29,6 +54,7 @@ _NAMESPACE = "oci-cache"
 _NAME = "zot"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _PUBLIC_AUTH_PORT = 8080
+_VALKEY = "oci-cache-valkey"
 
 
 def _s3_secret_env(name: str, key: str) -> k8s.EnvVar:
@@ -175,6 +201,97 @@ def _deployment(chart: Chart) -> None:
     )
 
 
+def _valkey(chart: Chart) -> None:
+    RedisReplication(
+        chart,
+        "valkey",
+        metadata=metadata(
+            _VALKEY,
+            _NAMESPACE,
+            annotations={
+                "description": (
+                    "Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's cacheDriver points here"
+                    " (remoteCache); the durable content lives in S3, so this holds only rebuildable metadata/dedupe"
+                    " state. Losing it is acceptable but may cause brief cache misses or require a Zot restart/Valkey"
+                    " flush for stale metadb entries. Uses OVH HDD node-local storage so the operator can rebuild a"
+                    " fresh Valkey replica without depending on the SeaweedFS CSI path."
+                )
+            },
+        ),
+        spec=RedisReplicationSpec(
+            cluster_size=2,
+            kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                image="valkey/valkey:9-alpine",
+                image_pull_policy="IfNotPresent",
+                resources=RedisReplicationSpecKubernetesConfigResources(
+                    requests={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
+                    },
+                    limits={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("256Mi"),
+                    },
+                ),
+            ),
+            redis_config=RedisReplicationSpecRedisConfig(max_memory_percent_of_limit=80),
+            storage=RedisReplicationSpecStorage(
+                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
+                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="local-path-ovh-hdd",
+                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "2Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            affinity=RedisReplicationSpecAffinity(
+                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    # Prefer ordinary workers; this workload writes node-local cache state.
+                    preferred_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
+                            weight=100,
+                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
+                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                ),
+                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
+                    required_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                                match_labels={"app": _VALKEY}
+                            ),
+                            topology_key="kubernetes.io/hostname",
+                        )
+                    ]
+                ),
+            ),
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     k8s.KubeNamespace(
@@ -249,6 +366,7 @@ def chart(app: App) -> Chart:
             endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics", scrape_timeout="10s")],
         ),
     )
+    _valkey(chart)
     return chart
 
 

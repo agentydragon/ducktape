@@ -5,8 +5,7 @@ mcp-oauth-facade, with its config, Service, HTTPRoute and ingress policy; and
 The facade's image tag is the placeholder "unset"; the hand-written
 `reader/image-pins/kustomization.yaml` overrides it at `kustomize build` time via Flux's
 image-automation marker (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker). Also
-hand-written in `reader/`: `kustomization.yaml` and the OAuth-state `RedisReplication`, which
-has no binding.
+hand-written in `reader/`: `kustomization.yaml`.
 """
 
 from __future__ import annotations
@@ -20,6 +19,30 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
+)
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
+    RedisReplication,
+    RedisReplicationSpec,
+    RedisReplicationSpecAffinity,
+    RedisReplicationSpecAffinityNodeAffinity,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecAffinityPodAntiAffinity,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    RedisReplicationSpecKubernetesConfig,
+    RedisReplicationSpecKubernetesConfigResources,
+    RedisReplicationSpecKubernetesConfigResourcesLimits,
+    RedisReplicationSpecKubernetesConfigResourcesRequests,
+    RedisReplicationSpecStorage,
+    RedisReplicationSpecStorageVolumeClaimTemplate,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
 )
 
 from cluster.cdk8s import cilium
@@ -39,6 +62,7 @@ _OIDC_SECRET = "plaid-db-mcp-oidc"
 _UPSTREAM_PORT = 8000
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
+_VALKEY = "plaid-valkey-kimsufi"
 
 
 def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
@@ -144,6 +168,86 @@ def _deployment(chart: Chart) -> None:
     )
 
 
+def _valkey(chart: Chart) -> None:
+    RedisReplication(
+        chart,
+        "valkey",
+        metadata=metadata(
+            _VALKEY, NAMESPACE, annotations={"description": "Kimsufi Valkey for the Plaid DB MCP OAuth facade state"}
+        ),
+        spec=RedisReplicationSpec(
+            cluster_size=2,
+            kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                image="valkey/valkey:9-alpine",
+                image_pull_policy="IfNotPresent",
+                resources=RedisReplicationSpecKubernetesConfigResources(
+                    requests={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
+                    },
+                    limits={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("128Mi"),
+                    },
+                ),
+            ),
+            storage=RedisReplicationSpecStorage(
+                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
+                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="local-path-ovh",
+                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "1Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            affinity=RedisReplicationSpecAffinity(
+                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    # Prefer ordinary workers when this workload tolerates control planes.
+                    preferred_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
+                            weight=100,
+                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
+                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                ),
+                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
+                    required_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                                match_labels={"app": _VALKEY}
+                            ),
+                            topology_key="kubernetes.io/hostname",
+                        )
+                    ]
+                ),
+            ),
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     k8s.KubeConfigMap(
@@ -157,8 +261,8 @@ def chart(app: App) -> Chart:
             "MCP_FACADE_UPSTREAM__KIND": "http",
             "MCP_FACADE_UPSTREAM__URL": f"http://localhost:{_UPSTREAM_PORT}/mcp",
             "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The hand-written plaid-valkey-kimsufi RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"plaid-valkey-kimsufi-master.{NAMESPACE}.svc.cluster.local",
+            # The RedisReplication's primary Service.
+            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{NAMESPACE}.svc.cluster.local",
             "MCP_FACADE_PERSISTENCE__DB": "0",
         },
     )
@@ -223,6 +327,7 @@ def chart(app: App) -> Chart:
             cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_METRICS_PORT]),
         ],
     )
+    _valkey(chart)
     return chart
 
 
