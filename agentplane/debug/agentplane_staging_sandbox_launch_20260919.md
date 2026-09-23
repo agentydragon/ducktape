@@ -1,61 +1,47 @@
 # Dogfooding the agentplane-staging sandbox as a Haku launch method (2026-09-19)
 
-Task: stop using haku-console's `sandbox` MCP server (`haku/sandbox/`) and instead provision and
-use a sandbox purely through the new `mcp__Agentplane_staging__*` Action Service tools, as `claude-ai`
-in `agentplane-staging`, then exercise what `ducktape` and `haku-state` document as available. This
-records what worked, what didn't, and why — as evidence for deciding whether/how this method should
-mature into a real Haku launch path. No cluster config was changed; only two abandoned `claude-ai`
-sandboxes and my own probe sandbox were disposed through the tool under test.
+On 2026-09-19 a claude.ai session provisioned and used a sandbox purely through the Action
+Service's `sandbox` ActionGroup (the `mcp__Agentplane_staging__*` tools), as the `claude-ai`
+ServiceAccount in `agentplane-staging`, in place of haku-console's `sandbox` MCP server
+(`haku/sandbox/`), and exercised what `ducktape` and `haku-state` document as available to Haku.
+The findings are evidence for whether and how this path should become a Haku launch method.
 
 ## Verdict
 
-The Action Service round trip (`list_actions` → `get_action_policy` → `request_action` →
-`get_action_request`/`list_action_request_events`) and the sandbox lifecycle it carries
-(`create`/`info`/`exec`/`list`/`dispose`) work exactly as documented, and egress substitution for
-Kubernetes and Forgejo is genuinely transparent — no credential setup needed inside the box at all.
-But this is **not yet a like-for-like substitute** for the haku-console sandbox / `oidc-ksbx-groups:haku`
-perimeter that `haku-state`'s own manual documents: the caller identity, RBAC, credentials and exec
-image are all substantially narrower today. Treat the two as different tools with different reach
-until that gap is closed or the manual is corrected to say so.
+The Action round trip (`list_actions` → `get_action_policy` → `request_action` →
+`get_action_request`/`list_action_request_events`) and the sandbox lifecycle it carries work as
+documented, and credential substitution makes the Kubernetes API and Forgejo usable from the box
+with nothing to set up inside it. It is not yet a substitute for Haku's own perimeter
+(`oidc-ksbx-groups:haku` plus haku-console's `haku_v1` profile): `claude-ai` has no writable
+namespace or Secrets and narrower standing approvals (finding 4), its one exec environment lacks
+Haku's tools (3), and its sandboxes hold a small shared quota until someone disposes them (1, 2).
 
-## What works end-to-end (verified live against `agentplane-staging`)
+## What works end-to-end (verified live)
 
-- **Auto-approval**: `claude-ai` is bound to `sandbox-self` (`ActionPolicyBinding
-claude-ai-github-reads`), so all five sandbox Actions execute with no human decision, typically
-  in 100-300ms end to end (submit → policy → dispatch → result).
-- **Lifecycle**: `create` → poll `info` for `Ready` reproduced every condition
-  `x/agentplane/docs/sandbox_actions.md` names (`ReconcilerError`, `DependenciesNotReady` with "Pod
-  exists with phase: Pending", `DependenciesReady` with "Pod is Ready"). Time from a clean `create`
-  to `Ready=True` was ~45s.
-- **Kubernetes egress**: `curl -H 'Authorization: Bearer agentplane-credential-kubernetes-workload'
-https://kubernetes.default.svc.cluster.local/apis/authentication.k8s.io/v1/selfsubjectreviews`
-  (POST) returns `system:serviceaccount:agentplane-staging:claude-ai` with matching
-  `pod-name`/`pod-uid` extras — reproducing the exact verification already recorded in
-  `sandbox_actions.md`. No `kubectl` needed; plain `curl` through the pre-set `HTTPS_PROXY` works
-  because the intercepting proxy's CA is already in `/etc/ssl/certs/ca-certificates.crt`.
-- **Forgejo egress, both surfaces**: `git clone http://haku:agentplane-credential-forgejo-haku@
-forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git` cloned real `haku-state`
-  (`AGENTS.md`, `SOUL.md`, `MEMORY.md`, `TODO.md`, ...) with **zero credential setup** — no
-  `~/.netrc`, no secret read, just the FQDN and a placeholder password. The REST API
-  (`GET /api/v1/user`) through the same substitution independently confirmed the identity as
-  `haku`/`haku@allegedly.works`. This is a genuine UX improvement over the old flow's
-  `~/.netrc`/Secret-read bootstrap.
-- **Egress boundaries are exactly as narrow as documented**: `github.com` — 403 (`claude-ai` has no
-  `github-public` `EgressBinding`, exactly as flagged in
-  `cluster/cdk8s/agentplane/actions_staging_policies.py`'s `TODO(github-egress)`); the Forgejo
-  **short-form** hostname `forgejo-http.forgejo:3000` (no `.svc.cluster.local`) — 403, empirically
-  confirming the "host admitted by name, not address" gotcha extends to abbreviated DNS forms, not
-  just IPs; `pypi.org` — 200 (packages policy).
-- **Caller isolation**: `sandbox.list` returned only my own sandbox; a pre-existing, unrelated
-  `test-ydxdf` Sandbox (the integration app's, not sandbox_actions') never appeared and wasn't
-  touched.
-- **Recovery**: disposing and recreating a stuck sandbox is a reliable, tool-native fix (see below).
+- **Auto-approved lifecycle.** `ActionPolicyBinding` `claude-ai-reads` grants `claude-ai` the
+  `sandbox-self` set, so all five sandbox Actions ran without a human decision, 100–300 ms each
+  from submit to result. A clean `create` reached `Ready=True` in ~45 s.
+- **Kubernetes as the box's own identity.** Plain `curl` with
+  `Authorization: Bearer agentplane-credential-kubernetes-workload` returned the
+  `SelfSubjectReview` recorded in `agentplane/docs/sandbox_actions.md`: the preset `HTTPS_PROXY`
+  and the interception CA mounted over `/etc/ssl/certs/ca-certificates.crt` leave nothing to
+  configure.
+- **Forgejo as `haku`, git and REST.**
+  `git clone http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git`
+  cloned `haku-state` with no `~/.netrc` or Secret read, and `GET /api/v1/user` through the same
+  substitution returned `haku`. Push was not tried; the credential is the account's own password
+  with no method limit (`cluster/cdk8s/agentplane/egress_staging_credentials.py`), so it carries
+  write.
+- **Unlisted hosts fail closed.** `github.com` is refused with 403 (`claude-ai` has no
+  `github-public` binding), and so is Forgejo's short name `forgejo-http.forgejo:3000`: a rule
+  admits only the host name it lists, the gotcha `sandbox_actions.md` records for
+  `kubernetes.default.svc`.
 
-## Friction found
+## Open findings
 
-### 1. Namespace CPU quota is trivially exhausted by forgotten sandboxes, which never expire
+### 1. Forgotten sandboxes hold the shared CPU quota indefinitely
 
-My first `create` failed immediately:
+The first `create` failed at once:
 
 ```text
 Ready=False reason=ReconcilerError message=Error seen: pods "claude-ai-haku-probe" is forbidden:
@@ -63,112 +49,91 @@ exceeded quota: agentplane-staging-quota, requested: limits.cpu=2500m, used: lim
 limited: limits.cpu=12
 ```
 
-`kubectl -n agentplane-staging get sandboxes.agents.x-k8s.io` showed why: two `claude-ai-owned`
-sandboxes (`claude-ai-conditions-check`, `claude-ai-egress-check`) had been sitting idle for 13-14
-hours, each costing `limits.cpu=2500m` (2 cores from the runner container + a 500m default the
-namespace `LimitRange` applies to the sidecar, which sets no CPU limit of its own) — 5 of the
-namespace's 12-core hard cap, alongside a same-day `agentplane-egress` rollout that transiently
-doubled its own pod count. I disposed both through `sandbox.dispose` (they were mine to clean up)
-and quota returned to `5.5`/`12` cores.
+Two `claude-ai` sandboxes left idle for 13–14 hours held 5 of the 12 cores, and only disposing
+them freed the quota. Nothing expires these boxes: `agentplane/sandbox_actions/inventory.py`
+stamps every Sandbox `shutdownPolicy: Retain` with no `shutdownTime`, the integration app's
+Sandboxes carry no expiry either (`agentplane/app/inventory.py`), and nothing in
+`agentplane-staging` sweeps them. haku-console's sandbox claims carry `shutdownPolicy: Delete` and
+a `shutdownTime` each `exec` pushes forward (`haku/sandbox/kubernetes_client.py`; 8 h, then at
+least 2 h past each exec).
 
-This is a structural gap, not a one-off: `x/agentplane/sandbox_actions/inventory.py` stamps every
-Sandbox with `shutdownPolicy: Retain` deliberately ("a box whose caller is still working in it must
-not be collected out from under them on a schedule nobody set"), unlike the haku-console tool's
-`initial_ttl_seconds`/`exec_ttl_extension_seconds` lease that auto-expires an abandoned claim. A
-namespace-wide quota shared by every tenant plus per-caller sandboxes with **no expiry at all**
-means one forgetful session permanently taxes (or, as here, fully blocks) everyone else's
-`sandbox.create` until a human or another agent happens to notice and dispose it.
+All of them share `agentplane-staging-quota` (`cluster/cdk8s/agentplane/rbac.py`), which is
+tighter than its comment's "roughly four concurrent sandboxes". A sandbox costs 2500m of
+`limits.cpu` (2 cores for `runner`, plus the `LimitRange`'s 500m default for `egress-sidecar`,
+which sets no CPU limit), but the namespace's eleven service Pods take 500m each, 5.5 of the 12
+cores (observed 2026-09-23). Two sandboxes fit at once, the app's included, and one forgotten box
+halves that.
 
-**Recommendation**: give sandbox_actions-created boxes a bounded idle TTL (mirroring the old tool),
-or at least a periodic sweep of long-idle `sandbox-actions.agentplane.allegedly.works/managed=true`
-Sandboxes; short of that, `x/agentplane/docs/sandbox_actions.md` should tell callers that a
-`ReconcilerError` quota message is reason to check `sandbox.list` for their own stale boxes before
-assuming the namespace itself is out of room.
+**Recommendation:** bound these sandboxes' lifetime as haku-console does, with the Sandbox's own
+`shutdownTime` and `shutdownPolicy: Delete` pushed forward by `exec`, or sweep long-idle
+`sandbox-actions.agentplane.allegedly.works/managed=true` Sandboxes; and size the quota for the
+services it also holds. Meanwhile `agentplane/docs/sandbox_actions.md` should tell a caller that
+an exceeded-quota `ReconcilerError` is a cue to `list` and dispose its own stale boxes.
 
-### 2. A quota-blocked sandbox does not self-heal once quota frees up
+### 2. A quota-blocked sandbox waits out the controller's error backoff
 
-After disposing the two leaked sandboxes, polling `sandbox.info` on the still-failed `haku-probe`
-kept returning the **identical** stale condition and `lastTransitionTime`, confirmed also via direct
-`kubectl get sandboxes.agents.x-k8s.io claude-ai-haku-probe` — no Pod had been (re-)attempted. The
-Agent Sandbox controller apparently doesn't watch `ResourceQuota` and only re-reconciles on its own
-resync interval or a spec change, neither of which a `sandbox.info` poll triggers. The only fix I
-found was **dispose + recreate** (a fresh object triggers a fresh reconcile), which then succeeded
-normally (`DependenciesNotReady` → `DependenciesReady` in ~45s).
+After the leaked boxes were disposed, `info` on the still-blocked `haku-probe` returned the same
+condition and `lastTransitionTime`, and no Pod appeared, for as long as it was polled; `dispose` +
+`create` then reached `Ready` in ~45 s. The controller does retry, but not when quota frees:
+agent-sandbox v0.5.5 returns the Pod-create error from `Reconcile`, so controller-runtime requeues
+the Sandbox on per-object exponential backoff (5 ms doubling to a 1000 s cap), and it watches only
+Sandboxes and their own Pods and Services, never `ResourceQuota`. Each wait roughly equals the time
+the box has already spent failing, up to ~17 minutes. This is read from upstream
+`controllers/sandbox_controller.go` and controller-runtime v0.24.1; the late retry itself was not
+observed.
 
-**Recommendation**: state this explicitly in `sandbox_actions.md`: a `ReconcilerError` condition
-that doesn't clear shortly after its stated blocker is resolved should be treated as stuck, and
-`dispose`+`create` is the documented remedy — not more polling.
+**Recommendation:** say so in `sandbox_actions.md`: a quota `ReconcilerError` clears only at the
+controller's next backoff retry, up to ~17 minutes after the quota frees, while `dispose` +
+`create` reconciles at once.
 
-### 3. The only offered environment is the full agent-runner harness image, not a shell
+### 3. The only environment is the runner image, and its description promises Python
 
-Staging's `sandbox` group offers exactly one environment (`cluster/cdk8s/agentplane/actions.py`):
+Staging's `sandbox` group offers one environment, `runner` (`cluster/cdk8s/agentplane/staging.py`):
+the integration app's `agentplane-runner` template, which the comment there already calls the wrong
+destination. The description `create` renders for it, "python, git and the agent harnesses",
+overstates what a command gets: `command -v` in the box found no `python3`, `pip3`, `kubectl`,
+`tea`, `jq`, `gh`, `bazel`/`bazelisk` or `openssl`, and uid 1000 has no `/etc/passwd` entry. The
+image's Debian packages are `curl`, `git` and `ripgrep` (`trixie_agentplane_runner` in
+`MODULE.bazel`), and its only Python is the runner's own hermetic interpreter, which `exec`'s
+`bash -lc` does not put on `PATH`. haku-console's box
+(`cluster/k8s/haku/workspaces/image/Dockerfile`) bakes what `haku-state`'s tooling calls:
+`python3`, `kubectl`, `tea`, `jq`, `gh`, `ruff`, bazelisk with a JDK, and `build-essential`.
 
-```python
-"runner": {
-    "template": "agentplane-runner",
-    "container": "runner",
-    "default_cwd": "/state",
-    "description": "The shared runner image: python, git and the agent harnesses.",
-}
-```
+**Recommendation:** make the environment's description say what a command can use (`git`,
+`curl`, `ripgrep`; no Python), and if this path is to carry Haku work, offer an exec environment
+with the tools above rather than the harness image.
 
-The code comment right above it already flags this as provisional: _"its workload container is the
-runner image, which is the wrong destination -- a box to run commands in wants neither the harnesses
-nor the state volume."_ Empirically, the description also **overstates what's exec-accessible**:
-`command -v` and a filesystem-wide `find` inside the box turned up only `git` and `curl` on `PATH`.
-`python3`, `pip3`, `kubectl`, `tea`, `sops`, `nix`, `bazel`/`bazelisk`, `jq`, `gh`, and `openssl` are
-all absent — no Python interpreter exists anywhere on the filesystem (`/usr/local/bin` holds only a
-214MB standalone `claude` binary). There's also no `/etc/passwd` entry for uid 1000. This is
-materially thinner than the haku-console sandbox image
-(`cluster/k8s/haku/workspaces/image/Dockerfile` + `haku-sandbox-setup.sh`), which ships
-kubectl/tea/sops/nix.
+### 4. `claude-ai`'s reach still falls short of Haku's
 
-**Recommendation**: correct the Action's environment description to what's actually there
-(git + curl; no Python), and — if this method is meant to carry real Haku work — add a second,
-lighter `SandboxEnvironment` purpose-built for ad hoc exec (as the code comment already anticipates)
-carrying the tools `haku-state/memory/procedures/run.md` actually expects, rather than reusing the
-harness image.
+Haku's perimeter, as `cluster/k8s/agents/agent-rbac-base/README.md` and `haku-state`'s
+`memory/credentials.md` and `memory/procedures/run.md` describe it: full CRUD in `haku-sandbox`
+and the Secrets there (Plaid Postgres, Google Drive/Tasks, ActivityWatch, the haku mailbox JWT,
+the haku-console MCP token), cluster-wide diagnostics, metadata and logs in agent-readable
+namespaces, and haku-console's MCP servers under `haku_v1`'s standing approvals
+(`cluster/cdk8s/haku/console_config.py`). What `claude-ai` lacks of it on `devel`:
 
-### 4. This identity's reach is much narrower than what `haku-state` documents as "available"
+- **Kubernetes:** it holds only `cluster-diagnostics-reader`
+  (`cluster/k8s/agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`). No role
+  in `haku-sandbox`, so no Plaid query Pod and none of its Secrets beyond the Forgejo password the
+  proxy substitutes; and it is not a subject of the Kyverno-generated metadata and log readers
+  (`cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml`).
+- **Egress:** Forgejo, the Kubernetes API, the package mirrors and Google's read APIs
+  (`google-readonly`) are bound. GitHub is not (`TODO(github-egress)` in
+  `cluster/cdk8s/agentplane/actions_staging_policies.py`), nor Grocy (read-only Grocy egress is
+  #7572, open), and nothing reaches Plaid, ActivityWatch, the mailbox or haku-console.
+- **Actions:** `cluster/cdk8s/agentplane/staging.py` configures a group for every haku-console MCP
+  server except `grants`, which has no Action Service counterpart. Live on 2026-09-23, `grocy_sf`
+  offered no Actions (`linkage_unavailable`) and neither did `gmail` or `google_calendar`
+  (`connect_failed`: the `google-mcp` Pod is in `ImagePullBackOff`). `claude-ai-reads`
+  auto-approves the GitHub, Home Assistant, Gmail and Calendar reads and the sandbox set;
+  `haku_v1`'s Tana and Grocy reads, its Home Assistant desk-light control and its `haku/` Gmail
+  labels wait for a human here.
+- **Run loop:** `haku-state`'s run procedure sweeps approved tool-call results from haku-console,
+  which a sandbox cannot reach. The counterpart here is the Action Service, which the `basic`
+  policy admits from inside the box as `claude-ai`.
 
-`haku-state/memory/credentials.md` and `memory/procedures/run.md` describe Haku's perimeter as the
-Kubernetes principal `oidc-ksbx-groups:haku`: full CRUD in `haku-sandbox`, cluster-wide read-only
-diagnostics (nodes/pods/events/deployments/Flux/certs/metrics), infra-namespace pod-logs/configmaps,
-and a table of Secrets (Plaid Postgres, Google Drive/Tasks, ActivityWatch, the haku mailbox JWT, the
-haku-console MCP token for the tool-request/approval queue).
-
-None of that is reachable from this new mechanism. `curl`'s `SelfSubjectRulesReview` against both
-`agentplane-staging` and `haku-sandbox` came back **identical and empty** beyond the cluster-wide
-baseline every authenticated principal gets (self-review endpoints, and unrelated KubeVirt/CDI list
-rules that are ambient cluster defaults, not anything scoped to `claude-ai`). So today, from this
-sandbox: no RBAC of any kind, no Plaid/Google/ActivityWatch/mailbox secret, and no path to the
-haku-console MCP approval queue that `run.md` step 3 ("Sweep approved tool-call results") depends
-on. What _does_ carry over cleanly: `haku-state` itself (read verified; write not separately tested,
-to avoid polluting Haku's real memory repo with throwaway commits — it's the same whole-account
-Forgejo credential either way), GitHub reads via the Action Service's own `github` group, package
-mirrors, and a mechanically-correct-but-currently-empty Kubernetes identity.
-
-**Recommendation**: this is a scope decision for whoever owns the migration, not something to guess
-at from here — but it should be written down. Either (a) extend `claude-ai`'s RBAC/EgressBindings/
-Secrets deliberately, action by action, until this path has real parity with `oidc-ksbx-groups:haku`
-before treating it as Haku's new home, or (b) if the intent is narrower (e.g. a general
-Action-based exec/GitHub-reads surface, not a Haku-run replacement), say so in `haku-state` — a
-runtime-specific entrypoint note, the same pattern `haku/runtime/claude_web_env/run.md` already
-uses for the web-home's own environment differences — so a future run under this launch method
-doesn't spend time hunting for Plaid/mailbox/console access that was never wired here.
-
-### 5. Minor tool ergonomics
-
-- `request_action`'s `title` silently enforces a 60-character max (`string_too_long`) with no hint
-  in the tool description until you hit it; worth a one-line callout since every single call has one.
-- `create`'s `wait_seconds`/`wait_until=terminal` only waits for the **Action's own** terminal state
-  (the object now exists), never the underlying Sandbox's `Ready` condition — clearly documented,
-  but easy to reflexively expect a generous `wait_seconds` on `create` to hand back a usable box. A
-  first-time caller (me) made exactly that assumption before re-reading `info`'s own docstring.
-
-## What to keep
-
-The credential-substitution design is the standout: nothing inside the box ever held a real secret,
-yet `curl`/`git` worked immediately with no bootstrap step, and an unresolved or wrong-host
-placeholder failed closed (403) rather than leaking anything. If sandbox_actions grows a lighter exec
-environment and a lifecycle bound, the mechanism underneath it is already solid.
+**Recommendation:** decide the scope and write it down. Either extend `claude-ai` deliberately,
+action by action, to the parts of this perimeter a Haku run needs, or, if the intent is narrower,
+say so in `haku-state` with a runtime-specific entrypoint like
+`haku/runtime/claude_web_env/run.md`, so a run under this method does not hunt for Plaid, mailbox
+or console access that is not wired.
