@@ -167,6 +167,7 @@ cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generate
 cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true

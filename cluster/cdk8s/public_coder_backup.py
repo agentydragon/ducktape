@@ -1,8 +1,5 @@
 """The public-coder-agent state backup: Restic snapshots through VolSync into its own
-SeaweedFS bucket.
-
-`repository-secret-store.yaml` (the SecretStore and the identity it reads with) stays
-hand-written beside the generated file: no namespaced `SecretStore` CRD binding exists.
+SeaweedFS bucket. The SOPS-encrypted Restic password beside the output stays hand-written.
 """
 
 from __future__ import annotations
@@ -25,6 +22,18 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMergePolicy,
     ExternalSecretSpecTargetTemplateTemplateFrom,
 )
+from external_secrets_secretstore_crds.io.external_secrets import (
+    SecretStore,
+    SecretStoreSpec,
+    SecretStoreSpecProvider,
+    SecretStoreSpecProviderKubernetes,
+    SecretStoreSpecProviderKubernetesAuth,
+    SecretStoreSpecProviderKubernetesAuthServiceAccount,
+    SecretStoreSpecProviderKubernetesServer,
+    SecretStoreSpecProviderKubernetesServerCaProvider,
+    SecretStoreSpecProviderKubernetesServerCaProviderType,
+)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -47,6 +56,7 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3CredentialsSpecSeaweedRef,
     S3CredentialsSpecSecretRef,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
     ReplicationSourceSpec,
@@ -67,7 +77,15 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAME = "public-coder-agent-backup"
@@ -78,8 +96,8 @@ _SEAWEEDFS = "seaweedfs"
 _MOVER_LABELS = {"app.kubernetes.io/name": "public-coder-agent-volsync"}
 _REPOSITORY_SECRET_NAME = "public-coder-agent-state-v2-restic"
 _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
-# Hand-written in repository-secret-store.yaml.
 _SECRET_STORE_NAME = "public-coder-agent-volsync-s3"
+_REPOSITORY_READER = "public-coder-agent-volsync-repository-reader"
 # SOPS-encrypted in repository.sops.yaml.
 _RESTIC_PASSWORD_SECRET_NAME = "public-coder-agent-volsync-restic-password"
 
@@ -193,6 +211,63 @@ def _network_policy(scope: Construct) -> None:
     )
 
 
+def _repository_store(scope: Construct) -> None:
+    """S3Credentials and the SOPS-managed Restic password create source Secrets in this
+    namespace. ESO narrows its access to exactly those Secrets and renders the combined
+    repository Secret VolSync requires."""
+    k8s.KubeServiceAccount(
+        scope, "repository-reader-sa", metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE)
+    )
+    k8s.KubeRole(
+        scope,
+        "repository-reader-role",
+        metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[
+                    "public-coder-agent-volsync-s3",
+                    _S3_CREDENTIALS_SECRET_NAME,
+                    _RESTIC_PASSWORD_SECRET_NAME,
+                ],
+                verbs=["get"],
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        scope,
+        "repository-reader-rolebinding",
+        metadata=k8s.ObjectMeta(name=_REPOSITORY_READER, namespace=_NAMESPACE),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_REPOSITORY_READER),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_REPOSITORY_READER, namespace=_NAMESPACE)],
+    )
+    SecretStore(
+        scope,
+        "repository-store",
+        metadata=metadata(_SECRET_STORE_NAME, _NAMESPACE),
+        spec=SecretStoreSpec(
+            provider=SecretStoreSpecProvider(
+                kubernetes=SecretStoreSpecProviderKubernetes(
+                    server=SecretStoreSpecProviderKubernetesServer(
+                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name="kube-root-ca.crt",
+                            key="ca.crt",
+                        )
+                    ),
+                    auth=SecretStoreSpecProviderKubernetesAuth(
+                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=_REPOSITORY_READER, namespace=_NAMESPACE
+                        )
+                    ),
+                    remote_namespace=_NAMESPACE,
+                )
+            )
+        ),
+    )
+
+
 def _remote_ref(secret_key: str, secret_name: str) -> ExternalSecretSpecData:
     return ExternalSecretSpecData(
         secret_key=secret_key, remote_ref=ExternalSecretSpecDataRemoteRef(key=secret_name, property=secret_key)
@@ -301,6 +376,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _bucket(chart)
     _network_policy(chart)
+    _repository_store(chart)
     _repository(chart)
     _replication_source(chart)
     return chart
@@ -308,3 +384,57 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "repository.sops.yaml"]),
+    )
+
+
+def public_coder_agent_backup(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    seaweedfs_public_coder_agent_backups_bucket: Kustomization,
+    external_secrets_config: Kustomization,
+    volsync: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="5m",
+            wait=True,
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="seaweed.seaweedfs.com/v1",
+                    kind="Bucket",
+                    name="public-coder-agent-backups",
+                    namespace="public-coder-agent",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="seaweed.seaweedfs.com/v1",
+                    kind="S3Credentials",
+                    name="public-coder-agent-backups",
+                    namespace="public-coder-agent",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name="public-coder-agent-state-v2-restic",
+                    namespace="public-coder-agent",
+                ),
+            ],
+            depends_on=flux_kustomization_depends_on_many(
+                seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
+            ),
+        ),
+        description=(
+            "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
+            "to its dedicated private SeaweedFS S3 bucket."
+        ),
+    )

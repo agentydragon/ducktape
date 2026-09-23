@@ -1,8 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/public_coder_backup.py) -- see cluster/docs/cdk8s.md.
   - public-coder-agent-backup.k8s.yaml
-  # Hand-written: no namespaced SecretStore CRD binding exists for cdk8s yet.
-  - repository-secret-store.yaml
   - repository.sops.yaml

@@ -932,10 +932,8 @@ def generate_manifests(root: Path) -> None:
     monitoring_flux_kustomizations.alloy(
         flux_chart, monitoring_alloy_artifact, mimir_kustomization, grafana_helmrepository_kustomization
     )
-    public_coder_agent_backup_artifact = artifact(
-        "public-coder-agent-backup", "cluster/k8s/agents/public-coder-agent/backup"
-    )
-    agents_flux_kustomizations.public_coder_agent_backup(
+    public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
+    public_coder_backup.public_coder_agent_backup(
         flux_chart,
         public_coder_agent_backup_artifact,
         seaweedfs_public_coder_agent_backups_bucket_kustomization,
