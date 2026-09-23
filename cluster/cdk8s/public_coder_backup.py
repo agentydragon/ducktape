@@ -33,7 +33,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -77,7 +76,6 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -400,38 +398,11 @@ def public_coder_agent_backup(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            wait=True,
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="public-coder-agent-backups",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="public-coder-agent-backups",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="public-coder-agent-state-v2-restic",
-                    namespace="public-coder-agent",
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
-            ),
+        artifact,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
         ),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "

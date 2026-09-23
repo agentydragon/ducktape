@@ -17,11 +17,9 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -215,52 +213,13 @@ def kyverno(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomiza
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m0s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m0s",
-            wait=True,
-            # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
-            # (certManager.enabled: false in the values above). No cert-manager dependency.
-            #
-            # Health check strategy — all three must pass before downstream dependsOn fires:
-            #
-            # The critical gate is the VWC check. With internal cert management, kyverno's
-            # webhook-controller creates the VWC dynamically ONLY AFTER the TLS server is
-            # ready (see the certManager comment above for source code references). So VWC
-            # existence is a true readiness signal — it means the webhook can serve HTTPS.
-            #
-            # Note: Flux/kstatus treats VWC as "unknown" status = pass (flux2#4346), so
-            # this check only verifies existence, not deep health. But with internal certs
-            # that's sufficient — the VWC won't exist until the webhook is operational.
-            # With certManager.enabled=true, this check would be useless because the Helm
-            # chart doesn't template the VWC (it's always dynamic), but the Deployment
-            # readiness probe would pass before the VWC is created, creating a race.
-            #
-            # wait: true is critical — without it, dependsOn only waits for YAML to be
-            # applied, not for resources to be healthy.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=_FLUX_NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apiextensions.k8s.io/v1",
-                    kind="CustomResourceDefinition",
-                    name="clusterpolicies.kyverno.io",
-                    namespace="",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="kyverno-admission-controller", namespace=NAME
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="kyverno-resource-validating-webhook-cfg",
-                    namespace="",
-                ),
-            ],
-        ),
+        artifact,
+        interval="10m0s",
+        timeout="10m0s",
+        # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
+        # (certManager.enabled: false in the values above). No cert-manager dependency.
+        #
+        # Gotcha: `wait` does not cover the resource VWC. kyverno's webhook-controller
+        # creates it at runtime (see the certManager note above), so it is not an
+        # applied object and dependents can reach admission before it exists.
     )

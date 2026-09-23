@@ -52,7 +52,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -61,7 +61,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -352,32 +351,25 @@ def aiquota(
     kustomization = flux_kustomization(
         flux_chart,
         name,
+        artifact,
         description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                # Provides the shared namespace and the CLIProxyAPI management Secret.
-                cli_proxy_api,
-                # Materializes the narrow mirrored copies of the API bearer for its
-                # consumers; the source Secret stays SOPS-managed here.
-                external_secrets_operator,
-                # Creates the aiquota database the migrate init container populates.
-                clickhouse_schema,
-                # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-                agent_machine_access_tf,
-                # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-                reflector,
-            ),
+        timeout="5m",
+        # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            forgejo_images,
+            # Provides the shared namespace and the CLIProxyAPI management Secret.
+            cli_proxy_api,
+            # Materializes the narrow mirrored copies of the API bearer for its
+            # consumers; the source Secret stays SOPS-managed here.
+            external_secrets_operator,
+            # Creates the aiquota database the migrate init container populates.
+            clickhouse_schema,
+            # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+            agent_machine_access_tf,
+            # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+            reflector,
         ),
     )
     write_yaml(

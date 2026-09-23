@@ -38,11 +38,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplication,
@@ -99,7 +95,6 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -604,22 +599,10 @@ def langfuse(
     return flux_kustomization(
         chart,
         _NAME,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="20m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_NAME, namespace=_NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
-        ),
+        artifact,
+        suspend=False,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="20m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )

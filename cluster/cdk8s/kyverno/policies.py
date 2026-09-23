@@ -15,7 +15,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicy,
     ClusterPolicySpec,
@@ -41,7 +40,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
@@ -851,17 +849,11 @@ def kyverno_policies(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyv
     return flux_kustomization(
         chart,
         "kyverno-policies",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            depends_on=[
-                # Policies require Kyverno CRDs to be installed
-                flux_kustomization_depends_on(kyverno)
-            ],
-            interval="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            timeout="2m",
-        ),
+        artifact,
+        depends_on=[
+            # Policies require Kyverno CRDs to be installed
+            flux_kustomization_depends_on(kyverno)
+        ],
+        interval="5m",
+        timeout="2m",
     )

@@ -22,11 +22,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -82,27 +80,15 @@ def forgejo_images(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2", kind="Terraform", name=NAME, namespace="flux-system"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # Forgejo API must be up (provider target)
-                forgejo,
-                tofu_controller,
-                tofu_state_db,
-            ),
+        artifact,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            # Forgejo API must be up (provider target)
+            forgejo,
+            tofu_controller,
+            tofu_state_db,
         ),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "

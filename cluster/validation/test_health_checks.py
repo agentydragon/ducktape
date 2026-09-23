@@ -20,6 +20,7 @@ def _make_cluster(
     resource_kind: str = "HelmRelease",
     resource_api_version: str = "helm.toolkit.fluxcd.io/v2",
     health_check_kind: str | None = None,
+    wait: bool = False,
 ) -> ParsedCluster:
     """Build a minimal ParsedCluster with one resource and optional healthCheck."""
     kust_file = k8s_dir / "test-app" / "kustomization.yaml"
@@ -31,6 +32,7 @@ def _make_cluster(
                 health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
                 if health_check_kind
                 else [],
+                wait=wait,
             )
         },
         build_results=[
@@ -77,6 +79,10 @@ class TestControllerResourceHealthChecks:
         assert len(errors) == 1
         assert resource_kind in errors[0]
 
+    def test_wait_covers_controller_resources(self, k8s_dir: Path) -> None:
+        """wait: true health-checks every applied object, the HelmRelease included."""
+        assert check_controller_health_checks(_make_cluster(k8s_dir, wait=True), k8s_dir) == []
+
     def test_no_error_for_plain_resources(self, k8s_dir: Path) -> None:
         cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
         assert check_controller_health_checks(cluster, k8s_dir) == []
@@ -84,13 +90,15 @@ class TestControllerResourceHealthChecks:
 
 class TestRetryPolicy:
     def _make_cluster(
-        self, *, health_check_kind: str = "HelmRelease", retry_interval: str | None = None, wait: bool = False
+        self, *, health_check_kind: str | None = "HelmRelease", retry_interval: str | None = None, wait: bool = False
     ) -> ParsedCluster:
         return ParsedCluster(
             flux_kustomizations={
                 "test-app": FluxKustomizationSpec(
                     path="./cluster/k8s/test-app",
-                    health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")],
+                    health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
+                    if health_check_kind
+                    else [],
                     retry_interval=retry_interval,
                     wait=wait,
                 )
@@ -107,10 +115,10 @@ class TestRetryPolicy:
     def test_wait_true_without_retry_interval_fails(self) -> None:
         """wait: true requires retryInterval (spec.retries was removed from the Flux CRD)."""
         with pytest.raises(AssertionError, match="no retryInterval"):
-            check_retry_policy(self._make_cluster(health_check_kind="Namespace", wait=True))
+            check_retry_policy(self._make_cluster(health_check_kind=None, wait=True))
 
     def test_wait_true_with_retry_passes(self) -> None:
-        check_retry_policy(self._make_cluster(health_check_kind="Namespace", wait=True, retry_interval="1m"))
+        check_retry_policy(self._make_cluster(health_check_kind=None, wait=True, retry_interval="1m"))
 
     def test_cli_proxy_api_preserves_existing_retry_interval_omission(self) -> None:
         cluster = ParsedCluster(flux_kustomizations={"cli-proxy-api": FluxKustomizationSpec(wait=True)})

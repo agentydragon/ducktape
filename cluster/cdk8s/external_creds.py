@@ -19,10 +19,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -253,15 +252,12 @@ def external_creds(
     kustomization = flux_kustomization(
         flux_chart,
         "external-creds",
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            decryption=sops_decryption(resources),
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[flux_kustomization_depends_on(claude_rbac)],
-            timeout="5m",
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        decryption=sops_decryption(resources),
+        depends_on=[flux_kustomization_depends_on(claude_rbac)],
+        timeout="5m",
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return kustomization

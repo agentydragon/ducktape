@@ -167,16 +167,8 @@ kustomizations; ConfigMaps carrying `$imagepolicy` markers.
 
 Open decisions, each "stays" or a conversion:
 
-- **The `airlock` and `study-casino` Deployments**: an image marker on an env value as
-  well as on `image:`, which the `image-pins/` Component (a Kustomize `images:` override)
-  cannot reach.
 - **`gaffer-private-source/bridge.yaml`**: a Flux Kustomization outside the generated
   graph, reconciling another repository's tree.
-- **kubevirt `VirtualMachine` and CDI `StorageProfile`**: upstream publishes no CRD
-  YAML; the schemas are YAML strings in generated Go at the release tags
-  (kubevirt `pkg/virt-operator/resource/generate/components/validations_generated.go`,
-  schema only; CDI `pkg/operator/resources/crds_generated.go`, a whole CRD), which a
-  binding would extract.
 
 ## Wave 5: rules that need the whole tree
 
@@ -254,11 +246,6 @@ name)` takes strings at 35 sites. The TODO entry proposes passing the workload
   `haku/workspaces.py`). The PDB helper was worth it; these may not be the same
   shape (ExternalSecret varies by store and data mapping). Measure the sites before
   writing either.
-- **`health_checks(chart, kinds)` kinds tuples.** Each node lists which kinds gate
-  readiness (`("Cluster", "Job")`, agentplane's `_HEALTH_CHECK_KINDS` with a
-  `Bundle` → `ConfigMap` special case). Unsure whether the kinds are a per-node choice
-  (keep listing them) or a property of the object kind (derive: every Deployment, Job,
-  Cluster in the chart gates). Look at the lists when there are a dozen (9 today).
 - **Two props styles.** agentplane uses an `Environment` props object (two
   environments); haku uses module constants (one). Both fit their case; converge only
   if a second haku environment appears.
