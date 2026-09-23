@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.models import SandboxIngestion
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
@@ -37,12 +39,14 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
     return entry
 
 
-async def wait_snapshot(store: ThreadStore, updates: ThreadUpdates, thread: UUID, cursor: int) -> protocol_pb2.Attached:
+async def wait_snapshot(
+    event_logs: EventLogStore, updates: ThreadUpdates, thread: UUID, cursor: int
+) -> protocol_pb2.Attached:
     changed = asyncio.Event()
     with updates.changes.subscribe(changed):
         while True:
             changed.clear()
-            snapshot = await store.feed_state(thread)
+            snapshot = await event_logs.feed_state(thread)
             if snapshot is not None and snapshot.attached.last_cursor == cursor:
                 return snapshot.attached
             await changed.wait()
@@ -50,11 +54,16 @@ async def wait_snapshot(store: ThreadStore, updates: ThreadUpdates, thread: UUID
 
 @pytest.mark.parametrize("boundary", list(CommitBoundary))
 async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
-    db_url: str, store: ThreadStore, thread_updates: ThreadUpdates, boundary: CommitBoundary
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    thread_updates: ThreadUpdates,
+    boundary: CommitBoundary,
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
-    thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     events = f"/threads/{thread_id}/events/stream"
     async with asyncio.timeout(45), source.serve() as target:
         async with (
@@ -99,11 +108,11 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
             assert (await first.checkpoint()).boundary is boundary
             committed = 3 if boundary is CommitBoundary.BEFORE else 4
             # Independent PostgreSQL reads, while the app is paused at a real commit boundary.
-            assert await store.events(thread.id, limit=100) == source.entries[:committed]
-            projection = await store.current_scope(thread.id)
+            assert await event_logs.events(thread.id, limit=100) == source.entries[:committed]
+            projection = await content.current_scope(thread.id)
             assert projection is not None
             assert projection.through_cursor == committed
-            before_death = await store.feed_state(thread.id)
+            before_death = await event_logs.feed_state(thread.id)
             assert before_death is not None
             assert before_death.attached.last_cursor == committed
             assert before_death.attached.active_turn_id == "test-turn"
@@ -127,8 +136,8 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                     .values(expires_at=func.clock_timestamp() - timedelta(seconds=1))
                 )
 
-            assert await store.events(thread.id, limit=100) == source.entries[:committed]
-            assert await store.feed_state(thread.id) == before_death
+            assert await event_logs.events(thread.id, limit=100) == source.entries[:committed]
+            assert await event_logs.feed_state(thread.id) == before_death
             # The runner source continues independently while no app process is alive.
             source.append(
                 event_pb2.Event(
@@ -147,9 +156,9 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 assert (await source.opened.get()).after_cursor == 0
                 replay = await source.opened.get()
                 assert replay.after_cursor == committed - 1
-                attached = await wait_snapshot(store, thread_updates, thread.id, 6)
+                attached = await wait_snapshot(event_logs, thread_updates, thread.id, 6)
                 assert attached == source.attached
-                assert await store.last_cursor(thread.id) == committed
+                assert await event_logs.last_cursor(thread.id) == committed
                 async with engine.connect() as database:
                     new_token = await database.scalar(
                         select(SandboxIngestion.token).where(SandboxIngestion.sandbox == SANDBOX)
@@ -187,15 +196,15 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                     )
                     assert await next_entry(stream) == final
 
-                assert await store.events(thread.id, limit=100) == source.entries
-                final_snapshot = await store.feed_state(thread.id)
+                assert await event_logs.events(thread.id, limit=100) == source.entries
+                final_snapshot = await event_logs.feed_state(thread.id)
                 assert final_snapshot is not None
                 assert final_snapshot.end is None
                 assert final_snapshot.attached == source.attached
                 view = await store.get_thread(thread.id)
                 assert view is not None
                 assert (view.last_cursor, view.model) == (8, "test-model-after")
-                projection = await store.current_scope(thread.id)
+                projection = await content.current_scope(thread.id)
                 assert projection is not None
                 assert projection.through_cursor == view.last_cursor
         finally:

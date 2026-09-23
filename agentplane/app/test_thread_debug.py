@@ -12,11 +12,14 @@ from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import command_pb2, event_pb2
@@ -28,6 +31,9 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
     thread_updates: ThreadUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
@@ -59,12 +65,12 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     source.append(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
-    await store.set_attached(thread, source.attached, lease=lease)
-    await store.record(thread, source.entries, lease=lease)
-    scope = await store.current_scope(thread)
+    await ingestion.set_attached(thread, source.attached, lease=lease)
+    await ingestion.record(thread, source.entries, lease=lease)
+    scope = await content.current_scope(thread)
     assert scope is not None
     app = create_app(
         inventory,
@@ -76,6 +82,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         live_index,
         action_policy,
         reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
         thread_updates=thread_updates,
         operator_sessions=operator_sessions,
     )
@@ -162,7 +170,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         stderr = "λ" * (1024 * 1024 + 1)
         source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
         source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="unlinked checkpoint")))
-        await store.record(thread, source.entries[-3:], lease=lease)
+        await ingestion.record(thread, source.entries[-3:], lease=lease)
         debug_tail = await client.get(chronological, params={"limit": "3"}, headers=AGENT_AUTH)
         rows = debug_tail.json()["observations"]
         assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
@@ -198,7 +206,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
                 command_noop=event_pb2.CommandNoop(command_id="noop-debug", reason="unchanged"), source_sequences=[6]
             )
         )
-        await store.record(thread, source.entries[-4:], lease=lease)
+        await ingestion.record(thread, source.entries[-4:], lease=lease)
         for command_id, admission_cursor, outcome_cursor in (("failed-debug", "13", "15"), ("noop-debug", "14", "16")):
             command_scope = params | {"entity_kind": "command", "entity_id": command_id}
             command_evidence = await client.get(path, params=command_scope, headers=AGENT_AUTH)

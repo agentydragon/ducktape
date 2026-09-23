@@ -18,13 +18,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.changes import Changes
-from agentplane.app.ingestion import event_batches
+from agentplane.app.ingestion import Ingestion, event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.thread.event_log import EventReplicationError, FeedEnd, FeedError, ThreadNotFoundError
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import (
+    EventLogStore,
+    EventReplicationError,
+    FeedEnd,
+    FeedError,
+    ThreadNotFoundError,
+)
 from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
-from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError
@@ -82,10 +88,19 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: ThreadStore, lease: IngestionLease):
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        client: RunnerClient,
+        event_logs: EventLogStore,
+        ingestion: Ingestion,
+        lease: IngestionLease,
+    ):
         self.session_id = session_id
         self.client = client
-        self.store = store
+        self.event_logs = event_logs
+        self.ingestion = ingestion
         self.lease = lease
         self.task: asyncio.Task[None] | None = None
 
@@ -95,12 +110,12 @@ class Feed:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
-            thread_id = await self.store.thread(self.lease.sandbox, self.session_id, attached.spec)
-            stored = await self.store.last_cursor(thread_id)
+            thread_id = await self.event_logs.open(self.lease.sandbox, self.session_id, attached.spec)
+            stored = await self.event_logs.last_cursor(thread_id)
             if stored > attached.last_cursor:
-                if await self.store.feed_state(thread_id) is None:
-                    await self.store.set_attached(thread_id, attached, lease=self.lease)
-                await self.store.end_feed(
+                if await self.event_logs.feed_state(thread_id) is None:
+                    await self.ingestion.set_attached(thread_id, attached, lease=self.lease)
+                await self.ingestion.end_feed(
                     thread_id,
                     lease=self.lease,
                     error="runner log cursor regressed; refusing to merge a different session history",
@@ -112,13 +127,13 @@ class Feed:
                     # Replay the boundary entry too: the same cursor must still identify the
                     # exact archived Event and source even if the runner has no new entries.
                     attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
-            await self.store.set_attached(thread_id, attachment.attached, lease=self.lease)
+            await self.ingestion.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
                 async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:
                     async for batch in batches:
-                        await self.store.record(thread_id, batch, lease=self.lease)
-                copied = await self.store.last_cursor(thread_id)
-                await self.store.end_feed(
+                        await self.ingestion.record(thread_id, batch, lease=self.lease)
+                copied = await self.event_logs.last_cursor(thread_id)
+                await self.ingestion.end_feed(
                     thread_id,
                     lease=self.lease,
                     error=(
@@ -129,7 +144,7 @@ class Feed:
                 )
             except EventReplicationError as error:
                 logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-                await self.store.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
+                await self.ingestion.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
         except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
@@ -151,13 +166,17 @@ class RunnerBridge:
         self,
         *,
         address_of: AddressOf,
-        store: ThreadStore,
+        event_logs: EventLogStore,
+        ingestion: Ingestion,
+        content: ContentStore,
         thread_changes: Changes,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
     ) -> None:
         self._address_of = address_of
-        self._store = store
+        self._event_logs = event_logs
+        self._ingestion = ingestion
+        self._content = content
         self._thread_changes = thread_changes
         self._discover_sandboxes = discover_sandboxes
         self._sandbox_changes = sandbox_changes
@@ -212,11 +231,11 @@ class RunnerBridge:
         try:
             async with asyncio.timeout(10):
                 lease = self._leases.get(sandbox)
-                if lease is not None and not await self._store.renew_ingestion(lease, LEASE_DURATION):
+                if lease is not None and not await self._ingestion.renew(lease, LEASE_DURATION):
                     await self._release(sandbox)
                     lease = None
                 if lease is None:
-                    lease = await self._store.acquire_ingestion(sandbox, LEASE_DURATION)
+                    lease = await self._ingestion.acquire(sandbox, LEASE_DURATION)
                     if lease is None:
                         return
                     self._leases[sandbox] = lease
@@ -231,8 +250,8 @@ class RunnerBridge:
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
-                        snapshot = await self._store.feed_state(thread_id)
+                        thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        snapshot = await self._event_logs.feed_state(thread_id)
                         # A semantic replay failure is durable evidence that this runner's prefix is
                         # unsafe. A new coordinator or app replica must not call set_attached() and
                         # make its failed thread view appear healthy before replaying the same
@@ -243,10 +262,16 @@ class RunnerBridge:
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
                             and snapshot is not None
                             and snapshot.end is not None
-                            and await self._store.last_cursor(thread_id) == summary.last_cursor
+                            and await self._event_logs.last_cursor(thread_id) == summary.last_cursor
                         ):
                             continue
-                        feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
+                        feed = Feed(
+                            session_id=summary.session_id,
+                            client=client,
+                            event_logs=self._event_logs,
+                            ingestion=self._ingestion,
+                            lease=lease,
+                        )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
                 except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
@@ -257,7 +282,7 @@ class RunnerBridge:
     async def _release(self, sandbox: str) -> None:
         for key in [key for key in self._feeds if key[0] == sandbox]:
             await self._feeds.pop(key).close()
-        await self._store.release_ingestion(self._leases.pop(sandbox))
+        await self._ingestion.release(self._leases.pop(sandbox))
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return await (await self._client(sandbox)).list_sessions()
@@ -279,9 +304,9 @@ class RunnerBridge:
     async def open_session(
         self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
     ) -> protocol_pb2.Attached:
-        existing = await self._store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=True)
-        if existing:
-            snapshot = await self._store.feed_state(existing[0].id)
+        existing = await self._event_logs.find(sandbox, session_id)
+        if existing is not None:
+            snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
@@ -290,7 +315,7 @@ class RunnerBridge:
         finally:
             # Open has completed when Attached arrives. This caller needs no history replay.
             attachment.cancel()
-        thread_id = await self._store.thread(sandbox, session_id, attached.spec)
+        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
         await self.start([sandbox])
         # In particular, do not return a resumed session while the database still says its
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
@@ -299,27 +324,30 @@ class RunnerBridge:
             async with asyncio.timeout(15):
                 while True:
                     waiter.clear()
-                    if await self._store.last_cursor(thread_id) >= attached.last_cursor:
+                    if await self._event_logs.last_cursor(thread_id) >= attached.last_cursor:
                         break
                     await waiter.wait()
         return attached
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return only after this Thread's matching runner admission is in the app archive."""
-        if admitted := await self._store.admitted_command(thread_id, command):
+        if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
-        thread = await self._store.get_thread(thread_id)
-        if thread is None:
+        runner_session = await self._event_logs.runner_session(thread_id)
+        if runner_session is None:
             raise ThreadNotFoundError(thread_id)
-        snapshot = await self._store.feed_state(thread_id)
+        snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # A runner rejection can still have followed earlier events the archive has not copied.
         # Start its feed before relaying so the rejection path cannot strand that prefix.
-        await self.start([thread.sandbox])
+        await self.start([runner_session.sandbox])
         try:
             await self._command(
-                thread.sandbox, thread.session_id, command, after_cursor=await self._store.last_cursor(thread_id)
+                runner_session.sandbox,
+                runner_session.session_id,
+                command,
+                after_cursor=await self._event_logs.last_cursor(thread_id),
             )
             return await self._wait_for_admission(thread_id, command)
         except TimeoutError as error:
@@ -350,12 +378,12 @@ class RunnerBridge:
         with self._thread_changes.subscribe(waiter):
             async with asyncio.timeout(COMMAND_ADMISSION_S):
                 while True:
-                    if admitted := await self._store.admitted_command(thread_id, command):
+                    if admitted := await self._content.admitted_command(thread_id, command):
                         return admitted
                     waiter.clear()
                     # A commit between the first read and clear is visible here even if its NOTIFY
                     # was already consumed; notifications only wake this durable reread.
-                    if admitted := await self._store.admitted_command(thread_id, command):
+                    if admitted := await self._content.admitted_command(thread_id, command):
                         return admitted
                     # LISTEN/NOTIFY is deliberately only a wake-up. If a notification is lost
                     # while this app is attached, a bounded durable reread still finds the
@@ -366,7 +394,7 @@ class RunnerBridge:
 
     async def events(self, thread_id: UUID, *, after_cursor: int) -> AsyncGenerator[bytes]:
         """Follow the committed archive without requiring or starting a runner attachment."""
-        if await self._store.get_thread(thread_id) is None:
+        if await self._event_logs.runner_session(thread_id) is None:
             raise ThreadNotFoundError(thread_id)
         waiter = asyncio.Event()
         cursor = after_cursor
@@ -374,17 +402,17 @@ class RunnerBridge:
             attached_sent = False
             while True:
                 waiter.clear()
-                snapshot = await self._store.feed_state(thread_id)
+                snapshot = await self._event_logs.feed_state(thread_id)
                 if not attached_sent and snapshot is not None:
                     yield _frame("attached", MessageToDict(snapshot.attached))
                     attached_sent = True
-                while page := await self._store.events(thread_id, after_cursor=cursor, limit=REPLAY_PAGE):
+                while page := await self._event_logs.events(thread_id, after_cursor=cursor, limit=REPLAY_PAGE):
                     for entry in page:
                         yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
                         cursor = entry.cursor
-                snapshot = await self._store.feed_state(thread_id)
+                snapshot = await self._event_logs.feed_state(thread_id)
                 if snapshot is not None and snapshot.end is not None:
-                    if await self._store.last_cursor(thread_id) > cursor:
+                    if await self._event_logs.last_cursor(thread_id) > cursor:
                         continue
                     match snapshot.end:
                         case FeedEnd():
