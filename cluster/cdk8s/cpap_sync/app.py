@@ -1,9 +1,9 @@
 """cpap-sync: the daily CronJob that copies the CPAP card's EDF files into the cpap-data
-Forgejo repo, the Service fronting the card's HTTP API, and the Job's egress policy.
+Forgejo repo, the KubeVirt gateway VM that exposes the card, the Service fronting the card's
+HTTP API, and the Job's egress policy.
 
-Hand-written beside the generated output: the KubeVirt gateway VM that exposes the card
-(no binding for `VirtualMachine`), the card's SOPS Secret, and `image-pins/`, whose
-image-automation marker overrides this chart's placeholder image tag
+Hand-written beside the generated output: the card's SOPS Secret, and `image-pins/`, whose
+image-automation markers override this chart's placeholder image tags
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
@@ -21,27 +21,158 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressToServices,
     CiliumNetworkPolicySpecEgressToServicesK8SService,
 )
+from kubevirt_virtualmachine_crds.io.kubevirt import (
+    VirtualMachine,
+    VirtualMachineSpec,
+    VirtualMachineSpecTemplate,
+    VirtualMachineSpecTemplateSpec,
+    VirtualMachineSpecTemplateSpecDomain,
+    VirtualMachineSpecTemplateSpecDomainCpu,
+    VirtualMachineSpecTemplateSpecDomainDevices,
+    VirtualMachineSpecTemplateSpecDomainDevicesDisks,
+    VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk,
+    VirtualMachineSpecTemplateSpecDomainDevicesHostDevices,
+    VirtualMachineSpecTemplateSpecDomainDevicesInterfaces,
+    VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
+    VirtualMachineSpecTemplateSpecDomainFirmware,
+    VirtualMachineSpecTemplateSpecDomainFirmwareBootloader,
+    VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi,
+    VirtualMachineSpecTemplateSpecDomainResources,
+    VirtualMachineSpecTemplateSpecDomainResourcesRequests,
+    VirtualMachineSpecTemplateSpecNetworks,
+    VirtualMachineSpecTemplateSpecNetworksPod,
+    VirtualMachineSpecTemplateSpecVolumes,
+    VirtualMachineSpecTemplateSpecVolumesContainerDisk,
+    VirtualMachineSpecTemplateSpecVolumesSecret,
+)
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, forgejo_images
-from cluster.cdk8s.generation import write_charts, write_namespace
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
 OUTPUT_DIR = "cluster/k8s/cpap-sync"
-_IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"  # the tag comes from image-pins/kustomization.yaml
+# The tags come from image-pins/kustomization.yaml.
+_IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
+_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
 _NODE_SELECTOR = {"kubernetes.io/hostname": "optiplex"}  # the host the CPAP card's USB WiFi adapter is attached to
 _CARD_SERVICE = "cpap-card"
-_GATEWAY_DOMAIN = "cpap-gateway"  # the VM's `kubevirt.io/domain` label (cpap-gateway-vm.yaml)
+_GATEWAY = "cpap-gateway"
 _GATEWAY_PORT = 18080
 _GIT_CREDENTIALS = "cpap-data-git-write"
 _WORKDIR = "/workdir"
+_CARD_SECRET = "cpap-ezshare"
+_RESOURCES = ["namespace.k8s.yaml", f"{_CARD_SECRET}.sops.yaml", f"{NAME}.k8s.yaml"]
 
 
 def _git_env(name: str, key: str) -> k8s.EnvVar:
     return k8s.EnvVar(
         name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=_GIT_CREDENTIALS, key=key))
+    )
+
+
+def _gateway_vm(chart: Chart) -> None:
+    labels = {"app.kubernetes.io/name": _GATEWAY}
+    VirtualMachine(
+        chart,
+        "gateway-vm",
+        metadata=metadata(
+            _GATEWAY,
+            NAMESPACE,
+            labels=labels,
+            annotations={
+                "description": (
+                    "Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically "
+                    "attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API "
+                    "to the sync Service."
+                )
+            },
+        ),
+        spec=VirtualMachineSpec(
+            run_strategy="Always",
+            template=VirtualMachineSpecTemplate(
+                metadata=k8s.ObjectMeta(labels={"kubevirt.io/domain": _GATEWAY} | labels),
+                spec=VirtualMachineSpecTemplateSpec(
+                    node_selector=_NODE_SELECTOR,
+                    domain=VirtualMachineSpecTemplateSpecDomain(
+                        cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=2),
+                        resources=VirtualMachineSpecTemplateSpecDomainResources(
+                            requests={
+                                # The guest currently has substantial headroom at this size. Keep
+                                # the appliance small while KubeVirt over-reserves USB host devices
+                                # as VFIO memory overhead.
+                                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("768Mi")
+                            }
+                        ),
+                        firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
+                            bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
+                                efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
+                            )
+                        ),
+                        devices=VirtualMachineSpecTemplateSpecDomainDevices(
+                            # This appliance has no graphical console.
+                            autoattach_graphics_device=False,
+                            disks=[
+                                VirtualMachineSpecTemplateSpecDomainDevicesDisks(
+                                    name="rootdisk",
+                                    boot_order=1,
+                                    disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
+                                ),
+                                VirtualMachineSpecTemplateSpecDomainDevicesDisks(
+                                    name="cpap-secret",
+                                    serial="cpapsecret",
+                                    disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
+                                ),
+                            ],
+                            interfaces=[
+                                VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
+                                    name="default",
+                                    masquerade={},
+                                    ports=[
+                                        VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
+                                            name="http", port=_GATEWAY_PORT
+                                        )
+                                    ],
+                                )
+                            ],
+                            host_devices=[
+                                VirtualMachineSpecTemplateSpecDomainDevicesHostDevices(
+                                    name="cpap-wifi", device_name="kubevirt.io/cpap-wifi"
+                                )
+                            ],
+                        ),
+                    ),
+                    networks=[
+                        VirtualMachineSpecTemplateSpecNetworks(
+                            name="default", pod=VirtualMachineSpecTemplateSpecNetworksPod()
+                        )
+                    ],
+                    volumes=[
+                        # A stateless VM disk.
+                        VirtualMachineSpecTemplateSpecVolumes(
+                            name="rootdisk",
+                            container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
+                                image=_GATEWAY_IMAGE, image_pull_policy="IfNotPresent"
+                            ),
+                        ),
+                        VirtualMachineSpecTemplateSpecVolumes(
+                            name="cpap-secret",
+                            secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name=_CARD_SECRET),
+                        ),
+                    ],
+                ),
+            ),
+        ),
     )
 
 
@@ -142,7 +273,7 @@ def chart(app: App) -> Chart:
         ),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector={"kubevirt.io/domain": _GATEWAY_DOMAIN},
+            selector={"kubevirt.io/domain": _GATEWAY},
             ports=[
                 k8s.ServicePort(
                     name="http", port=80, protocol="TCP", target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)
@@ -150,6 +281,7 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
+    _gateway_vm(chart)
     cilium.network_policy(
         chart,
         "egress",
@@ -193,7 +325,7 @@ def chart(app: App) -> Chart:
             # for the translated backend connection.  Keep the Service rule above for
             # the facade contract and explicitly authorize the stable VMI identity.
             cilium.egress_to(
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "k8s:kubevirt.io/domain": _GATEWAY_DOMAIN}, _GATEWAY_PORT
+                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "k8s:kubevirt.io/domain": _GATEWAY}, _GATEWAY_PORT
             ),
             # git.allegedly.works resolves to the cluster's Gateway node addresses;
             # cluster covers those node entities as well as in-cluster Forgejo traffic.
@@ -215,3 +347,24 @@ def write_manifests(root: Path) -> None:
         },
     )
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=_RESOURCES, components=["./image-pins"]),
+    )
+
+
+def cpap_sync(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_config: Kustomization,
+    kubevirt: Kustomization,
+    forgejo_images_kustomization: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        decryption=SOPS_DECRYPTION,
+        timeout="30m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images_kustomization),
+    )
