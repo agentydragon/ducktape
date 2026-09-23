@@ -124,7 +124,7 @@ from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flu
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
-from cluster.cdk8s.study_casino import flux_kustomizations as study_casino_flux_kustomizations
+from cluster.cdk8s.study_casino import app as study_casino_app, flux_kustomizations as study_casino_flux_kustomizations
 from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
@@ -195,6 +195,7 @@ def generate_manifests(root: Path) -> None:
     cli_proxy_api.write_manifests(root)
     matrix.write_manifests(root)
     matrix_user_provisioner.write_manifests(root)
+    study_casino_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

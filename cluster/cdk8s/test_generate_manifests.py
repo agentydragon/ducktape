@@ -115,6 +115,7 @@ _GENERATED_FILES = (
     "cluster/k8s/matrix/kustomization.yaml",
     "cluster/k8s/matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
     "cluster/k8s/matrix/user-provisioner/kustomization.yaml",
+    "cluster/k8s/study-casino/study-casino.k8s.yaml",
 )
 
 

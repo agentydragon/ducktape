@@ -151,6 +151,7 @@ exports_files(
         "matrix/kustomization.yaml",
         "matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
         "matrix/user-provisioner/kustomization.yaml",
+        "study-casino/study-casino.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
