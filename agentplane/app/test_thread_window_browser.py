@@ -128,6 +128,9 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
 
     await page.context.set_offline(True)
     try:
+        # Offline fails only new requests; the live SSE response ends with its connection.
+        async with page.expect_event("requestfailed", predicate=lambda request: "/sync/entities?" in request.url):
+            await thread_browser.ingress.drop_connections()
         latest = _append_items(thread_browser, "offline-item", range(70))
         async with asyncio.timeout(15):
             while True:

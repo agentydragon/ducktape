@@ -1,9 +1,10 @@
 //! Every command that resolves a selector gives the same answer for the same
 //! selector and chunk: `debundle run`, `spec validate --source-file` and
-//! `spec match-selector`. Each case also pins an `alpha_all` scoping rule the
-//! commands must share: same-spelled locals in sibling blocks, loop heads,
-//! `switch` bodies and named function expressions are independent bindings,
-//! while `var` hoists to the enclosing function.
+//! `spec match-selector`. Each case also pins a matching rule the commands must
+//! share: same-spelled locals in sibling blocks, loop heads, `switch` bodies and
+//! named function expressions are independent bindings, `var` hoists to the
+//! enclosing function, and a `const ANYTHING = <init>` declarator matches its
+//! initializer wherever it sits in its statement.
 
 use std::fs;
 use std::path::Path;
@@ -253,4 +254,61 @@ export { actual };
         matched["matches"].as_array().unwrap().is_empty(),
         "{matched:#}"
     );
+}
+
+/// `const ANYTHING = <init>` holes the declarator's name only: the initializer is
+/// the anchor. `c` also declares a `const` inside a single-parameter function
+/// and must not match.
+const ANYTHING_DECLARATOR_KEEPS_INITIALIZER: Case = Case {
+    chunk: r#"function a(n) {
+  if (!n) return;
+  const e = n.distinctive.leaf?.name;
+  return e;
+}
+function c(n) {
+  const t = n * 2;
+  return t;
+}
+console.log(a({ distinctive: { leaf: { name: "x" } } }), c(1));
+export { a, c };
+"#,
+    selector: r#"function readable(ANYTHING) {
+  STMT_LIST;
+  const ANYTHING = ANYTHING.distinctive.leaf?.name;
+  STMT_LIST;
+}"#,
+    local: "readable",
+    subject: "a",
+};
+
+/// Minifiers merge consecutive declarations, so an `ANYTHING = <init>`
+/// declarator floats: it matches one declarator anywhere in its statement.
+const ANYTHING_DECLARATOR_AMONG_OTHERS: Case = Case {
+    chunk: r#"function a(n) {
+  const e = n.distinctive.leaf?.name, t = 1;
+  return e + t;
+}
+function c(n) {
+  const e = n.other, t = 2;
+  return e + t;
+}
+console.log(a({ distinctive: { leaf: { name: "x" } } }), c({ other: "y" }));
+export { a, c };
+"#,
+    selector: r#"function readable(ANYTHING) {
+  const ANYTHING = ANYTHING.distinctive.leaf?.name;
+  STMT_LIST;
+}"#,
+    local: "readable",
+    subject: "a",
+};
+
+#[test]
+fn anything_declarator_keeps_its_initializer() {
+    assert_all_commands_resolve(&ANYTHING_DECLARATOR_KEEPS_INITIALIZER);
+}
+
+#[test]
+fn anything_declarator_floats_among_others() {
+    assert_all_commands_resolve(&ANYTHING_DECLARATOR_AMONG_OTHERS);
 }

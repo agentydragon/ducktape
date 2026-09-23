@@ -36,8 +36,11 @@ _ENTITY_COLUMNS = (
     "text_ref,arguments_ref,output_ref,input_ref"
 )
 _CHUNK_COLUMNS = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
-# Electric's own protocol parameters, including the two its client adds when recovering a handle.
-_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log", "expired_handle", "cache-buster"})
+# Electric's own protocol parameters, including the two its client adds when recovering a handle, and
+# the SSE flag it sends under both its current and its deprecated name.
+_PASSTHROUGH_QUERY = frozenset(
+    {"offset", "handle", "live", "live_sse", "experimental_live_sse", "cursor", "log", "expired_handle", "cache-buster"}
+)
 _APP_QUERY = frozenset({"projection_epoch"})
 # How long a scope read waits for a thread's first fold: Electric's own long-poll hold, which the
 # deployment leaves at its default, so whatever already carries a live shape request carries this.
@@ -278,7 +281,8 @@ class ElectricProxy:
         logger.info(
             "electric shape response: %s",
             f"{table=} subset={subset is not None} {upstream_seconds=:.3f} status={response.status_code} "
-            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')}",
+            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')} "
+            f"sse={request.query_params.get('live_sse')}",
         )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}

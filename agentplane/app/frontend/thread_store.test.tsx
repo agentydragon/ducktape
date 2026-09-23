@@ -54,20 +54,18 @@ function change(relation: string, operation: "insert" | "update" | "delete", row
   return { key: key(relation, row), value: row, headers: { relation: ["public", relation], operation } };
 }
 
-function headers(relation: string, handle: string): HeadersInit {
+function headers(relation: string, handle: string, offset = "0_0"): HeadersInit {
   return {
     "content-type": "application/json",
     "electric-handle": handle,
-    "electric-offset": "0_0",
+    "electric-offset": offset,
     "electric-cursor": "1",
     "electric-schema": JSON.stringify(SCHEMAS[relation]),
   };
 }
 
-function log(relation: string, handle: string, messages: Json[]): Response {
-  return new Response(JSON.stringify([...messages, { headers: { control: "up-to-date" } }]), {
-    headers: { ...headers(relation, handle), "electric-up-to-date": "" },
-  });
+function relationOf(path: string): string {
+  return path === "entities" ? "thread_entity" : "thread_payload_chunk";
 }
 
 function item(index: number, epoch = "epoch-1", extra: Json = {}): Json {
@@ -144,7 +142,16 @@ interface Subset {
   limit?: number;
 }
 
-/** The proxy's routes over in-memory rows, one Electric shape per path. */
+/** A live read's SSE connection: what it asked for, and where its events go. */
+interface Connection {
+  query: URLSearchParams;
+  events: ReadableStreamDefaultController<Uint8Array>;
+}
+
+/**
+ * The proxy's routes over in-memory rows, one Electric shape per path. A live read is an SSE
+ * connection, open until the reader leaves or a test ends it.
+ */
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
@@ -153,7 +160,11 @@ class FakeSync {
   entities: Json[] = [];
   chunks: Json[] = [];
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
-  readonly #live = new Map<string, { query: URLSearchParams; resolve: (response: Response) => void }>();
+  readonly #live = new Map<string, Connection>();
+  // The held scope read, answered by `respond`.
+  #held: ((response: Response) => void) | null = null;
+  // Handles Electric has rotated away from, each with the one its 409 names instead.
+  readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
   #snapshots = 0;
 
@@ -163,11 +174,13 @@ class FakeSync {
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
-    if (path === "scope") return this.folded ? this.scope() : this.#hold(path, url.searchParams, init?.signal);
+    if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
-    const relation = path === "entities" ? "thread_entity" : "thread_payload_chunk";
+    const relation = relationOf(path);
     // Electric resolves a shape's handle from its definition.
     const handle = url.searchParams.get("handle") ?? `${path}-1`;
+    const successor = this.#rotated.get(handle);
+    if (successor !== undefined) return Response.json([], { status: 409, headers: headers(relation, successor) });
     if (subset !== null) {
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
@@ -175,45 +188,89 @@ class FakeSync {
           data: rows.map((row) => change(relation, "insert", row)),
           metadata: { snapshot_mark: 1, database_lsn: "1", xip_list: [], xmin: "1", xmax: "1" },
         }),
-        { headers: { ...headers(relation, handle), "electric-offset": `${++this.#snapshots}00_0` } }
+        { headers: headers(relation, handle, `${++this.#snapshots}00_0`) }
       );
     }
-    if (url.searchParams.get("live") !== "true") return log(relation, handle, []);
-    return this.#hold(path, url.searchParams, init?.signal);
+    const offset = url.searchParams.get("offset") ?? "now";
+    // Nothing has changed since any offset a reader names, so a catch-up read hands it back.
+    const position = offset === "now" || offset === "-1" ? "0_0" : offset;
+    if (url.searchParams.get("live") !== "true")
+      return Response.json([{ headers: { control: "up-to-date" } }], {
+        headers: { ...headers(relation, handle, position), "electric-up-to-date": "" },
+      });
+    if (url.searchParams.get("live_sse") !== "true")
+      return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
+    const body = new ReadableStream<Uint8Array>({
+      start: (events) => {
+        this.#live.set(path, { query: url.searchParams, events });
+        init?.signal?.addEventListener("abort", () => {
+          if (this.#live.get(path)?.events === events) this.#live.delete(path);
+          events.error(new DOMException("aborted", "AbortError"));
+        });
+      },
+    });
+    return new Response(body, {
+      headers: { ...headers(relation, handle, position), "content-type": "text/event-stream" },
+    });
   };
 
   scope(): Response {
     return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
   }
 
-  #hold(path: string, query: URLSearchParams, signal?: AbortSignal | null): Promise<Response> {
+  #hold(signal?: AbortSignal | null): Promise<Response> {
     return new Promise((resolve, reject) => {
-      this.#live.set(path, { query, resolve });
+      this.#held = resolve;
       signal?.addEventListener("abort", () => {
-        this.#live.delete(path);
+        this.#held = null;
         reject(new DOMException("aborted", "AbortError"));
       });
     });
   }
 
-  /** The offset the shape's waiting live request reads from. */
-  async liveOffset(path: string): Promise<string | null> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    return this.#live.get(path)!.query.get("offset");
+  /** Answer the held scope read. */
+  async respond(response: () => Response): Promise<void> {
+    await vi.waitFor(() => expect(this.#held).not.toBeNull());
+    const resolve = this.#held!;
+    this.#held = null;
+    await act(async () => resolve(response()));
   }
 
-  /** Answer the path's waiting request. */
-  async respond(path: string, response: (relation: string) => Response): Promise<void> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    const { resolve } = this.#live.get(path)!;
+  /** The offset the shape's open SSE connection reads from. */
+  async liveOffset(path: string): Promise<string | null> {
+    return (await this.#connection(path)).query.get("offset");
+  }
+
+  /** Deliver changes on the shape's SSE connection as Electric does: an event each, then up-to-date. */
+  async send(path: string, messages: (relation: string) => Json[]): Promise<void> {
+    const { events } = await this.#connection(path);
+    const batch = [...messages(relationOf(path)), { headers: { control: "up-to-date" } }];
+    const stream = batch.map((message) => `data: ${JSON.stringify(message)}\n\n`).join("");
+    await act(async () => events.enqueue(new TextEncoder().encode(stream)));
+  }
+
+  /** End the shape's SSE connection, as Electric does once it has been open a minute. */
+  async close(path: string): Promise<void> {
+    const { events } = await this.#connection(path);
     this.#live.delete(path);
-    await act(async () => resolve(response(path === "entities" ? "thread_entity" : "thread_payload_chunk")));
+    await act(async () => events.close());
+  }
+
+  /** Rotate the shape to `successor`, as Electric does when it retires a log: the reconnect gets 409. */
+  async rotate(path: string, successor: string): Promise<void> {
+    this.#rotated.set((await this.#connection(path)).query.get("handle")!, successor);
+    await this.close(path);
   }
 
   posted(path: string): Subset[] {
     return this.requests
       .filter((request) => request.method === "POST" && request.path === path)
       .map((request) => request.subset!);
+  }
+
+  async #connection(path: string): Promise<Connection> {
+    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
+    return this.#live.get(path)!;
   }
 
   #entitySubset(subset: Subset): Json[] {
@@ -344,17 +401,16 @@ it("re-issues a scope read the server answered without a fold at once, and opens
   const sync = stubSync();
   thread(sync, 3);
   sync.folded = false;
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
 
-  await sync.respond("scope", () => new Response(null, { status: 204 }));
+  await sync.respond(() => new Response(null, { status: 204 }));
   // Already held again, before any timer could have fired.
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
-  expect(container.textContent).toContain("Loading thread");
+  // No window has opened: the view has nothing to show yet.
+  expect(container.textContent).toBe("");
 
   sync.folded = true;
-  await sync.respond("scope", () => sync.scope());
+  await sync.respond(() => sync.scope());
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
@@ -365,13 +421,11 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
 
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [
-      change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
-      change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
-      change(relation, "insert", item(71)),
-    ])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
+    change(relation, "insert", item(71)),
+  ]);
 
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-71@71"));
   expect(itemsShown(container)).toContain("item-70@71");
@@ -390,9 +444,9 @@ it("keeps reading the live log from where it was when a subset answers from furt
 
   // The stream reads on from where it was, so what the subset's position is past still reaches it.
   expect(await sync.liveOffset("entities")).toBe(reading);
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" }))])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+  ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
 });
 
@@ -414,11 +468,31 @@ it("re-reads a retired epoch's scope and swaps windows under the same children",
 
   sync.epoch = "epoch-2";
   thread(sync, 4, "epoch-2");
-  await sync.respond("entities", () => Response.json({}, { status: 410 }));
+  // The proxy refuses the reconnect for the old epoch.
+  await sync.close("entities");
 
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
   expect(container.querySelector("input")).toBe(draft);
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+});
+
+it("re-reads the scope as soon as the live log retires its epoch", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  const retired = sync.entities;
+  const asked = sync.requests.length;
+
+  sync.epoch = "epoch-2";
+  thread(sync, 4, "epoch-2");
+  // A rebuild moves every row out of the old epoch's shape, whose SSE connection stays open.
+  await sync.send("entities", (relation) => retired.map((row) => change(relation, "delete", row)));
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
+  expect(sync.requests.slice(asked).filter((request) => request.query.get("projection_epoch") === "epoch-1")).toEqual(
+    []
+  );
 });
 
 it("reloads as many rows as it held when Electric retires the shape's log, dropping deleted ones", async () => {
@@ -430,9 +504,7 @@ it("reloads as many rows as it held when Electric retires the shape's log, dropp
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
 
   sync.entities = sync.entities.filter((row) => row.entity_id !== "item-50");
-  await sync.respond("entities", (relation) =>
-    Response.json([], { status: 409, headers: { ...headers(relation, "entities-2") } })
-  );
+  await sync.rotate("entities", "entities-2");
 
   await vi.waitFor(() => expect(itemsShown(container)).not.toContain("item-50@50"));
   expect(itemsShown(container)).toHaveLength(60);
@@ -467,12 +539,10 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
   const params = read.params!;
   expect(new Set([`${params["1"]}@${params["2"]}`, `${params["3"]}@${params["4"]}`])).toEqual(new Set(["a@1", "b@1"]));
 
-  await sync.respond("chunks/text", (relation) =>
-    log(relation, "chunks/text-1", [change(relation, "insert", chunk("a", 3, "!"))])
-  );
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) }))])
-  );
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 3, "!"))]);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) })),
+  ]);
   await vi.waitFor(() => expect(body("item-1")).toBe("Hello there!"));
 });
 

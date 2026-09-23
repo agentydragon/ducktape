@@ -134,11 +134,12 @@ pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loa
 subset snapshots of them: the latest 30 positions, the page before the oldest row it holds each
 time the reader scrolls up, the view state, pending commands, and the commands this browser sent,
 by ID, so an outcome stays visible however far the thread has moved on. Every later change to a
-held row arrives on the shape's live log. Text and tool arguments render as far as their
-references' chunk counts, while reasoning, tool output and associated debug frames are read on
-demand. Local authored intent, unsent drafts and viewport/disclosure state remain separate from
-the synchronized rows. See [the sync design](../docs/thread_view_sync.md) for query, revision and
-memory contracts and the remaining acceptance gates.
+held row arrives on the shape's live log, which the browser follows over SSE. Text and tool
+arguments render as far as their references' chunk counts, while reasoning, tool output and
+associated debug frames are read on demand. Local authored intent, unsent drafts and
+viewport/disclosure state remain separate from the synchronized rows. See
+[the sync design](../docs/thread_view_sync.md) for query, revision and memory contracts and the
+remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
