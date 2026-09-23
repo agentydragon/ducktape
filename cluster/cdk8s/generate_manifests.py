@@ -230,6 +230,7 @@ from cluster.cdk8s.seaweedfs import (
     forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     namespace as seaweedfs_namespace,
+    pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
 )
@@ -331,6 +332,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_forgejo_bucket.write_manifests(root)
     seaweedfs_public_coder_agent_backups_bucket.write_manifests(root)
     seaweedfs_registry_cache_bucket.write_manifests(root)
+    seaweedfs_pr_visuals_bucket.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)
@@ -863,9 +865,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_monitoring_artifact, seaweedfs_cluster_kustomization, monitoring_crds_kustomization
     )
     seaweedfs_pr_visuals_bucket_artifact = artifact(
-        "seaweedfs-pr-visuals-bucket", "cluster/k8s/seaweedfs/pr-visuals-bucket"
+        "seaweedfs-pr-visuals-bucket", seaweedfs_pr_visuals_bucket.OUTPUT_DIR
     )
-    seaweedfs_pr_visuals_bucket_kustomization = seaweedfs_flux_kustomizations.seaweedfs_pr_visuals_bucket(
+    seaweedfs_pr_visuals_bucket_kustomization = seaweedfs_pr_visuals_bucket.seaweedfs_pr_visuals_bucket(
         flux_chart, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_cluster_kustomization
     )
     seaweedfs_public_coder_agent_backups_bucket_artifact = artifact(
