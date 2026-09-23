@@ -201,21 +201,6 @@ def seaweedfs_monitoring(
     )
 
 
-def seaweedfs_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "seaweedfs-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-        ),
-    )
-
-
 def seaweedfs_operator(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization
 ) -> Kustomization:

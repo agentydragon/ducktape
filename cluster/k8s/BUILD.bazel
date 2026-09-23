@@ -179,6 +179,8 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/namespace/namespace.k8s.yaml",
+        "seaweedfs/namespace/kustomization.yaml",
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/kustomization.yaml",
         "agents/plaid-mcp/namespace.k8s.yaml",

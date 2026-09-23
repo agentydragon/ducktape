@@ -81,6 +81,8 @@ _GENERATED_FILES = (
     "cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.k8s.yaml",
     "cluster/k8s/kyverno/policies/restrict-agent-kustomization-patch.k8s.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/seaweedfs/namespace/namespace.k8s.yaml",
+    "cluster/k8s/seaweedfs/namespace/kustomization.yaml",
     "cluster/k8s/external-creds/external-creds.k8s.yaml",
     "cluster/k8s/external-creds/kustomization.yaml",
     "cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
