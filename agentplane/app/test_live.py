@@ -51,7 +51,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.runner import protocol_pb2
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL
@@ -270,7 +270,7 @@ def app(
     async def unreachable(name: str) -> str:
         raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
-    store = TrajectoryStore.connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
+    store = ThreadStore.connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     bridge = RunnerBridge(address_of=unreachable, store=store)
     return create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer)
 
@@ -291,7 +291,7 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex, store: TrajectoryStore, replica: TrajectoryStore
+    seeded: LiveIndex, store: ThreadStore, replica: ThreadStore
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica, shutdown=drain)
@@ -331,7 +331,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, store: TrajectoryStore, replica: TrajectoryStore, db_url: str
+    seeded: LiveIndex, store: ThreadStore, replica: ThreadStore, db_url: str
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica, shutdown=drain)
@@ -344,7 +344,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                 await connection.execute(
                     text(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = current_database() AND application_name = 'agentplane-trajectory-updates'"
+                        "WHERE datname = current_database() AND application_name = 'agentplane-thread-updates'"
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected

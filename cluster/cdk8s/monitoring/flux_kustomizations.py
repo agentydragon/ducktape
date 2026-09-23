@@ -3,17 +3,17 @@
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -22,7 +22,11 @@ from cluster.cdk8s.flux import (
 
 
 def alloy_otlp_bearer_token_tf(
-    chart: Chart, tofu_controller: Kustomization, tofu_state_db: Kustomization, authentik_jwt_rotation: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    tofu_controller: Kustomization,
+    tofu_state_db: Kustomization,
+    authentik_jwt_rotation: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -30,13 +34,9 @@ def alloy_otlp_bearer_token_tf(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/alloy-otlp-bearer-token-tf",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-alloy-otlp-bearer-token-tf",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -57,20 +57,18 @@ def alloy_otlp_bearer_token_tf(
     )
 
 
-def alloy(chart: Chart, mimir: Kustomization, grafana_helmrepository: Kustomization) -> Kustomization:
+def alloy(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, mimir: Kustomization, grafana_helmrepository: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "alloy",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/alloy",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-alloy",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="alloy", namespace="monitoring"
@@ -82,7 +80,9 @@ def alloy(chart: Chart, mimir: Kustomization, grafana_helmrepository: Kustomizat
     )
 
 
-def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+def cilium_monitoring(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "cilium-monitoring",
@@ -90,13 +90,9 @@ def cilium_monitoring(chart: Chart, monitoring_crds: Kustomization) -> Kustomiza
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path="./cluster/k8s/monitoring/cilium",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-cilium",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[
                 # ServiceMonitor
                 flux_kustomization_depends_on(monitoring_crds)
@@ -139,41 +135,35 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     )
 
 
-def grafana_helmrepository(chart: Chart) -> Kustomization:
+def grafana_helmrepository(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-helmrepository",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-helmrepository",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="grafana-helmrepository",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             timeout="5m",
         ),
     )
 
 
-def grafana_instance(chart: Chart, grafana_operator: Kustomization, cnpg: Kustomization) -> Kustomization:
+def grafana_instance(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grafana_operator: Kustomization, cnpg: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-instance",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-instance",
+            path=artifact_path(artifact),
             prune=True,
             deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="grafana-instance",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
@@ -188,20 +178,18 @@ def grafana_instance(chart: Chart, grafana_operator: Kustomization, cnpg: Kustom
     )
 
 
-def grafana_operator(chart: Chart, monitoring_namespace: Kustomization) -> Kustomization:
+def grafana_operator(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_namespace: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-operator",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/grafana-operator",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="grafana-operator",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2",
@@ -216,22 +204,22 @@ def grafana_operator(chart: Chart, monitoring_namespace: Kustomization) -> Kusto
     )
 
 
-def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster: Kustomization) -> Kustomization:
+def loki(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    grafana_helmrepository: Kustomization,
+    seaweedfs_cluster: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/loki",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-loki", namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
@@ -251,6 +239,7 @@ def loki(chart: Chart, grafana_helmrepository: Kustomization, seaweedfs_cluster:
 
 def mimir(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
     grafana_helmrepository: Kustomization,
     seaweedfs_cluster: Kustomization,
@@ -262,17 +251,10 @@ def mimir(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/mimir",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-mimir",
-                namespace="ducktape-flux",
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-blocks", namespace="monitoring"
@@ -300,20 +282,16 @@ def mimir(
     )
 
 
-def monitoring_namespace(chart: Chart) -> Kustomization:
+def monitoring_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-namespace",
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/namespace",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-namespace",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             # Health check ensures monitoring namespace exists before dependents deploy
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="monitoring")],
@@ -322,19 +300,17 @@ def monitoring_namespace(chart: Chart) -> Kustomization:
     )
 
 
-def monitoring_rules(chart: Chart, monitoring_crds: Kustomization) -> Kustomization:
+def monitoring_rules(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-rules",
         spec=KustomizationSpec(
             interval="10m",
-            path="./cluster/k8s/monitoring/rules",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-rules",
-                namespace="ducktape-flux",
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=[
                 # PrometheusRule
                 flux_kustomization_depends_on(monitoring_crds)
@@ -345,6 +321,7 @@ def monitoring_rules(chart: Chart, monitoring_crds: Kustomization) -> Kustomizat
 
 def monitoring_stack(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     ntfy: Kustomization,
@@ -356,17 +333,10 @@ def monitoring_stack(
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/stack",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-stack",
-                namespace="ducktape-flux",
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
@@ -400,6 +370,7 @@ def monitoring_stack(
 
 def tempo(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
     grafana_helmrepository: Kustomization,
     seaweedfs_cluster: Kustomization,
@@ -411,17 +382,10 @@ def tempo(
             suspend=False,
             retry_interval="1m",
             interval="10m",
-            path="./cluster/k8s/monitoring/tempo",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name="monitoring-tempo",
-                namespace="ducktape-flux",
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="tempo", namespace="monitoring"

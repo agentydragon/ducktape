@@ -29,8 +29,7 @@ standard tools; examples appear only where they define a repo-specific format.
 ### @-Transclusion Syntax
 
 `@path/to/file.md` alone on its own line; relative paths supported. Transclude only
-content every reader of the host file needs — task-specific docs get a `<path>` pointer
-instead, so they load on demand.
+content every reader of the host file needs.
 
 ## General
 
@@ -511,13 +510,6 @@ never re-explain the standard behavior. Example: "Standard Flux image automation
 deviation: register the `ImageRepository` with the webhook receiver." House vocabulary:
 **deviation** = intentional divergence from stock; **gotcha** = surprising behavior that
 bites.
-
-### Local File Links in Markdown
-
-- `@path/to/file.md` (own line) — transclusion, for content agents must always load
-- `<path/to/file.md>` — clickable link without custom text
-- `[custom text](path/to/file.md)` — link with custom text
-- Never `[path](path)` — duplicates the path
 
 ### Inline Code in Prose
 

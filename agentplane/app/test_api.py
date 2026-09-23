@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
@@ -32,7 +34,9 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
+from agentplane.app.thread.store import ThreadStore
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -94,10 +98,19 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
+async def electric(store: ThreadStore) -> AsyncIterator[ElectricProxy]:
+    async def unexpected(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
+        yield ElectricProxy(client, store)
+
+
+@pytest.fixture
 def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -105,6 +118,7 @@ def client(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
+    electric: ElectricProxy,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
@@ -141,6 +155,7 @@ def client(
         action_policy,
         reviewer=reviewer,
         presets=TEST_PRESETS,
+        electric=electric,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -465,7 +480,7 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -609,6 +624,17 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
+@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
+def test_thread_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
+    path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
+    for credentials in (
+        {"Authorization": ""},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": "", "x-authentik-username": "root"},
+    ):
+        assert client.get(path, headers=credentials).status_code == 401
+
+
 def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
     refused = client.delete("/egress/bindings/live-seeded")
@@ -654,7 +680,7 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -688,10 +714,77 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert missing.status_code == 404
 
 
+async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    """A reload asks the authoritative scope about browser-held ids without resending commands."""
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread = await store.thread("live", "command-reconcile", spec)
+    lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+    assert lease is not None
+    failed = command_pb2.Command(
+        command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")
+    )
+    pending = command_pb2.Command(
+        command_id="pending", submit_input=command_pb2.SubmitInput(text="still awaiting the runner")
+    )
+
+    def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+        return event_log_pb2.EventEntry(
+            cursor=cursor,
+            origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor),
+            event=event_pb2.Event(**observation),  # type: ignore[arg-type]
+        )
+
+    await store.record(
+        thread,
+        [
+            entry(1, command_admitted=event_pb2.CommandAdmitted(command=failed)),
+            entry(2, command_failed=event_pb2.CommandFailed(command_id="failed", reason="runner rejected it")),
+            entry(3, command_admitted=event_pb2.CommandAdmitted(command=pending)),
+        ],
+        lease=lease,
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert first.status_code == 200, first.text
+        assert first.json() == {
+            "projection_epoch": THREAD_FOLD_EPOCH,
+            "commands": [
+                {"command_id": "failed", "outcome": "failed"},
+                {"command_id": "pending", "outcome": "pending"},
+                {"command_id": "absent", "outcome": None},
+            ],
+        }
+        # This is the reload path after a committed admission's HTTP response was lost.
+        reloaded = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert reloaded.json() == first.json()
+
+        stale = await http.post(
+            f"/threads/{thread}/commands/reconcile", json={**body, "projection_epoch": "old-projection"}
+        )
+        assert stale.status_code == 410
+        invalid = await http.post(f"/threads/{thread}/commands/reconcile", json={**body, "command_ids": ["id"] * 129})
+        assert invalid.status_code == 422
+
+
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -723,7 +816,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,

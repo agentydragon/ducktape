@@ -5,10 +5,11 @@
 #
 #   main   — every target: all cache-eligible ducktape package outputs (including
 #            the full shared Python lockfile closure any of them pulls in — see
-#            #3298/#7078) + all NixOS toplevels + home activationPackages +
-#            bootstrap packages. The parked Haku managed-agent NixOS system is
-#            excluded from this CI cache. Flake-specific image outputs are not
-#            part of `ducktapePkgs`, the package set passed to these targets.
+#            #3298/#7078) + all remaining NixOS toplevels + home activation
+#            packages + bootstrap packages. Parked Haku managed-agent,
+#            agent-box, and gecko NixOS systems are excluded from this CI cache.
+#            Flake-specific image outputs are not part of `ducktapePkgs`, the
+#            package set passed to these targets.
 #            Pushed to the broadly readable `main` cache.
 #   public — the bootstrap subset only, also pushed to the anonymous `public`
 #            cache (a fresh Claude Code web session substitutes these before any
@@ -86,7 +87,13 @@ let
   # Flake-specific image packages are not part of ducktapePkgs and therefore
   # are not inputs to the broad Attic build target.
   atticPackages = ducktapePkgs;
-  atticNixosConfigurations = builtins.removeAttrs self.nixosConfigurations [ "haku-managed-agent" ];
+  # Keep parked guest system closures out of automatic Attic builds while
+  # retaining their NixOS configurations and image outputs for manual builds.
+  atticNixosConfigurations = builtins.removeAttrs self.nixosConfigurations [
+    "haku-managed-agent"
+    "agent-box"
+    "gecko"
+  ];
 
   prefix = p: lib.mapAttrs' (n: v: lib.nameValuePair "${p}-${n}" v);
 in

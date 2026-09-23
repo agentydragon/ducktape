@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
@@ -27,7 +30,9 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -38,14 +43,42 @@ from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    """A pristine, migrated per-test database on the shared container, as an asyncpg URL."""
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[object]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Expose the call report to a fixture's teardown without changing test outcomes."""
+    report = yield
+    if call.when == "call":
+        item.stash[_CALL_REPORT] = report
+    return report
+
+
+_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
+
+
+def migrated_database(postgres_container: PostgresContainer, name: str) -> Iterator[str]:
+    """A pristine, migrated database named `name` on the shared container, as an asyncpg URL.
+
+    Not a fixture: a module whose cases only read can override `db_url` at module scope and pay
+    the creation and migration once, which is most of what a database costs here.
+    """
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(
+                text(
+                    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric') "
+                    "THEN CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'; END IF; END $$"
+                )
+            )
+    finally:
+        admin_engine.dispose()
+    db_name = re.sub(r"[^a-z0-9_]", "_", name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
     RUNNER.apply(async_url)
@@ -54,8 +87,13 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 
 
 @pytest.fixture
-async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    store = TrajectoryStore.connect(db_url)
+def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
+    yield from migrated_database(postgres_container, request.node.name)
+
+
+@pytest.fixture
+async def store(db_url: str) -> AsyncIterator[ThreadStore]:
+    store = ThreadStore.connect(db_url)
     await store.start_updates()
     try:
         yield store
@@ -64,13 +102,35 @@ async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
 
 
 @pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    replica = TrajectoryStore.connect(db_url)
+async def replica(db_url: str) -> AsyncIterator[ThreadStore]:
+    replica = ThreadStore.connect(db_url)
     await replica.start_updates()
     try:
         yield replica
     finally:
         await replica.close()
+
+
+SPEC = protocol_pb2.SessionSpec(
+    harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+)
+
+
+@pytest.fixture
+async def lease(store: ThreadStore) -> IngestionLease:
+    lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
+    assert lease is not None
+    return lease
+
+
+def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+    """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""
+    at = Timestamp()
+    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
+    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
+    return event_log_pb2.EventEntry(
+        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
+    )
 
 
 @pytest.fixture
@@ -84,7 +144,7 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def bridge(store: TrajectoryStore) -> RunnerBridge:
+def bridge(store: ThreadStore) -> RunnerBridge:
     """A bridge with nothing to dial, for the inventory and thread routes."""
 
     async def unreachable(name: str) -> str:

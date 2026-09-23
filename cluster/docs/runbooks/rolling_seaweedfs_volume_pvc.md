@@ -36,14 +36,14 @@ full RCA. **The gate in step 3 is what would have prevented that.**
 
 ```bash
 kubectl exec -n seaweedfs seaweedfs-filer-0 -- weed shell <<'EOF'
-volume.fix.replication -n
+volume.fix.replication -apply=false -doDelete=false
 EOF
 ```
 
-`-n` is dry-run. If output is anything other than "no under-replicated
-volumes found", **stop**. There's pre-existing under-replication; rolling
-another PVC now is one bug away from data loss. Resolve it first (often
-just runs to completion by removing `-n` and waiting).
+`-apply=false` runs the check without changing the cluster. If the dry-run
+reports any under-replicated volume, **stop**. There's pre-existing under-replication;
+rolling another PVC now is one bug away from data loss. Resolve it first and
+rerun this check.
 
 ### 2. Drain + cordon the target node, scale the volume server to 0
 
@@ -103,12 +103,13 @@ wiped server are gone**. (Step 3's gate ensures this set was empty.)
 ```bash
 kubectl exec -n seaweedfs seaweedfs-filer-0 -- weed shell <<'EOF'
 volume.list
-volume.fix.replication -n
+volume.fix.replication -apply=false
 EOF
 ```
 
-`volume.list` should show the new DataNode picking up replicas. Dry-run
-fix should be clean within a few minutes.
+`volume.list` should show the new DataNode picking up replicas. The explicit
+dry-run should be clean within a few minutes. It reports surplus replicas too;
+those are a separate cleanup decision and are not silently deleted here.
 
 ## Caveat: rack labels
 

@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - external-creds.k8s.yaml
   - analysis-ai.sops.yaml
+  - ankiweb-credentials.sops.yaml
   - anthropic-haku.sops.yaml
   - aws-route53-cert-manager.sops.yaml
   - aws-route53-dns-automation.sops.yaml
@@ -16,3 +17,4 @@ resources:
   - groq.sops.yaml
   - mistral.sops.yaml
   - openclaw-telegram-bot-token.sops.yaml
+  - tana-agentydragon-gmail-com-account-pat.sops.yaml

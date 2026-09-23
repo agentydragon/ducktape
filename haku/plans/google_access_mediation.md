@@ -21,11 +21,10 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
    its airlock-side producer (#3364). The console-owned token never reaches an Agent — it lives only
    in the `haku-console` Postgres, and Agents reach Gmail/Calendar solely through the console's
    approval-gated MCP tools.
-3. **G3 (later — not scheduled):** retire Haku's _last_ Airlock dependency, the read-only
-   `google-access-token` (`$TOK`) that the `google` Airlock grant reflects into `haku-sandbox`.
-   Today the agent holds it directly for Drive/Tasks and as the Gmail/Calendar REST fallback
-   (Haku's per-source docs, in the `haku-state` repo since #3951 deleted ducktape's
-   `haku/base/sources/`). What replaces it is the target below.
+3. **G3 (done):** stopped mirroring the read-only `google-access-token` (`$TOK`) into
+   `haku-sandbox`, ending Haku's Airlock dependency. Haku's direct Drive/Tasks reads and its
+   Gmail/Calendar REST fallback (per-source docs in the `haku-state` repo) went with it; the
+   read-tool list below is what restores them.
 
 Do not couple G1/G2/G3 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
 
@@ -38,33 +37,22 @@ no Google token with standing capability ever reaches the agent.**
   to execute autonomously (sending mail, deleting/modifying Drive files, mutating calendars, …) runs
   only through haku-console tools behind its approval policy. A token carrying those permissions must
   never be handed to the agent. This already holds for Gmail/Calendar writes.
-- **Low-risk (read-only) — a genuine tradeoff, currently unresolved:**
-  - _Direct token (status quo):_ the agent holds the read-only `$TOK`. Simpler, but it is a standing
-    bearer secret in agent context — if it leaks through the LLM provider, whoever reads it can read
-    all of the operator's mail/Drive going forward, bounded only by rotation cadence.
-  - _Console-mediated (cleaner, more secure):_ route reads through console MCP tools too, so the
-    agent holds no Google token at all. Cost: implementing a potentially large read tool surface
-    (Drive, Tasks, remaining Gmail/Calendar read affordances) — which may be worth doing anyway, and
-    would let G3 drop the `google` Airlock grant and the `haku-sandbox` reflection entirely.
+- **Low-risk (read-only) — no standing token either.** A read-only token in agent context is still
+  a standing bearer secret: leaked through the LLM provider, it reads all of the operator's
+  mail/Drive until rotation. Reads go through mediated tools instead; the cost is the read-tool
+  surface below.
 
-  Leaning console-mediated for the security win; decision deferred. Until then the read-only token
-  stays (least-privilege by construction — all `.readonly` scopes).
+## Console read-tool surface to build (priority list)
 
-## Console read-tool surface to build (priority list — what G3 must replace)
-
-Everything Haku might want to do with the read-only `$TOK`, as an implementation priority list. To
-retire `$TOK`, the console must expose console-mediated read tools covering all of it, then the
-`google` Airlock grant's read scopes can be dropped scope-by-scope as coverage lands (`gmail.readonly`,
-`drive.readonly`, `drive.activity.readonly`, `calendar.readonly`, `tasks.readonly`, `contacts.readonly`,
-`documents.readonly`, `spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`). Ordering
-is by current use, then held-scope value, then long tail. Each tool maps to a Google REST method so it
+The Google reads Haku lost with `$TOK`, as an implementation priority list. Ordering is by former
+use, then value, then long tail. Each tool maps to a Google REST method so it
 is directly implementable.
 
-Writes are **not** on this token — high-risk mutations (send mail, mutate calendar/tasks/Drive) are a
+Writes are **not** on this list — high-risk mutations (send mail, mutate calendar/tasks/Drive) are a
 separate approval-gated console surface (Gmail drafts/labels + Calendar create already exist); they are
 never added here.
 
-### P1 — active today; direct blockers to dropping `$TOK`
+### P1 — used by Haku's scans until `$TOK` was removed
 
 - **Drive — recency + activity** (`drive.readonly`, `drive.activity.readonly`): Haku's "what is the
   operator working on right now" window (its Drive source doc, `haku-state`).
@@ -76,9 +64,8 @@ never added here.
 - **Tasks** (`tasks.readonly`) — overdue/stale to-do scan (its Tasks source doc, `haku-state`).
   - `tasks_lists_list` (`tasklists.list`) and `tasks_list` (`tasks.list`, `showCompleted=false`, with
     `due`/`updated`).
-- **Gmail / Calendar** — already console-mediated (reads + bounded writes). Remaining REST-fallback
-  parity so the fallback path can be dropped is tracked in `haku/console/TODO.md`; no new work here is
-  needed to stop using `$TOK` for these two.
+- **Gmail / Calendar** — already console-mediated (reads + bounded writes). Gaps against the former
+  REST fallback are tracked in `haku/console/TODO.md`.
 
 ### P2 — held scope, high value, not yet wired
 
@@ -106,12 +93,6 @@ never added here.
   file is shared with, only when a finding needs it.
 - **YouTube** (`youtube.readonly`): weak interest/attention signal, privacy-heavy, no current source.
   Prefer **dropping the scope** over building a tool unless a concrete use appears.
-
-### Retirement mechanic
-
-As each product reaches full console read coverage, drop its scope from the `google` Airlock grant.
-When every scope above is covered (or dropped), remove the `google` grant, its ESO, and the
-`haku-sandbox` reflection — that completes G3 and ends Haku's Airlock dependency.
 
 ## Implementation: tiered, discovery-generated tools
 

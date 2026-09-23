@@ -5,20 +5,20 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agent_box(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
     cdi: Kustomization,
     external_secrets_operator: Kustomization,
@@ -37,15 +37,10 @@ def agent_box(
             interval="10m",
             retry_interval="1m",
             timeout="30m",
-            path="./cluster/k8s/parked/agent-box",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
             ),
@@ -97,16 +92,14 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
                     namespace="buildbuddy-executor",
                 )
             ],
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            decryption=SOPS_DECRYPTION,
         ),
     )
 
 
 def haku_cloud_agent(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     tofu_controller: Kustomization,
@@ -122,19 +115,14 @@ def haku_cloud_agent(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/parked/cloud-agent-tf",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
             # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
             # bogus key/token (401).
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
@@ -150,7 +138,12 @@ def haku_cloud_agent(
     )
 
 
-def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac: Kustomization) -> Kustomization:
+def docker_ci(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cert_manager_environment: Kustomization,
+    claude_rbac: Kustomization,
+) -> Kustomization:
     name = "docker-ci"
     return flux_kustomization(
         chart,
@@ -161,10 +154,8 @@ def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/parked/docker-ci",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[
@@ -185,6 +176,7 @@ def docker_ci(chart: Chart, cert_manager_environment: Kustomization, claude_rbac
 
 def gecko(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     gecko_namespace: Kustomization,
     kubevirt: Kustomization,
     cdi: Kustomization,
@@ -204,15 +196,10 @@ def gecko(
             interval="10m",
             retry_interval="1m",
             timeout="30m",
-            path="./cluster/k8s/parked/gecko/app",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
             ),
@@ -235,7 +222,7 @@ def gecko(
     )
 
 
-def gecko_namespace(chart: Chart) -> Kustomization:
+def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "gecko-namespace"
     return flux_kustomization(
         chart,
@@ -248,11 +235,9 @@ def gecko_namespace(chart: Chart) -> Kustomization:
             interval="10m",
             retry_interval="1m",
             timeout="2m",
-            path="./cluster/k8s/parked/gecko/namespace",
+            path=artifact_path(artifact),
             prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             wait=True,
             health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gecko")],
         ),
@@ -309,8 +294,9 @@ def haku_dispatch(
 
 def haku_managed_agent(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
-    agent_shared_secrets: Kustomization,
+    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     haku_namespace: Kustomization,
     haku_rbac: Kustomization,
@@ -327,16 +313,11 @@ def haku_managed_agent(
             interval="10m",
             retry_interval="1m",
             timeout="5m",
-            path="./haku/runtime/managed_agent/self_hosted/deploy",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             health_checks=[
                 KustomizationSpecHealthChecks(
                     api_version="apps/v1", kind="Deployment", name="haku-managed-agent", namespace="haku-sandbox"
@@ -344,9 +325,9 @@ def haku_managed_agent(
             ],
             depends_on=flux_kustomization_depends_on_many(
                 forgejo_images,
-                # provides ankiweb-credentials in claude-sandbox
-                agent_shared_secrets,
-                # provides the claude-sandbox SecretStore
+                # provides the canonical AnkiWeb credential and source-side grant
+                external_creds,
+                # provides the external-creds ClusterSecretStore
                 external_secrets_config,
                 haku_namespace,
                 haku_rbac,
@@ -361,6 +342,7 @@ def haku_managed_agent(
 
 def sdr(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
@@ -376,12 +358,10 @@ def sdr(
             # Temporarily disabled until the radio is set up again after relocation.
             suspend=True,
             retry_interval="1m",
-            path="./cluster/k8s/parked/sdr",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
+            source_ref=artifact_source_ref(artifact),
             timeout="5m",
             depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
         ),

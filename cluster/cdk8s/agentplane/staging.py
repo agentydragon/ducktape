@@ -1,21 +1,25 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
-shared Authentik, and the reviewed GitHub/Kubernetes/SSH/Home Assistant/Tana MCP action
-groups.
+shared Authentik, and the reviewed GitHub/Kubernetes/Grocy SF/SSH/Home Assistant/Tana/Gmail/
+Google Calendar MCP action groups.
 """
 
 from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
-from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
+from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
     ExternalSecretSpec,
+    ExternalSecretSpecData,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromSourceRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecSecretStoreRef,
+    ExternalSecretSpecSecretStoreRefKind,
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -27,21 +31,21 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
-from agentplane.action_service.mcp_linkage import McpOAuthServer, McpProvider
+from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import ExchangeFederationSettings
 from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -52,7 +56,8 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -66,12 +71,30 @@ _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
+_GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
+# grocy-mcp-sf's OIDCProxy authorization server (mcp_infra/authentik_auth) only advertises
+# `none`/`private_key_jwt` in `token_endpoint_auth_methods_supported` -- no client_secret_post
+# or client_secret_basic -- so this is a public, PKCE-only client (RFC 7591 dynamic client
+# registration against https://grocy-mcp-sf.allegedly.works/register, redirect_uri
+# https://agentplane-staging.allegedly.works/mcp-linkage/callback), the same shape as
+# `kubernetes` below. No client secret exists to rotate or leak. If the registration is ever
+# lost (e.g. the server's Valkey-backed client store is wiped), re-run the DCR POST and update
+# this literal; nothing else changes.
+_GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-# The same reflected Secrets haku-console's own home_assistant/tana servers read
-# (cluster/cdk8s/haku/console_config.py), widened to reflect into this namespace too.
+# One standalone google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
+# distinct paths, on a Google credential separate from haku-console's own per-Operator
+# connections -- see that module's docstring.
+_GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
+_CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
+# The same ESO-delivered Secrets haku-console's own home_assistant/tana servers read
+# (cluster/cdk8s/haku/console_config.py), with the Tana PAT approved for this namespace too.
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
+_GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
+# cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml
+_GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -102,7 +125,6 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     mcp_servers={
         "github": McpOAuthServer(
             server_id="github",
-            provider=McpProvider.GITHUB,
             server_url=_GITHUB_MCP_URL,
             client_id="configured-by-secret",
             client_secret_file="/etc/agentplane-github/client_secret",
@@ -110,9 +132,14 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         ),
         "kubernetes": McpOAuthServer(
             server_id="kubernetes",
-            provider=McpProvider.KUBERNETES,
             server_url=_KUBERNETES_MCP_URL,
             client_id="kubectl-passthrough-mcp",
+            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+        ),
+        "grocy_sf": McpOAuthServer(
+            server_id="grocy_sf",
+            server_url=_GROCY_SF_MCP_URL,
+            client_id=_GROCY_SF_MCP_CLIENT_ID,
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
         ),
     },
@@ -136,6 +163,20 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                     "transport": "streamable-http",
                     "url": _KUBERNETES_MCP_URL,
                     "server_id": "kubernetes",
+                    "auth": "oauth",
+                },
+            ),
+        ),
+        "grocy_sf": ActionGroup(
+            title="Grocy SF MCP",
+            description="Grocy SF household MCP tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Grocy SF MCP executed with the linked operator Grocy account.",
+                config={
+                    "transport": "streamable-http",
+                    "url": _GROCY_SF_MCP_URL,
+                    "server_id": "grocy_sf",
                     "auth": "oauth",
                 },
             ),
@@ -209,6 +250,36 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 },
             ),
         ),
+        "gmail": ActionGroup(
+            title="Gmail",
+            description="Gmail read/write tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential "
+                "separate from haku-console's per-Operator connections.",
+                config={
+                    "transport": "streamable-http",
+                    "url": _GMAIL_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
+                },
+            ),
+        ),
+        "google_calendar": ActionGroup(
+            title="Google Calendar",
+            description="Google Calendar read/write tools; every Action remains subject to operator approval.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google "
+                "credential separate from haku-console's per-Operator connections.",
+                config={
+                    "transport": "streamable-http",
+                    "url": _CALENDAR_MCP_URL,
+                    "auth": "static_bearer",
+                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
+                },
+            ),
+        ),
     },
 )
 
@@ -234,9 +305,7 @@ ENV = Environment(
     app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=2, pod_anti_affinity=True),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(
-        ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE, include_forgejo_credential=True
-    ),
+    egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
@@ -253,6 +322,7 @@ ENV = Environment(
             BEARER_SECRET_NAME,
             _HA_MCP_BEARER_SECRET,
             _TANA_MCP_BEARER_SECRET,
+            _GOOGLE_MCP_BEARER_SECRET,
         ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
@@ -264,13 +334,17 @@ ENV = Environment(
             # The Secret's own key is `token` (it's a Tana personal access token, not a
             # bearer minted for this purpose); renamed at mount time to the same
             # `bearer-token` file name every other static-bearer group uses.
-            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token"),
+            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True),
+            # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
+            # one caller-facing bearer.
+            BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
             cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
             cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
             cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
+            cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
@@ -282,6 +356,9 @@ ENV = Environment(
             cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+            # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
+            # same public Gateway path.
+            cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
             cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
@@ -290,14 +367,50 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    ServiceAccount(
+        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+    )
+    external_creds.add_external_secret(
+        chart,
+        "tana-pat-external-secret",
+        namespace=_NAMESPACE,
+        source_name=_TANA_MCP_BEARER_SECRET,
+        property_name="token",
+        description="ESO copy of the canonical Tana PAT from external-creds.",
+    )
+    ExternalSecret(
+        chart,
+        "google-mcp-bearer-external-secret",
+        metadata=metadata(
+            _GOOGLE_MCP_BEARER_SECRET,
+            _NAMESPACE,
+            annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
+        ),
+        spec=ExternalSecretSpec(
+            refresh_interval="1h",
+            secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=_GOOGLE_MCP_SECRET_STORE
+            ),
+            data=[
+                ExternalSecretSpecData(
+                    secret_key="bearer-token",
+                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_GOOGLE_MCP_BEARER_SECRET, property="bearer-token"),
+                )
+            ],
+            target=ExternalSecretSpecTarget(
+                name=_GOOGLE_MCP_BEARER_SECRET,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            ),
+        ),
+    )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
-        chart,
-        "egress-credentials",
-        namespace=ENV.egress.credentials_namespace,
-        proxy_namespace=ENV.namespace,
-        include_forgejo=ENV.egress.include_forgejo_credential,
+        chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
+    )
+    add_staging_egress_credentials(
+        chart, namespace=ENV.namespace, credentials_namespace=ENV.egress.credentials_namespace
     )
     return chart
 
@@ -348,6 +461,7 @@ def _add_session_secret(scope: Chart) -> None:
 
 def agentplane_staging(
     flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
@@ -355,6 +469,7 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
+    external_creds: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -365,7 +480,7 @@ def agentplane_staging(
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            path=f"./cluster/k8s/{ENV.namespace}",
+            path=artifact_path(artifact),
             prune=True,
             # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
             # deletion would take the database with them.
@@ -385,9 +500,7 @@ def agentplane_staging(
                 )
             ],
             decryption=sops_decryption(ENV.extra_resources),
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=ENV.namespace, namespace=FLUX_NAMESPACE
-            ),
+            source_ref=artifact_source_ref(artifact),
             depends_on=flux_kustomization_depends_on_many(
                 agentplane_crds,
                 agent_sandbox_controller,
@@ -395,6 +508,7 @@ def agentplane_staging(
                 cert_manager_trust,
                 claude_rbac,
                 cnpg,
+                external_creds,
                 external_secrets_config,
             ),
         ),

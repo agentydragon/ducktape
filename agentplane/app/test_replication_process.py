@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.store import ThreadStore
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -35,7 +36,7 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
     return entry
 
 
-async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> protocol_pb2.Attached:
+async def wait_snapshot(store: ThreadStore, thread: UUID, cursor: int) -> protocol_pb2.Attached:
     changed = asyncio.Event()
     with store.changes.subscribe(changed):
         while True:
@@ -48,7 +49,7 @@ async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> pr
 
 @pytest.mark.parametrize("boundary", list(CommitBoundary))
 async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
-    db_url: str, store: TrajectoryStore, boundary: CommitBoundary
+    db_url: str, store: ThreadStore, boundary: CommitBoundary
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -56,7 +57,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     events = f"/threads/{thread_id}/events/stream"
     async with asyncio.timeout(45), source.serve() as target:
         async with (
-            app_process(db_url, target, boundary=boundary, cursor=3) as first,
+            app_process(db_url, target, boundary=boundary, cursor=4) as first,
             httpx.AsyncClient(base_url=first.url, timeout=None) as browser,
             aconnect_sse(browser, "GET", events) as connection,
         ):
@@ -73,6 +74,17 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 )
             )
             assert await next_entry(stream) == source.entries[1]
+            source.append(
+                event_pb2.Event(
+                    command_admitted=event_pb2.CommandAdmitted(
+                        command=command_pb2.Command(
+                            command_id="test-model-command",
+                            change_model=command_pb2.ChangeModel(model="test-model-after"),
+                        )
+                    )
+                )
+            )
+            assert await next_entry(stream) == source.entries[2]
             # The browser stops consuming here; it never observes the command's effect before death.
             (thread,) = await store.list_threads(sandbox=SANDBOX)
             source.attached.spec.model = "test-model-after"
@@ -84,9 +96,12 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 )
             )
             assert (await first.checkpoint()).boundary is boundary
-            committed = 2 if boundary is CommitBoundary.BEFORE else 3
+            committed = 3 if boundary is CommitBoundary.BEFORE else 4
             # Independent PostgreSQL reads, while the app is paused at a real commit boundary.
             assert await store.events(thread.id, limit=100) == source.entries[:committed]
+            projection = await store.current_scope(thread.id)
+            assert projection is not None
+            assert projection.through_cursor == committed
             before_death = await store.feed_state(thread.id)
             assert before_death is not None
             assert before_death.attached.last_cursor == committed
@@ -131,7 +146,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 assert (await source.opened.get()).after_cursor == 0
                 replay = await source.opened.get()
                 assert replay.after_cursor == committed - 1
-                attached = await wait_snapshot(store, thread.id, 5)
+                attached = await wait_snapshot(store, thread.id, 6)
                 assert attached == source.attached
                 assert await store.last_cursor(thread.id) == committed
                 async with engine.connect() as database:
@@ -142,23 +157,23 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                     assert new_token != old_token
 
                 # Last-Event-ID wins over the stale query cursor. The snapshot is explicitly a
-                # runner observation at 5, not proof that the app has copied through cursor 5.
+                # runner observation at 6, not proof that the app has copied through cursor 6.
                 async with aconnect_sse(
-                    reconnected, "GET", events + "?after=0", headers={"Last-Event-ID": "2"}
+                    reconnected, "GET", events + "?after=0", headers={"Last-Event-ID": "3"}
                 ) as resumed:
                     stream = resumed.aiter_sse()
                     snapshot = await anext(stream)
                     assert snapshot.event == "attached"
                     assert ParseDict(snapshot.json(), protocol_pb2.Attached()) == source.attached
                     replay.replay.set()
-                    assert await next_entry(stream) == source.entries[2]
+                    assert await next_entry(stream) == source.entries[3]
                     # Append during browser catch-up: replay and live share exactly one prefix.
                     source.append(
                         event_pb2.Event(
                             item_completed=event_pb2.ItemCompleted(item_id="test-item", text="retained text")
                         )
                     )
-                    for entry in source.entries[3:]:
+                    for entry in source.entries[4:]:
                         assert await next_entry(stream) == entry
                     # Now the browser has exhausted replay. A new NOTIFY wakes its live read.
                     source.attached.active_turn_id = ""
@@ -178,7 +193,10 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 assert final_snapshot.attached == source.attached
                 view = await store.get_thread(thread.id)
                 assert view is not None
-                assert (view.last_cursor, view.model) == (7, "test-model-after")
+                assert (view.last_cursor, view.model) == (8, "test-model-after")
+                projection = await store.current_scope(thread.id)
+                assert projection is not None
+                assert projection.through_cursor == view.last_cursor
         finally:
             await engine.dispose()
 

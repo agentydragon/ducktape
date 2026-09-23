@@ -1,14 +1,13 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
  * (set by visual-test-lib) picks the route; `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers the routes a page still asks for, and `EventSource`
- * serves both stream shapes: one snapshot per live view, and one turn of runner events into the
- * session view.
+ * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
+ * only for the live sandbox, thread, and action-inventory views.
  */
 import "./network";
 import "@mantine/core/styles.css";
 
-import { create, toJson, toJsonString, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
@@ -24,20 +23,18 @@ import type {
   ThreadView,
 } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
-import { Direction, EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
+import { EventEntrySchema } from "../../../protocol/event_log_pb";
 import {
-  AttachedSchema,
   Harness,
   HarnessState,
   SessionSpecSchema,
   SessionSummarySchema,
-  type Attached,
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { routes } from "./network";
+import { electricLongPoll, electricShape, electricSubset, routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -627,377 +624,342 @@ const ACTIONS: ActionRequestView[] = [
   },
 ];
 
-const ATTACHED: Attached = create(AttachedSchema, {
-  sessionId: "s-1",
-  spec: SPEC,
-  lastCursor: 14n,
-  harnessState: HarnessState.RUNNING,
-});
+const CONVERSATION_SOURCE = "visual-runner";
+const CONVERSATION_EPOCH = "20260921";
+const payloadBodies = new Map<string, string>();
 
-const ATTACHED_STATES: Attached = create(AttachedSchema, {
-  sessionId: "s-2",
-  spec: SPEC,
-  lastCursor: 23n,
-  harnessState: HarnessState.RUNNING,
-});
-
-/** Real reasoning is several sentences, so the folded block is worth opening. */
-const THINKING = [
-  "The user asked what is in the repository, not for a recursive listing.",
-  "A plain ls of the top level answers it; anything deeper buries the answer.",
-].join("\n");
-
-/**
- * The second turn's thinking. The view scrolls to the newest event, so the reasoning that the
- * expanded scenario has to show is the one in the last turn.
- */
-const THINKING_AGAIN = [
-  "src is a directory, so reading it starts with listing what is inside.",
-  "Only then is there a file to open, and the user did not name one.",
-].join("\n");
-
-/** The markdown an answer actually arrives as: headings, a list, inline code, a fence, emphasis. */
-const ANSWER = [
-  "## Repository root",
-  "",
-  "Two entries, both tracked:",
-  "",
-  "- `README.md` — the project overview",
-  "- `src/` — **all** the source, including the _experimental_ parts",
-  "",
-  "Run the tests with:",
-  "",
-  "```bash",
-  "bazel test //...",
-  "```",
-].join("\n");
-
-function event(
-  cursor: number,
-  observation: MessageInitShape<typeof EventSchema>["observation"],
-  sources: number[] = []
-): EventEntry {
-  return create(EventEntrySchema, {
-    cursor: BigInt(cursor),
-    origin: { sourceId: "visual-runner", sequence: BigInt(cursor) },
-    event: create(EventSchema, {
-      at: { seconds: BigInt(Math.floor(NOW / 1000) - 60 + cursor) },
-      observation,
-      sourceSequences: sources.map(BigInt),
-    }),
-  });
+function payloadKey(
+  ownerCursor: string,
+  ownerId: string,
+  field: string,
+  generation: string,
+  revisionCursor: string
+): string {
+  return `${ownerCursor}:${ownerId}:${field}:${generation}:${revisionCursor}`;
 }
 
-function admitted(commandId: string): MessageInitShape<typeof EventSchema>["observation"] {
+function payload(
+  ownerCursor: number,
+  ownerId: string,
+  field: string,
+  body: string,
+  revisionCursor = ownerCursor
+): Record<string, string> {
+  const reference = {
+    projection_epoch: CONVERSATION_EPOCH,
+    owner_cursor: String(ownerCursor),
+    owner_id: ownerId,
+    field,
+    generation: "1",
+    revision_cursor: String(revisionCursor),
+  };
+  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  return reference;
+}
+
+function entity(
+  kind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command",
+  id: string,
+  cursor: number,
+  state: Record<string, unknown>,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
-    case: "commandAdmitted",
-    value: {
-      command: create(CommandSchema, {
-        commandId,
-        operation: { case: "submitInput", value: { text: "fixture input" } },
-      }),
-    },
+    thread_id: extra.thread_id ?? THREADS[0].id,
+    projection_epoch: CONVERSATION_EPOCH,
+    entity_kind: kind,
+    entity_id: id,
+    cursor: String(cursor),
+    revision_cursor: String(extra.revision_cursor ?? cursor),
+    pending: extra.pending ?? false,
+    turn_id: extra.turn_id ?? null,
+    state,
+    text_ref: extra.text_ref ?? null,
+    arguments_ref: extra.arguments_ref ?? null,
+    output_ref: extra.output_ref ?? null,
+    input_ref: extra.input_ref ?? null,
   };
 }
 
-function frame(
-  direction: Direction,
-  payload: Record<string, unknown>
-): MessageInitShape<typeof EventSchema>["observation"] {
-  return { case: "native", value: { direction, line: JSON.stringify(payload) } };
+function viewState(
+  throughCursor: number,
+  activeTurn: string | null,
+  operational: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return entity(
+    "view_state",
+    "current",
+    throughCursor,
+    {
+      controls: {
+        applied_model: "harness-claude-model",
+        active_turn_id: activeTurn,
+        harness_state: activeTurn === null ? "stopped" : "running",
+      },
+      operational: {
+        status: "active",
+        last_verified_cursor: String(throughCursor),
+        feed_error: null,
+        ...operational,
+      },
+    },
+    { revision_cursor: throughCursor }
+  );
 }
 
-/**
- * Two turns, cited the way the runner cites: a derived event names the frame it was translated
- * from, while an input written to the harness and the harness's own noise name nothing. The
- * `session_raw` scenario reads them as one stream in cursor order — the stderr line between the
- * second turn's reasoning and its answer is where the ordering earns its keep.
- */
-const EVENTS: EventEntry[] = [
-  event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
-  event(2, admitted("i1")),
-  event(3, frame(Direction.TO_HARNESS, { type: "user", text: "List the repository files." })),
-  event(4, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
-  event(5, { case: "turnStarted", value: { turnId: "t1" } }, [4]),
-  event(
-    6,
+function lifecycle(
+  cursor: number,
+  observation: string,
+  eventValue: Record<string, unknown>,
+  threadId?: string
+): Record<string, unknown> {
+  return entity(
+    "lifecycle",
+    `${observation}:${cursor}`,
+    cursor,
+    { observation, event: eventValue },
+    { thread_id: threadId }
+  );
+}
+
+function item(
+  cursor: number,
+  id: string,
+  kind: ItemKind,
+  text: string | null,
+  extra: {
+    tool?: string;
+    arguments?: string;
+    output?: string;
+    complete?: boolean;
+    turn?: string;
+    threadId?: string;
+  } = {}
+): Record<string, unknown> {
+  return entity(
+    "item",
+    id,
+    cursor,
     {
-      case: "harnessUserMessageConfirmed",
-      value: { harnessMessageId: "user-1", text: "List the repository files.", originCommandIds: ["i1"], turnId: "t1" },
+      kind,
+      tool_name: extra.tool ?? "",
+      completion: extra.complete === false ? null : text,
+      tool_succeeded: extra.output === undefined ? null : true,
     },
-    [4]
-  ),
-  event(7, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING })),
-  event(8, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }, [7]),
-  event(9, { case: "textDelta", value: { itemId: "r#0", text: THINKING } }, [7]),
-  event(10, { case: "itemCompleted", value: { itemId: "r#0", outcome: { case: "text", value: THINKING } } }, [7]),
-  event(11, frame(Direction.FROM_HARNESS, { type: "tool_use", name: "Bash", input: { command: "ls" } })),
-  event(12, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }, [11]),
-  event(13, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }, [11]),
-  event(14, frame(Direction.FROM_HARNESS, { type: "tool_result", is_error: false })),
-  event(
-    15,
     {
-      case: "itemCompleted",
-      value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
-    },
-    [14]
-  ),
-  event(16, frame(Direction.FROM_HARNESS, { type: "text", text: ANSWER })),
-  event(17, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }, [16]),
-  event(18, { case: "textDelta", value: { itemId: "m#0", text: ANSWER } }, [16]),
-  event(19, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }, [16]),
-  event(20, frame(Direction.FROM_HARNESS, { type: "turn.completed" })),
-  event(21, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }, [20]),
-  event(22, admitted("i2")),
-  event(23, frame(Direction.TO_HARNESS, { type: "user", text: "Now read src." })),
-  event(24, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
-  event(25, { case: "turnStarted", value: { turnId: "t2" } }, [24]),
-  event(
-    26,
-    {
-      case: "harnessUserMessageConfirmed",
-      value: { harnessMessageId: "user-2", text: "Now read src.", originCommandIds: ["i2"], turnId: "t2" },
-    },
-    [24]
-  ),
-  event(27, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING_AGAIN })),
-  event(28, { case: "itemStarted", value: { itemId: "r#1", kind: ItemKind.REASONING } }, [27]),
-  event(29, { case: "textDelta", value: { itemId: "r#1", text: THINKING_AGAIN } }, [27]),
-  event(
-    30,
-    { case: "itemCompleted", value: { itemId: "r#1", outcome: { case: "text", value: THINKING_AGAIN } } },
-    [27]
-  ),
-  event(31, { case: "harnessStderr", value: { text: "warning: /state/work is not a git repository\n" } }),
-  event(32, frame(Direction.FROM_HARNESS, { type: "text", text: "Reading `src` now" })),
-  event(33, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }, [32]),
-  event(34, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }, [32]),
-];
+      thread_id: extra.threadId,
+      turn_id: extra.turn ?? "turn-visual",
+      text_ref: text === null ? null : payload(cursor, id, "text", text),
+      arguments_ref: extra.arguments === undefined ? null : payload(cursor, id, "arguments", extra.arguments),
+      output_ref: extra.output === undefined ? null : payload(cursor, id, "output", extra.output),
+    }
+  );
+}
 
-/**
- * A second canned script, not a second turn of the same conversation: every state the transcript
- * restyle (role-as-bubble, status-as-dot) touches that the main script above doesn't produce on
- * its own -- a failed tool call standing alone, a run whose reasoning is still streaming beside a
- * tool call that already failed, and a message still queued mid-turn. Not meant to read as a
- * plausible conversation; each piece exists to make one dot's rendering show up in a diff.
- */
-const EVENTS_STATES: EventEntry[] = [
-  event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
-  event(2, admitted("i1")),
-  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(4, {
-    case: "harnessUserMessageConfirmed",
-    value: { harnessMessageId: "user-1", text: "Delete the stale branch.", originCommandIds: ["i1"], turnId: "t1" },
-  }),
-  event(5, { case: "itemStarted", value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
-  event(6, { case: "toolArguments", value: { itemId: "tool#0", argumentsJson: '{"command": "git branch -d stale"}' } }),
-  event(7, {
-    case: "itemCompleted",
-    value: {
-      itemId: "tool#0",
-      outcome: { case: "tool", value: { output: "fatal: branch 'stale' not found.", succeeded: false } },
-    },
-  }),
-  event(8, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(9, { case: "textDelta", value: { itemId: "m#0", text: "That branch doesn't exist." } }),
-  event(10, {
-    case: "itemCompleted",
-    value: { itemId: "m#0", outcome: { case: "text", value: "That branch doesn't exist." } },
-  }),
-  event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(12, admitted("i2")),
-  event(13, { case: "turnStarted", value: { turnId: "t2" } }),
-  event(14, {
-    case: "harnessUserMessageConfirmed",
-    value: {
-      harnessMessageId: "user-2",
-      text: "Run the test suite twice, thinking it over first.",
-      originCommandIds: ["i2"],
-      turnId: "t2",
-    },
-  }),
-  event(15, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
-  event(16, {
-    case: "textDelta",
-    value: { itemId: "r#0", text: "Running it once could hide a flaky failure; twice tells the difference." },
-  }),
-  // r#0 never completes: the run it starts is still thinking while its own tool calls finish.
-  event(17, { case: "itemStarted", value: { itemId: "tool#1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
-  event(18, { case: "toolArguments", value: { itemId: "tool#1", argumentsJson: '{"command": "bazel test //..."}' } }),
-  event(19, {
-    case: "itemCompleted",
-    value: { itemId: "tool#1", outcome: { case: "tool", value: { output: "42 passed", succeeded: true } } },
-  }),
-  event(20, { case: "itemStarted", value: { itemId: "tool#2", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
-  event(21, { case: "toolArguments", value: { itemId: "tool#2", argumentsJson: '{"command": "bazel test //..."}' } }),
-  event(22, {
-    case: "itemCompleted",
-    value: { itemId: "tool#2", outcome: { case: "tool", value: { output: "1 test regressed", succeeded: false } } },
-  }),
-  // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
-  // step looks like. i3 is admitted but has not yet been confirmed by the harness: this is what a
-  // message queued mid-turn looks like.
-  event(23, admitted("i3")),
-];
+function command(
+  cursor: number,
+  id: string,
+  operation: string,
+  outcome: "pending" | "effected" | "failed" | "noop",
+  reason: string | null = null
+): Record<string, unknown> {
+  return entity(
+    "command",
+    id,
+    cursor,
+    { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
+    { pending: outcome === "pending" }
+  );
+}
 
-const PENDING_EVENTS = [
-  event(24, {
-    case: "commandAdmitted",
-    value: {
-      command: {
-        commandId: "queued-model",
-        operation: { case: "changeModel", value: { model: "next-model" } },
-      },
-    },
-  }),
-  event(25, {
-    case: "commandAdmitted",
-    value: {
-      command: {
-        commandId: "queued-interrupt",
-        operation: { case: "interruptTurn", value: { turnId: "t2" } },
-      },
-    },
-  }),
-];
-
-const COMMAND_OUTCOMES = [
-  event(26, {
-    case: "harnessUserMessageConfirmed",
-    value: { harnessMessageId: "user-3", turnId: "t2", text: "fixture input", originCommandIds: ["i3"] },
-  }),
-  event(27, {
-    case: "turnCompleted",
-    value: { turnId: "t2", status: TurnStatus.COMPLETED },
-  }),
-  event(28, {
-    case: "commandFailed",
-    value: { commandId: "queued-model", reason: "The requested model is not available to this harness." },
-  }),
-  event(29, {
-    case: "commandNoop",
-    value: { commandId: "queued-interrupt", reason: "The target turn ended before the interrupt took effect." },
-  }),
-];
-
-function failedTurnEvents(afterContent: boolean): EventEntry[] {
-  const text = "Inspect the test repository.";
-  const entries = [
-    event(1, { case: "harnessStarted", value: { pid: 9 } }),
-    event(2, {
-      case: "commandAdmitted",
-      value: { command: { commandId: "test-input", operation: { case: "submitInput", value: { text } } } },
+function standardRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(34, "turn-visual"),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "List the repository files."),
+      }
+    ),
+    item(10, "tool-0", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"README.md"}',
+      output: "# ducktape\n\nRepository instructions are available.",
     }),
-    event(3, { case: "turnStarted", value: { turnId: "test-failed-turn" } }),
-    event(4, {
-      case: "harnessUserMessageConfirmed",
-      value: { harnessMessageId: "test-message", originCommandIds: ["test-input"], turnId: "test-failed-turn", text },
+    item(20, "r-1", ItemKind.REASONING, "I will inspect the repository structure before proposing a change.", {
+      threadId,
+    }),
+    item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
+    lifecycle(
+      31,
+      "harness_stderr",
+      toJson(
+        EventSchema,
+        create(EventSchema, { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } })
+      ) as Record<string, unknown>,
+      threadId
+    ),
+    item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
+      threadId,
+      complete: false,
     }),
   ];
-  if (afterContent) {
-    entries.push(
-      event(5, { case: "itemStarted", value: { itemId: "test-partial", kind: ItemKind.ASSISTANT_TEXT } }),
-      event(6, {
-        case: "textDelta",
-        value: {
-          itemId: "test-partial",
-          text: "The first test files are present.\n\n".repeat(12) + "Checking the remaining files…",
-        },
-      })
-    );
-  }
-  const error =
-    "Test model request failed: HTTP 429\nQuota exhausted for test-request-" +
-    "abcdef".repeat(12) +
-    "\n<diagnostic>test upstream response</diagnostic>";
-  const nativeCursor = entries.length + 1;
-  entries.push(
-    event(nativeCursor, {
-      case: "native",
-      value: { direction: Direction.FROM_HARNESS, line: JSON.stringify({ type: "error", message: error }) },
-    }),
-    event(
-      nativeCursor + 1,
-      {
-        case: "turnCompleted",
-        value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
-      },
-      [nativeCursor]
-    )
-  );
-  return entries;
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
-const INTERLEAVED_EVENTS: EventEntry[] = [
-  event(1, { case: "harnessStarted", value: { pid: 7 } }),
-  event(2, { case: "turnStarted", value: { turnId: "interleaved-turn", model: "harness-claude-model" } }),
-  event(3, { case: "itemStarted", value: { itemId: "tool-1", kind: ItemKind.TOOL_CALL, toolName: "Read" } }),
-  event(4, { case: "toolArguments", value: { itemId: "tool-1", argumentsJson: '{"path":"README.md"}' } }),
-  event(5, {
-    case: "commandAdmitted",
-    value: {
-      command: { commandId: "input-B", operation: { case: "submitInput", value: { text: "Also inspect tests." } } },
-    },
-  }),
-  event(6, {
-    case: "commandAdmitted",
-    value: {
-      command: { commandId: "input-C", operation: { case: "submitInput", value: { text: "Keep the patch small." } } },
-    },
-  }),
-  event(7, { case: "itemStarted", value: { itemId: "before-input", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(8, {
-    case: "textDelta",
-    value: { itemId: "before-input", text: "I checked the current files before processing the queued messages." },
-  }),
-  event(9, frame(Direction.FROM_HARNESS, { type: "user", text: "Also inspect tests.\nKeep the patch small." })),
-  event(
-    10,
-    {
-      case: "harnessUserMessageConfirmed",
-      value: {
-        harnessMessageId: "coalesced-message",
-        turnId: "interleaved-turn",
-        text: "Also inspect tests.\nKeep the patch small.",
-        originCommandIds: ["input-B", "input-C"],
-      },
-    },
-    [9]
-  ),
-  event(11, {
-    case: "commandAdmitted",
-    value: {
-      command: { commandId: "change-model", operation: { case: "changeModel", value: { model: "next-model" } } },
-    },
-  }),
-  event(12, frame(Direction.FROM_HARNESS, { type: "control_response", model: "next-model" })),
-  event(
-    13,
-    {
-      case: "modelChanged",
-      value: { commandId: "change-model", previousModel: "harness-claude-model", model: "next-model" },
-    },
-    [12]
-  ),
-  event(14, { case: "itemStarted", value: { itemId: "after-input", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(15, { case: "textDelta", value: { itemId: "after-input", text: "Continuing with the new model…" } }),
-  event(16, {
-    case: "commandAdmitted",
-    value: {
-      command: { commandId: "interrupt", operation: { case: "interruptTurn", value: { turnId: "interleaved-turn" } } },
-    },
-  }),
-  event(17, frame(Direction.FROM_HARNESS, { type: "turn_interrupted" })),
-  event(
-    18,
-    {
-      case: "turnCompleted",
-      value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
-    },
-    [17]
-  ),
-];
+function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
+  const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
+  const event = toJson(
+    EventSchema,
+    create(EventSchema, {
+      observation: { case: "turnCompleted", value: { turnId: "failed-turn", status: TurnStatus.FAILED, error } },
+    })
+  ) as Record<string, unknown>;
+  const rows = [
+    viewState(afterContent ? 8 : 6, null),
+    entity(
+      "confirmed_input",
+      "failed-input",
+      4,
+      { harness_message_id: "failed-input", origin_command_ids: ["input-failed"] },
+      {
+        thread_id: threadId,
+        turn_id: "failed-turn",
+        input_ref: payload(4, "failed-input", "confirmed_input", "Inspect the test repository."),
+      }
+    ),
+    ...(afterContent
+      ? [
+          item(
+            6,
+            "partial",
+            ItemKind.ASSISTANT_TEXT,
+            "The first test files are present. Checking the remaining files…",
+            { threadId }
+          ),
+        ]
+      : []),
+    lifecycle(afterContent ? 8 : 6, "turn_completed", event, threadId),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function interleavedRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(18, null),
+    item(3, "tool-1", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"README.md"}',
+      output: "README opened",
+    }),
+    item(
+      8,
+      "before-input",
+      ItemKind.ASSISTANT_TEXT,
+      "I checked the current files before processing the queued messages.",
+      {
+        threadId,
+        turn: "interleaved-turn",
+      }
+    ),
+    entity(
+      "confirmed_input",
+      "coalesced-message",
+      10,
+      { harness_message_id: "coalesced-message", origin_command_ids: ["input-B", "input-C"] },
+      {
+        thread_id: threadId,
+        turn_id: "interleaved-turn",
+        input_ref: payload(10, "coalesced-message", "confirmed_input", "Also inspect tests.\nKeep the patch small."),
+      }
+    ),
+    item(15, "after-input", ItemKind.ASSISTANT_TEXT, "Continuing with the new model…", {
+      threadId,
+      turn: "interleaved-turn",
+    }),
+    lifecycle(
+      18,
+      "turn_completed",
+      toJson(
+        EventSchema,
+        create(EventSchema, {
+          observation: {
+            case: "turnCompleted",
+            value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
+          },
+        })
+      ) as Record<string, unknown>,
+      threadId
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function statesRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(23, "t2"),
+    item(7, "tool-0", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: '{"command":"git branch -d stale"}',
+      output: "fatal: branch 'stale' not found.",
+    }),
+    item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
+    item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
+      threadId,
+      complete: false,
+      turn: "t2",
+    }),
+    item(19, "tool-1", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: '{"command":"bazel test //..."}',
+      output: "42 passed",
+      turn: "t2",
+    }),
+    command(
+      24,
+      "queued-model",
+      "change_model",
+      scenario.pendingCommands === "outcomes" ? "failed" : "pending",
+      "Model unavailable"
+    ),
+    command(
+      25,
+      "queued-interrupt",
+      "interrupt_turn",
+      scenario.pendingCommands === "outcomes" ? "noop" : "pending",
+      "Target turn already ended"
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
+  if (scenario.interleavedEvents) return interleavedRows(threadId);
+  if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
+  return standardRows(threadId);
+}
+
+function threadEntityInterest(threadId: string): Record<string, string | null> {
+  const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
+  return {
+    projection_epoch: CONVERSATION_EPOCH,
+    through_cursor: String(through),
+    anchor_cursor: String(through),
+    tail_from: "0",
+    window_from: null,
+    window_before: null,
+  };
+}
 
 if (scenario.pendingCommands === "mixed") {
   const local = new LocalCommands(THREADS[2].id);
@@ -1111,6 +1073,229 @@ routes.push(
   ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])]
 );
 
+/** Encode the database-facing Electric row, including PostgreSQL JSONB and bool columns. */
+function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
+  const value = { ...row };
+  for (const field of ["state", "text_ref", "arguments_ref", "output_ref", "input_ref"] as const) {
+    if (value[field] !== null) value[field] = JSON.stringify(value[field]);
+  }
+  value.pending = String(value.pending);
+  return value;
+}
+
+/** Mutable Electric collections bootstrap their fixed server-selected interest through an on-demand subset. */
+function currentSubset(query: URLSearchParams): boolean {
+  if (!query.has("subset__where") && !query.has("subset__params")) return false;
+  if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
+    throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
+  }
+  if (query.get("projection_epoch") !== CONVERSATION_EPOCH) {
+    throw new Error("current Electric shapes must select the resolved thread fold projection epoch");
+  }
+  // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
+  // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
+  return query.get("offset") === "now";
+}
+
+function shapeRow(relation: string, value: Record<string, unknown>) {
+  const identity =
+    relation === "thread_entity"
+      ? [value.thread_id, value.projection_epoch, value.entity_kind, value.entity_id]
+      : [
+          value.thread_id,
+          value.projection_epoch,
+          value.owner_cursor,
+          value.owner_id,
+          value.field,
+          value.generation,
+          value.chunk_index,
+        ];
+  return {
+    headers: { relation: ["public", relation] as ["public", string], operation: "insert" as const },
+    key: `"public"."${relation}"/${identity.map((part) => JSON.stringify(String(part))).join("/")}`,
+    value,
+  };
+}
+
+function threadRows(threadId: string): Record<string, unknown>[] {
+  return threadEntityRows(threadId).map(electricEntity);
+}
+
+function archivedStderr(cursor: number): Record<string, unknown> {
+  return toJson(
+    EventEntrySchema,
+    create(EventEntrySchema, {
+      cursor: BigInt(cursor),
+      origin: { sourceId: CONVERSATION_SOURCE, sequence: BigInt(cursor) },
+      event: create(EventSchema, {
+        observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } },
+      }),
+    })
+  ) as Record<string, unknown>;
+}
+
+function archivedCompletion(cursor: number): Record<string, unknown> {
+  return toJson(
+    EventEntrySchema,
+    create(EventEntrySchema, {
+      cursor: BigInt(cursor),
+      origin: { sourceId: CONVERSATION_SOURCE, sequence: BigInt(cursor) },
+      event: create(EventSchema, {
+        observation: { case: "itemCompleted", value: { itemId: "m-2", outcome: { case: "text", value: "complete" } } },
+      }),
+    })
+  ) as Record<string, unknown>;
+}
+
+const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
+  "31": () => archivedStderr(31),
+  "34": () => archivedCompletion(34),
+};
+
+function observationPage(threadId: string) {
+  return {
+    observations: [
+      { cursor: "31", kind: "harness_stderr" },
+      { cursor: "34", kind: "item_completed" },
+    ],
+    next_before_cursor: null,
+    next_after_cursor: null,
+    thread_id: threadId,
+  };
+}
+
+routes.push(
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/interest$/,
+    (match) =>
+      scenario.sessionReplay === "unavailable"
+        ? // This persistent service failure is distinct from a ready shape's stale source/epoch
+          // 410, which the production collection intentionally resolves once.
+          Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
+        : threadEntityInterest(match[1]),
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
+    (match, query, signal) => {
+      const subset = currentSubset(query);
+      if (!subset && query.get("offset") !== null) {
+        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`, undefined, signal);
+        return electricShape([], `visual-entities-${match[1]}`);
+      }
+      if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
+      const rows = threadRows(match[1]).map((row) => {
+        if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
+        return { ...row, revision_cursor: "8" };
+      });
+      return electricSubset(
+        rows.map((row) => shapeRow("thread_entity", row)),
+        `visual-entities-${match[1]}`
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
+    (match, query, signal) => {
+      const subset = currentSubset(query);
+      if (!subset && query.get("offset") !== null) {
+        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`, undefined, signal);
+        return electricShape([], `visual-commands-${match[1]}`);
+      }
+      if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
+      const selected = new Set(query.getAll("command_id"));
+      const rows = threadRows(match[1]).filter(
+        (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
+      );
+      return electricSubset(
+        rows.map((row) => shapeRow("thread_entity", row)),
+        `visual-commands-${match[1]}`
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
+    (_match, query) => {
+      const ownerCursor = query.get("owner_cursor") ?? "0";
+      const ownerId = query.get("owner_id") ?? "";
+      const field = query.get("field") ?? "";
+      const generation = query.get("generation") ?? "0";
+      const revisionCursor = query.get("revision_cursor") ?? "0";
+      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      return {
+        projection_epoch: CONVERSATION_EPOCH,
+        owner_cursor: ownerCursor,
+        owner_id: ownerId,
+        field,
+        generation,
+        revision_cursor: revisionCursor,
+        chunk_count: body === undefined ? "0" : "1",
+        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
+      };
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/sync\/payload-chunks$/,
+    (match, query, signal) => {
+      const ownerCursor = query.get("owner_cursor") ?? "0";
+      const ownerId = query.get("owner_id") ?? "";
+      const field = query.get("field") ?? "";
+      const generation = query.get("generation") ?? "0";
+      const revisionCursor = query.get("revision_cursor") ?? "0";
+      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
+      const rows =
+        query.get("offset") !== null && query.get("offset") !== "-1"
+          ? []
+          : body === undefined
+            ? []
+            : [
+                shapeRow("thread_payload_chunk", {
+                  thread_id: match[1],
+                  projection_epoch: CONVERSATION_EPOCH,
+                  owner_cursor: ownerCursor,
+                  owner_id: ownerId,
+                  field,
+                  generation,
+                  chunk_index: "0",
+                  text: body,
+                }),
+              ];
+      if (query.get("live") === "true" && query.get("offset") !== "-1")
+        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "thread_payload_chunk", signal);
+      return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
+    },
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/evidence$/,
+    () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
+  ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/evidence\/([0-9]+)\/frames$/,
+    (_match) => ({
+      frames: [
+        {
+          source_sequence: "31",
+          availability: "present",
+          entry: archivedStderr(31),
+        },
+      ],
+      next_after_sequence: null,
+    }),
+  ],
+  ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/observations\/([0-9]+)$/,
+    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
+  ]
+);
+
 const FRESH: WatchHealth = {
   fresh: true,
   stale_after_seconds: 900,
@@ -1142,11 +1327,7 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/**
- * The app's two stream shapes: a live view, which is one snapshot and then whatever changes (here,
- * nothing), and a session, which is the canned turn and then silence, the way a session mid-turn
- * looks.
- */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
 class HarnessEventSource extends EventTarget {
   readonly url: string;
   readyState = 1;
@@ -1191,42 +1372,7 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    const isStatesSession = url.pathname === `/threads/${THREADS[2].id}/events/stream`;
-    const thread = THREADS_WITH_SANDBOXES.find(
-      (candidate) => url.pathname === `/threads/${candidate.id}/events/stream`
-    );
-    if (!thread) throw new Error(`Unknown Thread stream: ${url.pathname}`);
-    let entries = isStatesSession ? EVENTS_STATES : EVENTS;
-    const attached = create(AttachedSchema, {
-      ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
-      sessionId: thread.session_id,
-    });
-    if (thread.sandbox !== "demo-a1b2") {
-      entries = entries.slice(0, thread.last_cursor);
-      attached.lastCursor = BigInt(entries.length);
-    }
-    if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
-    if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
-    if (scenario.interleavedEvents) {
-      entries = INTERLEAVED_EVENTS;
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-      attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
-    }
-    if (scenario.failedTurn) {
-      entries = failedTurnEvents(scenario.failedTurn === "after-content");
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-    }
-    if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
-    if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
-    entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));
-    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
-    for (const entry of entries) {
-      this.dispatchEvent(
-        new MessageEvent("event", { data: toJsonString(EventEntrySchema, entry), lastEventId: String(entry.cursor) })
-      );
-    }
+    throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
   close(): void {
@@ -1236,29 +1382,37 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-if (scenario.openEvidence !== undefined) {
-  const openEvidence = new MutationObserver(() => {
-    const frame = document.getElementById(`agentplane-event-${scenario.openEvidence}`);
-    if (!(frame instanceof HTMLDetailsElement)) return;
-    openEvidence.disconnect();
-    // Let initial bottom-follow and the opened frame's layout settle, then navigate back.
-    // Visiting the top first opts out even if the closed frame was already at the bottom.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        frame.open = true;
-        requestAnimationFrame(() => {
-          const history = frame.closest<HTMLElement>('[aria-label="Thread history"]');
-          if (!history) throw new Error("Raw evidence is outside Thread history");
-          history.scrollTo({ top: 0 });
-          requestAnimationFrame(() => {
-            frame.scrollIntoView({ block: "start" });
-            frame.dataset.evidenceReady = "";
-          });
-        });
-      })
+if (scenario.openDebug) {
+  const openDebug = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Debug history"
     );
+    if (!(button instanceof HTMLButtonElement)) return;
+    openDebug.disconnect();
+    button.click();
+    if (scenario.openDebug !== "stderr") return;
+    const expandStderr = new MutationObserver(() => {
+      const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
+      if (!row) return;
+      expandStderr.disconnect();
+      row.open = true;
+      row.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+    expandStderr.observe(document, { childList: true, subtree: true });
   });
-  openEvidence.observe(document, { childList: true, subtree: true });
+  openDebug.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openReasoning) {
+  const openReasoning = new MutationObserver(() => {
+    const summary = [...document.querySelectorAll("summary")].find(
+      (candidate) => candidate.textContent === "Reasoning"
+    );
+    if (!(summary instanceof HTMLElement)) return;
+    openReasoning.disconnect();
+    summary.click();
+  });
+  openReasoning.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.preselectReconnect) {

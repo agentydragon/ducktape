@@ -225,6 +225,7 @@ py_test(
         ":client",
         ":conftest",
         "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -284,6 +285,36 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_native_resources",
+    size = "medium",
+    srcs = ["test_native_resources.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: actual pinned native harness process
+        "@claude_code_cli_linux_x64//:claude",  # keep: actual pinned native harness process
+    ],
+    shard_count = 2,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: pinned harness binaries
+        "@platforms//os:linux",  # keep: kernel process accounting
+    ],
+    deps = [
+        ":client",
+        ":config",
+        ":conftest",
+        ":service",
+        "//:conftest",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -653,6 +684,21 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_journal_memory",
+    srcs = ["test_journal_memory.py"],
+    deps = [
+        ":conftest",
+        ":journal",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )

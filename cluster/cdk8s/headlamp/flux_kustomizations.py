@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomization) -> Kustomization:
+def headlamp(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization, sso_providers_tf: Kustomization
+) -> Kustomization:
     name = "headlamp"
     return flux_kustomization(
         chart,
@@ -22,10 +21,8 @@ def headlamp(chart: Chart, gateway: Kustomization, sso_providers_tf: Kustomizati
             retry_interval="1m",
             interval="10m",
             timeout="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="headlamp-app", namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/headlamp",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[

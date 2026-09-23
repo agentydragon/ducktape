@@ -76,3 +76,28 @@ and deleting the only state volume are not supported recovery paths. That node-l
 mount is the required ownership assumption; RWO alone does not prevent two processes on its node
 from opening it. Session metadata and native resume files remain beside the database. There is no
 JSONL reader or old-data migration.
+
+### Bounded session history
+
+The SQLite journal stores a recovery checkpoint in the same transaction as each event.
+Opening a session reads that checkpoint and validates the last event, without decoding
+historical frames. Attachments query exclusive-cursor pages of 128 events on the retained journal
+connection under its transaction lock, limited to the published cursor. A cancelled attachment
+waits for its read session to close before releasing that lock to a native callback. A slow
+attachment retains one page.
+Completed command IDs and debug checkpoint identities are looked up by their indexed
+keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
+
+This changes the disposable journal schema: recreate old staging runner state rather than
+replaying it into a compatibility checkpoint. The native harness's own history and memory
+usage are separate from the runner journal's bounds.
+
+Historical adapter item identities and Claude per-message block counts use connection-local
+SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache. Each adapter
+instance has its own scope, preserving reset-on-new-harness behavior. These lookup tables are
+scratch state: they disappear when the journal connection closes and are not recovery evidence.
+The current Claude message's block map and unconfirmed inputs remain in memory.
+
+The Python `RunnerClient` tracks its consumed cursor without retaining every received event.
+Tests that inspect an attachment's complete `seen` history explicitly enable
+`capture_history=True`; application clients use the bounded default.

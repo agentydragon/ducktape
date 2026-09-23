@@ -76,7 +76,7 @@ Standing under it:
 
 - One sandbox per agent with its own Kubernetes identity, standalone Sandboxes, which is
   what the central proxy keys credentials and rules on.
-- Trajectories outlive sandboxes (`T1`): every event on both sides of a delegation is stored under
+- Threads outlive sandboxes (`T1`): every event on both sides of a delegation is stored under
   a thread, so the audit of what crossed the channel is the same store the UI reads.
 - The threads API is the seed of cross-transcript reads. Haku Console already scopes conversation
   reads to the reader's trust tier ([`haku/console/TODO.md`](../../haku/console/TODO.md)
@@ -100,7 +100,7 @@ Missing:
 - **The judge.** An agent on a trusted model that gets each message crossing a tier boundary and
   decides whether to admit it, answering allow, redact, or block with a reason that goes back
   to the sender as an input; a classifier only if the agent proves too slow or costly. The inbound direction (fleet to Haku) is the prompt-injection
-  direction and gets its own, different check. The judge's decisions are trajectory events, so a
+  direction and gets its own, different check. The judge's decisions are thread events, so a
   leak that got through is findable.
 - **The orchestrator's identity on the API.** Haku creates and suspends sandboxes under
   its own Kubernetes identity, presenting an audience-scoped token the way the Ducktape agent does
@@ -151,7 +151,7 @@ Haku is not: a new sandbox clones the repository and resumes.
 Standing under it:
 
 - A sandbox whose harness resumes across process restarts and suspend/resume, and whose
-  trajectory outlives it (`T1`).
+  thread outlives it (`T1`).
 - `haku-state` on Forgejo with tokens minted by the GitOps controller
   ([`tf/gitops/haku-state`](../../tf/gitops/haku-state)), which is exactly the credential the
   egress proxy substitutes for Haku's identity. The shape is proven: staging's sandboxes reach
@@ -210,7 +210,7 @@ Missing:
 
 - Story 1 is next: the proxy has landed and is where a denied call turns into an ask, and the
   approvals machinery is already designed.
-- Story 2 has the proxy's per-identity credential sets and the trajectory store, and adds tiers,
+- Story 2 has the proxy's per-identity credential sets and the thread store, and adds tiers,
   the events kind filter, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
 - Story 4 is the long-lived thread and memory-in-git on top of a resuming sandbox and `T1`; story 5

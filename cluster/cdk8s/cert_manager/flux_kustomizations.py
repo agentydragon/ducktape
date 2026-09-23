@@ -9,15 +9,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def cert_manager(
-    chart: Chart, cert_manager_issuer_config: Kustomization, reflector: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cert_manager_issuer_config: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "cert-manager"
     return flux_kustomization(
@@ -27,10 +31,8 @@ def cert_manager(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/app",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Health check ensures cert-manager pods are ready before dependents try to create Certificates
@@ -68,6 +70,7 @@ def cert_manager(
 
 def cert_manager_environment(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     cert_manager_issuer_config: Kustomization,
@@ -82,10 +85,8 @@ def cert_manager_environment(
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/environment",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             post_build=KustomizationSpecPostBuild(
@@ -110,7 +111,7 @@ def cert_manager_environment(
     )
 
 
-def cert_manager_issuer_config(chart: Chart) -> Kustomization:
+def cert_manager_issuer_config(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "cert-manager-issuer-config"
     return flux_kustomization(
         chart,
@@ -119,17 +120,17 @@ def cert_manager_issuer_config(chart: Chart) -> Kustomization:
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/issuer-config",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
         ),
     )
 
 
-def cert_manager_trust(chart: Chart, cert_manager: Kustomization, kyverno: Kustomization) -> Kustomization:
+def cert_manager_trust(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
+) -> Kustomization:
     name = "cert-manager-trust"
     return flux_kustomization(
         chart,
@@ -138,10 +139,8 @@ def cert_manager_trust(chart: Chart, cert_manager: Kustomization, kyverno: Kusto
             retry_interval="1m",
             interval="10m",
             timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            path="./cluster/k8s/cert-manager/trust",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             # Health check ensures trust-manager is ready before ClusterIssuers depend on it

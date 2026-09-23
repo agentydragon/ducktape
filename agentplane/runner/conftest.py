@@ -97,6 +97,6 @@ async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
 
 @pytest.fixture
 async def client(runner: RunnerHandle) -> AsyncIterator[RunnerClient]:
-    client = RunnerClient(runner.target)
+    client = RunnerClient(runner.target, capture_history=True)
     yield client
     await client.close()

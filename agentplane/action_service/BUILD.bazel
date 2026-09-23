@@ -156,6 +156,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":catalog",
         ":connections",
         ":enrollments",
         ":mcp_linkage",
@@ -690,6 +691,10 @@ py_library(
 
 py_test(
     name = "test_connections",
+    # Starting the Postgres testcontainer takes ~28s of the first test's setup and importing the app
+    # ~30s, so uncached runs land at 56-64s (bbapi target history: 39s -> 48s across recent devel
+    # commits); too close to small's 60s.
+    size = "medium",
     srcs = ["test_connections.py"],
     requires_docker = True,
     deps = [
@@ -939,6 +944,9 @@ py_test(
 
 py_test(
     name = "test_mcp_linkage_callback",
+    # Postgres testcontainer + OAuth callback assertions genuinely take 37-47s
+    # (bbapi target history across ~30 recent devel commits); too close to small's 60s.
+    size = "medium",
     srcs = ["test_mcp_linkage_callback.py"],
     requires_docker = True,
     deps = [

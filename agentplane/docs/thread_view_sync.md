@@ -1,6 +1,13 @@
 # Thread view synchronization
 
-Status: **proposed design; no runtime changes.**
+Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
+`agentplane/app/thread_fold.py` is connected to PostgreSQL through the
+transactional writer. The integration uses Electric and its TanStack DB collection adapter;
+the browser consumes bounded metadata interests and explicitly selected payloads.
+See [app implementation notes](../app/README.md) for endpoints and storage details.
+The acceptance requirements below remain gates, including browser behavior and server
+memory; implementation presence is not evidence that they have passed.
+
 [Thread layering](thread_layering.md) owns command admission, runner identities and
 execution durability. This document owns the materialized conversation and partial
 browser state. Record names below describe domain concepts; concrete schemas and wire
@@ -29,8 +36,7 @@ representations remain implementation decisions to validate with the sync integr
 
 The [September 15 inspection](../debug/thread_load_20260915.md) measured 3,091 Events and
 approximately 1.79 MB of SSE for eight turns with 6,278 bytes of completed text/reasoning.
-It is a historical host HTTP measurement, not a current browser benchmark. The present
-browser still folds the full archive; these requirements describe its replacement.
+It is a historical host HTTP measurement, not a current browser benchmark. It motivated replacing browser archive replay with the materialized view described here.
 
 ## Conversation structure and projection
 
@@ -96,16 +102,17 @@ completion facts. Reasoning and tool outputs can remain omitted until requested.
 These logical operations map to sync-engine queries or existing app HTTP calls. They do
 not mandate a second wire protocol beside the engine.
 
-| Operation                   | Meaning                                                        |
-| --------------------------- | -------------------------------------------------------------- |
-| List segments, no direction | Latest N segments; return in conversation order.               |
-| List before cursor          | Closest N earlier segments, excluding the cursor.              |
-| List after cursor           | Closest N later segments, excluding the cursor.                |
-| Get segments by cursor      | Exact identities, even outside loaded windows.                 |
-| Read payload                | Whole immutable selected content, or typed unavailability.     |
-| List pending commands       | Keyset page by admission cursor.                               |
-| Get commands by ID          | Reconcile admitted and settled commands after a lost response. |
-| Submit                      | Existing runner-first command admission; no app queue.         |
+| Operation                   | Meaning                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.                                      |
+| List before cursor          | Closest N earlier segments, excluding the cursor.                                     |
+| List after cursor           | Closest N later segments, excluding the cursor.                                       |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                                        |
+| Read payload                | Whole immutable selected content, or typed unavailability.                            |
+| List pending commands       | Keyset page by admission cursor.                                                      |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                        |
+| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes. |
+| Submit                      | Existing runner-first command admission; no app queue.                                |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
 Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
@@ -122,7 +129,7 @@ filter or a subscription token. Missed deadlines report lag rather than stale su
 
 ## Reuse the synchronization engine
 
-**Preferred integration to evaluate: Electric with its TanStack DB collection.** Agentplane
+**Selected integration: Electric with its TanStack DB collection.** Agentplane
 owns projection, domain records, command admission and authorization. The engine should
 own snapshot/live handoff, transaction reconciliation, resumable delivery and refetch.
 Do not implement an Agentplane `Changes` journal, suffix wire messages, client replay
@@ -136,7 +143,16 @@ and [shape definitions](https://electric-sql.com/docs/guides/shapes). The
 provides the existing client integration. These are capabilities to exercise against
 pinned versions, not evidence that Agentplane's acceptance cases already pass.
 
-The evaluation must resolve:
+Mutable entity and command collections use changes-only logs and TanStack's on-demand
+snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
+reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
+current snapshot of that entire bounded shape; it does not replay earlier item revisions.
+The proxy accepts only a whole-shape subset query and owns all selection predicates.
+Payload shapes select one content field and generation. A pinned reference limits its
+chunk prefix; a following selection receives later chunks in that generation. A generation
+replacement selects a new shape. There is no persistent browser cache initially.
+
+Acceptance must still establish:
 
 1. **Limited bootstrap and recovery.** Establish changes-only/on-demand synchronization
    and fetch the selected tail. A full shape for the whole Thread must never load as an
@@ -265,9 +281,9 @@ app; app-committed content survives under the app database's storage guarantee. 
 runner never received is outside this guarantee. Measure commit latency on actual storage
 before relaxing publication durability.
 
-Runner restart also needs incremental recovery: its current journal loads all Events and
-session initialization folds them all. Persist recovery state, index pending commands and
-page replay. During execution, retain required active state and bounded journal buffers;
+Runner restart uses persisted recovery state, indexed pending commands and paged journal
+reads. Its independent runner PR must demonstrate that open and recovery work stay bounded
+as retained history grows. During execution, retain required active state and bounded journal buffers;
 page historical entries from disk rather than accumulating them in process memory. Native
 harness context and resume cost are separate measurements; bounding Agentplane's memory
 and work does not prove Claude/Codex's own execution or resume is bounded.
@@ -280,9 +296,11 @@ messages and snapshot reconciliation algorithm.
 ### Open at the tail
 
 Subscribe through the engine to metadata/current controls and request the latest 30 items
-with text selected, reasoning and tool bodies omitted. Install the subset using its snapshot
-metadata; follow concurrent changes using its sync token. Initial data already contains
-assembled selected text. No replay of old token Events and no hidden background history load.
+with text selected, reasoning and tool bodies omitted. The metadata collection catches up
+to the sampled projection position through the engine. Selected text loads from its exact
+payload reference; loading is explicit until its whole revision is available. Follow
+concurrent changes using engine sync tokens. No replay of old token Events and no hidden
+background history load.
 
 ### Scroll upward while an old item changes
 
@@ -374,7 +392,7 @@ content at a reported revision.
 
 ### Acceptance evidence
 
-Required evidence before production cutover:
+Required evidence before accepting the integrated implementation:
 
 - Projection parity over different batch boundaries, including parallel tools finishing in
   reverse order, authoritative replacement, independent content fields, unknown observations,

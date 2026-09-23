@@ -313,21 +313,6 @@ order — each one invalidates the design if it fails:
    rotate refresh tokens on use; if it does, iron-proxy's env copy goes stale
    between the Secret write and the reloader restart.
 
-## Stop mirroring a live Google access token into the sandboxes
-
-`cluster/k8s/agents/airlock/google-access-token-eso.yaml` puts a working Google
-access token into `claude-sandbox` and `haku-sandbox` on a 1-minute refresh, where
-an agent can read it. That is the same exposure class as F7/F10 — a credential
-readable from inside the agent, and so reachable by prompt injection from anything
-the agent reads — and it is the one the coder agent's proxy design exists to
-remove.
-
-Not urgent in itself: the grant is nine read-only scopes, so the blast radius is
-disclosure rather than modification. But it should not be the pattern the
-personal-data agent inherits, and the replacement (proxy-held or MCP-held) is
-already designed. Fold it in when that agent is built, and retire the mirror
-rather than adding a third namespace to it.
-
 ## Ask whether Airlock's `google` provider should stay a union grant
 
 Its single provider entry requests nine read-only scopes across Gmail, Drive,

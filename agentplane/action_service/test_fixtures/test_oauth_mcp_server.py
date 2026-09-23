@@ -15,13 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.catalog import ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.mcp_linkage import (
-    McpLinkageAuthority,
-    McpLinkageStart,
-    McpLinkageStatus,
-    McpOAuthServer,
-    McpProvider,
-)
+from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, OperatorPrincipal
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
 from agentplane.action_service.test_fixtures.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app
@@ -56,11 +50,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
     app = build_app(base_url=base_url, redirect_uri=REDIRECT_URI).http_app(path=PATH)
     with serve_app_sync(app, sock=sock):
         server = McpOAuthServer(
-            server_id="example",
-            provider=McpProvider.EXAMPLE,
-            server_url=f"{base_url}{PATH}",
-            client_id=CLIENT_ID,
-            redirect_uri=REDIRECT_URI,
+            server_id="example", server_url=f"{base_url}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
         )
         async with httpx2.AsyncClient(follow_redirects=False) as http:
             authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http)

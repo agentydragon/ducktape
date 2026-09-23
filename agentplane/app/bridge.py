@@ -1,4 +1,4 @@
-"""Runner-first commands and database-backed conversation delivery across app replicas."""
+"""Runner-first commands and database-backed thread delivery across app replicas."""
 
 from __future__ import annotations
 
@@ -18,21 +18,22 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.changes import Changes
+from agentplane.app.ingestion import event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.trajectory import (
-    EventReplicationError,
+from agentplane.app.thread.recording import EventReplicationError
+from agentplane.app.thread.store import (
     FeedEnd,
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
     ThreadNotFoundError,
-    TrajectoryStore,
+    ThreadStore,
 )
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import Attachment, RunnerClient, RunnerError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -87,7 +88,7 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(self, *, session_id: str, client: RunnerClient, store: ThreadStore, lease: IngestionLease):
         self.session_id = session_id
         self.client = client
         self.store = store
@@ -119,11 +120,9 @@ class Feed:
                     attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.store.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
-                while True:
-                    entry = await attachment.next_entry()
-                    await self.store.record(thread_id, [entry], lease=self.lease)
-                    attachment.seen.clear()
-            except StreamClosedError:
+                async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:
+                    async for batch in batches:
+                        await self.store.record(thread_id, batch, lease=self.lease)
                 copied = await self.store.last_cursor(thread_id)
                 await self.store.end_feed(
                     thread_id,
@@ -136,7 +135,7 @@ class Feed:
                 )
             except EventReplicationError as error:
                 logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-                await self.store.end_feed(thread_id, lease=self.lease, error=str(error))
+                await self.store.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
         except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
@@ -158,7 +157,7 @@ class RunnerBridge:
         self,
         *,
         address_of: AddressOf,
-        store: TrajectoryStore,
+        store: ThreadStore,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
     ) -> None:
@@ -238,6 +237,12 @@ class RunnerBridge:
                             await feed.close()
                         thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
                         snapshot = await self._store.feed_state(thread_id)
+                        # A semantic replay failure is durable evidence that this runner's prefix is
+                        # unsafe. A new coordinator or app replica must not call set_attached() and
+                        # make its failed thread view appear healthy before replaying the same
+                        # rejected suffix again. A distinct session is the explicit recovery path.
+                        if snapshot is not None and isinstance(snapshot.end, FeedError):
+                            continue
                         if (
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
                             and snapshot is not None
@@ -278,8 +283,17 @@ class RunnerBridge:
     async def open_session(
         self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
     ) -> protocol_pb2.Attached:
-        async with await (await self._client(sandbox)).attach(session_id, spec=spec) as attachment:
+        existing = await self._store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=True)
+        if existing:
+            snapshot = await self._store.feed_state(existing[0].id)
+            if snapshot is not None and isinstance(snapshot.end, FeedError):
+                raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
+        attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
+        try:
             attached = attachment.attached
+        finally:
+            # Open has completed when Attached arrives. This caller needs no history replay.
+            attachment.cancel()
         thread_id = await self._store.thread(sandbox, session_id, attached.spec)
         await self.start([sandbox])
         # In particular, do not return a resumed session while the database still says its
@@ -301,6 +315,9 @@ class RunnerBridge:
         thread = await self._store.get_thread(thread_id)
         if thread is None:
             raise ThreadNotFoundError(thread_id)
+        snapshot = await self._store.feed_state(thread_id)
+        if snapshot is not None and isinstance(snapshot.end, FeedError):
+            raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # A runner rejection can still have followed earlier events the archive has not copied.
         # Start its feed before relaying so the rejection path cannot strand that prefix.
         await self.start([thread.sandbox])

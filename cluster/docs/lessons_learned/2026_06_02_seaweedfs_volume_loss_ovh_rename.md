@@ -161,13 +161,14 @@ losing this server:
 # Inside any filer / master / volume pod
 weed shell <<EOF
 volume.list
-volume.fix.replication -collectionPattern=* -volumeIdPattern=* -n
+volume.fix.replication -collectionPattern=* -apply=false
 EOF
 ```
 
 `volume.list` should show every collection's volume ids replicated on
-≥2 distinct DataNodes. `volume.fix.replication -n` (dry-run) will list
-any under-replicated volumes.
+≥2 distinct DataNodes. `-apply=false` runs the replication check without
+changing the cluster; it lists under-replicated, over-replicated, and misplaced
+volumes.
 
 After bringing the renamed node back up (new empty volume server registered),
 **wait for re-replication to finish** before starting the next pilot:

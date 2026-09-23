@@ -73,6 +73,18 @@ spec:
                 secretKeyRef:
                   name: google-client-credentials
                   key: client_secret
+            # The `google-write` provider reuses this same GCP OAuth client (config.yaml); scope
+            # is a per-authorize-flow parameter, not fixed to the client registration.
+            - name: GOOGLE_WRITE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_id
+            - name: GOOGLE_WRITE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_secret
             - name: BSC_CLIENT_ID
               valueFrom:
                 secretKeyRef:

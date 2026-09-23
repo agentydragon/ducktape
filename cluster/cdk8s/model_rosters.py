@@ -154,15 +154,7 @@ def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
 # for clients that need them. OpenClaw uses the Responses surface below because it is
 # the working native passthrough to CLIProxyAPI.
-CLIPROXY_MODELS: list[str] = [
-    "gpt-6-astra",
-    "gpt-5.4",
-    "gpt-5.5",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.3-codex-spark",
-]
+CLIPROXY_MODELS: list[str] = ["gpt-6-astra", "gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 
 # Context window + max output tokens for the Codex-subscription models. Measured,
 # not published: litellm's model_cost DB (live-fetched from BerriAI) has exact

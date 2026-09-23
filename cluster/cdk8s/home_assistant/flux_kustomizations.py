@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def home_assistant(
     chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
     local_path_provisioner: Kustomization,
     seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
@@ -35,7 +30,7 @@ def home_assistant(
             interval="10m",
             retry_interval="1m",
             timeout="10m",
-            path="./cluster/k8s/home-assistant",
+            path=artifact_path(artifact),
             prune=True,
             wait=True,
             health_checks=[
@@ -58,13 +53,8 @@ def home_assistant(
                     namespace="home-assistant",
                 ),
             ],
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace="ducktape-flux"
-            ),
-            decryption=KustomizationSpecDecryption(
-                provider=KustomizationSpecDecryptionProvider.SOPS,
-                secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-            ),
+            source_ref=artifact_source_ref(artifact),
+            decryption=SOPS_DECRYPTION,
             depends_on=flux_kustomization_depends_on_many(
                 local_path_provisioner,
                 seaweedfs_cluster,

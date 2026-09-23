@@ -2397,7 +2397,7 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3749,7 +3749,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3775,7 +3775,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -3801,7 +3801,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3883,6 +3883,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: valkey
@@ -4384,6 +4386,30 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: ssh-mcp
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Standalone Gmail/Calendar MCP backend for Agentplane staging.
+  name: google-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/google-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: google-mcp
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -4953,7 +4979,7 @@ spec:
   dependsOn:
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: agent-shared-secrets
+    - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -5028,6 +5054,10 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
       name: egress
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-electric
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -5342,6 +5372,8 @@ spec:
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
   healthCheckExprs:
@@ -5366,6 +5398,10 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
       name: egress
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-electric
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

@@ -32,13 +32,14 @@ from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -178,7 +179,10 @@ class Settings(AppSettingsConfig):
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
+    electric_url: str | None = Field(
+        default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
+    )
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )
@@ -261,6 +265,9 @@ async def async_main(settings: Settings) -> None:
             timeout=10,
         ) as actions_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+        httpx.AsyncClient(
+            base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)
+        ) as electric_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
@@ -282,7 +289,7 @@ async def async_main(settings: Settings) -> None:
             sandbox_namespace=settings.sandbox_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        store = TrajectoryStore.connect(settings.database_url)
+        store = ThreadStore.connect(settings.database_url)
         await store.start_updates()
 
         async def running_sandboxes() -> list[str]:
@@ -294,6 +301,7 @@ async def async_main(settings: Settings) -> None:
             discover_sandboxes=running_sandboxes,
             sandbox_changes=live.changes,
         )
+
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)
             if settings.action_federation is not None and oidc is not None
@@ -312,6 +320,7 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
+            electric=(ElectricProxy(electric_http, store) if settings.electric_url is not None else None),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
@@ -353,7 +362,7 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, bridge: RunnerBridge, store: TrajectoryStore, sandboxes: DiscoverSandboxes
+    server: uvicorn.Server, *, bridge: RunnerBridge, store: ThreadStore, sandboxes: DiscoverSandboxes
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the bridge's lease release and the store's

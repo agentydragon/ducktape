@@ -32,11 +32,12 @@ py_library(
         "//agentplane/app:bridge",
         "//agentplane/app:decisions",
         "//agentplane/app:egress",
+        "//agentplane/app:electric",
         "//agentplane/app:identity",
         "//agentplane/app:inventory",
         "//agentplane/app:live",
         "//agentplane/app:presets",
-        "//agentplane/app:trajectory",
+        "//agentplane/app/thread:store",
         "//agentplane/protocol:event_log_pb2",
         "@pypi//asyncpg",
         "@pypi//fastapi",
@@ -58,5 +59,35 @@ py_library(
         "//agentplane/runner:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "electric_service",
+    srcs = ["electric_service.py"],
+    deps = [
+        "//agentplane/app:database_migrate",
+        "//third_party/containers:electric_1_8_1",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "http2_proxy",
+    srcs = ["http2_proxy.py"],
+    deps = [
+        "//third_party/containers:nginx_unprivileged",
+        "//util:net",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//cryptography",
+        "@pypi//h2",
+        "@pypi//httpx",
     ],
 )

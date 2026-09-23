@@ -1,10 +1,29 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, displayableError, httpError } from "./client";
+import { api, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {
+  const requests: URL[] = [];
+  const middleware = {
+    onRequest({ request }: { request: Request }) {
+      requests.push(new URL(request.url, "https://app.invalid"));
+      return Response.json({ observations: [], next_before_cursor: null, next_after_cursor: null });
+    },
+  };
+  api.use(middleware);
+  try {
+    await threadObservations("test-thread", { [direction]: "9007199254740993" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].searchParams.get(`${direction}_cursor`)).toBe("9007199254740993");
+    expect(requests[0].searchParams.get("limit")).toBe("30");
+  } finally {
+    api.eject(middleware);
+  }
+});
 
 it("includes HTTP status and the complete structured error without interpreting its envelope", () => {
   const error = {
