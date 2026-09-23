@@ -69,6 +69,7 @@ cluster/k8s/forgejo/claude/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/cpap-data/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/haku-state/kustomization.yaml linguist-generated=true
 cluster/k8s/gatus/sso-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/shared-rbac/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true

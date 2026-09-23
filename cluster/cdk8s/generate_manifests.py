@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import (
     agent_machine_access,
+    agent_shared_rbac,
     aiquota,
     cnpg_flux_kustomizations,
     descheduler,
@@ -185,6 +186,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    agent_shared_rbac.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -412,8 +414,8 @@ def generate_manifests(root: Path) -> None:
     volsync_kustomization = volsync_flux_kustomizations.volsync(
         flux_chart, volsync_artifact, snapshot_controller_kustomization
     )
-    agent_shared_rbac_artifact = artifact("agent-shared-rbac", "cluster/k8s/agents/shared-rbac")
-    agents_flux_kustomizations.agent_shared_rbac(
+    agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
+    agent_shared_rbac.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", "cluster/k8s/agents/shared-secrets")
