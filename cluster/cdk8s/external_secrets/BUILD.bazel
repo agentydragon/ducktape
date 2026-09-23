@@ -44,6 +44,19 @@ py_library(
 )
 
 py_library(
+    name = "single_secret_store",
+    srcs = ["single_secret_store.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "external_secret",
     srcs = ["external_secret.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

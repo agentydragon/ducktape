@@ -39,12 +39,6 @@ spec:
     template:
       data:
         bearer-token: "{{ .password }}"
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ^haku-console$,^agentplane-staging$
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ^haku-console$,^agentplane-staging$
       type: Opaque
 ---
 apiVersion: v1
@@ -288,9 +282,6 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: agentplane-actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
-        - matchLabels:
-            app.kubernetes.io/name: haku-console
-            k8s:io.kubernetes.pod.namespace: haku-console
       toPorts:
         - ports:
             - port: "8080"

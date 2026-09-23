@@ -87,6 +87,16 @@ class HomeAssistantClient:
     async def _verify_api_ready(self) -> None:
         await self.request_json("/api/", authenticated=False)
 
+    async def token_is_valid(self, token: str) -> bool:
+        """Whether Home Assistant accepts `token`."""
+        response = await self.http_client.get(
+            f"{self.settings.home_assistant_url}/api/", headers={"Authorization": f"Bearer {token}"}, timeout=30
+        )
+        if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            return False
+        response.raise_for_status()
+        return True
+
     async def onboarding_status(self) -> set[OnboardingStep] | None:
         """Return completed onboarding steps, or None when onboarding views are absent."""
         try:

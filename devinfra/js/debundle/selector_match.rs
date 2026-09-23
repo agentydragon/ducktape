@@ -676,18 +676,45 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
-        // the keyword.
+        // the keyword. An `ANYTHING` declarator is a run only when its
+        // initializer carries nothing (absent, or itself a hole, as in
+        // `const ANYTHING = ANYTHING`); otherwise it floats (see
+        // [`is_floating_declarator`]).
         NodeKind::VarDecl => {
             ck == NodeKind::VarDeclarator && {
                 let kids = index.children_of(child);
                 !kids.is_empty()
                     && index.kind_of(kids[0]) == NodeKind::BindingIdent
                     && (node_ident_hole(index, kids[0], DECLARATORS_HOLE_KEYWORD)
-                        || node_ident_hole(index, kids[0], ANYTHING_HOLE_KEYWORD))
+                        || (node_ident_hole(index, kids[0], ANYTHING_HOLE_KEYWORD)
+                            && !has_informative_init(index, child)))
             }
         }
         _ => false,
     }
+}
+
+/// A declarator whose initializer is more than a placeholder: present and not
+/// itself a hole.
+fn has_informative_init(index: &Index, declarator: NodeId) -> bool {
+    index
+        .children_of(declarator)
+        .get(1)
+        .is_some_and(|&init| !is_single_node_hole(index, init))
+}
+
+/// `ANYTHING = <init>` with an informative initializer: one declarator of any
+/// name whose initializer must match, with any declarators around it. It is
+/// placed as its own segment that never anchors either end of the list, so
+/// `const ANYTHING = x.y;` finds `x.y` inside `const a = 1, b = x.y, c = 2;`.
+fn is_floating_declarator(index: &Index, parent_kind: NodeKind, child: NodeId) -> bool {
+    parent_kind == NodeKind::VarDecl
+        && index.kind_of(child) == NodeKind::VarDeclarator
+        && index.children_of(child).first().is_some_and(|&name| {
+            index.kind_of(name) == NodeKind::BindingIdent
+                && node_ident_hole(index, name, ANYTHING_HOLE_KEYWORD)
+        })
+        && has_informative_init(index, child)
 }
 
 /// Number of leading children that are *not* part of a run-hole-bearing list and
@@ -1056,7 +1083,10 @@ fn match_children(
     }
     let nlist = &nchildren[nprefix..];
     let slist = &schildren[sprefix..];
-    if nlist.iter().any(|&c| is_run_hole_carrier(needle, nkind, c)) {
+    if nlist
+        .iter()
+        .any(|&c| is_run_hole_carrier(needle, nkind, c) || is_floating_declarator(needle, nkind, c))
+    {
         return match_list_with_holes(needle, nlist, subject, slist, nkind, mode, bindings);
     }
     if nlist.len() != slist.len() {
@@ -1073,11 +1103,14 @@ fn match_children(
 /// Partition `0..len` into maximal runs of non-hole positions — the fixed
 /// segments placed as an ordered subsequence with run-hole gaps — plus the
 /// anchoring flags (`anchored_left`/`anchored_right` = the first/last position is
-/// a fixed anchor). Position `i` is a hole iff `is_hole(i)`. An all-holes list
-/// yields no segments. Shared by the list / declarator / top-level placement paths.
+/// a fixed anchor). Position `i` is a hole iff `is_hole(i)`; a floating position
+/// (`is_floating(i)`) is a singleton segment with gaps allowed on both sides. An
+/// all-holes list yields no segments. Shared by the list / declarator /
+/// top-level placement paths.
 fn segment_partition(
     len: usize,
     is_hole: impl Fn(usize) -> bool,
+    is_floating: impl Fn(usize) -> bool,
 ) -> (Vec<(usize, usize)>, bool, bool) {
     let mut segments = Vec::new();
     let mut idx = 0;
@@ -1087,13 +1120,18 @@ fn segment_partition(
             continue;
         }
         let start = idx;
-        while idx < len && !is_hole(idx) {
+        if is_floating(idx) {
             idx += 1;
+        } else {
+            while idx < len && !is_hole(idx) && !is_floating(idx) {
+                idx += 1;
+            }
         }
         segments.push((start, idx - start));
     }
-    let anchored_left = len > 0 && !is_hole(0);
-    let anchored_right = len > 0 && !is_hole(len - 1);
+    let anchored = |i: usize| !is_hole(i) && !is_floating(i);
+    let anchored_left = len > 0 && anchored(0);
+    let anchored_right = len > 0 && anchored(len - 1);
     (segments, anchored_left, anchored_right)
 }
 
@@ -1109,9 +1147,11 @@ fn match_list_with_holes(
     mode: Mode,
     bindings: &mut Bindings,
 ) -> Result<bool, Unsupported> {
-    let (segments, anchored_left, anchored_right) = segment_partition(nlist.len(), |i| {
-        is_run_hole_carrier(needle, parent_kind, nlist[i])
-    });
+    let (segments, anchored_left, anchored_right) = segment_partition(
+        nlist.len(),
+        |i| is_run_hole_carrier(needle, parent_kind, nlist[i]),
+        |i| is_floating_declarator(needle, parent_kind, nlist[i]),
+    );
     if segments.is_empty() {
         return Ok(true);
     }
@@ -1197,7 +1237,8 @@ fn align_var_declarators(
 ) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
     let mut alignment = vec![None; ndecls.len()];
     let is_hole = |d: NodeId| is_run_hole_carrier(needle, NodeKind::VarDecl, d);
-    if !ndecls.iter().any(|&d| is_hole(d)) {
+    let is_floating = |d: NodeId| is_floating_declarator(needle, NodeKind::VarDecl, d);
+    if !ndecls.iter().any(|&d| is_hole(d) || is_floating(d)) {
         if ndecls.len() != sdecls.len() {
             return Ok(None);
         }
@@ -1209,8 +1250,11 @@ fn align_var_declarators(
         }
         return Ok(Some(alignment));
     }
-    let (segments, anchored_left, anchored_right) =
-        segment_partition(ndecls.len(), |i| is_hole(ndecls[i]));
+    let (segments, anchored_left, anchored_right) = segment_partition(
+        ndecls.len(),
+        |i| is_hole(ndecls[i]),
+        |i| is_floating(ndecls[i]),
+    );
     // An all-holes declarator list pins nothing (no positions to align).
     if segments.is_empty() {
         return Ok(Some(alignment));
@@ -1730,9 +1774,11 @@ pub fn match_top_level_sequence_indexed(
     subject_idx: &[Index],
     mode: Mode,
 ) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
-    let (segments, _, _) = segment_partition(needle_idx.len(), |i| {
-        is_module_stmt_list_hole(&needle_idx[i])
-    });
+    let (segments, _, _) = segment_partition(
+        needle_idx.len(),
+        |i| is_module_stmt_list_hole(&needle_idx[i]),
+        |_| false,
+    );
     // A fixed (non-hole) needle statement must be faithfully supported.
     for &(start, len) in &segments {
         for item in &needle_idx[start..start + len] {

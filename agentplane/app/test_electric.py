@@ -117,11 +117,14 @@ async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: See
         )
 
     app, electric = make_app(httpx.MockTransport(upstream), content)
-    # Everything Electric's client sends, including what it adds when recovering an expired handle.
+    # Everything Electric's client sends, including what it adds when recovering an expired handle and
+    # when it follows a shape over SSE.
     protocol = {
         "offset": "now",
         "handle": "h",
         "live": "true",
+        "live_sse": "true",
+        "experimental_live_sse": "true",
         "cursor": "c",
         "log": "changes_only",
         "expired_handle": "old",

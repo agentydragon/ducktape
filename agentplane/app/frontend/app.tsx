@@ -12,6 +12,8 @@ import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
+import { electricThreadSync } from "./thread_store";
+import { ThreadSyncContext } from "./thread_sync";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -118,8 +120,10 @@ function AppRoutes(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <HashRouter>
-      <AppRoutes />
-    </HashRouter>
+    <ThreadSyncContext.Provider value={electricThreadSync}>
+      <HashRouter>
+        <AppRoutes />
+      </HashRouter>
+    </ThreadSyncContext.Provider>
   );
 }

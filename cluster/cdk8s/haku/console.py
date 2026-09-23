@@ -69,7 +69,6 @@ from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
@@ -278,12 +277,6 @@ class Console(Construct):
                 (
                     env_name(Settings, "mcp_operator_oauth_token_timeout_seconds"),
                     EnvValue.from_value(str(checked_value(Settings, "mcp_operator_oauth_token_timeout_seconds", 30))),
-                ),
-                # The static bearer for the cluster-internal ssh-mcp backend, delivered into this
-                # namespace by ssh-mcp. Resolved only while the console calls the backend; never
-                # mounted into the inner workload.
-                self._from_secret(
-                    BEARER_SECRET_NAME, BEARER_SECRET_KEY, "mcp", "servers", "ssh", "backend", "auth", "token"
                 ),
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in
