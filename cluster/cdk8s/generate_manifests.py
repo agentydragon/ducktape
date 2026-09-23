@@ -7,6 +7,7 @@ from cdk8s import App, Chart
 from cluster.cdk8s import (
     agent_machine_access,
     agent_rbac_base,
+    agent_workspaces,
     agent_shared_rbac,
     aiquota,
     airlock,
@@ -220,6 +221,7 @@ def generate_manifests(root: Path) -> None:
     haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
+    agent_workspaces.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)

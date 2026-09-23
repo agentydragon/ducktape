@@ -76,6 +76,7 @@ exports_files(
         "haku-ci/haku-ci.k8s.yaml",
         "agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
         "agents/agent-rbac-base/kustomization.yaml",
+        "agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
         "agents/public-coder-agent/namespace/kustomization.yaml",

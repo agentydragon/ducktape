@@ -571,6 +571,36 @@ py_test(
 )
 
 py_library(
+    name = "agent_rbac_base",
+    srcs = ["agent_rbac_base.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/kyverno:cleanuppolicy",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "agent_workspaces",
+    srcs = ["agent_workspaces.py"],
+    deps = [
+        ":forgejo_images",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
+        "//cluster/cdk8s/crd_bindings/kyverno:cleanuppolicy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "mitmproxy",
     srcs = ["mitmproxy.py"],
     deps = [
@@ -960,6 +990,7 @@ py_library(
     deps = [
         ":agent_machine_access",
         ":agent_rbac_base",
+        ":agent_workspaces",
         ":agent_shared_rbac",
         ":aiquota",
         ":airlock",
@@ -1198,6 +1229,7 @@ py_test(
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
         "//cluster/k8s:agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
         "//cluster/k8s:agents/agent-rbac-base/kustomization.yaml",
+        "//cluster/k8s:agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml",
         "//cluster/k8s:agents/airlock/airlock.k8s.yaml",
         "//cluster/k8s:agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
