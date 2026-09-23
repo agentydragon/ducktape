@@ -143,8 +143,7 @@ class Console(Construct):
         self._supplied: list[tuple[str, ...]] = []
 
         # Narrow runtime identity: SubjectAccessReview for the Kubernetes-grant flow, plus
-        # claim/exec RBAC on the haku-sandbox pool (cluster/k8s/haku/workspaces/app/
-        # haku-console-sandbox-role.yaml). No Secret, log, exec, or SandboxTemplate access
+        # claim/exec RBAC on the haku-sandbox pool (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access
         # outside that pool.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=metadata(NAME, NAMESPACE), automount_token=True
