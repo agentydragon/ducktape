@@ -101,8 +101,6 @@ class Environment:
     flux_description: str
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
-    # Whether the operator Role may manage ActionPolicySet/Binding objects.
-    include_action_policy_rule: bool
     replicas: ReplicaProfile
     # agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
     app_config: dict
