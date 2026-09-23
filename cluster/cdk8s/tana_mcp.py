@@ -405,7 +405,7 @@ def chart(app: App) -> Chart:
         "tana-pat",
         namespace=_NAMESPACE,
         source_name=_PAT_SECRET,
-        property_name="token",
+        properties=("token",),
         description="ESO copy of the canonical Tana PAT from external-creds.",
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
