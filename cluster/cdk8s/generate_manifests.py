@@ -7,13 +7,12 @@ from cdk8s import App, Chart
 from cluster.cdk8s import (
     agent_machine_access,
     agent_rbac_base,
-    agent_workspaces,
     agent_shared_rbac,
+    agent_workspaces,
     aiquota,
     airlock,
     authentik_jwt_rotation,
     claude_sandbox_secrets,
-    cnpg_flux_kustomizations,
     cnpg_operator,
     descheduler,
     dns_automation,
@@ -23,7 +22,6 @@ from cluster.cdk8s import (
     external_creds,
     forgejo_image_automation,
     forgejo_images,
-    forgejo_images_flux_kustomizations,
     forgejo_token_rotation,
     gateway,
     gateway_flux_kustomizations,
@@ -31,17 +29,17 @@ from cluster.cdk8s import (
     goldilocks,
     google_mcp,
     ha_mcp,
-    haku_openclaw_spike_backup,
     haku_egress_proxy,
+    haku_openclaw_spike_backup,
     haku_openclaw_spike_config,
-    kubectl_passthrough_mcp,
-    loki_read_proxy,
     headlamp,
     hubble_ui,
     keda,
     kube_api_proxy,
     kube_system,
+    kubectl_passthrough_mcp,
     local_path_provisioner,
+    loki_read_proxy,
     metrics_server,
     mitmproxy,
     node_feature_discovery,
@@ -57,8 +55,8 @@ from cluster.cdk8s import (
     reflector,
     reloader,
     stateful_infra,
-    tana_mcp,
     talos_cloud_controller_manager,
+    tana_mcp,
     user_agentydragon,
     valkey,
     vector_talos_logs,
@@ -108,8 +106,6 @@ from cluster.cdk8s.clickhouse import (
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app, flux_kustomizations as cpap_sync_flux_kustomizations
-from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
-from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
     flux_kustomizations as dcgm_exporter_flux_kustomizations,
@@ -118,6 +114,7 @@ from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
     flux_kustomizations as external_secrets_flux_kustomizations,
     operator as external_secrets_operator,
+)
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
 from cluster.cdk8s.flux_image_automation_ghcr import (
@@ -156,8 +153,6 @@ from cluster.cdk8s.grocy import (
     mcp as grocy_mcp,
     user_perms as grocy_user_perms,
 )
-from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
@@ -167,8 +162,8 @@ from cluster.cdk8s.haku import (
     rbac as haku_rbac,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
+)
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
-from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -176,17 +171,13 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
-from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
-from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
-from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import (
     app as kubevirt_app,
     cdi as kubevirt_cdi,
     flux_kustomizations as kubevirt_flux_kustomizations,
 )
-from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
-from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
+from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
     database as litellm_database,
@@ -198,12 +189,7 @@ from cluster.cdk8s.litellm import (
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
-from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
-from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
-from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
-from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
-from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import (
     flux_kustomizations as openebs_lvm_flux_kustomizations,
@@ -211,9 +197,6 @@ from cluster.cdk8s.openebs_lvm import (
 )
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
-from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
-from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
-from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import (
     driver as seaweedfs_csi_driver,
@@ -403,14 +386,8 @@ def generate_manifests(root: Path) -> None:
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(flux_chart, budget_namespace_artifact)
-    haku_namespace_artifact = artifact("haku-namespace", "cluster/k8s/haku/namespace")
-    haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart, haku_namespace_artifact)
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = haku_namespace.haku_namespace(flux_chart, haku_namespace_artifact, root)
-    hubble_ui_artifact = artifact("hubble-ui", "cluster/k8s/hubble-ui")
-    hubble_ui_flux_kustomizations.hubble_ui(flux_chart, hubble_ui_artifact)
-    kube_api_proxy_artifact = artifact("kube-api-proxy", "cluster/k8s/kube-api-proxy")
-    kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
     hubble_ui.hubble_ui(flux_chart, hubble_ui_artifact)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
@@ -472,10 +449,6 @@ def generate_manifests(root: Path) -> None:
     gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
-    haku_rbac_artifact = artifact("haku-rbac", "cluster/k8s/haku/rbac")
-    haku_rbac_kustomization = haku_flux_kustomizations.haku_rbac(
-        flux_chart, haku_rbac_artifact, haku_namespace_kustomization
-    )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
     kubevirt_kustomization = kubevirt_app.kubevirt(flux_chart, kubevirt_artifact, kubevirt_operator_kustomization)
     haku_rbac_artifact = artifact(haku_rbac.NAME, haku_rbac.OUTPUT_DIR)
@@ -492,8 +465,6 @@ def generate_manifests(root: Path) -> None:
     metrics_server_kustomization = metrics_server.metrics_server(
         flux_chart, metrics_server_artifact, kyverno_kustomization
     )
-    reloader_artifact = artifact("reloader", "cluster/k8s/reloader")
-    reloader_flux_kustomizations.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
     reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
@@ -590,14 +561,10 @@ def generate_manifests(root: Path) -> None:
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
-    volsync_artifact = artifact("volsync", "cluster/k8s/volsync")
-    volsync_kustomization = volsync_flux_kustomizations.volsync(
-        flux_chart, volsync_artifact, snapshot_controller_kustomization
-    )
-    agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
-    agent_shared_rbac.agent_shared_rbac(
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
+    agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
+    agent_shared_rbac.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", "cluster/k8s/agents/shared-secrets")
