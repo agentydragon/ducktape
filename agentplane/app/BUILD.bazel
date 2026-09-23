@@ -428,6 +428,8 @@ py_library(
     srcs = ["database_migrate.py"],
     data = ["//agentplane/app/migrations:files"],
     deps = [
+        ":database",
+        ":operator_sessions",
         "//agentplane/app/agent_runtime:models",
         "//util:db_migrations",
         "@pypi//pydantic_settings",
@@ -732,6 +734,7 @@ py_library(
     name = "operator_sessions",
     srcs = ["operator_sessions.py"],
     deps = [
+        ":database",
         "@pypi//itsdangerous",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
@@ -817,7 +820,6 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
-        "//agentplane/app/agent_runtime:models",
         "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",

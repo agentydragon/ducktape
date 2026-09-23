@@ -6,7 +6,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     deps = [
-        "//agentplane/app:operator_sessions",
+        "//agentplane/app:database",
         "//agentplane/app:presets",
         "@pypi//sqlalchemy",
     ],

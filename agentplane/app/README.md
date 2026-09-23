@@ -81,11 +81,11 @@ bbr test //agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
-- `database.py`: the app's one connection pool; `main.py` builds it and hands it to each store and
-  to the thread update listener.
-- `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
-  in `operator_sessions.py` and reused by `agent_runtime/models.py`'s tables. Migrations run
-  separately through `:migrate`; the server itself never creates or checks tables at startup.
+- `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
+  `main.py` builds the pool and hands it to each store and to the thread update listener.
+- `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
+  `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
+  `:migrate`; the server itself never creates or checks tables at startup.
   `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
