@@ -116,7 +116,6 @@ from cluster.cdk8s.external_secrets import (
     flux_kustomizations as external_secrets_flux_kustomizations,
     operator as external_secrets_operator,
 )
-from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
@@ -260,8 +259,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    haku_console_resource_chart = haku_charts.write_console_manifests(root)
-    haku_console_health_checks = flux_health_checks(haku_console_resource_chart, ("Cluster", "Job"))
+    haku_charts.write_console_manifests(root)
     haku_openclaw_spike_config.write_manifests(root)
     haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
@@ -1422,7 +1420,6 @@ def generate_manifests(root: Path) -> None:
     haku_charts.haku_console(
         flux_chart,
         haku_console_artifact,
-        haku_console_health_checks,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         forgejo_images_kustomization,

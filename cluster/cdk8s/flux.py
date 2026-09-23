@@ -26,11 +26,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecDependsOn,
+    KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
+    KustomizationSpecImages,
+    KustomizationSpecPatches,
+    KustomizationSpecPostBuild,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
 )
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
@@ -55,19 +63,57 @@ def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecH
 def flux_kustomization(
     chart: Chart,
     name: str,
+    source: ArtifactGeneratorSpecArtifacts | KustomizationSpecSourceRef,
     *,
-    spec: KustomizationSpec,
+    path: str | None = None,
+    interval: str = "10m",
+    retry_interval: str | None = "1m",
+    timeout: str | None = None,
+    prune: bool = True,
+    wait: bool | None = True,
+    suspend: bool | None = None,
+    deletion_policy: KustomizationSpecDeletionPolicy | None = None,
+    decryption: KustomizationSpecDecryption | None = None,
+    depends_on: Sequence[KustomizationSpecDependsOn] | None = None,
+    health_checks: Sequence[KustomizationSpecHealthChecks] | None = None,
+    health_check_exprs: Sequence[KustomizationSpecHealthCheckExprs] | None = None,
+    post_build: KustomizationSpecPostBuild | None = None,
+    target_namespace: str | None = None,
+    service_account_name: str | None = None,
+    images: Sequence[KustomizationSpecImages] | None = None,
+    patches: Sequence[KustomizationSpecPatches] | None = None,
     description: str | None = None,
     namespace: str = NAMESPACE,
     annotations: dict[str, str] | None = None,
 ) -> Kustomization:
     """Add and return a Flux `Kustomization` custom resource in `chart`.
 
-    `spec` is the generated typed `KustomizationSpec` (//cluster/cdk8s/crd_bindings/flux:kustomization) --
-    build it directly rather than through a hand-rolled subset of its fields; this only
-    supplies metadata that isn't part of the CRD's own spec.
+    `source` is the node's `ArtifactGenerator` artifact, from which `sourceRef` and `path`
+    (its first directory) derive, or a direct `sourceRef` -- a `GitRepository` -- which
+    takes an explicit `path`. The spec keywords are `KustomizationSpec` fields under the
+    same names and types. Our policy, which a node overrides only where it differs:
+    `interval="10m"`, `retry_interval="1m"`, `prune=True`, `wait=True`. `None` leaves a
+    field unset, so Flux's own default applies (which for `retry_interval` is `interval`
+    and for `wait` is false). `health_checks` needs `wait` off: with `wait=True` Flux ignores
+    them. A `KustomizationSpec` field no node sets yet becomes a keyword here when one first
+    needs it.
     `description` becomes the `description` annotation (cluster/AGENTS.md).
     """
+    if wait and health_checks:
+        raise ValueError(f"{name=}: wait=True health-checks every applied object and Flux ignores health_checks")
+    match source:
+        case ArtifactGeneratorSpecArtifacts():
+            if path is not None:
+                raise ValueError(f"{name=}: an artifact source derives its path; got {path=}")
+            source_ref = KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=NAMESPACE
+            )
+            path = "./" + source.copy[0].to.removeprefix("@artifact/").removesuffix("/")
+        case KustomizationSpecSourceRef():
+            if path is None:
+                raise ValueError(f"{name=}: a direct sourceRef needs an explicit path")
+            source_ref = source
+
     metadata_annotations = dict(annotations or {})
     if description is not None:
         metadata_annotations["description"] = description
@@ -76,7 +122,26 @@ def flux_kustomization(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
-        spec=spec,
+        spec=KustomizationSpec(
+            source_ref=source_ref,
+            path=path,
+            interval=interval,
+            retry_interval=retry_interval,
+            timeout=timeout,
+            prune=prune,
+            wait=wait,
+            suspend=suspend,
+            deletion_policy=deletion_policy,
+            decryption=decryption,
+            depends_on=depends_on,
+            health_checks=health_checks,
+            health_check_exprs=health_check_exprs,
+            post_build=post_build,
+            target_namespace=target_namespace,
+            service_account_name=service_account_name,
+            images=images,
+            patches=patches,
+        ),
     )
 
 

@@ -42,11 +42,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
@@ -59,7 +55,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -428,21 +423,9 @@ def matrix(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomi
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=SYNAPSE, namespace=NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(cnpg),
-        ),
+        artifact,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(cnpg),
     )

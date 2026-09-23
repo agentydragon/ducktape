@@ -6,10 +6,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Service
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_yaml
@@ -42,19 +41,12 @@ def ssh_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         config.NAME,
+        artifact,
         description="Standalone SSH MCP backend for haku-console and Agentplane staging.",
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            decryption=sops_decryption(_KEY_FILES),
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        ),
+        timeout="5m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=sops_decryption(_KEY_FILES),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )
     write_yaml(
         out_dir / "kustomization.yaml",

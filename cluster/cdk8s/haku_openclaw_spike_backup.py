@@ -34,7 +34,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
@@ -51,7 +50,6 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -297,23 +295,16 @@ def haku_openclaw_spike_backup(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            wait=True,
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
-                # The Bucket and S3Credentials remain app-owned, but their readiness is
-                # retried by the ExternalSecret rather than coupling this Kustomization to
-                # the app Deployment health check.
-                external_secrets_operator,
-                volsync,
-            ),
+        artifact,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
+            # The Bucket and S3Credentials remain app-owned, but their readiness is
+            # retried by the ExternalSecret rather than coupling this Kustomization to
+            # the app Deployment health check.
+            external_secrets_operator,
+            volsync,
         ),
         description=(
             "Restic/VolSync backup of the Haku OpenClaw spike state to its "

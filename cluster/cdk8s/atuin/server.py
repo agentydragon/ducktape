@@ -21,7 +21,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecStorage,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -29,7 +28,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     Kustomization,
@@ -194,22 +192,15 @@ def atuin(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            depends_on=flux_kustomization_depends_on_many(cert_manager_issuer_config, cnpg),
+        artifact,
+        timeout="5m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        post_build=KustomizationSpecPostBuild(
+            substitute_from=[
+                KustomizationSpecPostBuildSubstituteFrom(
+                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
+                )
+            ]
         ),
+        depends_on=flux_kustomization_depends_on_many(cert_manager_issuer_config, cnpg),
     )

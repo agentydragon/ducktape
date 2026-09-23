@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -25,23 +20,8 @@ def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifa
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="agent-sandbox-controller",
-                    namespace="agent-sandbox-system",
-                )
-            ],
-        ),
+        artifact,
+        timeout="5m",
         description=(
             "kubernetes-sigs/agent-sandbox v0.5.5 combined release asset "
             "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
@@ -56,23 +36,11 @@ def airlock(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock"
-                )
-            ],
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        ),
+        artifact,
+        suspend=False,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )
 
 
@@ -83,23 +51,18 @@ def authentik_jwt_rotation(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="github-secrets-sync-pat",
-                    namespace="agents-infra",
-                )
-            ],
-            timeout="2m",
-        ),
+        artifact,
+        wait=None,
+        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="github-secrets-sync-pat",
+                namespace="agents-infra",
+            )
+        ],
+        timeout="2m",
     )
 
 
@@ -116,21 +79,18 @@ def forgejo_token_rotation(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images,
-                # owns the agents-infra namespace
-                authentik_jwt_rotation,
-                forgejo_claude,
-                haku_state,
-                forgejo_agentydragon_repos,
-            ),
-            timeout="2m",
+        artifact,
+        retry_interval=None,
+        wait=None,
+        depends_on=flux_kustomization_depends_on_many(
+            forgejo_images,
+            # owns the agents-infra namespace
+            authentik_jwt_rotation,
+            forgejo_claude,
+            haku_state,
+            forgejo_agentydragon_repos,
         ),
+        timeout="2m",
     )
 
 
@@ -145,16 +105,13 @@ def haku_egress_proxy(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
-            decryption=SOPS_DECRYPTION,
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
+        decryption=SOPS_DECRYPTION,
     )
 
 
@@ -168,37 +125,10 @@ def haku_openclaw_spike_app(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="haku-openclaw-spike-backups",
-                    namespace="haku-openclaw-spike",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="haku-openclaw-spike-backups",
-                    namespace="haku-openclaw-spike",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="haku-openclaw-spike",
-                    namespace="haku-openclaw-spike",
-                ),
-            ],
-        ),
+        artifact,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
         description=(
             "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
         ),
@@ -222,38 +152,20 @@ def plaid_mcp(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="postgresql.cnpg.io/v1", kind="Cluster", name="plaid-mcp-db", namespace="plaid-mcp"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="plaid-mcp", namespace="plaid-mcp"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="plaid-db-mcp", namespace="plaid-mcp"
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images,
-                gateway,
-                cnpg,
-                local_path_provisioner,
-                external_secrets_config,
-                valkey,
-                agent_machine_access_tf,
-                reflector,
-                # ServiceMonitor
-                monitoring_crds,
-            ),
+        artifact,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            forgejo_images,
+            gateway,
+            cnpg,
+            local_path_provisioner,
+            external_secrets_config,
+            valkey,
+            agent_machine_access_tf,
+            reflector,
+            # ServiceMonitor
+            monitoring_crds,
         ),
     )
 
@@ -270,50 +182,45 @@ def public_coder_agent_app(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            timeout="5m",
-            retry_interval="1m",
-            # Admission prerequisites for Certificate, Bundle, ExternalSecret and Pipe resources.
-            # Runtime credentials and services can reconcile after the namespace and workloads land.
-            depends_on=flux_kustomization_depends_on_many(
-                cert_manager, cert_manager_trust, external_secrets_operator, sshpiper_crds
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="public-coder-agent-proxy",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="public-coder-agent-sshpiper",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="cert-manager.io/v1",
-                    kind="Certificate",
-                    name="public-coder-agent-proxy-root-ca",
-                    namespace="public-coder-agent",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="brave-search-api-key",
-                    namespace="public-coder-agent",
-                ),
-            ],
+        artifact,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="5m",
+        # Admission prerequisites for Certificate, Bundle, ExternalSecret and Pipe resources.
+        # Runtime credentials and services can reconcile after the namespace and workloads land.
+        depends_on=flux_kustomization_depends_on_many(
+            cert_manager, cert_manager_trust, external_secrets_operator, sshpiper_crds
         ),
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1",
+                kind="Deployment",
+                name="public-coder-agent-proxy",
+                namespace="public-coder-agent",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1",
+                kind="Deployment",
+                name="public-coder-agent-sshpiper",
+                namespace="public-coder-agent",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="cert-manager.io/v1",
+                kind="Certificate",
+                name="public-coder-agent-proxy-root-ca",
+                namespace="public-coder-agent",
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="brave-search-api-key",
+                namespace="public-coder-agent",
+            ),
+        ],
         description=(
             "OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; "
             "devbox and backups reconcile separately."
@@ -328,15 +235,12 @@ def agent_shared_secrets(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            depends_on=[flux_kustomization_depends_on(claude_rbac)],
-            decryption=SOPS_DECRYPTION,
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        depends_on=[flux_kustomization_depends_on(claude_rbac)],
+        decryption=SOPS_DECRYPTION,
     )
 
 
@@ -352,29 +256,14 @@ def tana_mcp(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="tana-mcp", namespace="tana-mcp"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="tana-mcp-facade", namespace="tana-mcp"
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_creds,
-                external_secrets_config,
-                valkey,
-                # ServiceMonitor + PrometheusRule
-                monitoring_crds,
-            ),
+        artifact,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_creds,
+            external_secrets_config,
+            valkey,
+            # ServiceMonitor + PrometheusRule
+            monitoring_crds,
         ),
     )

@@ -21,7 +21,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressToServices,
     CiliumNetworkPolicySpecEgressToServicesK8SService,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachine,
     VirtualMachineSpec,
@@ -49,7 +48,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, forgejo_images
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -365,22 +363,8 @@ def cpap_sync(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            timeout="30m",
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config, kubevirt, forgejo_images_kustomization
-            ),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="kubevirt.io/v1", kind="VirtualMachine", name=_GATEWAY, namespace=NAMESPACE
-                )
-            ],
-        ),
+        artifact,
+        decryption=SOPS_DECRYPTION,
+        timeout="30m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images_kustomization),
     )

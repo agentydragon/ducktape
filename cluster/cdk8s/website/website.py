@@ -7,7 +7,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -16,7 +15,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
@@ -240,17 +238,10 @@ def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kus
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[
-                # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
-                flux_kustomization_depends_on(gateway)
-            ],
-        ),
+        artifact,
+        timeout="5m",
+        depends_on=[
+            # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
+            flux_kustomization_depends_on(gateway)
+        ],
     )

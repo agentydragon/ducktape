@@ -81,13 +81,15 @@ Every Flux `Kustomization` is one function in one shared chart, and its dependen
 its parameters. `generate_manifests.py` is the topological order, written out by hand.
 
 - **A node is `name(chart, artifact, *predecessors: Kustomization) -> Kustomization`.** It
-  builds its `KustomizationSpec` with the literals from its directory, reads `sourceRef`
-  and `path` off its artifact (`artifact_source_ref`, `artifact_path`), and returns
-  `flux.flux_kustomization(chart, name, spec=...)`. The entry point builds the artifact
+  returns `flux.flux_kustomization(chart, name, artifact, ...)`, which derives `sourceRef`
+  and `path` from the artifact and applies our defaults (listed once, in its docstring);
+  the node passes only the `KustomizationSpec` fields that differ, as keywords of the
+  same names and types. The entry point builds the artifact
   (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call,
   and passes every artifact to `write_artifact_generators` last; a parked node's
   artifact is left out, since nothing packages a suspended directory. A node sourcing a
-  `GitRepository` directly takes no artifact. `dependsOn` is
+  `GitRepository` directly takes no artifact and passes that `sourceRef` and a `path`
+  instead. `dependsOn` is
   `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
   off the constructs it is handed; the entry carries an explicit `namespace` for that
   reason. The predecessor is a value the caller already built, never a string, a
@@ -112,14 +114,12 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
   Kustomization from the artifact inventory, or the inventory from the Kustomizations'
   `sourceRef` names, is the same mistake facing opposite ways.
-- **Repetition is not a reason to abstract yet.** Two hundred nodes say
-  `interval="10m"`; keep saying it. The operational fields (`interval`,
-  `retry_interval`, `timeout`, `prune`, `wait`, `suspend`) are per-node choices a reader
-  must see on the node, and Flux's own defaults differ from ours. A literal that is the
-  same _fact_ in two places (the node's name in `metadata` and in its own `sourceRef`)
-  becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
-  entry) may become one module constant. Nothing else until every node it would touch is
-  in Python.
+- **A default is policy, not the common value.** `flux_kustomization` defaults a field
+  only where nearly every node agrees and the value is a stance we take for all of them;
+  a per-app choice (`timeout`, `decryption`, `health_checks`) stays on the node. `None`
+  leaves a field unset, so Flux's own default applies; Flux's defaults differ from ours.
+  A literal that is the same _fact_ in two places becomes one local; a block that is the
+  same _value_ everywhere (the SOPS `decryption` entry) may become one module constant.
 - **A node lives with its directory's generator once that directory is fully
   generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
   `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
@@ -132,25 +132,28 @@ The worked edge, `monitoring-crds -> cilium-monitoring`:
 ```python
 # monitoring/flux_kustomizations.py
 def monitoring_crds(chart: Chart) -> Kustomization:
-    name = "monitoring-crds"
-    return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
+    return flux_kustomization(
+        chart,
+        "monitoring-crds",
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, ...),
+        path="./example/prometheus-operator-crd-full",
+        interval="1h",
+        prune=False,  # Don't delete CRDs on uninstall (safety)
+        timeout="5m",
+    )
 
 
 # monitoring/cilium_monitoring.py, beside the chart it deploys
 def cilium_monitoring(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
-    name = "cilium-monitoring"
     return flux_kustomization(
         chart,
-        name,
-        spec=KustomizationSpec(
-            ...,
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            # The ServiceMonitor CRD.
-            depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-        ),
+        "cilium-monitoring",
+        artifact,
+        timeout="2m",
+        # The ServiceMonitor CRD.
+        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
     )
 
 

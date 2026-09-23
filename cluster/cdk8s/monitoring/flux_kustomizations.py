@@ -2,7 +2,6 @@
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
@@ -10,7 +9,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
@@ -20,20 +18,15 @@ def alloy(
     return flux_kustomization(
         chart,
         "alloy",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="alloy", namespace="monitoring"
-                )
-            ],
-            timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(mimir, grafana_helmrepository),
-        ),
+        artifact,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="alloy", namespace="monitoring"
+            )
+        ],
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(mimir, grafana_helmrepository),
     )
 
 
@@ -41,21 +34,17 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-crds",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="1h",
-            # The description-bearing variant: the CRDs kube-prometheus-stack's own `crds`
-            # subchart installed, so adopting them changes no schema.
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
-                name="prometheus-operator-source",
-                namespace="ducktape-flux",
-            ),
-            path="./example/prometheus-operator-crd-full",
-            prune=False,  # Don't delete CRDs on uninstall (safety)
-            wait=True,
-            timeout="5m",
+        # The description-bearing variant: the CRDs kube-prometheus-stack's own `crds`
+        # subchart installed, so adopting them changes no schema.
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
+            name="prometheus-operator-source",
+            namespace="ducktape-flux",
         ),
+        interval="1h",
+        path="./example/prometheus-operator-crd-full",
+        prune=False,  # Don't delete CRDs on uninstall (safety)
+        timeout="5m",
     )
 
 
@@ -65,22 +54,17 @@ def grafana_instance(
     return flux_kustomization(
         chart,
         "grafana-instance",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="grafana-deployment", namespace="monitoring"
-                ),
-            ],
-            timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
-        ),
+        artifact,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name="grafana-db-ovh", namespace="monitoring"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name="grafana-deployment", namespace="monitoring"
+            ),
+        ],
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
     )

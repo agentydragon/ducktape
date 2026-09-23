@@ -11,10 +11,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -100,27 +99,22 @@ def matrix_user_provisioner(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            # The job registers users against Synapse's admin API, so it must not start
-            # until Synapse answers. Depending on the app Kustomization (which is
-            # wait:true over the HelmRelease) gives that ordering; the health check states
-            # it directly rather than relying on that transitively.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=SYNAPSE, namespace=NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
-                matrix,
-            ),
+        artifact,
+        wait=None,
+        timeout="5m",
+        # The job registers users against Synapse's admin API, so it must not start
+        # until Synapse answers. Depending on the app Kustomization (which is
+        # wait:true over the HelmRelease) gives that ordering; the health check states
+        # it directly rather than relying on that transitively.
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=SYNAPSE, namespace=NAMESPACE
+            )
+        ],
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            forgejo_images,
+            # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
+            matrix,
         ),
     )

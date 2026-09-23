@@ -104,7 +104,6 @@ py_library(
         ":database",
         ":kube_api_proxy",
         ":migration",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
@@ -152,7 +151,6 @@ py_library(
     srcs = ["flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -165,7 +163,6 @@ py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
@@ -183,7 +180,6 @@ py_library(
     srcs = ["rbac.py"],
     deps = [
         ":namespace",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -197,7 +193,6 @@ py_library(
     name = "forgejo_tea",
     srcs = ["forgejo_tea.py"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -211,11 +206,9 @@ py_library(
     srcs = ["ui_image_webhook.py"],
     deps = [
         ":namespace",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/flux:receiver",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -227,7 +220,6 @@ py_library(
     srcs = ["workloads.py"],
     deps = [
         ":namespace",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",
@@ -244,7 +236,6 @@ py_library(
     srcs = ["workspaces.py"],
     deps = [
         ":namespace",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
@@ -252,7 +243,6 @@ py_library(
         "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
         "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxwarmpool",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/kyverno:cleanuppolicy",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",

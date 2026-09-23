@@ -7,7 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from kubevirt_cdi_crds.io.kubevirt.cdi import (
     Cdi,
     CdiSpec,
@@ -32,7 +31,6 @@ from kubevirt_storageprofile_crds.io.kubevirt.cdi import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 
@@ -134,25 +132,7 @@ def cdi(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cdi-apiserver", namespace="cdi"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cdi-deployment", namespace="cdi"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cdi-uploadproxy", namespace="cdi"
-                ),
-            ],
-        ),
+        artifact,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
     )

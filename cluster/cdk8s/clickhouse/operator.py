@@ -22,15 +22,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -161,22 +156,10 @@ def clickhouse_operator(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            # The chart enables ServiceMonitor resources.
-            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        ),
+        artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="10m",
+        # The chart enables ServiceMonitor resources.
+        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
     )

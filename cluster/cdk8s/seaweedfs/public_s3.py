@@ -19,7 +19,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3Credentials,
     S3CredentialsSpec,
@@ -53,7 +52,6 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -322,78 +320,18 @@ def seaweedfs_public_s3(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Gate on Bucket CRs managed in this repo that the public identities target.
-            # Claude and DriveFS identities authenticate through native IAM; static
-            # gateway configuration now contains only the credential-free anonymous read.
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_external_credentials,
-                seaweedfs_drivefs_artifacts_bucket,
-                vm_images_publisher,
-                seaweedfs_secrets,
-                seaweedfs_cluster,
-                gateway,
-            ),
-            wait=True,
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name=NAME, namespace=namespace.NAME
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Identity",
-                    name="claude-reader",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Identity",
-                    name="drivefs-artifacts-writer",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Identity",
-                    name="drivefs-artifacts-reader",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="claude-reader",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="drivefs-artifacts-writer",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="drivefs-artifacts-reader",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Policy",
-                    name="claude-reader-buckets",
-                    namespace="seaweedfs",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3PolicyBinding",
-                    name="claude-reader-buckets",
-                    namespace="seaweedfs",
-                ),
-            ],
+        # Gate on Bucket CRs managed in this repo that the public identities target.
+        # Claude and DriveFS identities authenticate through native IAM; static
+        # gateway configuration now contains only the credential-free anonymous read.
+        artifact,
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_external_credentials,
+            seaweedfs_drivefs_artifacts_bucket,
+            vm_images_publisher,
+            seaweedfs_secrets,
+            seaweedfs_cluster,
+            gateway,
         ),
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
     )
