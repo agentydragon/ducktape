@@ -1,14 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - postgres-cluster.yaml
+  # cdk8s-generated (cluster/cdk8s/langfuse/app.py).
+  - langfuse.k8s.yaml
+  # Hand-written: cdk8s drops the null Helm values it sets.
+  - helmrelease.yaml
+  # Hand-written: no RedisReplication CRD binding exists for cdk8s.
   - valkey-ovh-instance.yaml
   - langfuse-secrets.sops.yaml
-  - s3-credentials.yaml
-  - seaweed.yaml
-  - iam.yaml
-  - helmrelease.yaml
-  - httproute.yaml
-  - role-log-reader.yaml
-  - rolebinding-langfuse-reader.yaml

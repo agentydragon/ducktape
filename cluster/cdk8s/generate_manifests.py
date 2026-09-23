@@ -167,8 +167,9 @@ from cluster.cdk8s.home_assistant import (
 )
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
+from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
+from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
-from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
     database as litellm_database,
@@ -276,6 +277,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    langfuse_app.write_manifests(root)
     grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)

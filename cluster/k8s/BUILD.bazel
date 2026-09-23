@@ -214,6 +214,7 @@ exports_files(
         "flux-webhook-token/kustomization.yaml",
         "authentik/sso-providers-tf/sso-providers.k8s.yaml",
         "authentik/sso-providers-tf/kustomization.yaml",
+        "langfuse/langfuse.k8s.yaml",
         "grocy/app-base/grocy.k8s.yaml",
         "grocy/app-base/kustomization.yaml",
         "grocy/mcp-base/grocy-mcp.k8s.yaml",
