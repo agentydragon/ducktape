@@ -125,6 +125,7 @@ from cluster.cdk8s.flux_webhook import (
 )
 from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
+    app as forgejo_app,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -278,6 +279,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     langfuse_app.write_manifests(root)
+    forgejo_app.write_manifests(root)
     grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)
