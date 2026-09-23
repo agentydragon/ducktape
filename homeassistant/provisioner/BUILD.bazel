@@ -1,40 +1,8 @@
-"""Home Assistant onboarding provisioner OCI image."""
+"""The Home Assistant API client the provisioner images share."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//homeassistant/provisioner:__subpackages__"])
-
-aspect_py_binary(
-    name = "provision_bin",
-    main = "provision.py",
-    deps = [":provision"],
-)
-
-py_image_layer(
-    name = "layers",
-    binary = ":provision_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("provision_bin"),
-    env = py_image_env(binary_name = "provision_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":layers"],
-    user = "1000:1000",
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["homeassistant-provisioner:latest"],
-)
 
 py_library(
     name = "client",
@@ -49,15 +17,6 @@ py_library(
 )
 
 py_library(
-    name = "component_installer",
-    srcs = ["component_installer.py"],
-    deps = [
-        ":settings",
-        "@pypi//httpx2",
-    ],
-)
-
-py_library(
     name = "endpoint",
     srcs = ["endpoint.py"],
     visibility = [
@@ -68,40 +27,12 @@ py_library(
 )
 
 py_library(
-    name = "provision",
-    srcs = ["provision.py"],
-    deps = [
-        ":client",
-        ":component_installer",
-        ":endpoint",
-        ":settings",
-        "@pypi//httpx2",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    visibility = [
-        "//cluster/cdk8s/home_assistant:__pkg__",
-        "//homeassistant/provisioner:__subpackages__",
-    ],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
         ":client",
         ":endpoint",
-        ":settings",
         "@pypi//httpx2",
         "@pypi//pytest",
     ],
@@ -111,40 +42,9 @@ py_test(
     name = "test_client",
     srcs = ["test_client.py"],
     deps = [
-        ":conftest",
-        ":endpoint",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",
-        "@pypi//respx",
-    ],
-)
-
-py_test(
-    name = "test_component_installer",
-    srcs = ["test_component_installer.py"],
-    deps = [
-        ":component_installer",
-        ":conftest",
-        ":settings",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",
-    ],
-)
-
-py_test(
-    name = "test_provision",
-    srcs = ["test_provision.py"],
-    deps = [
         ":client",
         ":conftest",
         ":endpoint",
-        ":provision",
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//pydantic",
@@ -152,5 +52,18 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",
         "@pypi//respx",
+    ],
+)
+
+py_library(
+    name = "yaml_settings",
+    srcs = ["yaml_settings.py"],
+    visibility = [
+        "//cluster/cdk8s/home_assistant:__pkg__",
+        "//homeassistant/provisioner:__subpackages__",
+    ],
+    deps = [
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )

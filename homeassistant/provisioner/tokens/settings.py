@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import os
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, SecretStr
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
-
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; Gazelle
-# cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
-
-CONFIG_FILE_ENV = "HOME_ASSISTANT_TOKEN_PROVISIONER_CONFIG_FILE"
+from homeassistant.provisioner.yaml_settings import YamlFileSettings
 
 
 class TokenConfig(BaseModel):
@@ -35,11 +30,9 @@ class TokenConfig(BaseModel):
     description: str = Field(description="The Secret's `description` annotation.")
 
 
-class Settings(BaseSettings):
-    """Environment variables (`HOME_ASSISTANT_TOKEN_PROVISIONER_*`) override the YAML file
-    `CONFIG_FILE_ENV` names."""
-
+class Settings(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="HOME_ASSISTANT_TOKEN_PROVISIONER_", env_nested_delimiter="__")
+    config_file_env: ClassVar[str] = "HOME_ASSISTANT_TOKEN_PROVISIONER_CONFIG_FILE"
 
     endpoint: HomeAssistantEndpoint
     owner_username: str = Field(
@@ -47,18 +40,3 @@ class Settings(BaseSettings):
     )
     owner_password: SecretStr
     tokens: tuple[TokenConfig, ...]
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

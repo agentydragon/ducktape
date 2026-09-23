@@ -776,10 +776,10 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: homeassistant-provisioner
+  name: homeassistant-component-installer
   namespace: flux-system
 spec:
-  image: git.allegedly.works/ducktape-ci/homeassistant-provisioner
+  image: git.allegedly.works/ducktape-ci/homeassistant-component-installer
   interval: 5m
   secretRef:
     name: forgejo-images-creds
@@ -787,13 +787,38 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
-  name: homeassistant-provisioner
+  name: homeassistant-component-installer
   namespace: flux-system
 spec:
   filterTags:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
-    name: homeassistant-provisioner
+    name: homeassistant-component-installer
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: homeassistant-onboarding
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/homeassistant-onboarding
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: homeassistant-onboarding
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: homeassistant-onboarding
   policy:
     alphabetical:
       order: asc

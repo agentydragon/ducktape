@@ -1,4 +1,4 @@
-"""Shared installer for checksum-pinned Home Assistant components."""
+"""Install checksum-pinned custom components into Home Assistant's config directory."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx2
 
-from homeassistant.provisioner.settings import ComponentConfig
+from homeassistant.provisioner.components.settings import ComponentConfig, Settings
 
 
 def _safe_extract(payload: bytes, destination: Path) -> None:
@@ -109,3 +109,16 @@ async def install_components(
     """Install all configured custom components."""
     for component in components:
         await install_component_from_url(http_client, config_dir, component)
+
+
+async def async_main(settings: Settings) -> None:
+    async with httpx2.AsyncClient() as http_client:
+        await install_components(http_client, settings.config_dir, settings.components)
+
+
+def main() -> None:
+    asyncio.run(async_main(Settings()))
+
+
+if __name__ == "__main__":
+    main()

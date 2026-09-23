@@ -62,9 +62,13 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
+
+# Aliased: each provisioner names its model `Settings`, in a module named `settings`.
+from homeassistant.provisioner.components import settings as components
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
-from homeassistant.provisioner.settings import ProvisionerSettings
-from homeassistant.provisioner.tokens.settings import CONFIG_FILE_ENV, Settings, TokenConfig
+from homeassistant.provisioner.onboarding import settings as onboarding
+from homeassistant.provisioner.tokens import settings as tokens
+from homeassistant.provisioner.yaml_settings import YamlFileSettings
 from util.settings_contract import env_name, settings_file
 
 _OUTPUT_DIR = "cluster/k8s/home-assistant/app"
@@ -78,18 +82,22 @@ _METRICS_TOKEN = "home-assistant-metrics-token"
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "local-path-home-ssd"
-_PROVISIONER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset"
-_PROVISIONER_COMMAND = ["/homeassistant/provisioner/provision_bin"]
-_PROVISIONER_CONFIG = "/etc/homeassistant/provisioner.yaml"
+_ONBOARDING = "home-assistant-onboarding"
+_TOKEN_PROVISIONER = "home-assistant-token-provisioner"
+_COMPONENT_INSTALLER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-component-installer:unset"
+_ONBOARDING_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-onboarding:unset"
+_TOKEN_PROVISIONER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-token-provisioner:unset"
+# Each provisioner container mounts its settings ConfigMap here.
+_SETTINGS_DIR = "/etc/provisioner"
+# Where the config volume mounts, in Home Assistant and in its component installer.
+_CONFIG_DIR = "/config"
+# Home Assistant's own listener; Caddy (the hand-written Caddyfile) proxies to it.
+_BACKEND_PORT = 8124
 # Rendered by the kustomization.yaml's configMapGenerator.
 _CONFIGURATION_CONFIG_MAP = "home-assistant-configuration"
-_PROVISIONER_CONFIG_MAP = "home-assistant-provisioner-config"
 _CADDY_CONFIG_MAP = "home-assistant-caddy"
-_TOKEN_PROVISIONER = "home-assistant-token-provisioner"
-_TOKEN_PROVISIONER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-token-provisioner:unset"
-_TOKEN_PROVISIONER_CONFIG_DIR = "/etc/home-assistant-token-provisioner"
 
-# The local owner the token provisioner logs in as, through the in-cluster Service.
+# The local owner the provisioners log in as, through the in-cluster Service.
 _ENDPOINT = HomeAssistantEndpoint(
     url=f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:8123",
     client_id=f"https://{_HOSTNAME}/",
@@ -97,15 +105,35 @@ _ENDPOINT = HomeAssistantEndpoint(
 )
 _OWNER_USERNAME = "ha-local-admin"
 
+# Custom components the init container installs before Home Assistant starts.
+_COMPONENTS = (
+    components.ComponentConfig(
+        version="2.2.1",
+        url="https://github.com/dreo-team/hass-dreoverse/archive/refs/tags/v2.2.1.zip",
+        sha256="555e4e3470b64574bfe5a050ca5557ce3f509844e2e8827ecd7e10c8a3d77d24",
+        archive_path="*/custom_components/dreo",
+        install_dir="dreo",
+        manifest_domain="dreo",
+    ),
+    components.ComponentConfig(
+        version="1.1.1",
+        url="https://github.com/christiaangoossens/hass-oidc-auth/releases/download/v1.1.1/hass-oidc-auth.zip",
+        sha256="9ce9e6153f80c781e360b93e097ff7d87d09235430fc48e7a67d97dda5fc3322",
+        archive_path=".",
+        install_dir="auth_oidc",
+        config_files=("automations.yaml", "scripts.yaml", "scenes.yaml"),
+    ),
+)
+
 # The long-lived tokens the provisioner keeps valid. It writes only in this namespace; a workload
 # holding one copies it with ESO.
-HA_MCP_TOKEN = TokenConfig(
+HA_MCP_TOKEN = tokens.TokenConfig(
     client_name="ha-mcp-cluster",
     secret_name="ha-mcp-home-assistant-token",
     secret_namespace=_NAMESPACE,
     description="Long-lived token of Home Assistant's local owner, which ha-mcp copies",
 )
-AGENTPLANE_READER_TOKEN = TokenConfig(
+AGENTPLANE_READER_TOKEN = tokens.TokenConfig(
     client_name="agentplane-egress",
     read_only_user="agentplane-reader",
     secret_name="agentplane-home-assistant-token",
@@ -120,30 +148,36 @@ _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 _BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
     secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
 )
-_CONFIG_FILE_ENV = k8s.EnvVar(name=ProvisionerSettings.config_file_env, value=_PROVISIONER_CONFIG)
-_LOCAL_ADMIN_PASSWORD_ENV = k8s.EnvVar(
-    name=env_name(ProvisionerSettings, "local_admin_password"), value_from=_BREAK_GLASS_PASSWORD
-)
-_ONBOARDING_DISABLED_ENV = k8s.EnvVar(name=env_name(ProvisionerSettings, "onboarding_enabled"), value="false")
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
-def _provisioner_mounts() -> list[k8s.VolumeMount]:
-    return [
-        k8s.VolumeMount(name="config", mount_path="/config"),
-        k8s.VolumeMount(
-            name="provisioner-config", mount_path=_PROVISIONER_CONFIG, sub_path="provisioner.yaml", read_only=True
-        ),
-    ]
-
-
-def _config_volume() -> k8s.Volume:
-    return k8s.Volume(
-        name="config", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_CONFIG_CLAIM)
+def _settings_config_map(
+    scope: Construct,
+    name: str,
+    settings: type[YamlFileSettings],
+    content: dict[str, object],
+    *,
+    supplied: tuple[tuple[str, ...], ...] = (),
+) -> k8s.KubeConfigMap:
+    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
+    fields an env var completes."""
+    return k8s.KubeConfigMap(
+        scope,
+        name,
+        metadata=k8s.ObjectMeta(name=name, namespace=_NAMESPACE),
+        data={"settings.yaml": yaml_config(settings_file(settings, content, supplied=supplied))},
     )
+
+
+def _settings_env(settings: type[YamlFileSettings]) -> k8s.EnvVar:
+    return k8s.EnvVar(name=settings.config_file_env, value=f"{_SETTINGS_DIR}/settings.yaml")
+
+
+def _settings_mount(volume: str) -> k8s.VolumeMount:
+    return k8s.VolumeMount(name=volume, mount_path=_SETTINGS_DIR, read_only=True)
 
 
 def _config_map_volume(name: str, config_map: str) -> k8s.Volume:
@@ -159,6 +193,15 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 
 
 def _deployment(scope: Construct) -> None:
+    installer_settings = _settings_config_map(
+        scope,
+        "home-assistant-component-installer",
+        components.Settings,
+        {
+            "config_dir": _CONFIG_DIR,
+            "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
+        },
+    )
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -177,12 +220,14 @@ def _deployment(scope: Construct) -> None:
                     init_containers=[
                         k8s.Container(
                             name="provision-components",
-                            image=_PROVISIONER_IMAGE,
+                            image=_COMPONENT_INSTALLER_IMAGE,
                             image_pull_policy="Always",
-                            command=_PROVISIONER_COMMAND,
-                            args=["setup"],
-                            env=[_CONFIG_FILE_ENV, _ONBOARDING_DISABLED_ENV],
-                            volume_mounts=_provisioner_mounts(),
+                            command=["/homeassistant/provisioner/components/install_bin"],
+                            env=[_settings_env(components.Settings)],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
+                                _settings_mount("installer-settings"),
+                            ],
                         )
                     ],
                     containers=[
@@ -195,19 +240,19 @@ def _deployment(scope: Construct) -> None:
                                 # API after startup. This keeps the empty-PVC bootstrap port
                                 # aligned with Caddy while the API applies the loopback/proxy
                                 # settings.
-                                k8s.EnvVar(name="SETUP_PORT", value="8124"),
+                                k8s.EnvVar(name="SETUP_PORT", value=str(_BACKEND_PORT)),
                             ],
-                            ports=[k8s.ContainerPort(name="backend", container_port=8124)],
+                            ports=[k8s.ContainerPort(name="backend", container_port=_BACKEND_PORT)],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="250m", memory="512Mi"), limits=_quantities(memory="2Gi")
                             ),
                             volume_mounts=[
-                                k8s.VolumeMount(name="config", mount_path="/config"),
+                                k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
                                 k8s.VolumeMount(
                                     name="configuration",
-                                    mount_path="/config/configuration.yaml",
+                                    mount_path=f"{_CONFIG_DIR}/configuration.yaml",
                                     sub_path="configuration.yaml",
                                     read_only=True,
                                 ),
@@ -243,9 +288,12 @@ def _deployment(scope: Construct) -> None:
                         ),
                     ],
                     volumes=[
-                        _config_volume(),
+                        k8s.Volume(
+                            name="config",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_CONFIG_CLAIM),
+                        ),
                         _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP),
-                        _config_map_volume("provisioner-config", _PROVISIONER_CONFIG_MAP),
+                        _config_map_volume("installer-settings", installer_settings.name),
                         _config_map_volume("caddy-config", _CADDY_CONFIG_MAP),
                     ],
                 ),
@@ -264,13 +312,33 @@ def _deployment(scope: Construct) -> None:
 
 
 def _onboarding_job(scope: Construct) -> None:
+    settings = _settings_config_map(
+        scope,
+        _ONBOARDING,
+        onboarding.Settings,
+        {
+            "endpoint": _ENDPOINT.model_dump(),
+            "owner_username": _OWNER_USERNAME,
+            "owner_display_name": "Home Assistant Local Administrator",
+            "http_config": onboarding.HttpConfig(
+                server_host=["127.0.0.1"],
+                server_port=_BACKEND_PORT,
+                cors_allowed_origins=["https://cast.home-assistant.io"],
+                use_x_forwarded_for=True,
+                trusted_proxies=["127.0.0.1/32"],
+                login_attempts_threshold=-1,
+                ip_ban_enabled=True,
+                ssl_profile="modern",
+                use_x_frame_options=True,
+            ).model_dump(),
+        },
+        supplied=(("owner_password",),),
+    )
     k8s.KubeJob(
         scope,
         "onboarding",
         metadata=k8s.ObjectMeta(
-            name="home-assistant-onboarding",
-            namespace=_NAMESPACE,
-            annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
+            name=_ONBOARDING, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
         ),
         spec=k8s.JobSpec(
             backoff_limit=3,
@@ -278,27 +346,31 @@ def _onboarding_job(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(
                     # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
                     annotations={"home-assistant.allegedly.works/bootstrap-revision": "4"},
-                    labels={"app.kubernetes.io/name": "home-assistant-onboarding"},
+                    labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     restart_policy="OnFailure",
-                    node_selector=_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="onboarding",
-                            image=_PROVISIONER_IMAGE,
+                            image=_ONBOARDING_IMAGE,
                             image_pull_policy="Always",
-                            command=_PROVISIONER_COMMAND,
-                            args=["setup"],
-                            env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV],
+                            command=["/homeassistant/provisioner/onboarding/onboard_bin"],
+                            env=[
+                                _settings_env(onboarding.Settings),
+                                k8s.EnvVar(
+                                    name=env_name(onboarding.Settings, "owner_password"),
+                                    value_from=_BREAK_GLASS_PASSWORD,
+                                ),
+                            ],
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
                             ),
-                            volume_mounts=_provisioner_mounts(),
+                            volume_mounts=[_settings_mount("settings")],
                         )
                     ],
-                    volumes=[_config_volume(), _config_map_volume("provisioner-config", _PROVISIONER_CONFIG_MAP)],
+                    volumes=[_config_map_volume("settings", settings.name)],
                 ),
             ),
         ),
@@ -326,23 +398,16 @@ def _token_provisioner(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
         ],
     )
-    config = k8s.KubeConfigMap(
+    settings = _settings_config_map(
         scope,
-        "token-provisioner-config",
-        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
-        data={
-            "settings.yaml": yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "endpoint": _ENDPOINT.model_dump(),
-                        "owner_username": _OWNER_USERNAME,
-                        "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
-                    },
-                    supplied=[("owner_password",)],
-                )
-            )
+        _TOKEN_PROVISIONER,
+        tokens.Settings,
+        {
+            "endpoint": _ENDPOINT.model_dump(),
+            "owner_username": _OWNER_USERNAME,
+            "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
         },
+        supplied=(("owner_password",),),
     )
     k8s.KubeRoleBinding(
         scope,
@@ -384,11 +449,10 @@ def _token_provisioner(scope: Construct) -> None:
                                     image_pull_policy="Always",
                                     command=["/homeassistant/provisioner/tokens/provision_bin"],
                                     env=[
+                                        _settings_env(tokens.Settings),
                                         k8s.EnvVar(
-                                            name=CONFIG_FILE_ENV, value=f"{_TOKEN_PROVISIONER_CONFIG_DIR}/settings.yaml"
-                                        ),
-                                        k8s.EnvVar(
-                                            name=env_name(Settings, "owner_password"), value_from=_BREAK_GLASS_PASSWORD
+                                            name=env_name(tokens.Settings, "owner_password"),
+                                            value_from=_BREAK_GLASS_PASSWORD,
                                         ),
                                     ],
                                     resources=k8s.ResourceRequirements(
@@ -398,14 +462,10 @@ def _token_provisioner(scope: Construct) -> None:
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
-                                    volume_mounts=[
-                                        k8s.VolumeMount(
-                                            name="config", mount_path=_TOKEN_PROVISIONER_CONFIG_DIR, read_only=True
-                                        )
-                                    ],
+                                    volume_mounts=[_settings_mount("settings")],
                                 )
                             ],
-                            volumes=[_config_map_volume("config", config.name)],
+                            volumes=[_config_map_volume("settings", settings.name)],
                         ),
                     ),
                 )
