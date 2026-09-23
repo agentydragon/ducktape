@@ -535,6 +535,7 @@ py_library(
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/agentplane_crds:flux_kustomizations",
         "//cluster/cdk8s/agentplane_index:flux_kustomizations",
+        "//cluster/cdk8s/agentplane_index:workers",
         "//cluster/cdk8s/agents:flux_kustomizations",
         "//cluster/cdk8s/agents:namespaces",
         "//cluster/cdk8s/atuin:server",
@@ -697,6 +698,7 @@ py_test(
     size = "medium",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s:agentplane-index/agentplane-index.k8s.yaml",
         "//cluster/k8s:agentplane-staging/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",

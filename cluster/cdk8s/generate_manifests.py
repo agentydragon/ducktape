@@ -29,7 +29,10 @@ from cluster.cdk8s import (
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
-from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
+from cluster.cdk8s.agentplane_index import (
+    flux_kustomizations as agentplane_index_flux_kustomizations,
+    workers as agentplane_index_workers,
+)
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
@@ -166,6 +169,7 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
+    agentplane_index_workers.write_manifests(root)
     atuin_server.write_manifests(root)
     atuin_user_provisioner.write_manifests(root)
     litellm_database.write_manifests(root)
@@ -847,7 +851,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         local_path_provisioner_kustomization,
     )
-    agentplane_index_artifact = artifact("agentplane-index", "cluster/k8s/agentplane-index")
+    agentplane_index_artifact = artifact("agentplane-index", agentplane_index_workers.OUTPUT_DIR)
     agentplane_index_kustomization = agentplane_index_flux_kustomizations.agentplane_index(
         flux_chart,
         agentplane_index_artifact,
