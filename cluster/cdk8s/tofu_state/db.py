@@ -67,10 +67,8 @@ def chart(app: App) -> Chart:
         postgresql=ClusterSpecPostgresql(
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
-        affinity=cnpg.affinity(
-            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE}, tolerate_control_plane=True
-        ),
-        storage_class="local-path-ovh",
+        node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+        storage_class="local-path-ovh-ssd",
         size="1Gi",
         managed=ClusterSpecManaged(
             roles=[

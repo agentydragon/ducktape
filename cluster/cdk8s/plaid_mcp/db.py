@@ -58,10 +58,7 @@ def _cluster(chart: Chart) -> None:
                 " financial data."
             )
         },
-        # This instance currently has a local PV on a control plane. Keep it
-        # restartable there until its replica migration, but prefer workers for any
-        # placement not constrained by that PV.
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": _ZONE}, tolerate_control_plane=True),
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
         storage_class="local-path-ovh",
         size="5Gi",
         managed=ClusterSpecManaged(

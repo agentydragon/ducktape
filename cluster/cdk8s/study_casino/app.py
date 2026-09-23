@@ -91,12 +91,12 @@ def _database(scope: Construct) -> None:
         name=_DB_NAME,
         namespace=_NAMESPACE,
         annotations={"description": "CNPG Postgres for study-casino state."},
-        # 3 instances, one per OVH node. Tolerates 1-node loss without read-quorum or
+        # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
         # primary-availability impact.
         instances=3,
         image_name=None,
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/region": _REGION}, tolerate_control_plane=True),
-        storage_class="local-path-ovh",
+        node_selector={"topology.kubernetes.io/region": _REGION},
+        storage_class="local-path-ovh-ssd",
         size="1Gi",
         # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
         # reconcile and keeps the password in sync with study-casino-db-readonly.

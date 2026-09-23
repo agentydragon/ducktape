@@ -59,7 +59,7 @@ def chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
         # any future placement that is not constrained by an existing claim.
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=True),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
