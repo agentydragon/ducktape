@@ -1,13 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - pvc.yaml
-  - config-eso.yaml
+  - cli-proxy-api.k8s.yaml
   - client-key.sops.yaml
   - management-key.sops.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - admin-httproute.yaml
-  - networkpolicy.yaml
+components:
+  - ./image-pins

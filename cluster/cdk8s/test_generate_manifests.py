@@ -109,6 +109,8 @@ _GENERATED_FILES = (
     "cluster/k8s/ollama/ollama.k8s.yaml",
     "cluster/k8s/gatus/gatus.k8s.yaml",
     "cluster/k8s/activitywatch/activitywatch.k8s.yaml",
+    "cluster/k8s/cli-proxy-api/cli-proxy-api.k8s.yaml",
+    "cluster/k8s/cli-proxy-api/kustomization.yaml",
 )
 
 
