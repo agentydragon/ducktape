@@ -1,0 +1,81 @@
+# Regenerate the cdk8s manifests on Renovate branches.
+#
+# Renovate bumps a pin in cluster/cdk8s/**/*.py (renovate.json5's cdk8s custom
+# manager), which leaves cluster/k8s/**/*.k8s.yaml stale and
+# //cluster/cdk8s:test_generate_manifests red. This job runs the generator on
+# the pushed commit and pushes any change back as one follow-up commit.
+#
+# The push goes out as the ducktape-automation App: a push made with
+# GITHUB_TOKEN starts no workflows, so CI would never run on the regenerated
+# commit. The App's commit address appears twice more and must stay in sync:
+# the loop guard below, and renovate.json5's gitIgnoredAuthors (without which
+# Renovate stops rebasing a branch someone else has committed to).
+name: Renovate manifest regeneration
+"on":
+  push:
+    branches: ["renovate/**"]
+concurrency:
+  group: renovate-regenerate-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  regenerate:
+    name: Regenerate manifests
+    # The App's own push re-triggers this workflow; stop there.
+    if: >-
+      !github.event.deleted &&
+      github.event.head_commit.author.email != '281469510+ducktape-automation[bot]@users.noreply.github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+      # The binary writes into the checkout, so it runs here rather than on a
+      # BuildBuddy runner VM; its build actions still execute on RBE. Lint is
+      # bazel-ci's job, not a precondition for regenerating.
+      - name: Generate manifests
+        run: bazelisk run --config=nolint //cluster/cdk8s:generate_manifests
+
+      - name: Stage generated files
+        id: stage
+        run: |
+          git add -A cluster/k8s
+          if [[ -n "$(git status --porcelain --untracked-files=all -- ':!cluster/k8s')" ]]; then
+            git status --short
+            echo "::error::the generator wrote outside cluster/k8s"
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            echo "Generated manifests already match the generators"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --cached --stat
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/mint-automation-token
+        if: steps.stage.outputs.changed == 'true'
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      # A plain push: if the branch moved since this run's commit, it is
+      # rejected and the run for the newer push regenerates instead.
+      - name: Commit and push
+        if: steps.stage.outputs.changed == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git commit -m "cdk8s: regenerate manifests"
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
