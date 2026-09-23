@@ -201,7 +201,7 @@ def chart(app: App) -> Chart:
                 # unrestricted consumers. NOTE: this does NOT let a port-restricted egress
                 # policy reach the mirror on :80 — Cilium's socket-LB enforces egress on the
                 # backend targetPort (5000), not this Service port. So haku-ci's force-proxy
-                # egress allows 5000 explicitly (see cluster/k8s/haku-ci/ccnp-force-proxy-egress.yaml).
+                # egress allows 5000 explicitly (see haku_ci/runner.py).
                 # Plain HTTP.
                 k8s.ServicePort(name="http", port=80, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"),
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works

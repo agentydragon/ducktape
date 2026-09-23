@@ -100,7 +100,7 @@ deployed apiserver `AuthenticationConfiguration`.
 
 ### 1. Second apiserver route with LE cert termination
 
-Added `kubeapi.allegedly.works` (`cluster/k8s/kube-api-proxy/httproute.yaml`)
+Added `kubeapi.allegedly.works` (`cluster/cdk8s/kube_api_proxy.py`)
 on the existing `https-wildcard` listener. Cilium Gateway terminates the
 wildcard LE cert. An nginx reverse proxy pod (`kubeapi-proxy`) bridges
 HTTP→HTTPS to `kubernetes.default.svc:443`, since Cilium doesn't support

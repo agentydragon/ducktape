@@ -354,7 +354,7 @@ def _deployment(scope: Construct) -> None:
                     # No explicit zone nodeSelector: github-api-proxy-capture's seaweedfs-ovh
                     # StorageClass already pins scheduling to topology.kubernetes.io/zone=hil-ovh
                     # via WaitForFirstConsumer + allowedTopologies
-                    # (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml).
+                    # (seaweedfs_csi/driver.py).
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     automount_service_account_token=False,
                     termination_grace_period_seconds=60,

@@ -6,7 +6,7 @@ hostname on the existing HTTPS listener. The Forgejo Helm values therefore
 advertise SSH on port 2222, and host Home Manager config sets that port in
 `~/.ssh/config` for `git.allegedly.works`.
 
-The public SSH listener is `cluster/k8s/forgejo/app/ciliumenvoyconfig.yaml`.
+The public SSH listener is the `CiliumEnvoyConfig` in `cluster/cdk8s/forgejo/app.py`.
 Cilium Gateway API does not implement `TCPRoute` in the deployed Cilium 1.19
 series, and SSH cannot use `TLSRoute` because there is no TLS ClientHello/SNI.
 The manual `CiliumEnvoyConfig` binds the existing hostNetwork Cilium Envoy on

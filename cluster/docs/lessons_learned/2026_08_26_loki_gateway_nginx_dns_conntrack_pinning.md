@@ -51,7 +51,7 @@ cluster.
    already reached Loki.
 2. **`loki-gateway` got a `dnsmasq` sidecar** (`gateway.extraContainers` +
    `gateway.nginxConfig.resolver: "127.0.0.1:8053"` in
-   `cluster/k8s/monitoring/loki/helmrelease.yaml`). dnsmasq opens a fresh UDP
+   `cluster/cdk8s/monitoring/loki.py`). dnsmasq opens a fresh UDP
    flow per query instead of reusing one fixed source port, so it never falls
    into the conntrack-pinning trap. It forwards via its own
    `/etc/resolv.conf` (the kubelet-injected kube-dns ClusterIP), so no DNS

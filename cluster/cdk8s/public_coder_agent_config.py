@@ -565,7 +565,7 @@ def _deployment(scope: Construct) -> None:
                             name="trust", config_map=k8s.ConfigMapVolumeSource(name="public-coder-agent-proxy-ca-cert")
                         ),
                         # Delivered here by the haku-egress-proxy trust-manager Bundle
-                        # (cluster/k8s/agents/haku-egress-proxy/trust-bundle.yaml namespaceSelector).
+                        # (haku_egress_proxy.py's namespaceSelector).
                         k8s.Volume(
                             name="haku-egress-proxy-ca-cert",
                             config_map=k8s.ConfigMapVolumeSource(name="haku-egress-proxy-ca-cert"),

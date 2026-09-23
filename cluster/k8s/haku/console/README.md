@@ -157,7 +157,7 @@ straight to kube-apiserver (`cluster_auth_mode = passthrough` in
 `agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
 of its own — the operator's real permissions apply, via the
 `oidc-ksbx-agentydragon-admin` `ClusterRoleBinding`
-(`agents/kubectl-passthrough-mcp/app/clusterrolebinding-agentydragon-admin.yaml`, cluster-admin).
+(`cluster/cdk8s/kubectl_passthrough_mcp.py`, cluster-admin).
 So every tool call here runs with full cluster-admin once approved; the operator-approval
 click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
 enforcement-inventory entry.

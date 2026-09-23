@@ -50,6 +50,8 @@ cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/artifact-generators/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml linguist-generated=true
+cluster/k8s/flux-image-automation-forgejo/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/db/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
@@ -60,8 +62,6 @@ cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
 # automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/console/db/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/console/migration/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/etcd/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true

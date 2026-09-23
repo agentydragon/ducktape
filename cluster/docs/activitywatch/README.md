@@ -81,7 +81,7 @@ TLS connection resets occur (~1/20 calls) — retry once; bucket `last_updated` 
 
 ### Legacy iron-proxy read route (egress-substituted bearer)
 
-The dedicated Claude iron proxy (`cluster/k8s/agents/haku-egress-proxy/claude-iron-deployment.yaml`)
+The dedicated Claude iron proxy (`cluster/cdk8s/haku_egress_proxy.py`)
 can't do an OAuth exchange, so the mechanism mirrors aiquota's: a static bearer its pods never
 actually hold.
 
@@ -104,7 +104,7 @@ curl -H "Authorization: Bearer $AW_READ_TOKEN" \
 
 **Deviation for runtimes outside the fence** (the Claude Code web home, any `kubectl` that
 reads `haku-sandbox`): the same read token is ESO-mirrored into `haku-sandbox` as
-`activitywatch-read-token` (`cluster/k8s/haku/workspaces/app/activitywatch-read-token-eso.yaml`,
+`activitywatch-read-token` (`cluster/cdk8s/haku/workspaces.py`,
 store `kubernetes-activitywatch-secret-store`), and Haku reads it and calls the read route
 directly. Same route, same read-only bound, no approval step — the placeholder path above
 only works for pods whose traffic actually traverses the fence.

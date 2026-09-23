@@ -44,7 +44,7 @@ Two per-node surfaces flip in the **same commit**, per node:
    an opt-in `toset()`; add one hostname to roll that node. **Renaming a UserVolume
    repartitions/wipes that disk.**
 2. local-path: that node's `nodePathMap` entry in
-   <../../k8s/local-path-provisioner/helmrelease.yaml> → `/var/mnt/local-path-ovh-ssd/local-path`.
+   <../../cdk8s/local_path_provisioner.py> → `/var/mnt/local-path-ovh-ssd/local-path`.
 
 If (1) renames but (2) lags, new PVCs land on the root filesystem — so the node is
 **cordoned+drained** across the wipe (nothing provisions on it until both surfaces are on the
@@ -118,7 +118,7 @@ Before any planned volume-server outage, evacuation, or storage rename, set
 prevents new runs but does not stop an active Job; wait for active Jobs to finish before
 starting the maintenance. Restore `suspend: false` after the server is healthy and placement is
 stable. The **`SeaweedFSReplicaPlacementMismatch`** alert
-(<../../k8s/seaweedfs/monitoring/prometheusrule.yaml>) remains enabled to catch stalled repairs
+(<../../cdk8s/seaweedfs/monitoring.py>) remains enabled to catch stalled repairs
 and over-/misplaced replicas.
 
 ### Refresh FUSE clients before deleting a volume server (gotcha)

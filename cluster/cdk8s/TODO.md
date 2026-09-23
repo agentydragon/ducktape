@@ -8,10 +8,8 @@ can't drift _by construction_; a future edit that reintroduces two independent
 literals is then a visible, reviewable diff instead of a silent runtime break.
 
 This file tracks the candidates found by a full-repo audit (every test that reads a
-cdk8s-generated YAML file, plus every `cluster/validation/` test) that are **not yet
-reachable from cdk8s** — the manifests/configs on one or both sides are still
-hand-written, so unifying them needs a YAML→cdk8s conversion before the drift can be
-closed by construction. Candidates where both sides were already cdk8s-generated Python were
+cdk8s-generated YAML file, plus every `cluster/validation/` test) that are not closed by
+construction yet. Candidates where both sides were already cdk8s-generated Python were
 fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm/config.py`,
 `model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
 `app.py`, `egress.py`, `dex.py`,
@@ -113,31 +111,29 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
   `agents/public-coder-agent/app` uses) and the pin collapses.
 
-## Larger conversions — whole hand-written directories, no cdk8s presence yet
+## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
 
-- **`cluster/k8s/agents/public-coder-agent/{app,proxy,devbox}/`,
-  `agent-rbac-base/`, and `clickhouse/cluster/`** — `test_haku_public_coder_contract.py`
-  and `test_public_coder_clickhouse_reader_contract.py` tie together ~15-22
-  hand-written manifests (RBAC roles/bindings, NetworkPolicies, a kubeconfig, a SOPS
-  secret, Iron proxy transform config) on subject/selector/port agreement. Only
-  `public-coder-agent/app`'s one ConfigMap is cdk8s-generated today; `deployment.yaml`,
-  `role.yaml`, the NetworkPolicies, and the proxy/devbox directories are not.
-- **`cluster/k8s/agents/haku-egress-proxy/` script contract** —
-  `test_haku_sandbox_contract.py` regex-extracts required env vars and a clone
-  host:port from `haku-sandbox-setup.sh` and checks a hand-written SandboxTemplate
-  and egress policy cover them. Converting the SandboxTemplate/policy alone doesn't
-  fully close this (the script itself would need to declare its own requirements in
-  a checkable form), but it removes half the duplication.
-- **`cluster/k8s/authentik/app/`** — `test_authentik_blueprint_contracts.py`'s
-  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml` is a plain
-  hand-typed-list-vs-directory-contents check a cdk8s `glob()` at generation time
-  would close. The outpost/provider referential-integrity half of that test walks
-  Authentik's own blueprint DSL (`!Find`/`!KeyOf`) and stays a real external-format
-  check regardless of conversion.
-- **`cluster/k8s/haku/mailbox/`** — `test_mailbox_plan.py`'s init/prod image
-  equality and configMapGenerator-name-vs-mount-name checks. Small enough this might
-  not be worth a dedicated cdk8s chart on its own; reconsider if `mailbox/` gets
-  touched for another reason first.
+Each side the test compares is now a construct, except the hand-written inputs named;
+retiring a test means deriving both sides from one value.
+
+- **`agents/public-coder-agent/{app,proxy,devbox}`, `agent-rbac-base` and
+  `clickhouse/cluster`** — `test_haku_public_coder_contract.py` and
+  `test_public_coder_clickhouse_reader_contract.py` check subject, selector and port
+  agreement across RBAC, NetworkPolicies and the proxy. Still hand-written: the Iron
+  transform configs (`proxy/iron.yaml`) and the app's `agent-kubeconfig.yaml`, both
+  `configMapGenerator` inputs.
+- **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
+  regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
+  (an image build input) and checks the generated SandboxTemplate
+  (`haku/workspaces.py`) and egress policy cover them. Closing it fully needs the script
+  to declare its requirements in a checkable form.
+- **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
+  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
+  `kustomization.yaml` is still hand-written, so a generated one listing the glob would
+  close it. The outpost/provider referential-integrity half walks Authentik's blueprint
+  DSL (`!Find`/`!KeyOf`) and stays an external-format check.
+- **`haku/mailbox`** — `test_mailbox_plan.py`'s init/prod image equality and
+  configMapGenerator-name-vs-mount-name checks, now against `haku/mailbox.py`.
 
 ## Parked — lower priority
 

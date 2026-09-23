@@ -33,7 +33,7 @@ shows haku-ci still pulls ghcr/quay often enough to matter.
 
 ## The blocker: classic dockerd only mirrors Docker Hub
 
-haku-ci runs `docker:27-dind-rootless` (`cluster/k8s/haku-ci/scaledjob.yaml`).
+haku-ci runs `docker:27-dind-rootless` (`cluster/cdk8s/haku_ci/runner.py`).
 Tier 1 works because Docker's `--registry-mirror` handles Docker Hub — but it is
 **Hub-only** and takes **no path**, which is also why `oci-cache` serves Docker Hub
 at its root (a 6th Zot sync entry, destination `/`). There is **no `--registry-mirror`
