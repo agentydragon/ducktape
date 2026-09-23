@@ -117,7 +117,10 @@ from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizatio
 from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
 from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
-from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
+from cluster.cdk8s.seaweedfs import (
+    flux_kustomizations as seaweedfs_flux_kustomizations,
+    namespace as seaweedfs_namespace,
+)
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
@@ -186,6 +189,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    seaweedfs_namespace.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -266,8 +270,8 @@ def generate_manifests(root: Path) -> None:
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     reflector_artifact = artifact("reflector", "cluster/k8s/reflector")
     reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart, reflector_artifact)
-    seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", "cluster/k8s/seaweedfs/namespace")
-    seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(
+    seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", seaweedfs_namespace.OUTPUT_DIR)
+    seaweedfs_namespace_kustomization = seaweedfs_namespace.seaweedfs_namespace(
         flux_chart, seaweedfs_namespace_artifact
     )
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
