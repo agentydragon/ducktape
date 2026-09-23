@@ -1198,7 +1198,6 @@ py_library(
         "//cluster/cdk8s/flux_grafana_secrets",
         "//cluster/cdk8s/flux_image_automation_ghcr:image_automation",
         "//cluster/cdk8s/flux_webhook:chart",
-        "//cluster/cdk8s/flux_webhook:flux_kustomizations",
         "//cluster/cdk8s/flux_webhook_token",
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/forgejo:budget_namespace",

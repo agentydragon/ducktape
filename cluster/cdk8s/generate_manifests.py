@@ -118,10 +118,7 @@ from cluster.cdk8s.external_secrets import (
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
-from cluster.cdk8s.flux_webhook import (
-    chart as flux_webhook_chart,
-    flux_kustomizations as flux_webhook_flux_kustomizations,
-)
+from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
 from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
@@ -906,8 +903,8 @@ def generate_manifests(root: Path) -> None:
     )
     gatus_artifact = artifact("gatus", "cluster/k8s/gatus")
     gatus_flux_kustomizations.gatus(flux_chart, gatus_artifact, cnpg_kustomization, monitoring_crds_kustomization)
-    flux_webhook_artifact = artifact("flux-webhook", "cluster/k8s/flux-webhook")
-    flux_webhook_flux_kustomizations.flux_webhook(
+    flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
+    flux_webhook_chart.flux_webhook(
         flux_chart,
         flux_webhook_artifact,
         flux_webhook_token_kustomization,

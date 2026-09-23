@@ -67,12 +67,12 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
 
     return [
         *(
-            f"ImageRepository '{name}' is not listed in flux-webhook/github-webhook-receiver.yaml; "
+            f"ImageRepository '{name}' is not listed in the flux-webhook GitHub Receiver (cluster/cdk8s/flux_webhook/chart.py); "
             "new GHCR tags will only be picked up on the 5m poll, not on push. Add it to the Receiver's resources."
             for name in sorted(ghcr_repos - webhook_repos)
         ),
         *(
-            f"flux-webhook/github-webhook-receiver.yaml references ImageRepository '{name}', "
+            f"The flux-webhook GitHub Receiver references ImageRepository '{name}', "
             "but no such ImageRepository is defined under cluster/k8s."
             for name in sorted(webhook_repos - image_repos - _HAKU_STATE_IMAGE_REPOS)
         ),
