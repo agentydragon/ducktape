@@ -52,6 +52,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_backup,
     public_coder_devbox,
+    public_coder_sshpiper,
     reflector,
     reloader,
     stateful_infra,
@@ -256,6 +257,7 @@ def generate_manifests(root: Path) -> None:
     haku_ci_runner.write_manifests(root)
     agent_workspaces.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
+    public_coder_sshpiper.write_manifests(root)
     public_coder_backup.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)
