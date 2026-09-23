@@ -154,6 +154,8 @@ exports_files(
         "monitoring/grafana-operator/kustomization.yaml",
         "monitoring/cilium/cilium-monitoring.k8s.yaml",
         "monitoring/cilium/kustomization.yaml",
+        "monitoring/stack/monitoring-stack.k8s.yaml",
+        "monitoring/stack/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

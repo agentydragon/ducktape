@@ -116,6 +116,8 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/grafana-operator/kustomization.yaml",
     "cluster/k8s/monitoring/cilium/cilium-monitoring.k8s.yaml",
     "cluster/k8s/monitoring/cilium/kustomization.yaml",
+    "cluster/k8s/monitoring/stack/monitoring-stack.k8s.yaml",
+    "cluster/k8s/monitoring/stack/kustomization.yaml",
 )
 
 

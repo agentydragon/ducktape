@@ -112,6 +112,7 @@ from cluster.cdk8s.monitoring import (
     grafana_helmrepository,
     grafana_operator,
     namespace as monitoring_namespace,
+    stack as monitoring_stack,
 )
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
@@ -198,6 +199,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    monitoring_stack.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -596,8 +598,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
-    monitoring_stack_artifact = artifact("monitoring-stack", "cluster/k8s/monitoring/stack")
-    monitoring_flux_kustomizations.monitoring_stack(
+    monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
+    monitoring_stack.monitoring_stack(
         flux_chart,
         monitoring_stack_artifact,
         monitoring_namespace_kustomization,
