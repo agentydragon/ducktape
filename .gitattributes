@@ -114,6 +114,7 @@ cluster/k8s/monitoring/grafana-operator/kustomization.yaml linguist-generated=tr
 cluster/k8s/monitoring/cilium/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/loki/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/mimir/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/db/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/servicemonitor/kustomization.yaml linguist-generated=true
