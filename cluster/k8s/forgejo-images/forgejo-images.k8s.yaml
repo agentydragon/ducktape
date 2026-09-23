@@ -4,26 +4,26 @@ metadata:
   name: forgejo-images
   namespace: flux-system
 spec:
-  interval: 15m
-  refreshBeforeApply: true
-  path: ./tf/gitops/forgejo-images
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  serviceAccountName: tf-runner
-  approvePlan: "auto"
+  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "forgejo_images"
       }
+  interval: 15m
+  path: ./tf/gitops/forgejo-images
+  refreshBeforeApply: true
   runnerPodTemplate:
     spec:
       env:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
               key: password
+              name: tofu-state-db-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux

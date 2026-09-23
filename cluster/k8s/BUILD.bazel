@@ -125,6 +125,7 @@ exports_files(
         "agents/machine-access-tf/agent-machine-access.k8s.yaml",
         "agents/machine-access-tf/kustomization.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
+        "forgejo-images/forgejo-images.k8s.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
         "gatus/sso-tf/gatus-sso.k8s.yaml",
         "gatus/sso-tf/kustomization.yaml",
