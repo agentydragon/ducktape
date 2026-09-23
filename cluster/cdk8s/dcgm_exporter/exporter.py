@@ -1,7 +1,7 @@
 """The NVIDIA DCGM exporter: GPU metrics to Prometheus (`/metrics` on :9400).
 
-The hand-written PodMonitor beside this output (no PodMonitor binding yet) is auto-discovered
-by Alloy (`prometheus.operator.podmonitors "cluster"`) and forwarded to Mimir (365 d). The
+The PodMonitor is auto-discovered by Alloy (`prometheus.operator.podmonitors "cluster"`) and
+forwarded to Mimir (365 d). The
 motivation is getting DCGM_FI_DEV_XID_ERRORS (the `Xid 79 "GPU has fallen off the bus"`
 signal), PCIe replay counters, and power/temp into Mimir to characterize the recurring RTX 5090
 fall-off events; this replaces the local-CSV nix/nixos/modules/gpu-monitor.nix poller.
@@ -14,8 +14,15 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.metadata import metadata
 
 NAME = "dcgm-exporter"
 NAMESPACE = "dcgm-exporter"
@@ -99,6 +106,17 @@ def chart(app: App) -> Chart:
                     ],
                 ),
             ),
+        ),
+    )
+    # Alloy's prometheus.operator.podmonitors "cluster" auto-discovers this cluster-wide and
+    # forwards the scraped series to Mimir. No Alloy config change is needed.
+    PodMonitor(
+        chart,
+        "podmonitor",
+        metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics")],
         ),
     )
     return chart
