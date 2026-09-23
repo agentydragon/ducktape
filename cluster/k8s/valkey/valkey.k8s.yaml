@@ -1,3 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Redis operator for managing Valkey instances
+  name: valkey-system
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -14,24 +20,24 @@ metadata:
   name: redis-operator
   namespace: valkey-system
 spec:
-  interval: 30m
-  install:
-    crds: CreateReplace
-    remediation:
-      retries: 3
-  upgrade:
-    crds: CreateReplace
   chart:
     spec:
       chart: redis-operator
-      version: "0.26.1"
       sourceRef:
         kind: HelmRepository
         name: ot-helm
         namespace: flux-system
+      version: 0.26.1
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    crds: CreateReplace
   values:
+    featureGates:
+      GenerateConfigInInitContainer: true
     redisOperator:
       imageTag: v0.25.0
       initContainerImageTag: v0.25.0
-    featureGates:
-      GenerateConfigInInitContainer: true
