@@ -15,3 +15,10 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = ["//cluster/cdk8s:generation"],
+)

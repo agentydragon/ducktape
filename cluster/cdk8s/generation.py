@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
-from cdk8s_plus_34 import ConfigMap
+from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION
@@ -43,3 +43,19 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
     if not any(resource.endswith(".sops.yaml") for resource in resources):
         return None
     return SOPS_DECRYPTION
+
+
+def write_namespace(
+    root: Path, directory: str, *, name: str, labels: Mapping[str, str], annotations: Mapping[str, str] | None = None
+) -> None:
+    """Write `namespace.k8s.yaml` into `directory`, whose hand-written `kustomization.yaml`
+    lists it, so the Namespace stays owned by that directory's Kustomization."""
+    out_dir = root / directory
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    k8s.KubeNamespace(
+        Chart(app, "namespace", disable_resource_name_hashes=True),
+        "namespace",
+        metadata=k8s.ObjectMeta(name=name, labels=dict(labels), annotations=dict(annotations) if annotations else None),
+    )
+    app.synth()
