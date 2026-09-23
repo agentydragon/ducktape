@@ -66,6 +66,7 @@ from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_
 from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
+    budget_namespace as forgejo_budget_namespace,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -189,6 +190,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
+    forgejo_budget_namespace.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -223,8 +225,8 @@ def generate_manifests(root: Path) -> None:
             flux_chart, flux_image_automation_ghcr_artifact
         )
     )
-    budget_namespace_artifact = artifact("budget-namespace", "cluster/k8s/forgejo/budget-namespace")
-    budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart, budget_namespace_artifact)
+    budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
+    budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(flux_chart, budget_namespace_artifact)
     haku_namespace_artifact = artifact("haku-namespace", "cluster/k8s/haku/namespace")
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart, haku_namespace_artifact)
     hubble_ui_artifact = artifact("hubble-ui", "cluster/k8s/hubble-ui")

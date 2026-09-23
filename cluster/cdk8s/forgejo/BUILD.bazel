@@ -25,6 +25,20 @@ py_library(
 )
 
 py_library(
+    name = "budget_namespace",
+    srcs = ["budget_namespace.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "db",
     srcs = ["db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],

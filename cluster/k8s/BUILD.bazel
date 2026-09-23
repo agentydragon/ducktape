@@ -146,6 +146,8 @@ exports_files(
         "authentik/sso-providers-tf/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
+        "forgejo/budget-namespace/namespace.k8s.yaml",
+        "forgejo/budget-namespace/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
