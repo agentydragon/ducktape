@@ -70,7 +70,8 @@ class ProvisionerSettings(BaseSettings):
     components: tuple[ComponentConfig, ...]
     onboarding_enabled: bool
     tokens: tuple[TokenConfig, ...] | None = Field(
-        default=None, description="Secrets to keep holding valid tokens; None when this run keeps none."
+        default=None,
+        description="Secrets the `tokens` command keeps holding valid tokens; None where only `setup` runs.",
     )
 
     # Used by callers that need to describe the source without duplicating the
