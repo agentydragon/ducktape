@@ -180,26 +180,6 @@ def seaweedfs_pr_visuals_bucket(
     )
 
 
-def seaweedfs_public_coder_agent_backups_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
-) -> Kustomization:
-    name = "seaweedfs-public-coder-agent-backups-bucket"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
-            wait=True,
-            timeout="5m",
-        ),
-    )
-
-
 def seaweedfs_public_s3(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

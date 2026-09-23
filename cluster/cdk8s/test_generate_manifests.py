@@ -81,6 +81,8 @@ _GENERATED_FILES = (
     "cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.k8s.yaml",
     "cluster/k8s/kyverno/policies/restrict-agent-kustomization-patch.k8s.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/public-coder-agent-backups-bucket.k8s.yaml",
+    "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/forgejo-bucket/forgejo-bucket.k8s.yaml",
     "cluster/k8s/seaweedfs/forgejo-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",

@@ -101,3 +101,21 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "public_coder_agent_backups_bucket",
+    srcs = ["public_coder_agent_backups_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
