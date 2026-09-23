@@ -398,3 +398,62 @@ spec:
       app.kubernetes.io/name: haku-openclaw-spike
   policyTypes:
     - Egress
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Haku OpenClaw spike VolSync backup bucket.
+  name: haku-openclaw-spike-backups
+  namespace: haku-openclaw-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: haku-openclaw-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: haku-openclaw-spike-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Haku OpenClaw spike VolSync SeaweedFS credentials.
+  name: haku-openclaw-spike-backups
+  namespace: haku-openclaw-spike
+spec:
+  identityRef:
+    name: haku-openclaw-spike-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: haku-openclaw-spike-volsync-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: haku-openclaw-spike
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: haku-openclaw-spike
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: haku-openclaw-spike
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
