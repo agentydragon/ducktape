@@ -21,8 +21,11 @@ py_library(
     srcs = ["cdi.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/kubevirt:cdi",
+        "//cluster/cdk8s/crd_bindings/kubevirt:storageprofile",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )

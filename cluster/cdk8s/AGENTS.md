@@ -369,6 +369,10 @@ took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one
 <https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
 update markers". Don't repeat this explanation per directory; point back here instead.
 
+A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the Component
+copies the pinned tag into it with a block-style `replacements` rule that splits the
+container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
+
 Agentplane testing keeps its image pins inline in the hand-maintained root
 `kustomization.yaml`, since the Kustomization itself is part of the flat resource
 directory. Flux updates those `newTag:` markers in place; cdk8s generates only the

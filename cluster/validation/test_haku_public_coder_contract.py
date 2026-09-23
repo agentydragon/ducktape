@@ -9,10 +9,13 @@ from urllib.parse import urlparse
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    Chart,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
-from cluster.cdk8s import aiquota, public_coder_agent_config, public_coder_proxy
+from cluster.cdk8s import aiquota, public_coder_agent_config, public_coder_devbox, public_coder_proxy
 
 # pytest_plugins loads cluster.validation.haku_console_fixtures by name; gazelle cannot see
 # the dependency.
@@ -55,6 +58,13 @@ def app_objects() -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app())))
+
+
+@pytest.fixture(scope="module")
+def devbox_objects() -> list[dict[str, Any]]:
+    chart = Chart(Cdk8sTesting.app(), "devbox")
+    public_coder_devbox.virtual_machine(chart)
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
@@ -147,6 +157,7 @@ def test_public_coder_kubernetes_proxy_contract(
     haku_console_objects: list[dict[str, Any]],
     app_objects: list[dict[str, Any]],
     proxy_objects: list[dict[str, Any]],
+    devbox_objects: list[dict[str, Any]],
 ) -> None:
     """Agent traffic, configured SAR authorization, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
@@ -185,9 +196,7 @@ def test_public_coder_kubernetes_proxy_contract(
 
     app_deployment = _one(app_objects, "Deployment")
     app_pod_labels = app_deployment["spec"]["template"]["metadata"]["labels"]
-    devbox_pod_labels = yaml.safe_load((agent_dir / "devbox" / "virtualmachine.yaml").read_text())["spec"]["template"][
-        "metadata"
-    ]["labels"]
+    devbox_pod_labels = _one(devbox_objects, "VirtualMachine")["spec"]["template"]["metadata"]["labels"]
     for client_labels in (app_pod_labels, devbox_pod_labels):
         # Cilium's matchLabels selects any pod whose labels are a superset of the rule, so a
         # covering rule is one the client's actual labels satisfy -- not one matching them exactly.

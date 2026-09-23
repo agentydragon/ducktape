@@ -310,6 +310,8 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                     methods=[EgressPolicySpecRulesMethods.GET],
                     paths=[
                         "/api/objects/**",
+                        # `/api/stock/**` does not match `/api/stock` itself.
+                        "/api/stock",
                         "/api/stock/**",
                         "/api/user",
                         "/api/system/info",

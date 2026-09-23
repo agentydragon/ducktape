@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/airlock
+    newTag: devel-20260923061956-8d9a3df # {"$imagepolicy": "flux-system:airlock:tag"}
+# `images:` runs before `replacements` within a Component, so AIRLOCK_IMAGE_TAG gets the pinned tag.
+replacements:
+  - source:
+      kind: Deployment
+      name: airlock
+      fieldPath: spec.template.spec.containers.[name=airlock].image
+      options:
+        delimiter: ":"
+        index: 1
+    targets:
+      - select:
+          kind: Deployment
+          name: airlock
+        fieldPaths:
+          - spec.template.spec.containers.[name=airlock].env.[name=AIRLOCK_IMAGE_TAG].value

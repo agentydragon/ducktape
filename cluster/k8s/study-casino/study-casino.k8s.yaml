@@ -131,6 +131,123 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code flow, confidential client). State lives in CNPG Postgres (study-casino-db).
+  labels:
+    app.kubernetes.io/name: study-casino
+  name: study-casino
+  namespace: study-casino
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: study-casino
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: study-casino
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      containers:
+        - env:
+            - name: STUDY_CASINO_IMAGE_TAG
+              value: unset
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  key: user
+                  name: study-casino-db-app
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: study-casino-db-app
+            - name: PG_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: study-casino-db-app
+            - name: PG_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: study-casino-db-app
+            - name: PG_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: study-casino-db-app
+            - name: STUDY_CASINO_DATABASE_URL
+              value: postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)
+            - name: STUDY_CASINO_ADMIN_USERS
+              value: agentydragon
+            - name: STUDY_CASINO_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/study-casino/
+            - name: STUDY_CASINO_OIDC_CLIENT_ID
+              value: study-casino
+            - name: STUDY_CASINO_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: oidc_client_secret
+                  name: study-casino-oidc
+            - name: STUDY_CASINO_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: study-casino-oidc
+            - name: STUDY_CASINO_RNG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: rng_secret
+                  name: study-casino-oidc
+            - name: STUDY_CASINO_RNG_KEY_ID
+              value: study-casino-rng-v1
+          image: git.allegedly.works/ducktape-ci/study-casino:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          name: app
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+---
 apiVersion: v1
 kind: Service
 metadata:

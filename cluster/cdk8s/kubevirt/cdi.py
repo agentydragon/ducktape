@@ -1,9 +1,6 @@
 """The cluster-scoped CDI CR that cdi-operator (cluster/k8s/kubevirt/cdi-operator)
-reconciles into the Containerized Data Importer.
-
-The StorageProfiles beside it stay hand-written: there is no binding for that CRD, which
-CDI creates at runtime rather than shipping as YAML.
-"""
+reconciles into the Containerized Data Importer, and the StorageProfiles for our
+provisioners."""
 
 from __future__ import annotations
 
@@ -26,10 +23,31 @@ from kubevirt_cdi_crds.io.kubevirt.cdi import (
     CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
 )
+from kubevirt_storageprofile_crds.io.kubevirt.cdi import (
+    StorageProfile,
+    StorageProfileSpec,
+    StorageProfileSpecClaimPropertySets,
+    StorageProfileSpecClaimPropertySetsVolumeMode,
+)
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 
 OUTPUT_DIR = "cluster/k8s/kubevirt/cdi"
+_FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
+_BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
+# storage class -> (clone strategy, [(access mode, volume mode)])
+_STORAGE_PROFILES = {
+    "local-path-ovh": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
+    "local-path-proxmox": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
+    "lvm-proxmox-hdd": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
+    "lvm-proxmox-hdd-block": ("snapshot", [("ReadWriteOnce", _BLOCK)]),
+    "lvm-proxmox-hdd-shared": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
+    "lvm-proxmox-ssd": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
+    "lvm-proxmox-ssd-block": ("snapshot", [("ReadWriteOnce", _BLOCK)]),
+    "seaweedfs-ovh": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
+}
 
 
 def chart(app: App) -> Chart:
@@ -81,8 +99,40 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
+    # CDI creates StorageProfile objects automatically, but it cannot infer PVC claim
+    # properties for our local/custom provisioners. Declare the safe defaults so
+    # DataVolumes do not have to guess access mode or volume mode.
+    for name, (clone_strategy, claim_property_sets) in _STORAGE_PROFILES.items():
+        StorageProfile(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name),
+            spec=StorageProfileSpec(
+                claim_property_sets=[
+                    StorageProfileSpecClaimPropertySets(access_modes=[access_mode], volume_mode=volume_mode)
+                    for access_mode, volume_mode in claim_property_sets
+                ],
+                clone_strategy=clone_strategy,
+            ),
+        )
     return chart
 
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def cdi(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cdi_operator: Kustomization,
+    local_path_provisioner: Kustomization,
+) -> Kustomization:
+    name = "cdi"
+    return flux_kustomization(
+        chart,
+        name,
+        artifact,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
+    )

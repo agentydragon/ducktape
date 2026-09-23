@@ -31,7 +31,9 @@ py_test(
     deps = [
         ":extract_crd",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

@@ -228,39 +228,6 @@ def public_coder_agent_app(
     )
 
 
-def public_coder_agent_devbox(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    kubevirt: Kustomization,
-    forgejo_images: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_shared_secrets: Kustomization,
-    public_coder_agent_app_kustomization: Kustomization,
-) -> Kustomization:
-    name = "public-coder-agent-devbox"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="30m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            kubevirt,
-            forgejo_images,
-            external_creds,
-            external_secrets_config,
-            agent_shared_secrets,
-            public_coder_agent_app_kustomization,
-        ),
-        description=(
-            "KubeVirt build/test devbox for public-coder-agent "
-            "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "
-            "apart from the sshd host key and SSH access through ../sshpiper."
-        ),
-    )
-
-
 def agent_shared_secrets(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization
 ) -> Kustomization:

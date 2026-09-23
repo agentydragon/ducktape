@@ -167,16 +167,8 @@ kustomizations; ConfigMaps carrying `$imagepolicy` markers.
 
 Open decisions, each "stays" or a conversion:
 
-- **The `airlock` and `study-casino` Deployments**: an image marker on an env value as
-  well as on `image:`, which the `image-pins/` Component (a Kustomize `images:` override)
-  cannot reach.
 - **`gaffer-private-source/bridge.yaml`**: a Flux Kustomization outside the generated
   graph, reconciling another repository's tree.
-- **kubevirt `VirtualMachine` and CDI `StorageProfile`**: upstream publishes no CRD
-  YAML; the schemas are YAML strings in generated Go at the release tags
-  (kubevirt `pkg/virt-operator/resource/generate/components/validations_generated.go`,
-  schema only; CDI `pkg/operator/resources/crds_generated.go`, a whole CRD), which a
-  binding would extract.
 
 ## Wave 5: rules that need the whole tree
 
