@@ -99,6 +99,7 @@ exports_files(
         "ssh-mcp/kustomization.yaml",
         "agents/plaid-mcp/namespace.k8s.yaml",
         "tofu-state/namespace.k8s.yaml",
+        "agents/haku-egress-proxy/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",
         "forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",

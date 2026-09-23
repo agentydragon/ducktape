@@ -27,7 +27,8 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.store import ThreadEntityInterest, ThreadPayloadSelection, ThreadStore
+from agentplane.app.thread.content import ThreadEntityInterest, ThreadPayloadSelection
+from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.views import EntityKind
 from agentplane.app.thread_fold import PayloadField
 from agentplane.protocol import event_pb2
