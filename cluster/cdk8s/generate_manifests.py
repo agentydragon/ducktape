@@ -68,7 +68,10 @@ from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
 from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
-from cluster.cdk8s.home_assistant import flux_kustomizations as home_assistant_flux_kustomizations
+from cluster.cdk8s.home_assistant import (
+    flux_kustomizations as home_assistant_flux_kustomizations,
+    namespace as home_assistant_namespace,
+)
 from cluster.cdk8s.hubble_ui import flux_kustomizations as hubble_ui_flux_kustomizations
 from cluster.cdk8s.infra_drift import flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
@@ -143,6 +146,7 @@ def generate_manifests(root: Path) -> None:
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
+    home_assistant_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
