@@ -48,36 +48,6 @@ function a(n) {
 
 Burn-down: <plans/selector_engine.md>.
 
-## `const ANYTHING = <expr>` Ignores The Initializer
-
-Status: open (reproduced 2026-09-23). An `ANYTHING` hole as a declarator name
-turns the whole declarator, initializer included, into a wildcard:
-
-```js
-// selector
-function f(ANYTHING) {
-  STMT_LIST;
-  const ANYTHING = ANYTHING.distinctive.leaf?.name;
-  STMT_LIST;
-}
-// matches both
-function a(n) {
-  if (!n) return;
-  const e = n.distinctive.leaf?.name;
-  return e;
-}
-function c(n) {
-  const t = n * 2;
-  return t;
-}
-```
-
-A named declarator (`const x = ANYTHING.distinctive.leaf?.name;`) resolves
-uniquely. In the largest downstream spec, four selectors of this shape match
-248–638 places each although their distinctive content occurs once; `run`
-resolves them only because every other candidate is claimed by another
-selector. Burn-down: <plans/selector_engine.md>.
-
 ## Global Matching Needs Injective Target Assignment
 
 Status: fixed (2026-09-17). `all_different` over claimed targets is compiled

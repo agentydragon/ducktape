@@ -490,9 +490,12 @@ position:
 - As an object-literal shorthand property, it absorbs a run of key/value
   properties or spreads:
   `{ required: EXPR, ANYTHING, other: EXPR }`.
-- As a variable declarator (`const ANYTHING = null, selected = ...;`), it
-  behaves like anonymous `DECLARATORS` and absorbs a run of sibling
-  declarators. The initializer is ignored, as with `DECLARATORS`.
+- As a variable declarator with a placeholder initializer
+  (`const ANYTHING = null, selected = ...;`, or `= ANYTHING`), it behaves like
+  anonymous `DECLARATORS` and absorbs a run of sibling declarators. With any
+  other initializer (`const ANYTHING = config.limit;`) it is one declarator
+  whose name is a hole and whose initializer must match; reach a declarator
+  that shares its statement with others by adding `DECLARATORS`.
 - As a class field with no initializer (`class K { ANYTHING; method() {} }`),
   it absorbs a run of class members.
 
