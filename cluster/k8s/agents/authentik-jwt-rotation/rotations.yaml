@@ -145,7 +145,7 @@ rotations:
     # Read-only credential for agentplane's egress proxy (claude-ai), talking
     # directly to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather
     # than the grocy-mcp-sf MCP server -- the egress proxy scopes by HTTP method
-    # and path (see cluster/cdk8s/agentplane/egress.py), which Grocy's REST verbs
+    # and path (cluster/cdk8s/agentplane/egress_staging_credentials.py), which Grocy's REST verbs
     # express directly but the MCP server's single POST /mcp JSON-RPC endpoint
     # cannot. Same client credentials the grocy-mcp-sf MCP server itself uses to
     # log in (tf/gitops/agent-machine-access/grocy-sf.tf).
@@ -156,7 +156,7 @@ rotations:
     sops_file: secrets/grocy-sf-readonly-bearer-token.yaml
     token_field: token
     # Published in-cluster; the grocy-sf-readonly ExternalSecret
-    # (cluster/cdk8s/agentplane/egress_credentials.py) mirrors it into
+    # (cluster/cdk8s/agentplane/egress_staging_credentials.py) mirrors it into
     # agentplane-staging's isolated egress-credentials namespace.
     k8s_secret:
       path: cluster/k8s/agents/authentik-jwt-rotation/grocy-sf-readonly-token.sops.yaml
