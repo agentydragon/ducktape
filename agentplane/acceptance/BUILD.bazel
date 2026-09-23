@@ -132,6 +132,44 @@ py_test(
     ],
 )
 
+# Live, like `test_instructions`: one sandbox and one turn per harness, so `eternal` for the same
+# reasons. Its latency ceilings are asserted inside the test, not by Bazel's clock.
+py_test(
+    name = "test_thread_latency",
+    timeout = "eternal",
+    srcs = ["test_thread_latency.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:electric",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/app/agent_runtime/view:fold",
+        "//agentplane/app/agent_runtime/view:views",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Live testing, using the same real-agent fixtures and execution boundary as this suite.
 py_test(
     name = "test_mcp",
