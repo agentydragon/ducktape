@@ -40,8 +40,11 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 - **<option_electric_today.md>** — what is deployed, how it fails, and the seven reader flows traced
   through it.
 - **<option_electric_pages.md>** — TanStack DB + Electric, repartitioned into stable pages.
+- **<option_electric_subsets.md>** — one Electric shape per thread, windows loaded as subset
+  snapshots.
 - **<electric_primitives.md>** — what Electric actually offers, for both of the above.
-- **<prior_art.md>** — how other systems cut this, and which are worth an afternoon.
+- **<prior_art/README.md>** — other systems scored against the requirements from their docs, and
+  what to copy from them.
 - **<seams.md>** — where a sync implementation plugs in on each side, so several can live on
   `devel` at once and a deployment picks one.
 
@@ -50,43 +53,44 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 `+` meets it, `~` meets it with work or a caveat, `−` fails it, `?` unknown without investigation.
 Cells are judgements from the option files, not measurements.
 
-| Req                          | A0 poll all | Window poll | A1 poll delta | Moving window | SSE push | Electric today | Electric pages  |
-| ---------------------------- | ----------- | ----------- | ------------- | ------------- | -------- | -------------- | --------------- |
-| P1 tail-first open           | −           | +           | +             | +             | +        | +              | +               |
-| P2 live updates              | ~ (1 s)     | ~ (1 s)     | +             | +             | +        | +              | +               |
-| P3 history can change        | +           | +           | +             | +             | +        | +              | +               |
-| P4 scroll back               | + (free)    | +           | +             | +             | +        | ~              | +               |
-| **P5 place survives**        | +           | +           | +             | +             | +        | **−**          | +               |
-| P6 disconnect resumes        | +           | +           | +             | +             | ~        | **−**          | +               |
-| P7 stale epoch refused       | +           | +           | +             | +             | +        | +              | +               |
-| **P8 client picks content**  | +           | +           | +             | +             | +        | **−**          | ~ (shape/field) |
-| P9 command reconcile         | +           | +           | +             | +             | +        | +              | +               |
-| S1 body ≤ its own revision   | +           | +           | +             | +             | +        | ~              | +               |
-| S2 ordering                  | +           | +           | +             | +             | +        | +              | +               |
-| S3 caught-up signal          | +           | +           | +             | +             | +        | +              | ~               |
-| S4 no lost update            | +           | **+**       | +             | +             | +        | +              | +               |
-| **E1 O(1) requests on open** | +           | +           | +             | +             | +        | **−**          | +               |
-| E2 bytes bounded             | −           | +           | +             | +             | +        | +              | +               |
-| E3 streaming ≈0 requests     | +           | +           | +             | +             | +        | +              | +               |
-| **E4 scroll loads only new** | n/a         | −           | −             | **+**         | +        | −              | +               |
-| E5 no re-transfer            | −           | −           | ~             | +             | +        | −              | +               |
-| **E6 no timer polling**      | **−**       | ~ (rung 2)  | +             | +             | +        | +              | +               |
-| O1 bounded/shared state      | +           | **+**       | +             | +             | −        | −              | ~               |
-| O2 horizontal scale          | +           | +           | +             | +             | ~        | +              | +               |
-| O3 debuggable                | +           | +           | +             | +             | +        | ~              | ~               |
-| **O4 few moving parts**      | +           | **+**       | +             | +             | ~        | −              | **−**           |
-| **D1 no overlap re-sent**    | −           | −           | −             | **+**         | +        | **−**          | **+**           |
-| D2 no windowed/lazy seam     | +           | +           | +             | +             | +        | −              | −               |
-| D3 incrementally reachable   | +           | **+**       | +             | +             | ~        | n/a            | −               |
+| Req                          | A0 poll all | Window poll | A1 poll delta | Moving window | SSE push | Electric today | Electric pages  | Electric subsets |
+| ---------------------------- | ----------- | ----------- | ------------- | ------------- | -------- | -------------- | --------------- | ---------------- |
+| P1 tail-first open           | −           | +           | +             | +             | +        | +              | +               | +                |
+| P2 live updates              | ~ (1 s)     | ~ (1 s)     | +             | +             | +        | +              | +               | +                |
+| P3 history can change        | +           | +           | +             | +             | +        | +              | +               | +                |
+| P4 scroll back               | + (free)    | +           | +             | +             | +        | ~              | +               | +                |
+| **P5 place survives**        | +           | +           | +             | +             | +        | **−**          | +               | ~                |
+| P6 disconnect resumes        | +           | +           | +             | +             | ~        | **−**          | +               | +                |
+| P7 stale epoch refused       | +           | +           | +             | +             | +        | +              | +               | +                |
+| **P8 client picks content**  | +           | +           | +             | +             | +        | **−**          | ~ (shape/field) | +                |
+| P9 command reconcile         | +           | +           | +             | +             | +        | +              | +               | ~                |
+| S1 body ≤ its own revision   | +           | +           | +             | +             | +        | ~              | +               | ~                |
+| S2 ordering                  | +           | +           | +             | +             | +        | +              | +               | +                |
+| S3 caught-up signal          | +           | +           | +             | +             | +        | +              | ~               | +                |
+| S4 no lost update            | +           | **+**       | +             | +             | +        | +              | +               | +                |
+| **E1 O(1) requests on open** | +           | +           | +             | +             | +        | **−**          | +               | +                |
+| E2 bytes bounded             | −           | +           | +             | +             | +        | +              | +               | +                |
+| E3 streaming ≈0 requests     | +           | +           | +             | +             | +        | +              | +               | +                |
+| **E4 scroll loads only new** | n/a         | −           | −             | **+**         | +        | −              | +               | +                |
+| E5 no re-transfer            | −           | −           | ~             | +             | +        | −              | +               | ~                |
+| **E6 no timer polling**      | **−**       | ~ (rung 2)  | +             | +             | +        | +              | +               | +                |
+| O1 bounded/shared state      | +           | **+**       | +             | +             | −        | −              | ~               | +                |
+| O2 horizontal scale          | +           | +           | +             | +             | ~        | +              | +               | ~                |
+| O3 debuggable                | +           | +           | +             | +             | +        | ~              | ~               | +                |
+| **O4 few moving parts**      | +           | **+**       | +             | +             | ~        | −              | **−**           | ~                |
+| **D1 no overlap re-sent**    | −           | −           | −             | **+**         | +        | **−**          | **+**           | +                |
+| D2 no windowed/lazy seam     | +           | +           | +             | +             | +        | −              | −               | +                |
+| D3 incrementally reachable   | +           | **+**       | +             | +             | ~        | n/a            | −               | +                |
 
 ### What the matrix says
 
 - **D1 does not split the options by family.** It asks that moving the window never re-send what
-  the client holds, and says nothing about subscription count. Two very different designs pass —
-  the page partition, because non-overlapping partitions never overlap by construction, and the
-  moving window, because the client states what it has. Two fail for the same reason: a viewport
-  that is one changing predicate replays itself, which is Electric-as-deployed and a delta poll
-  without `have`.
+  the client holds, and says nothing about subscription count. Three very different designs pass —
+  the page partition, because non-overlapping partitions never overlap by construction; the moving
+  window, because the client states what it has; and one Electric shape per thread, because the
+  window is a subset read inside a shape whose predicate never moves. Two fail for the same reason:
+  a viewport that is one changing predicate replays itself, which is Electric-as-deployed and a
+  delta poll without `have`.
 - **A0 fails D1 hardest**, which is easy to miss because it has no window to move: it re-sends the
   whole conversation on every poll, held or not.
 - **The window poll is the cheapest column that clears the must-haves**, and every cell it fails is
@@ -103,10 +107,12 @@ Cells are judgements from the option files, not measurements.
   the deployed code performs is more than required, and the pending-selection double buffer it needs
   is the same machinery rotation and paging up use — so a design that never rebuilds a selection can
   drop all of it. See <requirements.md> § P7.
-- **The case against the Electric family is cumulative, not structural.** Shape count, the page
-  boundary and its landing pad, a catch-up signal that becomes composite, and no per-card readiness
-  signal. Each is affordable alone; the question is whether the pile is worth what shapes buy,
-  which is a cache shared between readers **of the same conversation**.
+- **The case against Electric shrank once subset snapshots were read.** The page partition's pile —
+  shape count, the page boundary and its landing pad, a composite catch-up gate — belongs to putting
+  the window in a shape's `where`. One shape per thread does not, and leaves three costs: a live
+  log carrying every change in the thread (E5), a `409` that makes the stock client drop what it
+  holds (P5), and one active instance per replication slot (O2). What shapes still buy is a cache
+  shared between readers of one thread.
 - **The moving window is the only column that is all `+`.** That is not a claim that it is right —
   it is the option written _from_ these requirements, so it ought to score well, and the honest
   reading is that the requirements have not yet been stress-tested against it. Its costs are real
@@ -134,9 +140,9 @@ What any chosen design has to be held to.
   zero per arriving segment while a reader holds a history page. The second is flow 4, and the
   shape-creation log (landed in #7589) reports a handle per request, so counting distinct handles over
   a session answers both.
-- **Shape count against `ELECTRIC_MAX_SHAPES=1024`**, before any Electric partition is built rather
-  than after: pages × fields in use × concurrent conversations, given that shapes are shared between
-  readers of one conversation.
+- **Shape count against `ELECTRIC_MAX_SHAPES`**, which is our setting (Electric's default is
+  unlimited). Per thread under <option_electric_subsets.md>: the entity shape, one per payload field
+  in use, and the control shape — shared by every reader of the thread.
 - Browser coverage for the two flows nothing asserts end to end: scroll up and then stream (no hole
   appears, and the reader's place does not move), and a page's rows surviving an unsubscribe of a
   page above it.
@@ -145,23 +151,19 @@ What any chosen design has to be held to.
 
 ## What to settle next, in order
 
-1. **Decide whether shapes are worth their complexity**, now that neither D1 nor P8 rules them
-   out. What they buy is a cache shared between readers of one conversation; what they cost is
-   everything in option_electric_pages.md that is not about conversations. With few concurrent
-   readers per conversation, that trade looks bad — but it is a judgement, not a derivation.
-2. **Prototype the delta query** — `segment_index` in range, whole for the backfill and
-   `revision_cursor > $since` for the overlap — and **pin with a test that every mutation advances
-   an entity's `revision_cursor`, including a body change.** That single assumption carries the
-   moving window, A1 and the SSE option alike.
-3. **Add `segment_index` to the fold.** Needed by every option that pages, including the Electric
-   one, and a cursor cannot substitute: how many segments a cursor range covers depends on how
-   densely a turn packs them.
-4. **Read Zero and Replicache** — Replicache especially, whose pull protocol is this option
-   specified properly, and worth copying rather than reinventing.
+1. **Choose between the two designs that clear everything but desires.** One Electric shape per
+   thread (<option_electric_subsets.md>) keeps the engine we run and loses its interest, rotation
+   and paging machinery. The moving window (<option_moving_window.md>), over SSE or long poll,
+   needs no engine and is Replicache's row-version pull done statelessly. Zero is the third answer
+   if a new engine is acceptable (**O4**); the evidence is in <prior_art/README.md>.
+2. **Prototype the delta query** — `entity_index` in range, whole for the backfill and
+   `revision_cursor > $since` for the overlap — and pin with tests that every mutation advances an
+   entity's `revision_cursor`, including a body change, **and that a thread's revisions become
+   visible in commit order.** The second is Replicache's warning about watermarks, and both carry
+   the moving window, A1 and the SSE option alike.
+3. **Measure the Electric subsets design** against `agentplane-testing` before choosing it: open to
+   first text for a 30-segment tail, and the live log's traffic for a reader scrolled away from an
+   active tail.
 
-`subset__where` (<prior_art.md>) drops down the list: it could only help an Electric option reach
-D1, and a narrow snapshot of a wide shape still leaves the live log carrying the whole
-conversation — but it is cheap, and it would improve the Electric option on P1 and O1 regardless.
-
-#7592 — the page content shape — stays held. The extent on `PayloadRef` (S1) and `segment_index`
-are the parts of that work worth keeping whatever wins.
+#7592 — the page content shape — stays held. The extent on `PayloadRef` (S1) is the part of that
+work worth keeping whatever wins.

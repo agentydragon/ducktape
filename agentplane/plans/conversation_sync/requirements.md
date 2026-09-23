@@ -171,8 +171,10 @@ Note what this is _not_: a cap on subscriptions. The count is free; the re-trans
 
 - **Overlapping windows re-send.** Any design where the viewport is one predicate that changes —
   Electric as deployed, or a delta poll without a `have` parameter — replays the new window whole.
-  Electric has no choice about it: a shape's predicate is fixed at creation, so a moved range is a
-  different shape and a fresh shape's log starts at `offset=-1`.
+  Electric as deployed has no choice about it: the window is in the shape's predicate, which is
+  fixed at creation, so a moved range is a different shape. One shape per thread avoids that by
+  reading the window as subset snapshots of a shape whose predicate never moves
+  (§ option_electric_subsets).
 - **Non-overlapping partitions do not.** The page partition (§ option_electric_pages) never moves a
   bound, so scrolling up subscribes to a page the client does not hold and re-sends nothing. It pays
   for this in subscription count, which D1 does not charge for.
