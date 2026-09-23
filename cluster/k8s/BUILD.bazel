@@ -216,6 +216,8 @@ exports_files(
         "authentik/sso-providers-tf/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
+        "forgejo/budget-namespace/namespace.k8s.yaml",
+        "forgejo/budget-namespace/kustomization.yaml",
         "grocy/app-base/grocy.k8s.yaml",
         "grocy/app-base/kustomization.yaml",
         "grocy/mcp-base/grocy-mcp.k8s.yaml",

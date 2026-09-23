@@ -55,21 +55,6 @@ def forgejo(
     )
 
 
-def budget_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "budget-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="1h",
-            path=artifact_path(artifact),
-            prune=False,
-            source_ref=artifact_source_ref(artifact),
-            timeout="1m",
-        ),
-    )
-
-
 def forgejo_cache(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, local_path_provisioner: Kustomization
 ) -> Kustomization:
