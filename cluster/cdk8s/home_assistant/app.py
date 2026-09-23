@@ -92,7 +92,17 @@ HA_MCP_TOKEN = TokenConfig(
     secret_namespace=_NAMESPACE,
     description="Long-lived token of Home Assistant's local owner, which ha-mcp copies",
 )
-_TOKENS = (HA_MCP_TOKEN,)
+AGENTPLANE_READER_TOKEN = TokenConfig(
+    client_name="agentplane-egress",
+    read_only_user="agentplane-reader",
+    secret_name="agentplane-home-assistant-token",
+    secret_namespace=_NAMESPACE,
+    description=(
+        "Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress "
+        "proxy presents"
+    ),
+)
+_TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 
 _CONFIG_FILE_ENV = k8s.EnvVar(name=ProvisionerSettings.config_file_env, value=_PROVISIONER_CONFIG)
 _LOCAL_ADMIN_PASSWORD_ENV = k8s.EnvVar(

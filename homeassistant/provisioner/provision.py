@@ -23,13 +23,13 @@ async def provision(client: HomeAssistantClient, password: str) -> None:
     completed = await client.wait_until_ready()
     required_steps = frozenset(OnboardingStep)
     if completed is None or completed >= required_steps:
-        await client.login(password)
+        await client.login(settings.username, password)
         await client.configure_http(password)
         print("Home Assistant onboarding is already complete")
         return
 
     if OnboardingStep.USER in completed:
-        await client.login(password)
+        await client.login(settings.username, password)
     else:
         await client.create_owner(password)
     if OnboardingStep.CORE_CONFIG not in completed:

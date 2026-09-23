@@ -179,6 +179,8 @@ Against the [requirements](thread_sync_requirements.md), it falls short in three
 - **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
 
 Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
+What Electric itself cannot do for following an agent, and where this design therefore stops:
+[Where Electric stops fitting thread sync](thread_sync_electric_limits.md).
 
 Acceptance must still establish:
 

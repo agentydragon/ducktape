@@ -770,13 +770,10 @@ register_toolchains("@rust_toolchains//:all")
 # Keep this extension visible to downstream modules. Ducktape BUILD files use
 # apparent labels such as `@crates//:anyhow`, and those labels are resolved in
 # Ducktape's own repository mapping when another workspace consumes Ducktape via
-# `bazel_dep` + `archive_override`. A downstream workspace's root `@crates`
-# repository cannot satisfy those labels.
-#
-# Do not attach Ducktape's `Cargo.Bazel.lock` here. rules_rust's rendered-lock
-# checksum is not portable across root-module and dependency-module path
-# contexts, which makes downstream consumers fail analysis even though
-# `Cargo.lock` is pinned. Let crate_universe render from the Cargo lock instead.
+# `bazel_dep` + `git_override`. A downstream workspace's root `@crates`
+# repository cannot satisfy those labels. crate_universe refuses a non-root
+# `from_cargo` without a `lockfile` (it never repins across module boundaries
+# and skips the digest check there), so the lockfile is what dependents render.
 crate = use_extension(
     "@rules_rust//crate_universe:extensions.bzl",
     "crate",
@@ -786,6 +783,7 @@ crate = use_extension(
 crate.from_cargo(
     name = "crates",  # this becomes the repo name
     cargo_lockfile = "//:Cargo.lock",
+    lockfile = "//:Cargo.Bazel.lock",
     manifests = ["//:Cargo.toml"],
 )
 

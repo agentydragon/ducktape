@@ -5,6 +5,11 @@ One Electric shape per thread, windowed by subset snapshots, is deployed:
 below, is <../../docs/thread_sync_requirements.md>. This plan holds the work still open on the
 Electric design, and the path to trying a second implementation beside it.
 
+The Electric work goes as far as Electric goes without working against it. Where it cannot do what
+following an agent wants, the work stops and the mismatch goes in
+<../../docs/thread_sync_electric_limits.md>; those mismatches are what a second implementation
+would be for.
+
 ## Open on the Electric design
 
 1. **Eviction (P10).** The store keeps every row and body it has loaded until the thread closes.
@@ -24,23 +29,20 @@ Electric design, and the path to trying a second implementation beside it.
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
    tables.
-4. **Compacting completed bodies (D5).** Compaction keeps the body's identity — owner, generation
-   and every reference to it — so the entity row does not change. What reaches a reader holding the
-   body is the storage change itself:
-   - a delete for each chunk it replaces, which must not withdraw text the reader shows;
-   - the compacted row, which the field's live shape pushes to every reader following the field,
-     including readers that do not hold the body: one re-send of the text. Keeping compacted rows
-     out of the live shape avoids it, at the cost of a second read path (**D2**); compacting late
-     makes the re-send rare either way.
-
-   **S1:** the compacted row must answer a reference as far as it spans, as the chunks did. If it
-   keeps the length of each chunk it replaces, it answers every revision's reference; without those
-   lengths only the final reference resolves, and one naming an intermediate revision gets `410`.
-   Nothing needs an old revision's body outside debugging, and the event log keeps it. First, pin
-   Electric's behaviour: whether a delete carries the row's text, and whether a compaction
-   transaction's changes arrive together.
-
-5. **Measure it on `agentplane-testing`.**
+4. **Completing a message re-sends its text.** `item_completed` always writes the final text as a
+   new generation (`fold.py`), so its reference moves and a reader who followed the stream
+   downloads the whole text once more. Keeping the generation when the completed text is what was
+   streamed removes that, for every implementation. It also leaves the streamed generation's
+   chunks and manifests unreferenced, which is most of what **D5** would compact.
+5. **Compacting completed bodies (D5).** Electric's behaviour is pinned
+   (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the whole text and deleting the
+   rest in one transaction needs no client change, since the store applies only inserts. Every
+   follower of the field still receives the compacted text once, twice under `replica=full`; that
+   cost is Electric's (<../../docs/thread_sync_electric_limits.md>). Dropping `replica=full` from
+   the chunk shapes halves it, since nothing reads a chunk update's or delete's values. **S1** for
+   intermediate references needs the replaced chunks' lengths, which `thread_payload_chunk` has
+   no column for; without them a compacted body answers only its final reference.
+6. **Measure it on `agentplane-testing`.**
    - Open to first text for a 30-row tail, cold and warm, timed per stage.
    - A PING turn under 3 s.
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
@@ -83,4 +85,5 @@ files, not measurements. Rows where every column is `+` are left out.
 | D3 incremental        | +                   | +           | +             | ~        |
 
 The window poll's `−` cells are one omission — the client never says what it holds — and adding it
-is the moving window. Electric's `−` on P10 is item 1 above.
+is the moving window. Electric's `−` on P10 is item 1 above; its `~` on E5 is
+<../../docs/thread_sync_electric_limits.md> § What does not.
