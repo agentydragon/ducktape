@@ -4,33 +4,29 @@ metadata:
   name: cpap-data
   namespace: flux-system
 spec:
-  interval: 15m
-  refreshBeforeApply: true
-  path: ./tf/gitops/cpap-data
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-
-  # Collaborator grants reference service users provisioned by these modules.
-  dependsOn:
-    - name: forgejo-claude
-    - name: haku-state
-
-  serviceAccountName: tf-runner
-  approvePlan: "auto"
-
+  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "cpap_data"
       }
+  dependsOn:
+    - name: forgejo-claude
+    - name: haku-state
+  interval: 15m
+  path: ./tf/gitops/cpap-data
+  refreshBeforeApply: true
   runnerPodTemplate:
     spec:
       env:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
               key: password
+              name: tofu-state-db-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
