@@ -122,7 +122,7 @@ def _database(scope: Construct) -> None:
         "database",
         name="langfuse-db",
         namespace=_NAMESPACE,
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": _ZONE}, tolerate_control_plane=True),
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app

@@ -81,6 +81,7 @@ py_library(
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":local_path_provisioner",
         ":metadata",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "@pypi//constructs",

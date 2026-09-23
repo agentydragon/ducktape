@@ -12,7 +12,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecAffinity, ClusterSpecBootstrapInitdb
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
     Database,
     DatabaseSpec,
@@ -98,12 +98,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        affinity=ClusterSpecAffinity(
-            node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-            topology_key="kubernetes.io/hostname",
-            pod_anti_affinity_type="required",
-            tolerations=[cnpg.CONTROL_PLANE_TOLERATION],
-        ),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),

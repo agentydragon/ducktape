@@ -66,7 +66,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=False),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh",
         size="2Gi",
     )

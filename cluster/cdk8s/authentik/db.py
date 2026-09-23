@@ -26,7 +26,7 @@ def chart(app: App) -> Chart:
         "cluster",
         name=NAME,
         namespace="authentik",
-        affinity=cnpg.affinity(node_selector=NODE_SELECTOR, tolerate_control_plane=True),
+        node_selector=NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="8Gi",
         # The plugin sidecar archives WAL continuously and provides physical base

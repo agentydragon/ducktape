@@ -72,7 +72,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": _ZONE}, tolerate_control_plane=False),
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app

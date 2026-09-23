@@ -8,10 +8,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
     ClusterSpecAffinity,
-    ClusterSpecAffinityNodeAffinity,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     ClusterSpecAffinityTolerations,
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
@@ -27,40 +23,26 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
+from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
 from cluster.cdk8s.metadata import metadata
 
 POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 
-# Soft anti-affinity off control-plane nodes, whose etcd is on a rotational HDD that
-# co-located I/O starves (2026-06-28 outage).
-OFF_CONTROL_PLANE_NODE_AFFINITY = ClusterSpecAffinityNodeAffinity(
-    preferred_during_scheduling_ignored_during_execution=[
-        ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-            weight=100,
-            preference=ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                match_expressions=[
-                    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                    )
-                ]
-            ),
-        )
-    ]
-)
-
-CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
+_CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
 )
 
 
-def affinity(*, node_selector: dict[str, str], tolerate_control_plane: bool) -> ClusterSpecAffinity:
-    """One instance per node within `node_selector`, preferring workers over control planes;
-    `tolerate_control_plane` lets an instance still land on one."""
+def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSpecAffinity:
+    """One instance per node within `node_selector`, required: instances sharing a node
+    share its failure, and preferred anti-affinity lets the scheduler co-locate them. A
+    Cluster tolerates control-plane nodes exactly when its storage is SSD, since OVH's
+    SSD nodes are its control planes."""
     return ClusterSpecAffinity(
         node_selector=node_selector,
-        tolerations=[CONTROL_PLANE_TOLERATION] if tolerate_control_plane else None,
+        tolerations=[_CONTROL_PLANE_TOLERATION] if storage_class in SSD_STORAGE_CLASSES else None,
         topology_key="kubernetes.io/hostname",
-        node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
+        pod_anti_affinity_type="required",
     )
 
 
@@ -72,7 +54,7 @@ def cluster(
     namespace: str,
     storage_class: str,
     size: str,
-    affinity: ClusterSpecAffinity,
+    node_selector: dict[str, str],
     initdb: ClusterSpecBootstrapInitdb | None = None,
     instances: int = 2,
     image_name: str | None = POSTGRES_IMAGE,
@@ -83,7 +65,8 @@ def cluster(
     resources: ClusterSpecResources | None = None,
 ) -> Cluster:
     """Add a CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and
-    types, except `initdb` (`bootstrap.initdb`) and `storage_class`/`size` (`storage`).
+    types, except `initdb` (`bootstrap.initdb`), `storage_class`/`size` (`storage`) and
+    `node_selector` (the zone or region pin), from which `_affinity` derives placement.
     Our policy: 2 instances (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`;
     `image_name=None` runs the operator's default image. Every Cluster disables the
     liveness isolation check -- CNPG 1.27+ otherwise kills a primary it considers isolated
@@ -101,7 +84,7 @@ def cluster(
                     isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
                 )
             ),
-            affinity=affinity,
+            affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
             storage=ClusterSpecStorage(storage_class=storage_class, size=size),
             postgresql=postgresql,
             plugins=plugins,

@@ -16,19 +16,9 @@ metadata:
   namespace: study-casino
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/region: hil
-    tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecAffinity,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
@@ -122,14 +121,7 @@ class Db(Construct):
             name=_CLUSTER_NAME,
             namespace=env.namespace,
             instances=env.db.instances,
-            affinity=ClusterSpecAffinity(
-                enable_pod_anti_affinity=True if env.db.pod_anti_affinity else None,
-                pod_anti_affinity_type="preferred" if env.db.pod_anti_affinity else None,
-                topology_key="kubernetes.io/hostname" if env.db.pod_anti_affinity else None,
-                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                tolerations=[cnpg.CONTROL_PLANE_TOLERATION],
-                node_affinity=cnpg.OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
+            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
             storage_class=_STORAGE_CLASS,
             size=_STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while

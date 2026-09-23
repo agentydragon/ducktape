@@ -14,13 +14,21 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                         |
-| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ------------------------------------- |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | `topologyKey: kubernetes.io/hostname` |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                   |
+| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                      |
+| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ---------------------------------- |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | required, `kubernetes.io/hostname` |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
+
+**Placement** (`cnpg.cluster` derives it; no site builds its own): pod
+anti-affinity is `required` on `kubernetes.io/hostname` for every Cluster, and
+a Cluster tolerates the control-plane taint exactly when its storage class is
+SSD (`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) — OVH's
+`tier=ssd` nodes are its control planes, its `tier=hdd` nodes its workers.
+A running instance's local-path PV pins it to its node, so before an instance
+on a class that loses the toleration can restart, rebuild it on a worker.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via

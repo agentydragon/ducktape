@@ -30,7 +30,7 @@ def _chart(app: App) -> Chart:
         "cluster",
         name=_CLUSTER_NAME,
         namespace="litellm",
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=False),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh",
         size="5Gi",
         # CNPG auto-generates credentials in secret litellm-db-app.

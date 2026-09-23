@@ -30,9 +30,6 @@ class ReplicaProfile:
 @dataclass(frozen=True)
 class DbProps:
     instances: int
-    # Preferred pod anti-affinity across nodes; a single instance sets none of CNPG's
-    # three affinity fields at all (not just false).
-    pod_anti_affinity: bool
 
 
 @dataclass(frozen=True)

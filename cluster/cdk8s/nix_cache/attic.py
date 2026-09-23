@@ -95,7 +95,7 @@ def _database(scope: Construct) -> None:
         name=_DB,
         namespace=NAMESPACE,
         image_name=None,
-        affinity=cnpg.affinity(node_selector=_ZONE_SELECTOR, tolerate_control_plane=True),
+        node_selector=_ZONE_SELECTOR,
         storage_class="local-path-ovh",
         size="2Gi",
         # CNPG generates the credentials in Secret attic-db-app.

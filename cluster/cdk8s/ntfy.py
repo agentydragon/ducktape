@@ -32,7 +32,7 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecAffinity, ClusterSpecBootstrapInitdb
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStore,
@@ -236,13 +236,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DATABASE_CLUSTER,
         namespace=NAMESPACE,
-        affinity=ClusterSpecAffinity(
-            enable_pod_anti_affinity=True,
-            pod_anti_affinity_type="required",
-            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-            topology_key="kubernetes.io/hostname",
-            node_affinity=cnpg.OFF_CONTROL_PLANE_NODE_AFFINITY,
-        ),
+        node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),

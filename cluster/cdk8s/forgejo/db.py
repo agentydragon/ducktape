@@ -36,7 +36,7 @@ def _chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs; the node
         # affinity only steers placements no existing claim constrains.
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=True),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # The cluster was created by pg_basebackup from the retired forgejo-db, so this

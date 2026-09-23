@@ -45,7 +45,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_CLUSTER,
         namespace=NAMESPACE,
-        affinity=cnpg.affinity(node_selector=_ZONE_SELECTOR, tolerate_control_plane=True),
+        node_selector=_ZONE_SELECTOR,
         storage_class="local-path-ovh",
         size="2Gi",
         initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),

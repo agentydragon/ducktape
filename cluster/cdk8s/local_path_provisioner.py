@@ -37,6 +37,11 @@ _PROVISIONER = "cluster.local/local-path-provisioner"
 _ZONE = "topology.kubernetes.io/zone"
 _REGION = "topology.kubernetes.io/region"
 _TIER = "storage.allegedly.works/tier"
+_OVH_SSD = "local-path-ovh-ssd"
+_HOME_SSD = "local-path-home-ssd"
+# Classes provisioning onto SSD. OVH's tier=ssd nodes are exactly its control planes, so
+# a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
+SSD_STORAGE_CLASSES = frozenset({_OVH_SSD, _HOME_SSD})
 
 
 def _node_path(node: str, path: str) -> dict[str, object]:
@@ -88,12 +93,12 @@ def _storage_classes(scope: Construct) -> None:
     # OVH ssd node is schedulable, else it stays Pending (loud) instead of silently landing
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
-    _storage_class(scope, "local-path-ovh-ssd", reclaim_policy="Delete", topology={_ZONE: "hil-ovh", _TIER: "ssd"})
+    _storage_class(scope, _OVH_SSD, reclaim_policy="Delete", topology={_ZONE: "hil-ovh", _TIER: "ssd"})
     _storage_class(scope, "local-path-proxmox", reclaim_policy="Delete", topology={_REGION: "proxmox"})
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the
     # OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies this
     # node-local state to replicated SeaweedFS storage for disaster recovery.
-    _storage_class(scope, "local-path-home-ssd", reclaim_policy="Retain", topology={_REGION: "home", _TIER: "ssd"})
+    _storage_class(scope, _HOME_SSD, reclaim_policy="Retain", topology={_REGION: "home", _TIER: "ssd"})
 
 
 def chart(app: App) -> Chart:

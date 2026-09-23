@@ -69,9 +69,7 @@ class Db(Construct):
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            affinity=cnpg.affinity(
-                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE}, tolerate_control_plane=False
-            ),
+            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=ClusterSpecBootstrapInitdb(database=DATABASE, owner=DATABASE),
