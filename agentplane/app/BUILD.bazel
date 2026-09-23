@@ -1084,6 +1084,7 @@ py_test(
         ":conftest",
         ":test_thread_browser",
         "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",

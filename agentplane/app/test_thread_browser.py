@@ -495,6 +495,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
                 )
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
+                reads_before_disconnect = len(body_reads)
                 await page.context.set_offline(True)
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
@@ -503,13 +504,16 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
+                # A long poll already open may still deliver the delta; nothing shown is withdrawn.
                 await expect(
-                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
+                    page.get_by_text("Projected browser prefix and streamed suffix", exact=False)
                 ).to_have_count(1)
                 await page.context.set_offline(False)
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
                 ).to_have_count(1)
+                # The delta arrives on the live log; the body is not read again.
+                assert len(body_reads) == reads_before_disconnect
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
         finally:
             await engine.dispose()

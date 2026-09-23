@@ -4,10 +4,10 @@ import asyncio
 from urllib.parse import parse_qs, urlsplit
 
 import pytest_bazel
-from playwright.async_api import Request, expect
+from playwright.async_api import expect
 
 from agentplane.app.test_thread_browser import ThreadBrowser, db_url
-from agentplane.protocol import event_pb2
+from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -16,7 +16,7 @@ pytest_plugins = ("agentplane.app.test_thread_browser",)
 __all__ = ["db_url"]
 
 
-def _append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_pb2.EventEntry:
+def _append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
     latest = None
     for number in numbers:
         item_id = f"{prefix}-{number:03d}"
@@ -48,17 +48,19 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     thread_browser: ThreadBrowser,
 ) -> None:
     page = thread_browser.page
-    requests: list[Request] = []
-    page.on("request", requests.append)
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
-    await composer.fill("Draft retained while the thread grows")
-
     latest = _append_items(thread_browser, "window-item", range(70))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    # Opened now, the thread is longer than its tail: older rows are a page away.
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+    await page.reload()
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await expect(page.get_by_text("Window message 069", exact=False)).to_be_visible()
-    await expect(composer).to_have_value("Draft retained while the thread grows")
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Draft retained while the thread grows")
     # Virtualization keeps only the measured viewport and overscan mounted.
     assert await page.locator("[data-thread-anchor]").count() < 20
 
@@ -68,17 +70,31 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     ):
         await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
     await history.hover()
-    await page.mouse.wheel(0, -10_000)
-    await page.wait_for_function("""() => document.querySelector('[aria-label="Thread history"]').scrollTop < 80""")
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    anchor = await history.evaluate(
-        """area => {
-            const top = area.getBoundingClientRect().top;
-            const row = [...area.querySelectorAll('[data-thread-anchor]')]
-                .find(candidate => candidate.getBoundingClientRect().bottom > top);
-            return { cursor: row.dataset.threadAnchor, top: row.getBoundingClientRect().top };
-        }"""
+    # Reaching the top loads the page before it, and the reader's row is held in place while it
+    # lands; sample the position once two consecutive frames agree.
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
     )
+    await page.mouse.wheel(0, -10_000)
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+        anchor = await history.evaluate(
+            """area => new Promise(resolve => {
+                const sample = () => {
+                    const top = area.getBoundingClientRect().top;
+                    const row = [...area.querySelectorAll('[data-thread-anchor]')]
+                        .find(candidate => candidate.getBoundingClientRect().bottom > top);
+                    return { cursor: row.dataset.threadAnchor, top: row.getBoundingClientRect().top };
+                };
+                const settle = previous => requestAnimationFrame(() => {
+                    const current = sample();
+                    if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
+                    else settle(current);
+                });
+                requestAnimationFrame(() => settle(sample()));
+            })"""
+        )
+    await gesture.dispose()
 
     # The tail grows by more than a page while the reader stays back in the thread: its rows
     # arrive on the same shape, and the row the reader is at does not move.
@@ -89,9 +105,9 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained while the thread grows")
 
-    # One scope read and one shape throughout: the window moved by loading more into it.
-    assert len([request for request in requests if "/sync/scope" in request.url]) <= 1
-    assert len(_handles([request.url for request in requests])) == 1
+    # One scope read and one shape since the reload: the window moved by loading more into it.
+    assert len([url for url in requests if "/sync/scope" in url]) == 1
+    assert len(_handles(requests)) == 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
 
 
@@ -107,8 +123,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     document = await page.evaluate_handle("document")
     before = _handles(await page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"))
     assert len(before) == 1
-    requests: list[Request] = []
-    page.on("request", requests.append)
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
 
     await page.context.set_offline(True)
     try:
@@ -127,8 +143,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         await expect(composer).to_have_value("Draft retained across a long offline gap")
         assert await document.evaluate("original => original === document")
         # The gap is read from the shape's log, from the offset the reader had reached.
-        assert _handles([request.url for request in requests]) == before
-        assert not [request for request in requests if "/sync/scope" in request.url]
+        assert _handles(requests) == before
+        assert not [url for url in requests if "/sync/scope" in url]
         await page.screenshot(path=undeclared_outputs_dir() / "thread-long-offline-recovery.png")
     finally:
         await page.context.set_offline(False)
