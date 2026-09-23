@@ -628,14 +628,8 @@ const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
-function payloadKey(
-  ownerCursor: string,
-  ownerId: string,
-  field: string,
-  generation: string,
-  revisionCursor: string
-): string {
-  return `${ownerCursor}:${ownerId}:${field}:${generation}:${revisionCursor}`;
+function payloadKey(ownerId: string, field: string, generation: string): string {
+  return `${ownerId}:${field}:${generation}`;
 }
 
 function payload(
@@ -654,7 +648,7 @@ function payload(
     revision_cursor: String(revisionCursor),
     chunk_count: "1",
   };
-  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  payloadBodies.set(payloadKey(ownerId, field, reference.generation), body);
   return reference;
 }
 
@@ -950,16 +944,9 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   return standardRows(threadId);
 }
 
-function threadEntityInterest(threadId: string): Record<string, string | null> {
+function threadScope(threadId: string): Record<string, string> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
-  return {
-    projection_epoch: CONVERSATION_EPOCH,
-    through_cursor: String(through),
-    anchor_cursor: String(through),
-    tail_from: "0",
-    window_from: null,
-    window_before: null,
-  };
+  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
 }
 
 if (scenario.pendingCommands === "mixed") {
@@ -971,6 +958,23 @@ if (scenario.pendingCommands === "mixed") {
         case: "submitInput",
         value: { text: "Continue when ready. This message has no saved confirmation yet." },
       },
+    })
+  );
+}
+
+if (scenario.pendingCommands === "outcomes") {
+  // A settled command shows while the browser that sent it still holds it.
+  const local = new LocalCommands(THREADS[2].id);
+  local.remember(
+    create(CommandSchema, {
+      commandId: "queued-model",
+      operation: { case: "changeModel", value: { model: "next-model" } },
+    })
+  );
+  local.remember(
+    create(CommandSchema, {
+      commandId: "queued-interrupt",
+      operation: { case: "interruptTurn", value: { turnId: "t2" } },
     })
   );
 }
@@ -1084,18 +1088,46 @@ function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   return value;
 }
 
-/** Mutable Electric collections bootstrap their fixed server-selected interest through an on-demand subset. */
-function currentSubset(query: URLSearchParams): boolean {
-  if (!query.has("subset__where") && !query.has("subset__params")) return false;
-  if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
-    throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
-  }
+interface Subset {
+  where?: string;
+  params?: Record<string, string>;
+  order_by?: string;
+  limit?: number;
+}
+
+function subsetOf(query: URLSearchParams, body: string | undefined): Subset {
   if (query.get("projection_epoch") !== CONVERSATION_EPOCH) {
-    throw new Error("current Electric shapes must select the resolved thread fold projection epoch");
+    throw new Error("thread shapes must name the resolved thread fold projection epoch");
   }
-  // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
-  // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
-  return query.get("offset") === "now";
+  if (body === undefined) throw new Error("a subset is POSTed with its parameters in the body");
+  return JSON.parse(body) as Subset;
+}
+
+/** The proxy's entity subset forms, evaluated over the fixture rows. */
+function entitySubset(rows: Record<string, unknown>[], subset: Subset): Record<string, unknown>[] {
+  const index = (row: Record<string, unknown>) => BigInt(String(row.entity_index));
+  const newestFirst = (selected: Record<string, unknown>[]) =>
+    selected.sort((left, right) => (index(right) > index(left) ? 1 : index(right) < index(left) ? -1 : 0));
+  const selected =
+    subset.where === undefined && subset.order_by === "entity_index DESC"
+      ? newestFirst(rows)
+      : subset.where === "entity_index < $1" && subset.order_by === "entity_index DESC"
+        ? newestFirst(rows.filter((row) => index(row) < BigInt(subset.params?.["1"] ?? "0")))
+        : subset.where === "entity_kind = 'view_state'"
+          ? rows.filter((row) => row.entity_kind === "view_state")
+          : subset.where === "entity_kind = 'command' AND pending = true"
+            ? rows.filter((row) => row.entity_kind === "command" && row.pending === "true")
+            : subset.where === "entity_kind = 'command' AND entity_id = ANY($1)"
+              ? rows.filter(
+                  (row) =>
+                    row.entity_kind === "command" &&
+                    (JSON.parse(`[${(subset.params?.["1"] ?? "{}").slice(1, -1)}]`) as string[]).includes(
+                      String(row.entity_id)
+                    )
+                )
+              : undefined;
+  if (selected === undefined) throw new Error(`the proxy admits no entity subset ${JSON.stringify(subset)}`);
+  return selected.slice(0, subset.limit);
 }
 
 function shapeRow(relation: string, value: Record<string, unknown>) {
@@ -1118,8 +1150,9 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
   };
 }
 
+/** Positions in the order the fixture lists its rows, which is the order they were first written. */
 function threadRows(threadId: string): Record<string, unknown>[] {
-  return threadEntityRows(threadId).map(electricEntity);
+  return threadEntityRows(threadId).map((row, index) => electricEntity({ ...row, entity_index: String(index) }));
 }
 
 function archivedStderr(cursor: number): Record<string, unknown> {
@@ -1168,106 +1201,72 @@ function observationPage(threadId: string) {
 routes.push(
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/interest$/,
+    /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
       scenario.sessionReplay === "unavailable"
-        ? // This persistent service failure is distinct from a ready shape's stale source/epoch
-          // 410, which the production collection intentionally resolves once.
+        ? // This persistent service failure is distinct from a retired epoch's 410, which the
+          // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
-        : threadEntityInterest(match[1]),
+        : threadScope(match[1]),
   ],
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
-    (match, query, signal) => {
-      const subset = currentSubset(query);
-      if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`, undefined, signal);
-        return electricShape([], `visual-entities-${match[1]}`);
-      }
-      if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
-      const rows = threadRows(match[1]).map((row) => {
-        if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
-        return { ...row, revision_cursor: "8" };
-      });
-      return electricSubset(
-        rows.map((row) => shapeRow("thread_entity", row)),
-        `visual-entities-${match[1]}`
-      );
-    },
+    (match, query, signal) =>
+      query.get("live") === "true"
+        ? electricLongPoll(`visual-entities-${match[1]}`, undefined, signal)
+        : electricShape([], `visual-entities-${match[1]}`),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
-    (match, query, signal) => {
-      const subset = currentSubset(query);
-      if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`, undefined, signal);
-        return electricShape([], `visual-commands-${match[1]}`);
-      }
-      if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
-      const selected = new Set(query.getAll("command_id"));
-      const rows = threadRows(match[1]).filter(
-        (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
+    (match, query, _signal, body) => {
+      const rows = threadRows(match[1]).map((row) =>
+        scenario.sessionReplay === "catching-up" && row.entity_kind === "view_state"
+          ? { ...row, revision_cursor: "8" }
+          : row
       );
       return electricSubset(
-        rows.map((row) => shapeRow("thread_entity", row)),
-        `visual-commands-${match[1]}`
+        entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
+        `visual-entities-${match[1]}`,
+        "thread_entity"
       );
     },
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
-    (_match, query) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      return {
-        projection_epoch: CONVERSATION_EPOCH,
-        owner_cursor: ownerCursor,
-        owner_id: ownerId,
-        field,
-        generation,
-        revision_cursor: revisionCursor,
-        chunk_count: body === undefined ? "0" : "1",
-        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
-      };
-    },
+    /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
+    (match, query, signal) =>
+      query.get("live") === "true"
+        ? electricLongPoll(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
+        : electricShape([], `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk"),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-chunks$/,
-    (match, query, signal) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      const rows =
-        query.get("offset") !== null && query.get("offset") !== "-1"
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
+    (match, query, _signal, body) => {
+      const params = subsetOf(query, body).params ?? {};
+      const rows = Array.from({ length: Object.keys(params).length / 2 }, (_, index) => ({
+        ownerId: params[String(2 * index + 1)],
+        generation: params[String(2 * index + 2)],
+      })).flatMap(({ ownerId, generation }) => {
+        const text = payloadBodies.get(payloadKey(ownerId, match[2], generation));
+        return text === undefined
           ? []
-          : body === undefined
-            ? []
-            : [
-                shapeRow("thread_payload_chunk", {
-                  thread_id: match[1],
-                  projection_epoch: CONVERSATION_EPOCH,
-                  owner_cursor: ownerCursor,
-                  owner_id: ownerId,
-                  field,
-                  generation,
-                  chunk_index: "0",
-                  text: body,
-                }),
-              ];
-      if (query.get("live") === "true" && query.get("offset") !== "-1")
-        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "thread_payload_chunk", signal);
-      return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
+          : [
+              shapeRow("thread_payload_chunk", {
+                thread_id: match[1],
+                projection_epoch: CONVERSATION_EPOCH,
+                owner_cursor: "0",
+                owner_id: ownerId,
+                field: match[2],
+                generation,
+                chunk_index: "0",
+                text,
+              }),
+            ];
+      });
+      return electricSubset(rows, `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk");
     },
   ],
   [
