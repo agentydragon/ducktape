@@ -17,7 +17,7 @@ use crate::render::{
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    prove_synthesized_selector, single_ident_pat_name, solve_single_member_selector,
+    match_single_member_selector, prove_synthesized_selector, single_ident_pat_name,
 };
 
 /// Candidate concrete anchors, split into preference tiers. Literal values are
@@ -170,7 +170,7 @@ fn slot_anchor_ranking(declarator: &VarDeclarator) -> Vec<AnchorSpan> {
 ///
 /// Reuses [`cover_object_slot`]'s slot-aware scoring — `(target slot not yet
 /// resolved, total matches)` via the single-binding-form matcher
-/// ([`solve_single_member_selector`]) — so an anchor that flips the target binding
+/// ([`match_single_member_selector`]) — so an anchor that flips the target binding
 /// to the resolved one and rules out the most competitors wins. `seed` (the
 /// chunk-wide read-off spans restricted to this slot) is kept up front when
 /// non-empty: it is the index's already-ranked `selective × stable` choice, so
@@ -178,7 +178,7 @@ fn slot_anchor_ranking(declarator: &VarDeclarator) -> Vec<AnchorSpan> {
 /// when the slot's own anchors cannot single it out (the caller then falls back
 /// to the keep-shallow group path).
 fn slot_minimal_anchors(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     slot: usize,
@@ -208,7 +208,7 @@ fn slot_minimal_anchors(
     // declarator: one match, at the target statement, bound to the target slot's
     // runtime name.
     let slot_resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
-        let matches = solve_single_member_selector(index, export, &render_slot(kept)?)?;
+        let matches = match_single_member_selector(index, export, &render_slot(kept)?)?;
         let [m] = matches.as_slice() else {
             return Ok(false);
         };
@@ -223,7 +223,7 @@ fn slot_minimal_anchors(
             }
             let mut trial = kept.clone();
             trial.insert(anchor);
-            let matches = solve_single_member_selector(index, export, &render_slot(&trial)?)?;
+            let matches = match_single_member_selector(index, export, &render_slot(&trial)?)?;
             let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
             let score = (target_unresolved, matches.len());
             if best.is_none_or(|(best_score, _)| score < best_score) {
@@ -251,7 +251,7 @@ fn slot_minimal_anchors(
 /// own anchors cannot single it out or the unioned selector does not resolve the
 /// tuple uniquely.
 fn try_var_group_read_off(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -269,7 +269,6 @@ fn try_var_group_read_off(
     {
         Some(anchor_set) => {
             let item = index
-                .parsed
                 .module
                 .body
                 .get(decl.body_idx)
@@ -367,7 +366,7 @@ fn try_var_group_read_off(
 /// alternative ([`group_read_off_candidates`]). `limit == 1` reproduces
 /// [`minimize_var_group_selector`].
 pub(crate) fn minimize_var_group_selector_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -417,7 +416,7 @@ pub(crate) fn minimize_var_group_selector_candidates(
 /// source. `limit == 1` reproduces the single pick [`minimize_var_group_selector`]
 /// returns for the group / fell-through path (group read-off, else keep-shallow).
 fn group_read_off_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -452,7 +451,7 @@ fn group_read_off_candidates(
 /// count or an error rather than a candidate set), adding anchors tier by tier
 /// (shallow literals first) until the group resolves correctly.
 pub(crate) fn minimize_var_group_selector(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -534,7 +533,7 @@ pub(crate) fn minimize_var_group_selector(
 /// falls back to enclosing-context anchoring. Returns `None` for a multi-target
 /// residual no cover resolves.
 fn keep_shallow_group_selector(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],

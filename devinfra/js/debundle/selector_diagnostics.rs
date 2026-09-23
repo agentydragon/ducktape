@@ -26,12 +26,6 @@
 //! - `selector_resolution_error` — the selector failed to resolve for a
 //!   reason other than a classified no-match / ambiguity (including native
 //!   solver no-assignment diagnostics, parse / schema / unsupported hole);
-//! - `native_source_match_capability_error` — source-only validation could not
-//!   parse or capability-check a selector for native source_match lowering;
-//! - `native_source_match_lowering_unsupported` — source-only validation parsed
-//!   the selector, but the native selector IR cannot yet represent its shape;
-//! - `native_selector_ir_error` — source-only validation hit another native
-//!   selector IR construction error before invoking the solver;
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
 //!

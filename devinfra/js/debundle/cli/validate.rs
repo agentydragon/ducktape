@@ -18,17 +18,12 @@
 
 use std::path::Path;
 
-use analysis::ChunkId;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
 use selector_diagnostics::{SelectorDiagnosticEntry, SelectorDiagnosticsReport};
-use selector_ir_lowering::{
-    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, SelectorIrLoweringError,
-    lower_member_selector,
-};
 use serde::Serialize;
 use source_match::{SelectorResolver, chunk_resolver::ChunkResolver};
 use source_match::{selector_body_key, selector_key, source_match_claim_member_selectors};
@@ -243,14 +238,6 @@ fn validate_modules_against_source(
                         format!("{}#members[{member_index}]", path.display()),
                         &selector,
                     )?);
-                    diagnostics.extend(validate_native_member_source_match(
-                        &chunk_id,
-                        &module_path,
-                        export_name.as_deref(),
-                        "members.source_match",
-                        format!("{}#members[{member_index}]", path.display()),
-                        &selector,
-                    ));
                 }
                 Ok(_) => {}
                 Err(error) => diagnostics.push(selector_error_diagnostic(
@@ -270,15 +257,9 @@ fn validate_modules_against_source(
                 &resolver,
                 &chunk_id,
                 &module_path,
-                origin.clone(),
-                &claim,
-            )?);
-            diagnostics.extend(validate_native_source_match_claim(
-                &chunk_id,
-                &module_path,
                 origin,
                 &claim,
-            ));
+            )?);
         }
         for (statement_index, statement) in module.anonymous_statements.into_iter().enumerate() {
             let origin = format!("{}#anonymous_statements[{statement_index}]", path.display());
@@ -288,16 +269,9 @@ fn validate_modules_against_source(
                         &resolver,
                         &chunk_id,
                         &module_path,
-                        origin.clone(),
-                        &selector,
-                    )?);
-                    diagnostics.extend(validate_native_anonymous_source_match(
-                        &chunk_id,
-                        &module_path,
-                        statement_index,
                         origin,
                         &selector,
-                    ));
+                    )?);
                 }
                 Err(error) => diagnostics.push(selector_error_diagnostic(
                     &chunk_id,
@@ -352,210 +326,6 @@ fn validate_modules_against_source(
         total,
         chunks,
     })
-}
-
-fn validate_native_member_source_match(
-    chunk_id: &str,
-    module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    claim_origin: String,
-    selector: &spec::AnonymousStatementSelector,
-) -> Vec<SelectorDiagnosticEntry> {
-    let Some(export_name) = export_name else {
-        return vec![native_lowering_diagnostic(
-            chunk_id,
-            module_path,
-            None,
-            selector_kind,
-            Some(selector.clone()),
-            claim_origin,
-            "native source_match audit requires a member export name".to_string(),
-            "native_selector_ir_error",
-        )];
-    };
-
-    let context = MemberSelectorLoweringContext::new(ChunkId(0), module_path);
-    let selector_spec = MemberSelectorSpec::SourceMatch(selector.clone());
-    match lower_member_selector(&context, export_name, &selector_spec) {
-        Ok(_) => Vec::new(),
-        Err(error) => vec![native_lowering_error_diagnostic(
-            chunk_id,
-            module_path,
-            Some(export_name),
-            selector_kind,
-            selector.clone(),
-            claim_origin,
-            error,
-        )],
-    }
-}
-
-fn validate_native_source_match_claim(
-    chunk_id: &str,
-    module_path: &str,
-    claim_origin: String,
-    claim: &SourceMatchClaim,
-) -> Vec<SelectorDiagnosticEntry> {
-    let selectors = match source_match_claim_member_selectors(module_path, claim) {
-        Ok(selectors) => selectors,
-        Err(_) => return Vec::new(),
-    };
-    let mut exports_by_target = std::collections::BTreeMap::new();
-    for selector in &selectors {
-        let Some(target_binding) = selector.selector.target_binding.as_deref() else {
-            return Vec::new();
-        };
-        exports_by_target.insert(target_binding.to_string(), selector.export_name.clone());
-    }
-
-    let context = MemberSelectorLoweringContext::new(ChunkId(0), module_path);
-    let mut builder = MemberSelectorProgramBuilder::new(context);
-    for selector in &selectors {
-        let selector_spec = MemberSelectorSpec::SourceMatch(selector.selector.clone());
-        if let Err(error) = builder.declare_member_target_in_module(
-            module_path,
-            &selector.export_name,
-            &selector_spec,
-        ) {
-            return selectors
-                .into_iter()
-                .map(|selector| {
-                    native_lowering_error_diagnostic(
-                        chunk_id,
-                        module_path,
-                        Some(&selector.export_name),
-                        "source_matches",
-                        selector.selector,
-                        claim_origin.clone(),
-                        error.clone(),
-                    )
-                })
-                .collect();
-        }
-    }
-
-    let group_selector = claim.source_match().selector();
-    let result = builder
-        .try_lower_native_source_match_group(module_path, &group_selector, &exports_by_target)
-        .and_then(|lowered| {
-            if lowered {
-                builder.into_program().map(|_| ())
-            } else {
-                Err(SelectorIrLoweringError::Unsupported {
-                    selector_kind: "source_matches",
-                    reason: "selector shape is not yet supported by native selector IR",
-                })
-            }
-        });
-
-    match result {
-        Ok(()) => Vec::new(),
-        Err(error) => selectors
-            .into_iter()
-            .map(|selector| {
-                native_lowering_error_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "source_matches",
-                    selector.selector,
-                    claim_origin.clone(),
-                    error.clone(),
-                )
-            })
-            .collect(),
-    }
-}
-
-fn validate_native_anonymous_source_match(
-    chunk_id: &str,
-    module_path: &str,
-    statement_index: usize,
-    claim_origin: String,
-    selector: &spec::AnonymousStatementSelector,
-) -> Vec<SelectorDiagnosticEntry> {
-    let context = MemberSelectorLoweringContext::new(ChunkId(0), module_path);
-    let mut builder = MemberSelectorProgramBuilder::new(context);
-    let result = builder
-        .declare_native_anonymous_statement_target_in_module(module_path, statement_index, selector)
-        .and_then(|_| builder.into_program().map(|_| ()));
-    match result {
-        Ok(()) => Vec::new(),
-        Err(error) => vec![native_lowering_error_diagnostic(
-            chunk_id,
-            module_path,
-            None,
-            "anonymous_statements.source_match",
-            selector.clone(),
-            claim_origin,
-            error,
-        )],
-    }
-}
-
-fn native_lowering_error_diagnostic(
-    chunk_id: &str,
-    module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    selector: spec::AnonymousStatementSelector,
-    claim_origin: String,
-    error: SelectorIrLoweringError,
-) -> SelectorDiagnosticEntry {
-    native_lowering_diagnostic(
-        chunk_id,
-        module_path,
-        export_name,
-        selector_kind,
-        Some(selector),
-        claim_origin,
-        error.to_string(),
-        native_lowering_category(&error),
-    )
-}
-
-fn native_lowering_category(error: &SelectorIrLoweringError) -> &'static str {
-    match error {
-        SelectorIrLoweringError::UnsupportedSourceMatch { reason, .. }
-            if reason.contains("selector shape is not yet supported by native selector IR") =>
-        {
-            "native_source_match_lowering_unsupported"
-        }
-        SelectorIrLoweringError::UnsupportedSourceMatch { .. } => {
-            "native_source_match_capability_error"
-        }
-        SelectorIrLoweringError::Unsupported { .. } => "native_source_match_lowering_unsupported",
-        _ => "native_selector_ir_error",
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn native_lowering_diagnostic(
-    chunk_id: &str,
-    module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    selector: Option<spec::AnonymousStatementSelector>,
-    claim_origin: String,
-    message: String,
-    category: &'static str,
-) -> SelectorDiagnosticEntry {
-    let mut diagnostic = selector_error_diagnostic(
-        chunk_id,
-        module_path,
-        export_name,
-        selector_kind,
-        selector,
-        claim_origin,
-        message,
-    )
-    .with_category(category);
-    diagnostic.recommended_next_action = format!(
-        "Repair or shard this native source_match lowering gap in {module_path}; re-run \
-         `debundle spec validate --modules <modules-dir> --source-file {chunk_id} --format json`."
-    );
-    diagnostic
 }
 
 fn validate_member_source_match(
