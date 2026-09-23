@@ -18,9 +18,10 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/agents/plaid-mcp/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
 NAMESPACE = "plaid-mcp"
 _NAME = "plaid-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}

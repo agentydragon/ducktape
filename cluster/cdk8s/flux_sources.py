@@ -15,9 +15,10 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitR
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/flux/sources"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
 
 
 def _source(chart: Chart, name: str, *, url: str, tag: str, description: str | None = None) -> GitRepository:

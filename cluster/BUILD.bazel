@@ -4,6 +4,14 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files([".tflint.hcl"])
 
+# The closed-world generated tree (cluster/cdk8s/manifest_roots.py), whole: the parity test
+# fails on any file here the generator does not write.
+filegroup(
+    name = "generated_manifests",
+    srcs = glob(["generated/**"]),
+    visibility = ["//cluster:__subpackages__"],
+)
+
 py_library(
     name = "network_readiness",
     srcs = ["network_readiness.py"],

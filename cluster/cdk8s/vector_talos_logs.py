@@ -23,10 +23,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "vector-talos-logs"
 NAMESPACE = "vector-talos-logs"
-OUTPUT_DIR = "cluster/k8s/vector-talos-logs"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/vector-talos-logs"
 _LABELS = {"app": NAME}
 _CONFIG_MAP = ConfigMapArgs(name="vector-talos-config", namespace=NAMESPACE, files=["vector.toml"])
 

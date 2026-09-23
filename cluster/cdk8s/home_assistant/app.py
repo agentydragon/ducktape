@@ -61,11 +61,12 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from homeassistant.provisioner.settings import ProvisionerSettings, TokenConfig
 from util.settings_contract import env_name
 
-_OUTPUT_DIR = "cluster/k8s/home-assistant/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _LABELS = {"app.kubernetes.io/name": _NAME}

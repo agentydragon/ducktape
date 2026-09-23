@@ -25,6 +25,7 @@ from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.openclaw_gateway import (
@@ -619,4 +620,4 @@ def app_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/agents/haku-openclaw-spike/app", chart, app_chart)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app", chart, app_chart)

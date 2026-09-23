@@ -20,10 +20,10 @@ from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def _build_result(k8s_dir: Path, subdir: str, resources: list[tuple[str, str]]) -> KustomizeBuildResult:
-    """Build a KustomizeBuildResult for a kustomization at k8s_dir/subdir/."""
+def _build_result(repo_root: Path, subdir: str, resources: list[tuple[str, str]]) -> KustomizeBuildResult:
+    """Build a KustomizeBuildResult for a kustomization at repo_root/cluster/k8s/subdir/."""
     return KustomizeBuildResult(
-        kustomization_path=k8s_dir / subdir / "kustomization.yaml",
+        kustomization_path=repo_root / "cluster/k8s" / subdir / "kustomization.yaml",
         resources=[K8sResource(kind=kind, apiVersion=api) for kind, api in resources],
     )
 
@@ -88,7 +88,6 @@ class TestValidateDependencies:
     def test_workloads_need_no_runtime_readiness_edges(
         self, tmp_path: Path, name: str, include_infrastructure: bool
     ) -> None:
-        k8s_dir = tmp_path / "k8s"
         kustomizations = (
             {"gateway": FluxKustomizationSpec(), "cert-manager": FluxKustomizationSpec()}
             if include_infrastructure
@@ -96,13 +95,12 @@ class TestValidateDependencies:
         )
         kustomizations[name] = FluxKustomizationSpec(path="./cluster/k8s/test-app")
         cluster = _cluster(
-            kustomizations, build_results=[_build_result(k8s_dir, "test-app", [("Deployment", "apps/v1")])]
+            kustomizations, build_results=[_build_result(tmp_path, "test-app", [("Deployment", "apps/v1")])]
         )
-        assert validate_dependencies(cluster, k8s_dir) == []
+        assert validate_dependencies(cluster, tmp_path) == []
 
     @pytest.mark.parametrize("depends_on_provider", [False, True])
     def test_certificate_still_requires_its_provider(self, tmp_path: Path, depends_on_provider: bool) -> None:
-        k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
                 "test-app": FluxKustomizationSpec(
@@ -111,9 +109,9 @@ class TestValidateDependencies:
                 ),
                 "cert-manager": FluxKustomizationSpec(),
             },
-            build_results=[_build_result(k8s_dir, "test-app", [("Certificate", "cert-manager.io/v1")])],
+            build_results=[_build_result(tmp_path, "test-app", [("Certificate", "cert-manager.io/v1")])],
         )
-        errors = validate_dependencies(cluster, k8s_dir)
+        errors = validate_dependencies(cluster, tmp_path)
         assert errors == (
             []
             if depends_on_provider
@@ -126,7 +124,6 @@ class TestValidateOperatorDependencies:
 
     def test_direct_dep_passes(self, tmp_path: Path) -> None:
         """Kustomization with direct dep on operator passes."""
-        k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
                 "my-app": FluxKustomizationSpec(
@@ -134,13 +131,12 @@ class TestValidateOperatorDependencies:
                 ),
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
-            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
+            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
         )
-        assert validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"}) == []
+        assert validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"}) == []
 
     def test_transitive_dep_passes(self, tmp_path: Path) -> None:
         """Transitive dependency (app -> middle -> operator) is accepted."""
-        k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
                 "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="middle")]),
@@ -149,23 +145,22 @@ class TestValidateOperatorDependencies:
                 ),
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
-            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
+            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
         )
-        errors = validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"})
+        errors = validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"})
         assert errors == [], f"Unexpected errors for transitive dep: {errors}"
 
     def test_missing_dep_fails(self, tmp_path: Path) -> None:
         """Kustomization with no path to operator is flagged."""
-        k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
                 "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="unrelated")]),
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
                 "unrelated": FluxKustomizationSpec(path="./cluster/k8s/unrelated"),
             },
-            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
+            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
         )
-        errors = validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"})
+        errors = validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"})
         assert any("my-app" in e and "some-operator" in e for e in errors)
 
 

@@ -146,7 +146,8 @@ cluster/
 ├── cdk8s/                  # cdk8s Python generators for converted Kustomization directories
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
-├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/, proxies/)
+├── generated/              # Flux Kustomization directories cdk8s writes in full (same sub-paths as k8s/; never edit)
+├── k8s/                    # Flux-managed manifests with a hand-written file (config only — source lives in rotators/, provisioners/, proxies/)
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)

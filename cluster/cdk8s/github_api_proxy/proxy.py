@@ -68,10 +68,11 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_IDENTITY_DIR = "cluster/k8s/github-api-proxy/identity"
-_APP_DIR = "cluster/k8s/github-api-proxy/app"
+_IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
+_APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
 _NAME = "github-api-proxy"
 _NAMESPACE = "github-api-proxy"
 _LABELS = {"app.kubernetes.io/name": _NAME}

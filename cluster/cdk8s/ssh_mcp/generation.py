@@ -12,11 +12,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.ssh_mcp import backend, config, sshpiper
 from cluster.scripts.nebula_mesh import Mesh
 
-OUTPUT_DIR = "cluster/k8s/ssh-mcp"
-_SSHPIPER_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ssh-mcp"
+_SSHPIPER_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
 _KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
 
 

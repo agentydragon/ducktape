@@ -30,9 +30,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "forgejo-images"
-OUTPUT_DIR = "cluster/k8s/forgejo-images"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
 SECRET_NAME = "forgejo-images-creds"
 _REGISTRY_CREDS_FILE = "registry-creds.sops.yaml"
 

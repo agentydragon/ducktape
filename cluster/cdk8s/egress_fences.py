@@ -23,6 +23,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
@@ -310,4 +311,6 @@ def mitmproxy_cloud_api(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike)
+    write_charts(
+        root, f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike
+    )

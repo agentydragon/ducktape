@@ -24,7 +24,7 @@ def _cluster_with(doc: dict) -> ParsedCluster:
 
 
 def _external_creds_cluster(
-    k8s_dir: Path,
+    repo_root: Path,
     supplier_docs: list[dict],
     consumer_docs: list[dict],
     store_docs: list[dict] | None = None,
@@ -47,15 +47,16 @@ def _external_creds_cluster(
         },
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=k8s_dir / "external-creds/kustomization.yaml",
+                kustomization_path=repo_root / "cluster/k8s/external-creds/kustomization.yaml",
                 resources=parse_k8s_resources(supplier_docs),
             ),
             KustomizeBuildResult(
-                kustomization_path=k8s_dir / "external-secrets/config/kustomization.yaml",
+                kustomization_path=repo_root / "cluster/k8s/external-secrets/config/kustomization.yaml",
                 resources=parse_k8s_resources(store_docs or [_central_store()]),
             ),
             KustomizeBuildResult(
-                kustomization_path=k8s_dir / "consumer/kustomization.yaml", resources=parse_k8s_resources(consumer_docs)
+                kustomization_path=repo_root / "cluster/k8s/consumer/kustomization.yaml",
+                resources=parse_k8s_resources(consumer_docs),
             ),
         ],
     )

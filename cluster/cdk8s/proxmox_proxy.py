@@ -18,10 +18,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
-OUTPUT_DIR = "cluster/k8s/proxmox-proxy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/proxmox-proxy"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
 _CONFIG_MAP = ConfigMapArgs(name="proxmox-proxy-config", namespace=NAMESPACE, files=["config/nginx.conf"])

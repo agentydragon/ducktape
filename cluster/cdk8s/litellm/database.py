@@ -18,8 +18,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = "cluster/k8s/litellm/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
 _CLUSTER_NAME = "litellm-db"
 
 

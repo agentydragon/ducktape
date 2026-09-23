@@ -27,11 +27,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
-OUTPUT_DIR = "cluster/k8s/agents/agent-rbac-base"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-rbac-base"
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]

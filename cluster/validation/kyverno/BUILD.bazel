@@ -46,12 +46,14 @@ py_test(
     data = [
         # The structural half of this test scans every namespace manifest, so
         # unlike its siblings it does need the whole tree.
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "@multitool//tools/kyverno",
     ] + glob(["testdata/namespace_vpa_*.yaml"]),
     deps = [
         ":apply",
         ":paths",
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

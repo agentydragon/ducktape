@@ -24,9 +24,10 @@ from cluster.cdk8s import external_creds
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "authentik-jwt-rotation"
-OUTPUT_DIR = "cluster/k8s/agents/authentik-jwt-rotation"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/authentik-jwt-rotation"
 NAMESPACE = "agents-infra"
 _IMAGE = "git.allegedly.works/ducktape-ci/authentik-jwt-rotation:unset"
 # Rendered from rotations.yaml by the hand-written kustomization's configMapGenerator.

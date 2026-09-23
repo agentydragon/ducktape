@@ -68,12 +68,13 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 NAME = "ntfy"
-OUTPUT_DIR = "cluster/k8s/ntfy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586

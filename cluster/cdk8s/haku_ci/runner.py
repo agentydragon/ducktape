@@ -34,11 +34,12 @@ from keda_triggerauthentication_crds.sh.keda import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
-OUTPUT_DIR = "cluster/k8s/haku-ci"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku-ci"
 
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}

@@ -22,9 +22,10 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.matrix.matrix import NAMESPACE, SYNAPSE
 
-OUTPUT_DIR = "cluster/k8s/matrix/user-provisioner"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner"
 _NAME = "matrix-user-provisioner"
 # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset"

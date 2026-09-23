@@ -12,11 +12,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
-OUTPUT_DIR = "cluster/k8s/monitoring/tempo"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/tempo"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
 

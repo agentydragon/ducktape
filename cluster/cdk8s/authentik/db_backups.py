@@ -30,12 +30,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "authentik-db-backups"
 NAMESPACE = "authentik"
-OUTPUT_DIR = "cluster/k8s/authentik/db-backups"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db-backups"
 _CREDENTIALS_SECRET = "authentik-db-backup-s3"
 _OBJECT_STORE = "authentik-db-ovh"
 

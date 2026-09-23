@@ -50,11 +50,12 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
-_OUTPUT_DIR = "cluster/k8s/monitoring/grafana-instance"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
@@ -352,4 +353,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

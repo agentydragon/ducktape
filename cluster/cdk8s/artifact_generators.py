@@ -24,8 +24,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
 )
 
 from cluster.cdk8s.flux import NAMESPACE, flux_kustomization
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-_ARTIFACT_GENERATORS_DIR = "cluster/k8s/artifact-generators"
+_ARTIFACT_GENERATORS_DIR = f"{HAND_WRITTEN_ROOT}/artifact-generators"
 _DUCKTAPE_SOURCE = ArtifactGeneratorSpecSources(
     alias="repo", kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
 )

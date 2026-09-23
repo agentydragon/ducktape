@@ -28,6 +28,7 @@ cluster/k8s/flux/flux-system/**
 # cdk8s synthesis owns these committed snapshots. Formatting them after generation
 # makes the snapshot test fail and obscures the authored construct.
 cluster/k8s/**/*.k8s.yaml
+cluster/generated/**
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 

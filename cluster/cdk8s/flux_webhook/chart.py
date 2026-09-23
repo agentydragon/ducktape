@@ -45,11 +45,12 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
-OUTPUT_DIR = "cluster/k8s/flux-webhook"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-webhook"
 _NTFY_WEBHOOK = "ntfy-webhook"
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of

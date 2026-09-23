@@ -22,10 +22,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
 NAMESPACE = "seaweedfs-credentials"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/external-credentials"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/external-credentials"
 CLAUDE_READER_SECRET = "claude-reader-s3-credentials"
 DRIVEFS_ARTIFACTS_SECRET = "drivefs-artifacts-s3-credentials"
 _CHART = "external-credentials"

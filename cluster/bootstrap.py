@@ -117,7 +117,7 @@ def preflight(root: Path) -> None:
     log.info("Preflight Validation")
 
     repo = pygit2.Repository(root)
-    gitops_prefixes = ("cluster/k8s/", "cluster/flux-system/")
+    gitops_prefixes = ("cluster/k8s/", "cluster/generated/", "cluster/flux-system/")
     diff = repo.index.diff_to_tree(repo.head.peel(pygit2.Tree))
     dirty = [d.delta.new_file.path for d in diff if d.delta.new_file.path.startswith(gitops_prefixes)]
     if dirty:

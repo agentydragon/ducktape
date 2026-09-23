@@ -11,6 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 
 def agent_box(
@@ -50,7 +51,7 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
         annotations={"ducktape.org/parked": "true"},
         suspend=True,
         timeout="5m",
-        path="./cluster/k8s/parked/buildbuddy-executor",
+        path=f"./{HAND_WRITTEN_ROOT}/parked/buildbuddy-executor",
         decryption=SOPS_DECRYPTION,
     )
 

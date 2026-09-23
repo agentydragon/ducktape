@@ -56,11 +56,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
-OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/backup"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/backup"
 _NAMESPACE = "public-coder-agent"
 _BUCKET_NAME = "public-coder-agent-backups"
 _SEAWEEDFS = "seaweedfs"

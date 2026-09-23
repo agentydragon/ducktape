@@ -23,7 +23,7 @@ def assert_no_cycles(g: nx.DiGraph) -> None:
 
 
 def validate_operator_dependencies(
-    cluster: ParsedCluster, k8s_dir: Path, crd_to_operator: dict[str, str] | None = None
+    cluster: ParsedCluster, repo_root: Path, crd_to_operator: dict[str, str] | None = None
 ) -> list[str]:
     """Validate that kustomizations using CRD instances transitively depend on the managing operator.
 
@@ -33,7 +33,7 @@ def validate_operator_dependencies(
     if crd_to_operator is None:
         crd_to_operator = CRD_TO_OPERATOR
 
-    flux_resources = cluster.flux_kust_resources(k8s_dir)
+    flux_resources = cluster.flux_kust_resources(repo_root)
     errors = []
     g = cluster.graph
     reported: set[tuple[str, str]] = set()
@@ -142,7 +142,7 @@ def _external_artifact_errors(
     return []
 
 
-def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def validate_dependencies(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Validate GitOps dependency graph.
 
     Raises CyclicDependencyError if any circular dependency is detected.
@@ -153,6 +153,6 @@ def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     assert_no_cycles(cluster.graph)
 
     errors = []
-    errors.extend(validate_operator_dependencies(cluster, k8s_dir))
+    errors.extend(validate_operator_dependencies(cluster, repo_root))
     errors.extend(check_cross_namespace_references(cluster))
     return errors

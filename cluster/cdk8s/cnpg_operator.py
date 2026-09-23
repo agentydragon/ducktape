@@ -24,11 +24,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cnpg"
 NAMESPACE = "cnpg-system"
-OUTPUT_DIR = "cluster/k8s/cnpg"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cnpg"
 _BARMAN_CLOUD = "plugin-barman-cloud"
 # The operator backs two failurePolicy: Fail webhooks (Cluster, Backup, ScheduledBackup),
 # so while it is down those writes are rejected outright — and it is the operator

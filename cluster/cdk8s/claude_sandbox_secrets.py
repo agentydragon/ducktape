@@ -26,9 +26,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "claude-sandbox-secrets"
-OUTPUT_DIR = "cluster/k8s/agents/claude-sandbox-secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/claude-sandbox-secrets"
 _NAMESPACE = "claude-sandbox"
 _SOPS_FILES = ("claude-web-age-key.sops.yaml", "claude-forgejo-tea.sops.yaml")
 _TELEGRAM_BOT_TOKEN = "openclaw-telegram-bot-token"

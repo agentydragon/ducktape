@@ -28,9 +28,10 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 )
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_OUTPUT_DIR = "cluster/k8s/grafana"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/grafana"
 _NAMESPACE = "monitoring"
 _INSTANCE_LABELS = {"dashboards": "grafana"}
 
@@ -88,4 +89,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

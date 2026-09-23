@@ -12,11 +12,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "vpa"
 NAMESPACE = "kube-system"
-OUTPUT_DIR = "cluster/k8s/vpa"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/vpa"
 _REPOSITORY_NAME = "fairwinds-stable"
 _REPOSITORY_NAMESPACE = "flux-system"
 # Goldilocks installs from this repository too, from its own chart.

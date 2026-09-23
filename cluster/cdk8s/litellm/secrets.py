@@ -16,8 +16,9 @@ from external_secrets_crds.io.external_secrets import ExternalSecret, ExternalSe
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = "cluster/k8s/litellm/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"
 _NAMESPACE = "litellm"
 _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"

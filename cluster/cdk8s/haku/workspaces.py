@@ -72,10 +72,11 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku.namespace import NAMESPACE
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-workspaces"
-OUTPUT_DIR = "cluster/k8s/haku/workspaces/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app"
 TEMPLATE_NAME = "haku"
 
 _CONSOLE_ROLE = "haku-console-sandbox"

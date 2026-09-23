@@ -35,8 +35,9 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = "cluster/k8s/tofu-state"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
 _DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
 _CLUSTER_NAME = "tofu-state-db-ovh"

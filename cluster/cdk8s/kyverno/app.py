@@ -13,10 +13,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "kyverno"
-OUTPUT_DIR = "cluster/k8s/kyverno/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/kyverno/app"
 _FLUX_NAMESPACE = "flux-system"
 _CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 

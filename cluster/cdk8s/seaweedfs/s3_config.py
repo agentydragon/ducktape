@@ -40,12 +40,13 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
 SECRET_NAME = "seaweedfs-s3-config"
 SECRET_KEY = "seaweedfs_s3_config.json"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/secrets"
 _CHART = "s3-config"
 _READER = "eso-reader"
 _SECRET_STORE = "seaweedfs-identities"

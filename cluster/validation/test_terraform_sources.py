@@ -6,15 +6,15 @@ import pytest
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s.manifest_roots import manifest_files
 from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(scope="module")
 def resources() -> list[dict]:
-    root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
     return [
         document
-        for path in root.rglob("*.yaml")
+        for path in manifest_files(get_required_path("_main/cluster/k8s/kustomization.yaml").parents[2])
         # Authentik blueprints use custom YAML tags and are not Kubernetes resources.
         if "blueprints" not in path.parts
         for document in yaml.safe_load_all(path.read_text())

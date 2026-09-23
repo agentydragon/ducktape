@@ -42,8 +42,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = "cluster/k8s/kyverno/policies"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/kyverno/policies"
 
 _CREATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE
 _UPDATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.UPDATE

@@ -49,9 +49,10 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/matrix"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
 _NAME = "matrix"

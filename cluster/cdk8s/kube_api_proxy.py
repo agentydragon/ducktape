@@ -18,11 +18,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
-OUTPUT_DIR = "cluster/k8s/kube-api-proxy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"

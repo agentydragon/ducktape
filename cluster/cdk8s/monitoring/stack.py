@@ -31,10 +31,11 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-stack"
-OUTPUT_DIR = "cluster/k8s/monitoring/stack"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"

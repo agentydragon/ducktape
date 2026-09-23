@@ -25,10 +25,11 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "infra-drift"
-OUTPUT_DIR = "cluster/k8s/infra-drift"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/infra-drift"
 
 
 def chart(app: App) -> Chart:

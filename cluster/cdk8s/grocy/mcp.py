@@ -28,11 +28,12 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.valkey import valkey_instance
 
-BASE_DIR = "cluster/k8s/grocy/mcp-base"
-SERVICEMONITOR_BASE_DIR = "cluster/k8s/grocy/mcp-servicemonitor-base"
+BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
+SERVICEMONITOR_BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-servicemonitor-base"
 _NAME = "grocy-mcp-server"
 _LABELS = {"app.kubernetes.io/name": "grocy-mcp", "app.kubernetes.io/component": "server"}
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
@@ -232,9 +233,11 @@ def write_manifests(root: Path) -> None:
         root / SERVICEMONITOR_BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["grocy-mcp-servicemonitor.k8s.yaml"]),
     )
-    write_charts(root, "cluster/k8s/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF"))
+    write_charts(
+        root, f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF")
+    )
     write_charts(
         root,
-        "cluster/k8s/grocy/vallejo/mcp",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
         lambda app: household_chart(app, household="vallejo", display_name="Vallejo"),
     )

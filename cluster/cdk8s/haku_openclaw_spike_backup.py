@@ -52,10 +52,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-openclaw-spike-backup"
-OUTPUT_DIR = "cluster/k8s/agents/haku-openclaw-spike/backup"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/backup"
 _NAMESPACE = "haku-openclaw-spike"
 _MOVER_LABELS = {"app.kubernetes.io/name": "haku-openclaw-spike-volsync"}
 _REPOSITORY_SECRET_NAME = "haku-openclaw-spike-volsync-restic"

@@ -13,10 +13,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.external_secrets.external_secret import cluster_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "ducktape-flux"
-OUTPUT_DIR = "cluster/k8s/external-creds"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 STORE = cluster_secret_store("kubernetes-external-creds-secret-store")
 

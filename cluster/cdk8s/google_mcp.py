@@ -65,12 +65,13 @@ from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 
 _NAME = "google-mcp"
-OUTPUT_DIR = f"cluster/k8s/{_NAME}"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAME}"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
 _PLACEHOLDER_TAG = "unset"
 _HTTP_PORT = 8080

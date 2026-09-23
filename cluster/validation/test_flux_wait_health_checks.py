@@ -8,21 +8,22 @@ from pathlib import Path
 
 import pytest_bazel
 
+from cluster.cdk8s.manifest_roots import manifest_files
 from cluster.validation.flux import FluxKustomizationSpec, parse_flux_kustomizations
 
 
-def _flux_kustomizations(k8s_dir: Path) -> dict[str, FluxKustomizationSpec]:
-    """Every Flux Kustomization under cluster/k8s, rendered or hand-written, keyed by file and name."""
+def _flux_kustomizations(repo_root: Path) -> dict[str, FluxKustomizationSpec]:
+    """Every Flux Kustomization under both manifest roots, keyed by file and name."""
     return {
-        f"{path.relative_to(k8s_dir)}: {name}": spec
-        for path in sorted(k8s_dir.rglob("*.yaml"))
+        f"{path.relative_to(repo_root)}: {name}": spec
+        for path in sorted(manifest_files(repo_root))
         if "kustomize.toolkit.fluxcd.io" in path.read_text()
         for name, spec in parse_flux_kustomizations(path).items()
     }
 
 
-def test_wait_excludes_health_checks(k8s_dir: Path) -> None:
-    kustomizations = _flux_kustomizations(k8s_dir)
+def test_wait_excludes_health_checks(repo_root: Path) -> None:
+    kustomizations = _flux_kustomizations(repo_root)
     # Anti-vacuity: the scan reached the rendered node file, not just a handful of stragglers.
     assert sum(spec.wait for spec in kustomizations.values()) > 50
     violations = sorted(key for key, spec in kustomizations.items() if spec.wait and spec.health_checks)

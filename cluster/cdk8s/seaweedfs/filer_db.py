@@ -33,10 +33,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-filer-db-ssd"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/db"
 # The application role's credentials, which the filer authenticates with too. The -creds
 # name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
 # (default user "app") for this cluster.

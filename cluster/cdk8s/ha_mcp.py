@@ -73,12 +73,13 @@ from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "ha-mcp"
-OUTPUT_DIR = "cluster/k8s/agents/ha-mcp/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
 _BEARER_SECRET_NAME = "ha-mcp-bearer"
 _BEARER_SECRET_KEY = "bearer-token"

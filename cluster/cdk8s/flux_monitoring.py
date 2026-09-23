@@ -21,10 +21,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-monitoring"
-OUTPUT_DIR = "cluster/k8s/flux-monitoring"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-monitoring"
 # Every controller (kustomize-, source-, helm-, notification-, image-automation- and
 # image-reflector-controller) carries this label (per gotk-components.yaml) and exposes
 # /metrics on the `http-prom` named port (8080).

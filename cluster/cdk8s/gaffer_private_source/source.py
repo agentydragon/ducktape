@@ -33,11 +33,12 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 )
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "gaffer-private"
 NAMESPACE = "flux-system"
-OUTPUT_DIR = "cluster/k8s/gaffer-private-source"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gaffer-private-source"
 _BRANCH = "main"
 
 

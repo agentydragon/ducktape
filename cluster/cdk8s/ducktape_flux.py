@@ -16,9 +16,10 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitR
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/flux/ducktape-flux"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
 _READER = "ducktape-flux-reader"
 
 
@@ -46,7 +47,8 @@ def chart(app: App) -> Chart:
             interval="1m",
             ref=GitRepositorySpecRef(branch="devel"),
             sparse_checkout=[
-                "cluster/k8s/",
+                f"{HAND_WRITTEN_ROOT}/",
+                f"{GENERATED_ROOT}/",
                 "cluster/charts/browsertrix/",
                 "haku/x/dispatch/deploy/",
                 "haku/runtime/managed_agent/self_hosted/deploy/",

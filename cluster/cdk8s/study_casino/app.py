@@ -40,9 +40,10 @@ from cluster.cdk8s import cnpg
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_OUTPUT_DIR = "cluster/k8s/study-casino"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
 _PORT = 8080
@@ -390,4 +391,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

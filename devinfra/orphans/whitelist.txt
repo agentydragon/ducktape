@@ -56,6 +56,7 @@ nix/**
 
 # k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
 cluster/k8s/**
+cluster/generated/**
 cluster/scripts/get-passwords
 cluster/docs/iam-policy-route53.json
 

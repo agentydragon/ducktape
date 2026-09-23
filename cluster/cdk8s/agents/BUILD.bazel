@@ -19,5 +19,8 @@ py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = ["//cluster/cdk8s:generation"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+    ],
 )

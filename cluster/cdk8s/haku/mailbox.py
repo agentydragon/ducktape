@@ -36,11 +36,12 @@ from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import namespace
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
-OUTPUT_DIR = "cluster/k8s/haku/mailbox"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/mailbox"
 
 _LABELS = {"app.kubernetes.io/name": NAME}
 _INGRESS_NAME = "haku-mailbox-smtp-ingress"

@@ -49,11 +49,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
-OUTPUT_DIR = "cluster/k8s/gateway"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gateway"
 # Not the plaintext listener: the gateway's HTTP-only route owns port 80 and redirects it.
 HTTPS_LISTENER = "https-wildcard"
 _HTTP_LISTENER = "http"

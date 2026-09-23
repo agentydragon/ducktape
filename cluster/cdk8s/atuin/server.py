@@ -25,11 +25,12 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "atuin"
 NAMESPACE = "atuin"
-OUTPUT_DIR = "cluster/k8s/atuin"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/atuin"
 # CNPG generates the application credentials in `<cluster>-app`.
 DB_APP_SECRET = "atuin-db-app"
 _DB_CLUSTER = "atuin-db"
