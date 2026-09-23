@@ -25,12 +25,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
@@ -73,6 +67,7 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 _OUTPUT_DIR = "cluster/k8s/forgejo/app"
@@ -416,40 +411,30 @@ def _helm_release(scope: Construct) -> None:
             type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
         ),
     )
-    HelmRelease(
+    helm_release(
         scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            # Extended timeout (PostgreSQL + PVC binding + init containers)
-            timeout="15m",
-            # Runtime prerequisites may become ready after admission; keep retrying while
-            # they converge.
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
-            upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    version="17.1.6",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="forgejo-db-ssd-creds",
-                    values_key="password",
-                    # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
-                    target_path="gitea.config.database.PASSWD",
-                )
-            ],
-            values=_values(),
-        ),
+        _NAME,
+        _NAMESPACE,
+        repository=repository,
+        chart=_NAME,
+        version="17.1.6",
+        interval="15m",
+        # Extended timeout (PostgreSQL + PVC binding + init containers)
+        timeout="15m",
+        # Runtime prerequisites may become ready after admission; keep retrying while
+        # they converge.
+        install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
+        upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="forgejo-db-ssd-creds",
+                values_key="password",
+                # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
+                target_path="gitea.config.database.PASSWD",
+            )
+        ],
+        values=_values(),
     )
 
 

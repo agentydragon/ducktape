@@ -63,6 +63,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
@@ -77,6 +78,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
@@ -107,6 +109,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
@@ -122,9 +125,9 @@ py_library(
     srcs = ["alloy.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":grafana_helmrepository",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s:helm",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -138,8 +141,10 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
+        ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
@@ -159,10 +164,11 @@ py_library(
     srcs = ["mimir.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
         "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
@@ -179,10 +185,11 @@ py_library(
     srcs = ["tempo.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
         "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
