@@ -8,5 +8,5 @@
     "remote-snapshot-save-policy": "always",
     "snapshot-read-policy": "newest"
   },
-  "container_image": "ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:e5e03bd26cc4a6a089d0539db9dda5cb7a952525f29c140c8a3c7c3f0cd04f84"
+  "container_image": "ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:32e60b43e477ab78cc6e86f82b5f7725f0579dfb2b00ca651486de8fb7b1af78"
 }
