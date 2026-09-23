@@ -125,6 +125,7 @@ from cluster.cdk8s.seaweedfs import (
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     namespace as seaweedfs_namespace,
     public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
+    registry_cache_bucket as seaweedfs_registry_cache_bucket,
 )
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
@@ -200,6 +201,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_loom_gym_bucket.write_manifests(root)
     seaweedfs_forgejo_bucket.write_manifests(root)
     seaweedfs_public_coder_agent_backups_bucket.write_manifests(root)
+    seaweedfs_registry_cache_bucket.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -689,9 +691,9 @@ def generate_manifests(root: Path) -> None:
         )
     )
     seaweedfs_registry_cache_bucket_artifact = artifact(
-        "seaweedfs-registry-cache-bucket", "cluster/k8s/seaweedfs/registry-cache-bucket"
+        "seaweedfs-registry-cache-bucket", seaweedfs_registry_cache_bucket.OUTPUT_DIR
     )
-    seaweedfs_registry_cache_bucket_kustomization = seaweedfs_flux_kustomizations.seaweedfs_registry_cache_bucket(
+    seaweedfs_registry_cache_bucket_kustomization = seaweedfs_registry_cache_bucket.seaweedfs_registry_cache_bucket(
         flux_chart, seaweedfs_registry_cache_bucket_artifact, seaweedfs_cluster_kustomization
     )
     seaweedfs_csi_artifact = artifact("seaweedfs-csi", "cluster/k8s/seaweedfs-csi")
