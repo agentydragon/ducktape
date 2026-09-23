@@ -198,6 +198,8 @@ exports_files(
         "seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml",
         "seaweedfs/forgejo-bucket/forgejo-bucket.k8s.yaml",
         "seaweedfs/forgejo-bucket/kustomization.yaml",
+        "seaweedfs/monitoring/kustomization.yaml",
+        "seaweedfs/monitoring/seaweedfs-monitoring.k8s.yaml",
         "seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",
         "seaweedfs/loom-gym-bucket/kustomization.yaml",
         "seaweedfs/drivefs-artifacts-bucket/drivefs-artifacts-bucket.k8s.yaml",

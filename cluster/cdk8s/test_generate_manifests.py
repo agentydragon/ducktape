@@ -100,6 +100,8 @@ _GENERATED_FILES = (
     "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/forgejo-bucket/forgejo-bucket.k8s.yaml",
     "cluster/k8s/seaweedfs/forgejo-bucket/kustomization.yaml",
+    "cluster/k8s/seaweedfs/monitoring/seaweedfs-monitoring.k8s.yaml",
+    "cluster/k8s/seaweedfs/monitoring/kustomization.yaml",
     "cluster/k8s/seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",
     "cluster/k8s/seaweedfs/loom-gym-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/drivefs-artifacts-bucket.k8s.yaml",

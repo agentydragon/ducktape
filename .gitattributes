@@ -107,6 +107,7 @@ cluster/k8s/seaweedfs/pr-visuals-bucket/kustomization.yaml linguist-generated=tr
 cluster/k8s/seaweedfs/registry-cache-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/forgejo-bucket/kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/monitoring/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/loom-gym-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/drivefs-artifacts-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/namespace/kustomization.yaml linguist-generated=true
