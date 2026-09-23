@@ -427,6 +427,25 @@ py_test(
 )
 
 py_library(
+    name = "mitmproxy",
+    srcs = ["mitmproxy.py"],
+    deps = [
+        ":cilium",
+        ":egress_fences",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
+        "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "ntfy",
     srcs = ["ntfy.py"],
     deps = [
@@ -492,6 +511,7 @@ py_library(
         ":google_mcp",
         ":ha_mcp",
         ":haku_openclaw_spike_config",
+        ":mitmproxy",
         ":ntfy",
         ":public_coder_agent_config",
         ":public_coder_devbox",
@@ -655,6 +675,8 @@ py_test(
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/kustomization.yaml",
         "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
+        "//cluster/k8s:agents/mitmproxy/kustomization.yaml",
+        "//cluster/k8s:agents/mitmproxy/mitmproxy.k8s.yaml",
         "//cluster/k8s:agents/mitmproxy/namespace.k8s.yaml",
         "//cluster/k8s:agents/plaid-mcp/namespace.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
