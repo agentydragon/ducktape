@@ -121,7 +121,6 @@ _ACTIONS_SETTINGS = {
     "mcp_servers": {
         "github": {
             "server_id": "github",
-            "provider": "github",
             "server_url": _GITHUB_MCP_URL,
             "client_id": "configured-by-secret",
             "client_secret_file": "/etc/agentplane-github/client_secret",
@@ -129,14 +128,12 @@ _ACTIONS_SETTINGS = {
         },
         "kubernetes": {
             "server_id": "kubernetes",
-            "provider": "kubernetes",
             "server_url": _KUBERNETES_MCP_URL,
             "client_id": "kubectl-passthrough-mcp",
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
         },
         "grocy_sf": {
             "server_id": "grocy_sf",
-            "provider": "grocy_sf",
             "server_url": _GROCY_SF_MCP_URL,
             "client_id": _GROCY_SF_MCP_CLIENT_ID,
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",

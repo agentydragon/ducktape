@@ -12,7 +12,7 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
 
 1. **Generated component resources** (`agentplane-{staging,testing}`, `artifact-generators`,
    `litellm/app`, `agents/ha-mcp/app`, `ssh-mcp`, `aiquota`, `clickhouse/schema`,
-   `external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`,
+   `external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler`,
    `agents/public-coder-agent/namespace`): `kustomization.yaml`
    (`flux.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
@@ -27,8 +27,8 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
    `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A
    ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
    `agents/public-coder-agent/app`); the objects that carry a value another directory
-   shares (`descheduler`'s HelmRepository + HelmRelease and `seaweedfs/cluster`'s
-   PriorityClass, both rendered from `stateful_infra.PRIORITY`); the
+   shares (`seaweedfs/cluster`'s PriorityClass, rendered from `stateful_infra.PRIORITY`,
+   which `descheduler`'s eviction policy also reads); the
    CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
    (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
    name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through

@@ -120,6 +120,10 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
   entry) may become one module constant. Nothing else until every node it would touch is
   in Python.
+- **A node lives with its directory's generator once that directory is fully
+  generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
+  `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
+  conversion. No interim flattening of those packages.
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
 

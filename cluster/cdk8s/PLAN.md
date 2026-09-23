@@ -178,13 +178,6 @@ declarations again.
 Cleanups and patterns that look right from where the tree is today, not committed to
 by any wave. Each names what would settle it. None is a reason to widen a wave's PR.
 
-- **Flatten the 72 single-file subpackages.** #7391 put each slice's Flux nodes in
-  `cluster/cdk8s/<area>/flux_kustomizations.py` with its own `BUILD.bazel`; 72 of the 79
-  subpackages hold one module. STYLE.md flattens a directory with fewer than three
-  files. Likely target: `cluster/cdk8s/flux_kustomizations/<area>.py` until the
-  directory's workloads convert, at which point the nodes move into the component's
-  package. Unsure whether the move is worth doing before Wave 4 moves most of them
-  anyway; decide at the Wave 1 pause from how many areas Wave 4 will touch.
 - **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
   order by hand, which is the design. If it becomes hard to read, the shape to try is
   one function per area that builds its subgraph from explicit predecessor parameters
