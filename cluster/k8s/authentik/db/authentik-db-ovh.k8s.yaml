@@ -24,4 +24,4 @@ spec:
         enabled: false
   storage:
     size: 8Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd

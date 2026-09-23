@@ -65,7 +65,7 @@ def _database(scope: Construct) -> None:
         name="langfuse-db",
         namespace=_NAMESPACE,
         node_selector={"topology.kubernetes.io/zone": _ZONE},
-        storage_class="local-path-ovh",
+        storage_class="local-path-ovh-ssd",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app
         initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse"),

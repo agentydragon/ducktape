@@ -41,7 +41,7 @@ spec:
         enabled: false
   storage:
     size: 1Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: batch/v1
 kind: Job

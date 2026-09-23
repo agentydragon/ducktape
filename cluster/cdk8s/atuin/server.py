@@ -46,7 +46,7 @@ def _database(chart: Chart) -> None:
         name=_DB_CLUSTER,
         namespace=NAMESPACE,
         node_selector=_ZONE_SELECTOR,
-        storage_class="local-path-ovh",
+        storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
     )

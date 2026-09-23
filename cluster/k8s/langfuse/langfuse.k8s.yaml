@@ -31,7 +31,7 @@ spec:
         enabled: false
   storage:
     size: 10Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: v1
 kind: Secret

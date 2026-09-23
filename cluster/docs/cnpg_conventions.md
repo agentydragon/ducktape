@@ -29,6 +29,9 @@ SSD (`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) — OVH's
 `tier=ssd` nodes are its control planes, its `tier=hdd` nodes its workers.
 A running instance's local-path PV pins it to its node, so before an instance
 on a class that loses the toleration can restart, rebuild it on a worker.
+**Gotcha:** PVs provisioned before `local-path-ovh` was pinned to `tier=hdd` can
+still sit on a control plane's NVMe; check where an instance's PV lives, not
+only its Cluster's class.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via

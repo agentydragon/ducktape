@@ -31,7 +31,7 @@ spec:
         enabled: false
   storage:
     size: 2Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -27,7 +27,7 @@ def chart(app: App) -> Chart:
         name=NAME,
         namespace="authentik",
         node_selector=NODE_SELECTOR,
-        storage_class="local-path-ovh",
+        storage_class="local-path-ovh-ssd",
         size="8Gi",
         # The plugin sidecar archives WAL continuously and provides physical base
         # backups to the Authentik-specific SeaweedFS ObjectStore (authentik/db-backups).
