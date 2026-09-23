@@ -396,10 +396,12 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        "//cluster/cdk8s:node_feature_discovery",
         "//cluster/cdk8s/monitoring:loki",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
