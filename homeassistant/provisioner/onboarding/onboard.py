@@ -1,19 +1,13 @@
-"""Install configured Home Assistant components and complete configured onboarding."""
+"""Complete Home Assistant's onboarding and converge its UI-managed HTTP settings."""
 
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import httpx2
-import typer
 
 from homeassistant.provisioner.client import HomeAssistantClient, OnboardingStep
-from homeassistant.provisioner.component_installer import install_components
-from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
-from homeassistant.provisioner.settings import HttpConfig, ProvisionerSettings, load_settings
-
-app = typer.Typer(add_completion=False)
+from homeassistant.provisioner.onboarding.settings import HttpConfig, Settings
 
 
 def _config_without_metadata(config: object) -> dict[str, object]:
@@ -49,58 +43,42 @@ async def configure_http(client: HomeAssistantClient, http_config: HttpConfig, u
     await client.websocket_command({"id": 1, "type": "http/config/promote"})
 
 
-async def provision(client: HomeAssistantClient, settings: ProvisionerSettings, password: str) -> None:
+async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
     """Create the owner if necessary and finish all onboarding steps."""
+    password = settings.owner_password.get_secret_value()
     completed = await client.wait_until_ready()
     required_steps = frozenset(OnboardingStep)
     if completed is None or completed >= required_steps:
-        await client.login(settings.username, password)
-        await configure_http(client, settings.http_config, settings.username, password)
+        await client.login(settings.owner_username, password)
+        await configure_http(client, settings.http_config, settings.owner_username, password)
         print("Home Assistant onboarding is already complete")
         return
 
     if OnboardingStep.USER in completed:
-        await client.login(settings.username, password)
+        await client.login(settings.owner_username, password)
     else:
-        await client.create_owner(settings.display_name, settings.username, password)
+        await client.create_owner(settings.owner_display_name, settings.owner_username, password)
     if OnboardingStep.CORE_CONFIG not in completed:
         await client.request_json("/api/onboarding/core_config", data={})
     if OnboardingStep.INTEGRATION not in completed:
         await client.request_json(
-            "/api/onboarding/integration", data={"client_id": settings.client_id, "redirect_uri": settings.redirect_uri}
+            "/api/onboarding/integration",
+            data={"client_id": settings.endpoint.client_id, "redirect_uri": settings.endpoint.redirect_uri},
         )
     if OnboardingStep.ANALYTICS not in completed:
         await client.request_json("/api/onboarding/analytics", data={})
-    await configure_http(client, settings.http_config, settings.username, password)
+    await configure_http(client, settings.http_config, settings.owner_username, password)
     print("Home Assistant onboarding is complete")
 
 
-async def _setup(settings: ProvisionerSettings) -> None:
+async def async_main(settings: Settings) -> None:
     async with httpx2.AsyncClient() as http_client:
-        await install_components(http_client, Path("/config"), settings.components)
-        if settings.onboarding_enabled:
-            if settings.local_admin_password is None:
-                raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required")
-            endpoint = HomeAssistantEndpoint(
-                url=settings.home_assistant_url, client_id=settings.client_id, redirect_uri=settings.redirect_uri
-            )
-            await provision(
-                HomeAssistantClient(http_client, endpoint), settings, settings.local_admin_password.get_secret_value()
-            )
+        await onboard(HomeAssistantClient(http_client, settings.endpoint), settings)
 
 
-# A callback keeps `setup` a named subcommand, which the Deployment's init container and the
-# onboarding Job invoke; Typer runs a lone command without its name otherwise.
-@app.callback()
 def main() -> None:
-    """Provision Home Assistant."""
-
-
-@app.command()
-def setup() -> None:
-    """Install configured components and complete configured onboarding."""
-    asyncio.run(_setup(load_settings()))
+    asyncio.run(async_main(Settings()))
 
 
 if __name__ == "__main__":
-    app()
+    main()
