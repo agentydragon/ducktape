@@ -50,7 +50,10 @@ from cluster.cdk8s import (
     volsync,
     vpa,
 )
-from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
+from cluster.cdk8s.activitywatch import (
+    app as activitywatch_app,
+    flux_kustomizations as activitywatch_flux_kustomizations,
+)
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
 from cluster.cdk8s.agentplane_index import (
@@ -230,6 +233,7 @@ def generate_manifests(root: Path) -> None:
     website.write_manifests(root)
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
+    activitywatch_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     cert_manager_app.write_manifests(root)
     cert_manager_trust.write_manifests(root)

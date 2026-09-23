@@ -184,6 +184,7 @@ exports_files(
         "website/kustomization.yaml",
         "ollama/ollama.k8s.yaml",
         "gatus/gatus.k8s.yaml",
+        "activitywatch/activitywatch.k8s.yaml",
         "kube-system/kube-system.k8s.yaml",
         "kube-system/kustomization.yaml",
         "user-agentydragon/user-agentydragon.k8s.yaml",
