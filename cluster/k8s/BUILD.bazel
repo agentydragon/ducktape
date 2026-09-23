@@ -87,6 +87,7 @@ exports_files(
         "haku/console/kustomization.yaml",
         "haku/console/migration/haku-console-migration.k8s.yaml",
         "haku/console/migration/kustomization.yaml",
+        "home-assistant/namespace.k8s.yaml",
         "litellm/keys-tf/litellm-keys.k8s.yaml",
         "litellm/namespace.k8s.yaml",
         "monitoring/etcd/etcd-monitoring.k8s.yaml",
