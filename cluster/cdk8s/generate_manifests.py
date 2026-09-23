@@ -28,6 +28,7 @@ from cluster.cdk8s import (
     nvidia_runtimeclass,
     public_coder_agent_config,
     public_coder_devbox,
+    reflector,
     stateful_infra,
     user_agentydragon,
 )
@@ -119,7 +120,6 @@ from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizatio
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
-from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
@@ -201,6 +201,7 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass.write_manifests(root)
     hubble_ui.write_manifests(root)
     metrics_server.write_manifests(root)
+    reflector.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -278,8 +279,8 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", "cluster/k8s/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
-    reflector_artifact = artifact("reflector", "cluster/k8s/reflector")
-    reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart, reflector_artifact)
+    reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
+    reflector_kustomization = reflector.reflector(flux_chart, reflector_artifact)
     seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", "cluster/k8s/seaweedfs/namespace")
     seaweedfs_namespace_kustomization = seaweedfs_flux_kustomizations.seaweedfs_namespace(
         flux_chart, seaweedfs_namespace_artifact

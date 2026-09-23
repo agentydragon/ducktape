@@ -567,6 +567,23 @@ py_library(
 )
 
 py_library(
+    name = "reflector",
+    srcs = ["reflector.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -602,6 +619,7 @@ py_library(
         ":nvidia_runtimeclass",
         ":public_coder_agent_config",
         ":public_coder_devbox",
+        ":reflector",
         ":stateful_infra",
         ":user_agentydragon",
         "//cluster/cdk8s:flux_kustomizations_cnpg",
@@ -680,7 +698,6 @@ py_library(
         "//cluster/cdk8s/openebs_lvm:flux_kustomizations",
         "//cluster/cdk8s/parked:flux_kustomizations",
         "//cluster/cdk8s/proxmox_proxy:flux_kustomizations",
-        "//cluster/cdk8s/reflector:flux_kustomizations",
         "//cluster/cdk8s/reloader:flux_kustomizations",
         "//cluster/cdk8s/seaweedfs:flux_kustomizations",
         "//cluster/cdk8s/seaweedfs_csi:flux_kustomizations",
@@ -874,6 +891,8 @@ py_test(
         "//cluster/k8s:ntfy/ntfy.k8s.yaml",
         "//cluster/k8s:nvidia-runtimeclass/kustomization.yaml",
         "//cluster/k8s:nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
+        "//cluster/k8s:reflector/kustomization.yaml",
+        "//cluster/k8s:reflector/reflector.k8s.yaml",
         "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s:ssh-mcp/kustomization.yaml",
         "//cluster/k8s:ssh-mcp/ssh-mcp.k8s.yaml",

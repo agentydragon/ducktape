@@ -169,6 +169,8 @@ exports_files(
         "hubble-ui/kustomization.yaml",
         "metrics-server/metrics-server.k8s.yaml",
         "metrics-server/kustomization.yaml",
+        "reflector/reflector.k8s.yaml",
+        "reflector/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
