@@ -56,10 +56,13 @@ bbr test //agentplane/app/...
 - `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
   thread entities, and immutable content chunks/manifests. Each ingestion transaction
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  Layered bottom-up: `models.py` (the tables) and `views.py` (the rows' client contract); `rows.py`
-  (fold records to and from entity rows) and `payloads.py` (insert-only bodies); `recording.py`
-  (the fold write path); `store.py` (`ThreadStore`, the API over all of it). `updates.py` turns
-  committed PostgreSQL notifications into replica-local wakeups.
+  Layered bottom-up: `models.py` (the tables) and `views.py` (the rows' client contract);
+  `event_log.py` (the copied runner events and the feed state) and `ingestion_lease.py` (which
+  replica ingests a sandbox); `rows.py` (fold records to and from entity rows) and `payloads.py`
+  (insert-only bodies); `recording.py` (the fold write path) and `content.py` (reads of what the
+  fold assembled); `store.py` (`ThreadStore`, the API over all of it: it owns each transaction,
+  composes the writes that span levels, and holds what is set on a thread itself). `updates.py`
+  turns committed PostgreSQL notifications into replica-local wakeups.
 - `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
@@ -67,6 +70,8 @@ bbr test //agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
+- `database.py`: the app's one connection pool; `main.py` builds it and hands it to each store and
+  to the thread update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
   in `operator_sessions.py` and reused by `thread/models.py`'s tables. Migrations run separately through
   `:migrate`; the server itself never creates or checks tables at startup. `:image` and

@@ -85,8 +85,7 @@ _TOKEN_RULE = RolePolicyRule(
 
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the
 # ActionPolicySet/ActionPolicyBinding its Sandbox is auto-approved under, reading
-# their Ready condition to know the Action Service has seen each edit. Rule order is
-# immaterial to RBAC evaluation.
+# their Ready condition to know the Action Service has seen each edit.
 _ACTION_POLICY_RULE = RolePolicyRule(
     resources=[
         custom_resource("agentplane.allegedly.works", "actionpolicysets"),
@@ -189,12 +188,12 @@ class AgentRbac(Construct):
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        rules = list(_SANDBOX_RULES)
-        if env.include_action_policy_rule:
-            rules.append(_ACTION_POLICY_RULE)
-        rules.append(_TOKEN_RULE)
-
-        Role(self, "role", metadata=metadata("agentplane-testing-operator", env.namespace), rules=rules)
+        Role(
+            self,
+            "role",
+            metadata=metadata("agentplane-testing-operator", env.namespace),
+            rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
+        )
 
         RoleBinding(
             self,
