@@ -1,11 +1,11 @@
 """The central GitHub API proxy: its Namespace and Certificates (`identity/`), and the proxy
-workload with its capture storage, Service and network policy (`app/`).
+workload with its capture storage, Service, network policy, dedicated TLS-passthrough Gateway
+and TLSRoute, PodMonitor and alert PrometheusRule (`app/`).
 
 The proxy image tag is the placeholder "unset"; the hand-written
 cluster/k8s/github-api-proxy/app/image-pins/kustomization.yaml overrides it at `kustomize build`
-time via Flux's image-automation marker. Also hand-written in `app/`: the dedicated Gateway and
-TLSRoute, the PodMonitor and PrometheusRule (no typed bindings for those kinds yet), the client
-credential SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
+time via Flux's image-automation marker. Also hand-written in `app/`: the client credential
+SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
 `kustomization.yaml`. The Flux Kustomization substitutes `${LETSENCRYPT_ISSUER}`
 (`cert-manager-issuer-config`) into the server Certificate.
 """
@@ -13,6 +13,7 @@ credential SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) an
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
@@ -32,6 +33,36 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressDenyToPortsPortsProtocol,
 )
 from constructs import Construct
+from gateway_api_gateway_crds.io.k8s.networking.gateway import (
+    Gateway,
+    GatewaySpec,
+    GatewaySpecListeners,
+    GatewaySpecListenersAllowedRoutes,
+    GatewaySpecListenersAllowedRoutesNamespaces,
+    GatewaySpecListenersAllowedRoutesNamespacesFrom,
+    GatewaySpecListenersTls,
+    GatewaySpecListenersTlsMode,
+)
+from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
+    TlsRoute,
+    TlsRouteSpec,
+    TlsRouteSpecParentRefs,
+    TlsRouteSpecRules,
+    TlsRouteSpecRulesBackendRefs,
+)
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroups,
+    PrometheusRuleSpecGroupsRules,
+    PrometheusRuleSpecGroupsRulesExpr,
+)
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -53,6 +84,127 @@ _PROXY_PORT = 8080
 _METRICS_PORT = 9090
 _RUN_DIR = "/run/github-api-proxy"
 _CLIENTS = ("wyrm2", "rugged")
+_TLS_LISTENER = "proxy-tls"
+
+_RULES = [
+    PrometheusRuleSpecGroupsRules(
+        alert="GitHubProxyCaptureWriteFailed",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            'max by (channel) (github_api_proxy_capture_write_failures_total{namespace="github-api-proxy"}) > 0'
+        ),
+        labels={"severity": "warning"},
+        annotations={
+            "summary": "Central GitHub proxy capture has lost {{ $labels.channel }} observations",
+            "description": (
+                "A private capture append failed. Readiness stays false until a controlled restart, but existing "
+                "connections may continue and the quota mitigation remains active. Inspect storage and preserve the "
+                "incomplete evidence before restarting; do not count this interval as complete observation coverage.\n"
+            ),
+        },
+    ),
+    PrometheusRuleSpecGroupsRules(
+        alert="GitHubProxyMetricsScrapeFailed",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            'max(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}) == 0'
+        ),
+        for_="2m",
+        labels={"severity": "warning"},
+        annotations={
+            "summary": "Central GitHub proxy metrics cannot be scraped",
+            "description": (
+                "All discovered proxy metrics targets have failed for two minutes. Check the Pod, private metrics "
+                "listener and Alloy network path.\n"
+            ),
+        },
+    ),
+    PrometheusRuleSpecGroupsRules(
+        alert="GitHubProxyMetricsMissing",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            'absent_over_time(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}[5m])'
+        ),
+        labels={"severity": "warning"},
+        annotations={
+            "summary": "Central GitHub proxy observations are missing",
+            "description": (
+                "No proxy scrape result has been retained for five minutes. Check Pod discovery, the PodMonitor, Alloy "
+                "collection and remote write. Missing telemetry cannot establish a healthy proxy or quiet quota.\n"
+            ),
+        },
+    ),
+    PrometheusRuleSpecGroupsRules(
+        record="github_api_proxy:capture_collection_physical_storage_budget:ratio",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            dedent(
+                """\
+                sum by (namespace, persistentvolumeclaim) (
+                  label_replace(
+                    sum by (collection) (
+                      max by (collection, instance) (
+                        SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
+                      )
+                    ),
+                    "volumename", "$1", "collection", "(.+)"
+                  )
+                  * on (volumename) group_left(namespace, persistentvolumeclaim)
+                    max by (volumename, namespace, persistentvolumeclaim) (
+                      kube_persistentvolumeclaim_info{
+                        namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",
+                        storageclass="seaweedfs-ovh"
+                      }
+                    )
+                )
+                / on (namespace, persistentvolumeclaim)
+                  (
+                    max by (namespace, persistentvolumeclaim) (
+                      kube_persistentvolumeclaim_resource_requests_storage_bytes{
+                        namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+                      }
+                    ) > 0
+                  )
+                """
+            )
+        ),
+    ),
+    PrometheusRuleSpecGroupsRules(
+        alert="GitHubProxyCaptureCollectionStorageBudgetHigh",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            "github_api_proxy:capture_collection_physical_storage_budget:ratio > 0.85"
+        ),
+        for_="5m",
+        labels={"severity": "warning"},
+        annotations={
+            "summary": "Central GitHub proxy collection exceeds 85% of its physical storage budget",
+            "description": (
+                "Reported normal-volume bytes, including replicas, exceed 85% of the PVC storage request. This is an "
+                "operational budget, not free space or guaranteed write capacity. Captures append without automatic "
+                "deletion. Check volume-server telemetry and arrange explicit retention or expansion; preserve "
+                "investigation evidence.\n"
+            ),
+        },
+    ),
+    PrometheusRuleSpecGroupsRules(
+        alert="GitHubProxyCaptureStorageBudgetInputsMissing",
+        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+            dedent(
+                """\
+                absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
+                  namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+                })
+                """
+            )
+        ),
+        for_="5m",
+        labels={"severity": "warning"},
+        annotations={
+            "summary": "Central GitHub proxy collection storage budget cannot be observed",
+            "description": (
+                "The collection byte metric, PVC-to-collection mapping or positive PVC storage request is missing. Check "
+                "SeaweedFS volume-server scrapes and kube-state-metrics. Absence is not zero usage. Partial volume-server "
+                "loss can still undercount a present budget ratio.\n"
+            ),
+        },
+    ),
+]
 
 
 def _namespace(scope: Construct) -> None:
@@ -325,6 +477,69 @@ def _network_policy(scope: Construct) -> None:
     )
 
 
+def _gateway(scope: Construct) -> None:
+    Gateway(
+        scope,
+        "gateway",
+        metadata=metadata(
+            _NAME,
+            _NAMESPACE,
+            annotations={
+                "description": (
+                    "Dedicated TLS-only listener; avoids overlapping the shared wildcard HTTPS listener on port 443."
+                )
+            },
+        ),
+        spec=GatewaySpec(
+            gateway_class_name="cilium",
+            listeners=[
+                GatewaySpecListeners(
+                    name=_TLS_LISTENER,
+                    hostname=_HOSTNAME,
+                    port=8443,
+                    protocol="TLS",
+                    tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
+                    allowed_routes=GatewaySpecListenersAllowedRoutes(
+                        namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
+                            from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
+                        )
+                    ),
+                )
+            ],
+        ),
+    )
+    TlsRoute(
+        scope,
+        "tls-route",
+        metadata=metadata(_NAME, _NAMESPACE),
+        spec=TlsRouteSpec(
+            parent_refs=[TlsRouteSpecParentRefs(name=_NAME, section_name=_TLS_LISTENER)],
+            hostnames=[_HOSTNAME],
+            rules=[TlsRouteSpecRules(backend_refs=[TlsRouteSpecRulesBackendRefs(name=_NAME, port=443)])],
+        ),
+    )
+
+
+def _monitoring(scope: Construct) -> None:
+    PodMonitor(
+        scope,
+        "pod-monitor",
+        metadata=metadata(_NAME, _NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            pod_metrics_endpoints=[
+                PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")
+            ],
+        ),
+    )
+    PrometheusRule(
+        scope,
+        "prometheus-rule",
+        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name=_NAME, rules=_RULES)]),
+    )
+
+
 def app_chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
@@ -332,6 +547,8 @@ def app_chart(app: App) -> Chart:
     _deployment(chart)
     _network_policy(chart)
     _service(chart)
+    _gateway(chart)
+    _monitoring(chart)
     return chart
 
 
