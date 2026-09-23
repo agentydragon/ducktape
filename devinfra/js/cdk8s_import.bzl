@@ -27,6 +27,8 @@ def cdk8s_import(
         visibility = None,
         crd_name = None,
         crd_version = None,
+        crd_go_key = None,
+        crd_wrap_kind = None,
         crd_remove_paths = []):
     """Generate a py_library of typed cdk8s constructs from an upstream CRD YAML.
 
@@ -39,6 +41,11 @@ def cdk8s_import(
                       omitted, crd is passed directly to cdk8s import.
         crd_version: Optional CRD version to keep when extracting. Useful when the bundle lists
                       a deprecated version after its storage version.
+        crd_go_key:  Read crd as a generated Go file and extract the raw-string map value under
+                      this key (upstreams that embed CRDs in Go instead of publishing YAML).
+        crd_wrap_kind: The crd_go_key value is only an `openAPIV3Schema` entry: wrap it in a
+                      namespaced CRD of this kind, named crd_name (`<plural>.<group>`), serving
+                      crd_version.
         crd_remove_paths: Optional dotted paths to remove from the extracted schema before
                       importing. Use only to work around cdk8s/jsii generator limitations; this
                       does not modify the installed CRD.
@@ -81,6 +88,10 @@ def cdk8s_import(
         ]
         if crd_version != None:
             extract_args.extend(["--version", crd_version])
+        if crd_go_key != None:
+            extract_args.extend(["--go-key", crd_go_key])
+        if crd_wrap_kind != None:
+            extract_args.extend(["--wrap-kind", crd_wrap_kind])
         for path in crd_remove_paths:
             extract_args.extend(["--remove-path", path])
         extract_args.extend(["$(location {})".format(crd), "$@"])
@@ -93,8 +104,8 @@ def cdk8s_import(
             visibility = ["//visibility:private"],
         )
         crd = ":" + extracted_crd
-    elif crd_version != None or crd_remove_paths:
-        fail("cdk8s_import: crd_version/crd_remove_paths require crd_name")
+    elif crd_version != None or crd_go_key != None or crd_wrap_kind != None or crd_remove_paths:
+        fail("cdk8s_import: crd_version/crd_go_key/crd_wrap_kind/crd_remove_paths require crd_name")
 
     jsii_module_path = jsii_module_path if jsii_module_path != None else module_path
     python_module_path = python_module_path if python_module_path != None else module_path

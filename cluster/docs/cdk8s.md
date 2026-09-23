@@ -153,6 +153,9 @@ Flux version deployed by the repository.
 
 - `cdk8s import` takes one CRD per invocation; a bundled multi-document file
   (external-secrets) goes through the `devinfra/k8s/extract_crd.py` genrule first.
+  KubeVirt and CDI publish no YAML for the CRDs their operators create at runtime; the
+  same genrule extracts them from the generated Go files that embed them
+  (`crd_go_key`), wrapping KubeVirt's schema-only entries in a CRD (`crd_wrap_kind`).
 - A CRD group with a dash (`external-secrets.io`) keeps it in the jsii assembly's npm
   name but not in the Python package directory; `jsii_module_path` carries the second
   spelling.
