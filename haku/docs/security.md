@@ -198,7 +198,7 @@ Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 Single-user policy binding, operator-owned. Nobody but the signed-in operator reaches
 haku-ui, regardless of haku-state content — auth sits **in front of** the app, outside
 Haku's write scope.
-Source of truth: <../../cluster/k8s/authentik/proxy-routes/haku-ui-httproute.yaml>,
+Source of truth: <../../cluster/cdk8s/authentik/proxy_routes.py>,
 <../../cluster/k8s/authentik/app/blueprints/haku-ui-sso.yaml>.
 
 ### Console iframe containment
@@ -270,7 +270,7 @@ data-bearing third-party URL; no web-platform mechanism blocks that from outside
 **Silent subresource beacons (`fetch`/`<img>`/`sendBeacon`/WebSocket) to a third
 party** — **blocked by the operator-injected CSP** on the haku-ui `HTTPRoute`
 (`ResponseHeaderModifier` sets `connect-src 'self'`, `img-src 'self' data:`, … — the
-same mechanism <../../cluster/k8s/authentik/app/httproute.yaml> uses). Subresource loads
+same mechanism <../../cluster/cdk8s/authentik/app.py> uses on `auth.allegedly.works`). Subresource loads
 obey the _document's own_ CSP, which Haku serves — so the fence must be injected at the
 route, the only public door, where `set` overrides anything Haku's backend sends. The
 policy deliberately relaxes **execution**, not destinations (JupyterLab, served under
@@ -280,7 +280,7 @@ destination stays self/same-document, so the third-party beacon fence is unchang
 the accepted residual that a string-to-eval gadget in the SPA or a dependency would let
 rendered external text execute directly (no prompt-injection step, no git commit, no CSP
 tripwire) — bounded by the destination fence. The full decision rationale (operator,
-2026-08-01) lives in <../../cluster/k8s/authentik/proxy-routes/haku-ui-httproute.yaml>.
+2026-08-01) lives in <../../cluster/cdk8s/authentik/proxy_routes.py>.
 
 **WebRTC data channels to a third party (bypass `connect-src`)** — **open — accepted
 residual** (see Known gaps). The CSP3 `webrtc 'block'` directive is in the injected

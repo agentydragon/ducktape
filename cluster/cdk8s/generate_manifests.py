@@ -72,6 +72,7 @@ from cluster.cdk8s.authentik import (
     db as authentik_db,
     flux_kustomizations as authentik_flux_kustomizations,
     namespace as authentik_namespace,
+    proxy_routes as authentik_proxy_routes,
     sso_providers,
 )
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
@@ -223,6 +224,7 @@ def generate_manifests(root: Path) -> None:
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
+    authentik_proxy_routes.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
