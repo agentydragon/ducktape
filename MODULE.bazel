@@ -1197,7 +1197,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_triggerauthentications.yaml"],
 )
 
-# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/k8s/clickhouse/operator/helmrelease.yaml.
+# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/cdk8s/clickhouse/operator.py.
 http_file(
     name = "clickhouse_installation_crd",
     downloaded_file_path = "CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml",

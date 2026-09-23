@@ -111,6 +111,8 @@ _GENERATED_FILES = (
     "cluster/k8s/authentik/proxy-routes/kustomization.yaml",
     "cluster/k8s/authentik/db-backups/db-backups.k8s.yaml",
     "cluster/k8s/clickhouse/operator/namespace.k8s.yaml",
+    "cluster/k8s/clickhouse/operator/helmrelease.k8s.yaml",
+    "cluster/k8s/clickhouse/operator/kustomization.yaml",
     "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
     "cluster/k8s/litellm/namespace.k8s.yaml",
     "cluster/k8s/litellm/kustomization.yaml",
