@@ -1193,7 +1193,7 @@ def generate_manifests(root: Path) -> None:
         litellm_kustomization,
         litellm_keys_tf_kustomization,
     )
-    haku_console_artifact = artifact("haku-console", haku_charts.PATH, "cluster/k8s/haku/console-namespace")
+    haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_charts.haku_console(
         flux_chart,
         haku_console_artifact,
