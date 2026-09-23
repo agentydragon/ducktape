@@ -80,42 +80,75 @@ pub enum Token {
     Ident(Box<str>),
 }
 
+/// Which JS scope an [`AlphaScope`] frame models.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    /// The template root or a function/arrow/constructor/setter body: the scope
+    /// `var` declarations hoist to.
+    Function,
+    /// A `catch` clause's param + body.
+    Catch,
+    /// A block, loop head, `switch` body, or the name of a named function/class
+    /// expression: holds `let`/`const`/`class` bindings only.
+    Lexical,
+}
+
 /// One lexical frame's bijective needle↔subject identifier map.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 struct AlphaScope {
+    kind: FrameKind,
     forward: HashMap<String, String>,
     backward: HashMap<String, String>,
 }
 
+impl AlphaScope {
+    fn new(kind: FrameKind) -> Self {
+        Self {
+            kind,
+            forward: HashMap::new(),
+            backward: HashMap::new(),
+        }
+    }
+}
+
 /// Scope-aware bijective needle↔subject identifier binding accumulated during
-/// alpha matching — a stack of lexical frames. References (`match_ref`) resolve
-/// against the visible stack
-/// (innermost-out); bindings (`match_binding`) consult only the current frame so a
-/// binding may shadow an outer same-spelled one. A function/arrow/constructor/
-/// setter/catch node pushes a frame around its params + body, so same-spelled
-/// locals in sibling scopes (e.g. a param reused across two functions) stay
-/// independent — without this the flat bijection conflated them and under-matched.
+/// alpha matching — a stack of lexical frames mirroring JS scoping, so
+/// same-spelled locals in sibling scopes (a param reused across two functions, a
+/// `const` reused across two blocks) stay independent. References (`match_ref`)
+/// resolve against the visible stack innermost-out; bindings (`match_binding`)
+/// consult only their own frame, so a binding may shadow an outer one. A `var`
+/// binding lands in the innermost [`FrameKind::Function`] frame, as JS hoists it.
 /// Cloneable so run-hole placement can snapshot/restore across backtracking.
 #[derive(Clone)]
 struct Bindings {
     scopes: Vec<AlphaScope>,
+    /// Matching the declarators of a `var` declaration: its bindings hoist.
+    in_var_decl: bool,
 }
 
 impl Default for Bindings {
     fn default() -> Self {
         Self {
-            scopes: vec![AlphaScope::default()],
+            scopes: vec![AlphaScope::new(FrameKind::Function)],
+            in_var_decl: false,
         }
     }
 }
 
 impl Bindings {
-    fn push_scope(&mut self) {
-        self.scopes.push(AlphaScope::default());
+    fn push_scope(&mut self, kind: FrameKind) {
+        self.scopes.push(AlphaScope::new(kind));
     }
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    fn innermost(&self, pick: impl Fn(FrameKind) -> bool) -> usize {
+        self.scopes
+            .iter()
+            .rposition(|scope| pick(scope.kind))
+            .expect("the root frame is a function frame")
     }
 
     /// Match an identifier **reference**: consult the visible scope stack
@@ -123,6 +156,8 @@ impl Bindings {
     /// mapping is honored in **either** mode — that is how a `target_binding`
     /// prebind forces one needle name onto one subject name even under `Exact`
     /// (where the unbound fallback is exact spelling, not a fresh alpha pair).
+    /// An unbound reference names something outside the template; it binds in
+    /// the innermost non-lexical frame.
     fn match_ref(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
         for scope in self.scopes.iter().rev() {
             if let Some(mapped) = scope.forward.get(needle) {
@@ -132,32 +167,38 @@ impl Bindings {
                 return false;
             }
         }
-        self.resolve_unbound(needle, subject, mode)
+        let frame = self.innermost(|kind| kind != FrameKind::Lexical);
+        self.resolve_unbound(frame, needle, subject, mode)
     }
 
-    /// Match an identifier **binding** (declaration): consult only the current
-    /// frame, so it may shadow an outer binding of the same spelling.
+    /// Match an identifier **binding** (declaration): consult only the frame it
+    /// declares into, so it may shadow an outer binding of the same spelling.
     fn match_binding(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
-        let scope = self.scopes.last().expect("always a root scope");
+        let frame = if self.in_var_decl {
+            self.innermost(|kind| kind == FrameKind::Function)
+        } else {
+            self.scopes.len() - 1
+        };
+        let scope = &self.scopes[frame];
         if let Some(mapped) = scope.forward.get(needle) {
             return mapped == subject;
         }
         if scope.backward.contains_key(subject) {
             return false;
         }
-        self.resolve_unbound(needle, subject, mode)
+        self.resolve_unbound(frame, needle, subject, mode)
     }
 
     /// Resolve a needle↔subject pair that neither side has mapped yet: under
-    /// `AlphaAll` bind them as a fresh alpha pair; under `Exact` require identical
-    /// spellings (no new binding). The pre-binding gate (`match_ref`/`match_binding`)
-    /// already short-circuited a known mapping, so this only sees genuinely-free
-    /// names.
-    fn resolve_unbound(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
+    /// `AlphaAll` bind them as a fresh alpha pair in `frame`; under `Exact`
+    /// require identical spellings (no new binding). The pre-binding gate
+    /// (`match_ref`/`match_binding`) already short-circuited a known mapping, so
+    /// this only sees genuinely-free names.
+    fn resolve_unbound(&mut self, frame: usize, needle: &str, subject: &str, mode: Mode) -> bool {
         match mode {
             Mode::Exact => needle == subject,
             Mode::AlphaAll => {
-                let scope = self.scopes.last_mut().expect("always a root scope");
+                let scope = &mut self.scopes[frame];
                 scope
                     .forward
                     .insert(needle.to_string(), subject.to_string());
@@ -190,21 +231,27 @@ impl Bindings {
     }
 }
 
-/// Node kinds that introduce a lexical scope for their params + body:
-/// function/arrow bodies, catch clauses, setter and constructor params.
-fn introduces_alpha_scope(kind: NodeKind) -> bool {
-    matches!(
-        kind,
+/// The alpha frame a node opens around its children, if any.
+fn alpha_frame(kind: NodeKind) -> Option<FrameKind> {
+    match kind {
         NodeKind::Function
-            | NodeKind::AsyncFunction
-            | NodeKind::GeneratorFunction
-            | NodeKind::AsyncGeneratorFunction
-            | NodeKind::Arrow
-            | NodeKind::AsyncArrow
-            | NodeKind::Constructor
-            | NodeKind::Setter
-            | NodeKind::Catch
-    )
+        | NodeKind::AsyncFunction
+        | NodeKind::GeneratorFunction
+        | NodeKind::AsyncGeneratorFunction
+        | NodeKind::Arrow
+        | NodeKind::AsyncArrow
+        | NodeKind::Constructor
+        | NodeKind::Setter => Some(FrameKind::Function),
+        NodeKind::Catch => Some(FrameKind::Catch),
+        NodeKind::Block
+        | NodeKind::For
+        | NodeKind::ForIn
+        | NodeKind::ForOf
+        | NodeKind::Switch
+        | NodeKind::FnExpr
+        | NodeKind::ClassExpr => Some(FrameKind::Lexical),
+        _ => None,
+    }
 }
 
 /// A node-indexed view of one statement's `ChunkFacts`, owning its string labels
@@ -915,15 +962,71 @@ fn homo(
         }
     }
 
-    // A function/arrow/constructor/setter/catch node scopes its params + body, so
-    // same-spelled locals in sibling scopes stay independent (alpha shadowing).
-    if mode == Mode::AlphaAll && introduces_alpha_scope(nkind) {
-        bindings.push_scope();
-        let result = match_children(needle, nid, nkind, subject, sid, mode, bindings);
-        bindings.pop_scope();
-        return result;
+    if mode != Mode::AlphaAll {
+        return match_children(needle, nid, nkind, subject, sid, mode, bindings);
     }
-    match_children(needle, nid, nkind, subject, sid, mode, bindings)
+    // `var` declarators bind into the enclosing function frame; a nested
+    // function or class expression starts over.
+    let outer_in_var_decl = bindings.in_var_decl;
+    if nkind == NodeKind::VarDecl {
+        bindings.in_var_decl = needle.operator_of(nid) == Some("var");
+    }
+    let result = match alpha_frame(nkind) {
+        Some(frame) => {
+            if frame == FrameKind::Function
+                || matches!(nkind, NodeKind::FnExpr | NodeKind::ClassExpr)
+            {
+                bindings.in_var_decl = false;
+            }
+            bindings.push_scope(frame);
+            let result = if matches!(nkind, NodeKind::FnExpr | NodeKind::ClassExpr) {
+                match_named_expression(needle, nid, subject, sid, mode, bindings)
+            } else {
+                match_children(needle, nid, nkind, subject, sid, mode, bindings)
+            };
+            bindings.pop_scope();
+            result
+        }
+        None => match_children(needle, nid, nkind, subject, sid, mode, bindings),
+    };
+    bindings.in_var_decl = outer_in_var_decl;
+    result
+}
+
+/// A named function/class expression's name is bound in its own frame, visible
+/// only inside the expression: `const f = function g() { g(); }` does not see an
+/// outer `g`. Children are `[name?, function-or-class]`.
+fn match_named_expression(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<bool, Unsupported> {
+    let (nkids, skids) = (needle.children_of(nid), subject.children_of(sid));
+    if nkids.len() != skids.len() {
+        return Ok(false);
+    }
+    let (Some((&nbody, nname)), Some((&sbody, sname))) = (nkids.split_last(), skids.split_last())
+    else {
+        return Ok(true);
+    };
+    if let (Some(&nname), Some(&sname)) = (nname.first(), sname.first()) {
+        match (needle.ident_of(nname), subject.ident_of(sname)) {
+            (Some(n), Some(s)) if !is_single_node_hole(needle, nname) => {
+                if !bindings.match_binding(n, s, mode) {
+                    return Ok(false);
+                }
+            }
+            _ => {
+                if !homo(needle, nname, subject, sname, mode, bindings)? {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    homo(needle, nbody, subject, sbody, mode, bindings)
 }
 
 /// Match the children of two same-kind nodes: a positional prefix (callee /
