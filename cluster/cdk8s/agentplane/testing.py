@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -118,7 +119,6 @@ ENV = Environment(
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
-    include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
@@ -150,6 +150,7 @@ def chart(app: App) -> Chart:
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
     )
+    add_testing_egress_credentials(chart, credentials_namespace=ENV.egress.credentials_namespace)
     return chart
 
 

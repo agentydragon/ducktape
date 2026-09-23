@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -35,9 +37,9 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
     return entry
 
 
-async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> protocol_pb2.Attached:
+async def wait_snapshot(store: ThreadStore, updates: ThreadUpdates, thread: UUID, cursor: int) -> protocol_pb2.Attached:
     changed = asyncio.Event()
-    with store.changes.subscribe(changed):
+    with updates.changes.subscribe(changed):
         while True:
             changed.clear()
             snapshot = await store.feed_state(thread)
@@ -48,7 +50,7 @@ async def wait_snapshot(store: TrajectoryStore, thread: UUID, cursor: int) -> pr
 
 @pytest.mark.parametrize("boundary", list(CommitBoundary))
 async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
-    db_url: str, store: TrajectoryStore, boundary: CommitBoundary
+    db_url: str, store: ThreadStore, thread_updates: ThreadUpdates, boundary: CommitBoundary
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -145,7 +147,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 assert (await source.opened.get()).after_cursor == 0
                 replay = await source.opened.get()
                 assert replay.after_cursor == committed - 1
-                attached = await wait_snapshot(store, thread.id, 6)
+                attached = await wait_snapshot(store, thread_updates, thread.id, 6)
                 assert attached == source.attached
                 assert await store.last_cursor(thread.id) == committed
                 async with engine.connect() as database:

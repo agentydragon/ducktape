@@ -5,10 +5,10 @@ from pathlib import Path
 from cdk8s import App, Chart
 
 from cluster.cdk8s import (
+    agent_machine_access,
     aiquota,
     cnpg_flux_kustomizations,
     descheduler,
-    descheduler_flux_kustomizations,
     dns_automation,
     dns_automation_flux_kustomizations,
     egress_fences,
@@ -17,6 +17,7 @@ from cluster.cdk8s import (
     forgejo_image_automation,
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
+    github_branch_protection,
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
@@ -29,7 +30,7 @@ from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flu
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
 from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
+from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -52,11 +53,13 @@ from cluster.cdk8s.flux_image_automation_ghcr import (
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_kustomizations
 from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook_token_flux_kustomizations
-from cluster.cdk8s.forgejo import flux_kustomizations as forgejo_flux_kustomizations
+from cluster.cdk8s.forgejo import (
+    flux_kustomizations as forgejo_flux_kustomizations,
+    gitops_modules as forgejo_gitops_modules,
+)
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
 from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
-from cluster.cdk8s.github_branch_protection import flux_kustomizations as github_branch_protection_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import flux_kustomizations as github_secrets_sync_flux_kustomizations
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
@@ -78,7 +81,7 @@ from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as li
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
-from cluster.cdk8s.monitoring import flux_kustomizations as monitoring_flux_kustomizations
+from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
@@ -100,7 +103,10 @@ from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
-from cluster.cdk8s.tofu_state import flux_kustomizations as tofu_state_flux_kustomizations
+from cluster.cdk8s.tofu_state import (
+    flux_kustomizations as tofu_state_flux_kustomizations,
+    namespace as tofu_state_namespace,
+)
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
@@ -139,6 +145,12 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
+    agents_namespaces.write_manifests(root)
+    tofu_state_namespace.write_manifests(root)
+    github_branch_protection.write_manifests(root)
+    agent_machine_access.write_manifests(root)
+    forgejo_gitops_modules.write_manifests(root)
+    alloy_otlp_bearer_token.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -252,8 +264,8 @@ def generate_manifests(root: Path) -> None:
     kubevirt_kustomization = kubevirt_flux_kustomizations.kubevirt(
         flux_chart, kubevirt_artifact, kubevirt_operator_kustomization
     )
-    descheduler_artifact = artifact("descheduler", "cluster/k8s/descheduler")
-    descheduler_flux_kustomizations.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
+    descheduler_artifact = artifact("descheduler", descheduler.OUTPUT_DIR)
+    descheduler.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
     keda_artifact = artifact("keda", "cluster/k8s/keda")
     keda_kustomization = keda_flux_kustomizations.keda(flux_chart, keda_artifact, kyverno_kustomization)
     kyverno_policies_artifact = artifact("kyverno-policies", "cluster/k8s/kyverno/policies")
@@ -446,8 +458,8 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
-    forgejo_agentydragon_artifact = artifact("forgejo-agentydragon", "cluster/k8s/forgejo/agentydragon")
-    forgejo_flux_kustomizations.forgejo_agentydragon(
+    forgejo_agentydragon_artifact = artifact("forgejo-agentydragon", forgejo_gitops_modules.AGENTYDRAGON_DIR)
+    forgejo_gitops_modules.forgejo_agentydragon(
         flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     infra_drift_artifact = artifact("infra-drift", "cluster/k8s/infra-drift")
@@ -505,8 +517,8 @@ def generate_manifests(root: Path) -> None:
     atuin_flux_kustomizations.atuin_user_provisioner(
         flux_chart, atuin_user_provisioner_artifact, atuin_kustomization, user_agentydragon_kustomization
     )
-    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", "cluster/k8s/agents/machine-access-tf")
-    agent_machine_access_tf_kustomization = agents_flux_kustomizations.agent_machine_access_tf(
+    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
+    agent_machine_access_tf_kustomization = agent_machine_access.agent_machine_access_tf(
         flux_chart,
         agent_machine_access_tf_artifact,
         tofu_controller_kustomization,
@@ -537,8 +549,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
-    github_branch_protection_artifact = artifact("github-branch-protection", "cluster/k8s/github-branch-protection")
-    github_branch_protection_flux_kustomizations.github_branch_protection(
+    github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
+    github_branch_protection.github_branch_protection(
         flux_chart,
         github_branch_protection_artifact,
         tofu_controller_kustomization,
@@ -724,17 +736,17 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     forgejo_agentydragon_repos_artifact = artifact(
-        "forgejo-agentydragon-repos", "cluster/k8s/forgejo/agentydragon-repos"
+        "forgejo-agentydragon-repos", forgejo_gitops_modules.AGENTYDRAGON_REPOS_DIR
     )
-    forgejo_agentydragon_repos_kustomization = forgejo_flux_kustomizations.forgejo_agentydragon_repos(
+    forgejo_agentydragon_repos_kustomization = forgejo_gitops_modules.forgejo_agentydragon_repos(
         flux_chart,
         forgejo_agentydragon_repos_artifact,
         forgejo_kustomization,
         tofu_controller_kustomization,
         tofu_state_db_kustomization,
     )
-    budget_ledger_artifact = artifact("budget-ledger", "cluster/k8s/forgejo/budget-ledger")
-    forgejo_flux_kustomizations.budget_ledger(
+    budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
+    forgejo_gitops_modules.budget_ledger(
         flux_chart,
         budget_ledger_artifact,
         forgejo_kustomization,
@@ -742,8 +754,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         budget_namespace_kustomization,
     )
-    forgejo_claude_artifact = artifact("forgejo-claude", "cluster/k8s/forgejo/claude")
-    forgejo_claude_kustomization = forgejo_flux_kustomizations.forgejo_claude(
+    forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
+    forgejo_claude_kustomization = forgejo_gitops_modules.forgejo_claude(
         flux_chart,
         forgejo_claude_artifact,
         forgejo_kustomization,
@@ -984,8 +996,8 @@ def generate_manifests(root: Path) -> None:
     study_casino_flux_kustomizations.study_casino(
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
     )
-    haku_state_artifact = artifact("haku-state", "cluster/k8s/forgejo/haku-state")
-    haku_state_kustomization = forgejo_flux_kustomizations.haku_state(
+    haku_state_artifact = artifact("haku-state", forgejo_gitops_modules.HAKU_STATE_DIR)
+    haku_state_kustomization = forgejo_gitops_modules.haku_state(
         flux_chart,
         haku_state_artifact,
         forgejo_kustomization,
@@ -995,9 +1007,9 @@ def generate_manifests(root: Path) -> None:
         haku_namespace_kustomization,
     )
     monitoring_alloy_otlp_bearer_token_tf_artifact = artifact(
-        "monitoring-alloy-otlp-bearer-token-tf", "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf"
+        "monitoring-alloy-otlp-bearer-token-tf", alloy_otlp_bearer_token.OUTPUT_DIR
     )
-    monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
+    alloy_otlp_bearer_token.alloy_otlp_bearer_token_tf(
         flux_chart,
         monitoring_alloy_otlp_bearer_token_tf_artifact,
         tofu_controller_kustomization,
@@ -1026,8 +1038,8 @@ def generate_manifests(root: Path) -> None:
         agent_machine_access_tf_kustomization,
         reflector_kustomization,
     )
-    cpap_data_artifact = artifact("cpap-data", "cluster/k8s/forgejo/cpap-data")
-    forgejo_flux_kustomizations.cpap_data(
+    cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
+    forgejo_gitops_modules.cpap_data(
         flux_chart,
         cpap_data_artifact,
         forgejo_kustomization,
@@ -1186,7 +1198,7 @@ def generate_manifests(root: Path) -> None:
         litellm_kustomization,
         litellm_keys_tf_kustomization,
     )
-    haku_console_artifact = artifact("haku-console", haku_charts.PATH, "cluster/k8s/haku/console-namespace")
+    haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_charts.haku_console(
         flux_chart,
         haku_console_artifact,

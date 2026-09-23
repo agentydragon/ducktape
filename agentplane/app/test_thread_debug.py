@@ -14,9 +14,11 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import TrajectoryStore
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,7 +27,9 @@ from agentplane.protocol import command_pb2, event_pb2
 async def test_lazy_scoped_evidence_and_native_expansion(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -72,6 +76,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         live_index,
         action_policy,
         reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     path = f"/threads/{thread}/evidence"
     params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}

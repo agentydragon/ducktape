@@ -15,14 +15,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.trajectory import (
-    SEGMENT_KINDS,
-    EntityKind,
-    ThreadEntityInterest,
-    ThreadInterestExpiredError,
-    ThreadPayloadSelection,
-    TrajectoryStore,
-)
+from agentplane.app.thread.content import ThreadEntityInterest, ThreadInterestExpiredError, ThreadPayloadSelection
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +102,7 @@ class ElectricStreamingResponse(StreamingResponse):
 
 
 class ElectricProxy:
-    def __init__(self, client: httpx.AsyncClient, store: TrajectoryStore) -> None:
+    def __init__(self, client: httpx.AsyncClient, store: ThreadStore) -> None:
         self._client = client
         self._store = store
 

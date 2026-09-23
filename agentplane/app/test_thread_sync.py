@@ -8,10 +8,12 @@ from uuid import UUID
 import httpx
 import pytest_bazel
 
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.trajectory import IngestionLease, TrajectoryStore
+from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -19,7 +21,8 @@ from agentplane.protocol import command_pb2, event_pb2
 
 async def test_materialized_revisions_replicate_with_restricted_role() -> None:
     async with electric_service() as service:
-        store = TrajectoryStore.connect(service.database_url)
+        engine = connect(service.database_url)
+        store = ThreadStore(engine)
         try:
             source = ReplicationSource()
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -77,7 +80,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                 assert "".join(row["text"] for row in ordered) == "Hello world"
             await _cross_replica_sync(service, store, source, thread, lease)
         finally:
-            await store.close()
+            await engine.dispose()
 
 
 async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[str, str]) -> httpx.Response:
@@ -103,7 +106,7 @@ async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[s
 
 
 async def _cross_replica_sync(
-    service: ElectricService, store: TrajectoryStore, source: ReplicationSource, thread: UUID, lease: IngestionLease
+    service: ElectricService, store: ThreadStore, source: ReplicationSource, thread: UUID, lease: IngestionLease
 ) -> None:
     async with (
         asyncio.timeout(60),
@@ -193,7 +196,7 @@ async def _selected_command_outcome(
     client_one: httpx.AsyncClient,
     client_two: httpx.AsyncClient,
     path: str,
-    store: TrajectoryStore,
+    store: ThreadStore,
     source: ReplicationSource,
     thread: UUID,
     lease: IngestionLease,
@@ -245,7 +248,7 @@ async def _history_windows(
     client_two: httpx.AsyncClient,
     path: str,
     previous_params: dict[str, str],
-    store: TrajectoryStore,
+    store: ThreadStore,
     source: ReplicationSource,
     thread: UUID,
     lease: IngestionLease,

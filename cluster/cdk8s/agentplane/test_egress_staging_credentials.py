@@ -28,13 +28,10 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
     assert provider["remoteNamespace"] == "haku-sandbox"
     assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
 
-    secrets = [obj for obj in objects if obj["kind"] == "ExternalSecret"]
-    assert {(obj["metadata"]["namespace"], obj["metadata"]["name"]) for obj in secrets} == {
-        (STAGING_NAMESPACE, "haku-forgejo-git"),
-        (STAGING_NAMESPACE, "grocy-sf-readonly"),
-    }
-    forgejo = next(obj for obj in secrets if obj["metadata"]["name"] == "haku-forgejo-git")
-    assert forgejo["spec"]["data"] == [
+    secrets = {obj["metadata"]["name"]: obj for obj in objects if obj["kind"] == "ExternalSecret"}
+    assert {obj["metadata"]["namespace"] for obj in secrets.values()} == {STAGING_NAMESPACE}
+    assert set(secrets) == {"agentplane-github-pat", "haku-forgejo-git", "grocy-sf-readonly"}
+    assert secrets["haku-forgejo-git"]["spec"]["data"] == [
         {"secretKey": "password", "remoteRef": {"key": "haku-forgejo-git", "property": "password"}}
     ]
     assert not any(obj["kind"] == "Secret" for obj in objects)

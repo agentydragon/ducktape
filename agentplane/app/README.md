@@ -49,14 +49,20 @@ bbr test //agentplane/app/...
 - `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
   (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
   Service, and the SSE streams that push a snapshot of it to every open tab.
-- `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
+- `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `trajectory.py`: the PostgreSQL store of threads, events, feed state, leases, materialized
+- `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
   thread entities, and immutable content chunks/manifests. Each ingestion transaction
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
+  Layered bottom-up: `models.py` (the tables) and `views.py` (the rows' client contract);
+  `event_log.py` (the copied runner events and the feed state) and `ingestion_lease.py` (which
+  replica ingests a sandbox); `rows.py` (fold records to and from entity rows) and `payloads.py`
+  (insert-only bodies); `recording.py` (the fold write path) and `content.py` (reads of what the
+  fold assembled); `store.py` (`ThreadStore`, the API over all of it: it owns each transaction,
+  composes the writes that span levels, and holds what is set on a thread itself). `updates.py`
+  turns committed PostgreSQL notifications into replica-local wakeups.
 - `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
@@ -64,8 +70,10 @@ bbr test //agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
+- `database.py`: the app's one connection pool; `main.py` builds it and hands it to each store and
+  to the thread update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
-  in `operator_sessions.py` and reused by `trajectory.py`'s tables. Migrations run separately through
+  in `operator_sessions.py` and reused by `thread/models.py`'s tables. Migrations run separately through
   `:migrate`; the server itself never creates or checks tables at startup. `:image` and
   `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
@@ -144,7 +152,7 @@ bottom before a queued scroll event. Larger history-window, collection-retention
 proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.md).
 
 The new projection schema is incompatible with populated pre-projection staging/testing
-archives: reset the disposable trajectory data before applying it. There is no implicit
+archives: reset the disposable thread data before applying it. There is no implicit
 backfill, tolerant old-row reader, or on-open replay. Migration `0005_conversation_projection`
 creates the materialized tables, grants and publication, which `0006_thread_fold_rename` renames
 to the `thread_*` family; the managed `electric` database role must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
@@ -214,7 +222,7 @@ writer implements no `Flush()`.
 
 The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and
 Threads, including archived Threads and threadless Sandboxes. Kubernetes watch invalidations and
-the existing PostgreSQL trajectory notifications both refresh that snapshot. A listener reconnect
+the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 

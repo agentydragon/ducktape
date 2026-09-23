@@ -29,9 +29,12 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
 from agentplane.app.oidc import load_settings
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
-from agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
+from agentplane.app.thread.models import SandboxIngestion
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -160,10 +163,13 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_and_store(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_and_database(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    engine: AsyncEngine,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -174,8 +180,20 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then releases the ingestion lease and every
-    connection the store held."""
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer)
+    connection the app held."""
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
+    )
     port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
     server = AppServer(
@@ -186,7 +204,9 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     async def sandboxes() -> list[str]:
         return [SANDBOX]
 
-    serving = asyncio.create_task(serve_then_close(server, bridge=bridge, store=store, sandboxes=sandboxes))
+    serving = asyncio.create_task(
+        serve_then_close(server, bridge=bridge, thread_updates=thread_updates, engine=engine, sandboxes=sandboxes)
+    )
     # The bridge leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
     while not server.started or await _leases(database) == 0:
         if serving.done():

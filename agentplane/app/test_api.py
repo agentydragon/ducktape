@@ -21,6 +21,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.kubernetes import (
@@ -34,7 +35,9 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.trajectory import THREAD_FOLD_EPOCH, TrajectoryStore
+from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -97,7 +100,7 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
+async def electric(store: ThreadStore) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
@@ -109,7 +112,9 @@ async def electric(store: TrajectoryStore) -> AsyncIterator[ElectricProxy]:
 def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -155,6 +160,8 @@ def client(
         reviewer=reviewer,
         presets=TEST_PRESETS,
         electric=electric,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -479,7 +486,9 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -502,7 +511,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
 
         app = create_app(
             inventory,
-            RunnerBridge(address_of=nobody_listens, store=store),
+            RunnerBridge(address_of=nobody_listens, store=store, thread_changes=thread_updates.changes),
             store,
             TEST_MODELS,
             egress,
@@ -510,6 +519,8 @@ def test_a_runner_that_does_not_answer_is_a_503(
             live_index,
             action_policy,
             reviewer=reviewer,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
             response = client.get("/sandboxes/live/sessions")
@@ -679,7 +690,9 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -692,7 +705,17 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -716,7 +739,9 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -752,7 +777,17 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         lease=lease,
     )
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
     async with httpx.AsyncClient(
@@ -783,7 +818,9 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -793,7 +830,17 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -815,7 +862,9 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
-    store: TrajectoryStore,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -835,7 +884,17 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     gone_thread = await store.thread("gone", "s-3", spec)
     await store.archive(gone_thread)
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH

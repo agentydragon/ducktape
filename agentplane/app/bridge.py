@@ -22,15 +22,9 @@ from agentplane.app.ingestion import event_batches
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.trajectory import (
-    EventReplicationError,
-    FeedEnd,
-    FeedError,
-    IngestionLease,
-    IngestionLeaseLostError,
-    ThreadNotFoundError,
-    TrajectoryStore,
-)
+from agentplane.app.thread.event_log import EventReplicationError, FeedEnd, FeedError, ThreadNotFoundError
+from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError
@@ -88,7 +82,7 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(self, *, session_id: str, client: RunnerClient, store: ThreadStore, lease: IngestionLease):
         self.session_id = session_id
         self.client = client
         self.store = store
@@ -157,12 +151,14 @@ class RunnerBridge:
         self,
         *,
         address_of: AddressOf,
-        store: TrajectoryStore,
+        store: ThreadStore,
+        thread_changes: Changes,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
     ) -> None:
         self._address_of = address_of
         self._store = store
+        self._thread_changes = thread_changes
         self._discover_sandboxes = discover_sandboxes
         self._sandbox_changes = sandbox_changes
         self._clients: dict[str, RunnerClient] = {}
@@ -299,7 +295,7 @@ class RunnerBridge:
         # In particular, do not return a resumed session while the database still says its
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
         waiter = asyncio.Event()
-        with self._store.changes.subscribe(waiter):
+        with self._thread_changes.subscribe(waiter):
             async with asyncio.timeout(15):
                 while True:
                     waiter.clear()
@@ -351,7 +347,7 @@ class RunnerBridge:
     async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Wait for the ingester's committed prefix, never for a native command effect."""
         waiter = asyncio.Event()
-        with self._store.changes.subscribe(waiter):
+        with self._thread_changes.subscribe(waiter):
             async with asyncio.timeout(COMMAND_ADMISSION_S):
                 while True:
                     if admitted := await self._store.admitted_command(thread_id, command):
@@ -374,7 +370,7 @@ class RunnerBridge:
             raise ThreadNotFoundError(thread_id)
         waiter = asyncio.Event()
         cursor = after_cursor
-        with self._store.changes.subscribe(waiter):
+        with self._thread_changes.subscribe(waiter):
             attached_sent = False
             while True:
                 waiter.clear()

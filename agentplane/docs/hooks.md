@@ -112,7 +112,7 @@ its veto was decorative.
   same way and turns the answer into the command's exit and stdout. `bypass_hook_trust` is set,
   since the runner authored the config.
 - **Log before answering.** The hook's request and the client's decision are session-log events
-  written before the harness gets its answer, so a trajectory shows what was asked and decided.
+  written before the harness gets its answer, so the thread shows what was asked and decided.
 - **Webhooks sit above the runner.** HTTP callback registration belongs to the app, which holds
   the client side of the capability and fans out; the runner asks only the attachment that
   declared the hook, and attachments are independent ([SPEC](../runner/SPEC.md) § Attachments).

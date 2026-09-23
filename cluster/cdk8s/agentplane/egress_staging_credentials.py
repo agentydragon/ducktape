@@ -1,7 +1,7 @@
-"""agentplane-staging's egress credentials beyond the shared set (`egress.py`,
-`egress_credentials.py`): each real account the staging proxy presents for a sandbox, with the
-Secret plumbing that delivers it and the EgressPolicy that scopes where it is presented. Testing
-reaches no real account, so nothing here is rendered there.
+"""agentplane-staging's egress credentials: each real account the staging proxy presents for a
+sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
+and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
+presented. Testing copies in only the GitHub PAT (`egress_testing_credentials.py`).
 """
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -37,22 +37,34 @@ from external_secret_store_crds.io.external_secrets import (
 
 from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
-from cluster.cdk8s.agentplane.egress_credentials import credential_external_secret
+from cluster.cdk8s.agentplane.egress_credentials import (
+    EXTERNAL_CREDS_READER,
+    EXTERNAL_CREDS_STORE,
+    GITHUB_PAT_SECRET,
+    credential_external_secret,
+)
 from cluster.cdk8s.metadata import metadata
 
 _FORGEJO_STORE = "kubernetes-agentplane-staging-forgejo-secret-store"
-_READER = "external-creds-reader"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
     construct = Construct(scope, "staging-egress-credentials")
-    _forgejo_haku(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    reader = ServiceAccount(construct, "reader", metadata=metadata(EXTERNAL_CREDS_READER, credentials_namespace))
+    credential_external_secret(
+        construct,
+        namespace=credentials_namespace,
+        target=GITHUB_PAT_SECRET,
+        source="github-agentydragon-agent",
+        key="token",
+        store=EXTERNAL_CREDS_STORE,
+    )
+    _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
-def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
-    reader = ServiceAccount(scope, "reader", metadata=metadata(_READER, credentials_namespace))
+def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     source_role = Role(
         scope,
         "forgejo-source-role",
@@ -79,7 +91,9 @@ def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: st
                 kubernetes=ClusterSecretStoreSpecProviderKubernetes(
                     remote_namespace="haku-sandbox",
                     auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=_READER)
+                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=EXTERNAL_CREDS_READER
+                        )
                     ),
                     server=ClusterSecretStoreSpecProviderKubernetesServer(
                         ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(

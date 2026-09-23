@@ -27,8 +27,10 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.thread.content import ThreadEntityInterest, ThreadPayloadSelection
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.views import EntityKind
 from agentplane.app.thread_fold import PayloadField
-from agentplane.app.trajectory import EntityKind, ThreadEntityInterest, ThreadPayloadSelection, TrajectoryStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -57,7 +59,7 @@ def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
 
 
 @pytest.fixture
-async def seeded(store: TrajectoryStore) -> Seeded:
+async def seeded(store: ThreadStore) -> Seeded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
     started: dict[str, int] = {}
@@ -96,7 +98,7 @@ async def seeded(store: TrajectoryStore) -> Seeded:
     return Seeded(thread, interest, selection)
 
 
-def make_app(upstream: httpx.MockTransport, store: TrajectoryStore) -> tuple[FastAPI, httpx.AsyncClient]:
+def make_app(upstream: httpx.MockTransport, store: ThreadStore) -> tuple[FastAPI, httpx.AsyncClient]:
     electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
     app = FastAPI()
     app.state.electric = ElectricProxy(electric, store)
@@ -124,7 +126,7 @@ def payload_query(seeded: Seeded) -> dict[str, str]:
     }
 
 
-async def test_entity_shape_names_only_kinds_the_projection_writes(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_entity_shape_names_only_kinds_the_projection_writes(store: ThreadStore, seeded: Seeded) -> None:
     """A kind in the predicate that nothing writes is dead, and rides in every shape's cache key."""
     seen: httpx.Request | None = None
 
@@ -148,7 +150,7 @@ async def test_entity_shape_names_only_kinds_the_projection_writes(store: Trajec
     assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
 
 
-async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, seeded: Seeded) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -189,7 +191,7 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: TrajectoryStor
     }
 
 
-async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: ThreadStore, seeded: Seeded) -> None:
     """Immutable history is cached and revalidated, never re-transferred and never served unchecked."""
     seen: list[httpx.Request] = []
 
@@ -218,7 +220,7 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
     assert [request.headers.get("if-none-match") for request in seen] == [None, '"shape-7_0"']
 
 
-async def test_stale_or_client_widened_interest_is_rejected(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_stale_or_client_widened_interest_is_rejected(store: ThreadStore, seeded: Seeded) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected requests must not reach Electric")
 
@@ -235,7 +237,7 @@ async def test_stale_or_client_widened_interest_is_rejected(store: TrajectorySto
     assert bad_log.status_code == 400
 
 
-async def test_old_entity_scope_is_rejected_before_forwarding(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_old_entity_scope_is_rejected_before_forwarding(store: ThreadStore, seeded: Seeded) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("retired scopes must not reach Electric")
 
@@ -258,7 +260,7 @@ async def test_old_entity_scope_is_rejected_before_forwarding(store: TrajectoryS
     ],
 )
 async def test_current_snapshot_cannot_change_fixed_shape(
-    subset: dict[str, str], store: TrajectoryStore, seeded: Seeded
+    subset: dict[str, str], store: ThreadStore, seeded: Seeded
 ) -> None:
     seen: list[httpx.Request] = []
 
@@ -300,7 +302,7 @@ async def test_current_snapshot_cannot_change_fixed_shape(
     ],
 )
 async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
-    query: str, store: TrajectoryStore, seeded: Seeded
+    query: str, store: ThreadStore, seeded: Seeded
 ) -> None:
     async def unexpected(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("rejected snapshots must not reach Electric")
@@ -313,7 +315,7 @@ async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision(store: TrajectoryStore, seeded: Seeded) -> None:
+async def test_payload_shape_uses_server_verified_exact_revision(store: ThreadStore, seeded: Seeded) -> None:
     seen: httpx.Request | None = None
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -350,7 +352,7 @@ async def test_payload_shape_uses_server_verified_exact_revision(store: Trajecto
 
 
 async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(
-    store: TrajectoryStore, seeded: Seeded
+    store: ThreadStore, seeded: Seeded
 ) -> None:
     seen: list[httpx.Request] = []
 
@@ -396,7 +398,7 @@ async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_id
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
 async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(
-    disconnect: str, store: TrajectoryStore, seeded: Seeded
+    disconnect: str, store: ThreadStore, seeded: Seeded
 ) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:

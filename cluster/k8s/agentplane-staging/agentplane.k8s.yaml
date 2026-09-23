@@ -3404,6 +3404,13 @@ subjects:
     name: agentplane-egress
     namespace: agentplane-staging
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging-egress-credentials
+automountServiceAccountToken: false
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -3423,13 +3430,6 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: agentplane-github-pat
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-creds-reader
-  namespace: agentplane-staging-egress-credentials
-automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -10,3 +10,11 @@ metadata:
     rbac.ducktape.io/agent-readable-metadata: "true"
   name: public-coder-agent
 spec: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: public-coder-agent
+imagePullSecrets:
+  - name: forgejo-images-creds

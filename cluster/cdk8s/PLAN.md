@@ -67,29 +67,15 @@ neighbourhood is in. "1:1 first, abstract when the neighbourhood is in": literal
 duplicated while the other side is still YAML; a shared type, registry, loader or
 derived roster is not written until every node it would touch is a construct.
 
-## Pause after Wave 1
-
-Look at the Flux layer as one thing before building on it:
-
-- Node signatures. `agentplane_staging` takes 17 `Kustomization` parameters. Decide
-  whether that is acceptable as is, wants keyword-only parameters, or reveals that
-  some dependencies are not the node's own (a dependency inherited from a chart's
-  needs, say). A record type for "dependencies" is not one of the options.
-- Repetition. Re-measure lines per node after the artifact step. The remaining
-  repetition should be operational fields (`interval`, `prune`, `wait`, ...) and
-  literal `healthChecks` for hand-written directories; if anything else repeats,
-  name it before adding a helper.
-- Cycle check. `test_cluster_integration.test_no_dependency_errors` exercises the check over
-  the emitted local Flux graph; the cycle-specific tests in `test_dependencies.py` exercise
-  it on synthetic graphs. In-chart `dependsOn` entries now come from earlier Kustomization
-  objects. The remaining literal edge,
-  `artifact-generators -> flux-system`, targets the bootstrap Kustomization outside this
-  chart. Revisit whether the output-level check still adds value once construction order
-  makes an in-chart cycle impossible.
-
 ## Wave 2: split the trees
 
-One PR, because each half is broken alone.
+Runs after Wave 4's first tranche, through its pause: no conversion depends on it, it is
+the one step that can prune live objects, and the floor is decided from a smaller
+remainder. Until then, progress is measured per directory (generated vs hand-written
+files), not by looking at `cluster/k8s`.
+
+One PR for the move, because each half is broken alone; the sparse-checkout change below
+lands and reconciles before it.
 
 - cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
   hand-written files only. Each artifact gets a second copy op from the generated
@@ -97,6 +83,13 @@ One PR, because each half is broken alone.
   `.gitattributes` collapses to one glob. A test helper overlays the two trees the way
   the artifact does, for `test_flux_build` and `test_cluster_integration`. Exit:
   artifact contents byte-identical per Kustomization before and after the move.
+- Before the move: add `cluster/generated/k8s/` to the `ducktape` GitRepository's
+  `sparseCheckout`. Landing the move first rebuilds artifacts without the generated
+  files, and their Kustomizations prune those objects (CNPG Clusters included).
+- Three generated outputs are read without an artifact and stay in `cluster/k8s` unless
+  bootstrap changes: `flux/kustomizations.k8s.yaml` and `external-creds` (the
+  `flux-system` GitRepository, whose `sparseCheckout` is in `gotk-sync.yaml`), and
+  `artifact-generators` (read from the `ducktape` GitRepository directly).
 
 **Pause after Wave 2.** With `cluster/k8s` showing only what is still hand-written:
 
@@ -129,9 +122,20 @@ Decide from the count Wave 3 reports, not before.
 Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, then
 node taking values, then dependents).
 
-- **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
-  at most an ExternalSecret) need either conversion or consolidation into their
-  application's owner. SSH-MCP includes its namespace in the application owner.
+- **Single-`Terraform`-CR directories** through `terraform.gitops_terraform`
+  (`forgejo/{agentydragon,agentydragon-repos,budget-ledger,claude,cpap-data,haku-state}`,
+  `github-branch-protection`, `agents/machine-access-tf`,
+  `monitoring/alloy-otlp-bearer-token-tf`), one exemplar then the rest.
+- **Namespaces.** A namespace subdirectory already applied by its app's Kustomization
+  folds into that directory as `namespace.k8s.yaml` (`generation.write_namespace`), one
+  PR each: `agents/{mitmproxy,haku-egress-proxy,haku-openclaw-spike}`,
+  `forgejo`, `authentik`, `litellm`, `clickhouse/operator`, `home-assistant`; `ssh-mcp`
+  and `haku/console` into their app charts. A namespace several Kustomizations deploy
+  into (`seaweedfs`, `monitoring`, `haku-sandbox`, `kube-system`) or whose contents are
+  written at runtime (`budget`, `agentydragon`) keeps its own Kustomization and converts
+  standalone.
+- **Single-CNPG-`Cluster` directories** (`forgejo/db`, `tofu-state/db`, `authentik/db`):
+  identical rendered objects, no rename or ownership change.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
   `agents/haku-egress-proxy` (one `IronProxy` construct for its two iron deployments and
   `public-coder-agent/proxy`), `agents/haku-openclaw-spike/app`,
@@ -170,20 +174,26 @@ declarations again.
   property unrepresentable or checkable over constructs rather than parsed output:
   `test_crd_layering` (a Kustomization applying an operator's kinds depends on that
   operator's Kustomization; what roster it still needs is decided then),
-  `test_dependencies`, `test_health_checks`, `test_generator_namespace`. Others may
-  follow; the remaining list is what is left, not a target.
+  `test_dependencies` (with `test_cluster_integration.test_no_dependency_errors`, whose
+  cycle check construction order already makes moot for in-chart edges; the one literal
+  edge left is `artifact-generators -> flux-system`), `test_health_checks`,
+  `test_generator_namespace`. Others may follow; the remaining list is what is left, not
+  a target.
 
 ## Candidates I am not sure about
 
 Cleanups and patterns that look right from where the tree is today, not committed to
 by any wave. Each names what would settle it. None is a reason to widen a wave's PR.
 
-- **The entry point at 1,180 lines.** `generate_manifests.py` is the whole topological
+- **The entry point at 1,430 lines.** `generate_manifests.py` is the whole topological
   order by hand, which is the design. If it becomes hard to read, the shape to try is
   one function per area that builds its subgraph from explicit predecessor parameters
   and returns the nodes others need, called from the entry point in order; not a
   registry, not per-module imports of other areas' nodes. Unsure it is needed; the
   file has not yet caused a wrong edit.
+- **`postBuild.substituteFrom: cert-manager-issuer-config`** is the one non-operational
+  block still repeated verbatim, on 6 nodes. Same value everywhere, so it may become a
+  `flux` constant like `SOPS_DECRYPTION`; low value at 6 sites.
 - **`generation.write_charts(*builders)`** still takes builder callables at 8 call
   sites (`lambda app: chart(app, mesh)` in `dns_automation`). Confident it should
   become `app = directory_app(root, path); chart(app, mesh); app.synth()`; only the

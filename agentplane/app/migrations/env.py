@@ -3,7 +3,7 @@
 from alembic import context
 
 from agentplane.app.database_migrate import RUNNER
-from agentplane.app.trajectory import Base
+from agentplane.app.thread.models import Base
 
 connection = context.config.attributes["connection"]
 target_metadata = context.config.attributes.get("target_metadata", Base.metadata)

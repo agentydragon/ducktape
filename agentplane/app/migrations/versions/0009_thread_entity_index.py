@@ -8,7 +8,7 @@ down_revision = "0008_thread_scope_source_id"
 branch_labels = None
 depends_on = None
 
-# The order `_ordered_entity_rows` numbers a batch in, so a backfilled row gets the index
+# The order `ordered_entity_rows` numbers a batch in, so a backfilled row gets the index
 # it would have been given had the column always existed.
 _BACKFILL = """
 UPDATE thread_entity AS entity
