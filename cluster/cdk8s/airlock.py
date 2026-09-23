@@ -31,19 +31,13 @@ from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
     ClusterExternalSecretSpecExternalSecretSpecTarget,
 )
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -146,30 +140,16 @@ def _session_secret(chart: Chart) -> None:
         metadata=metadata(_SESSION_SECRET, NAME),
         spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "session-secret",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=ExternalSecretSpec(
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                immutable=True,
-                name=_SESSION_SECRET,
-                template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
-            ),
-        ),
+        name=_SESSION_SECRET,
+        namespace=NAME,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
+        immutable=True,
     )
 
 

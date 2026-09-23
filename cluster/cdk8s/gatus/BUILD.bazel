@@ -38,6 +38,7 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",

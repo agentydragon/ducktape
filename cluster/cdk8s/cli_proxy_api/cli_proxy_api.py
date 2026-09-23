@@ -24,13 +24,6 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
@@ -48,6 +41,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -124,40 +118,25 @@ def _data_claim(scope: Construct) -> None:
 def _config(scope: Construct) -> None:
     # CLIProxyAPI requires a single config file. ESO renders the API key from the
     # SOPS-managed client-key Secret, so this template remains safe to review and edit.
-    ExternalSecret(
+    add_external_secret(
         scope,
         "config",
-        metadata=metadata(
-            _CONFIG_SECRET,
-            _NAMESPACE,
-            annotations={
-                "description": (
-                    "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
-                    "to three times only before its first response byte reaches the caller. Remote management "
-                    "uses native Authentik OIDC for browsers and a management key for AIQuota."
-                )
-            },
+        name=_CONFIG_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+        data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
         ),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-cli-proxy-api-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_CONFIG_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="client_key",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="cli-proxy-api-client-key", property="client-key"),
-                )
-            ],
-        ),
+        annotations={
+            "description": (
+                "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
+                "to three times only before its first response byte reaches the caller. Remote management "
+                "uses native Authentik OIDC for browsers and a management key for AIQuota."
+            )
+        },
     )
 
 

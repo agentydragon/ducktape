@@ -19,25 +19,12 @@ from cilium_envoyconfig_crds.io.cilium import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
@@ -76,9 +63,11 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3CredentialsSpecSecretRef,
 )
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 _OUTPUT_DIR = "cluster/k8s/forgejo/app"
@@ -188,30 +177,16 @@ def _metrics_token(scope: Construct) -> None:
         metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "metrics-token",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_METRICS_TOKEN,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_METRICS_TOKEN,
+        namespace=_NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -436,40 +411,30 @@ def _helm_release(scope: Construct) -> None:
             type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
         ),
     )
-    HelmRelease(
+    helm_release(
         scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            # Extended timeout (PostgreSQL + PVC binding + init containers)
-            timeout="15m",
-            # Runtime prerequisites may become ready after admission; keep retrying while
-            # they converge.
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
-            upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    version="17.1.6",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="forgejo-db-ssd-creds",
-                    values_key="password",
-                    # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
-                    target_path="gitea.config.database.PASSWD",
-                )
-            ],
-            values=_values(),
-        ),
+        _NAME,
+        _NAMESPACE,
+        repository=repository,
+        chart=_NAME,
+        version="17.1.6",
+        interval="15m",
+        # Extended timeout (PostgreSQL + PVC binding + init containers)
+        timeout="15m",
+        # Runtime prerequisites may become ready after admission; keep retrying while
+        # they converge.
+        install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
+        upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="forgejo-db-ssd-creds",
+                values_key="password",
+                # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
+                target_path="gitea.config.database.PASSWD",
+            )
+        ],
+        values=_values(),
     )
 
 

@@ -31,15 +31,12 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromRewrite,
     ExternalSecretSpecDataFromRewriteRegexp,
     ExternalSecretSpecDataFromSourceRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -49,6 +46,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -142,114 +140,93 @@ def _add_credentials(scope: Construct) -> None:
             ],
         )
 
-    ExternalSecret(
+    add_external_secret(
         scope,
         "oidc-credentials",
-        metadata=metadata(
-            "agentplane-oidc",
-            _NAMESPACE,
-            annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
-        ),
-        spec=ExternalSecretSpec(
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name="agentplane-oidc",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    data={
-                        "client-id": "agentplane-testing",
-                        "client-secret": '{{ index . "client-secret" }}',
-                        "session-secret": '{{ index . "session-secret" }}',
-                    },
-                ),
-            ),
-            data_from=[
-                rewrite("agentplane-testing-dex-client-secret", "client-secret"),
-                rewrite("agentplane-testing-agentplane-session-secret", "session-secret"),
-            ],
-        ),
-    )
-
-    ExternalSecret(
-        scope,
-        "mcp-oauth-credentials",
-        metadata=metadata(
-            "agentplane-mcp-oauth",
-            _NAMESPACE,
-            annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
-        ),
-        spec=ExternalSecretSpec(
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name="agentplane-mcp-oauth",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    data={"client-id": "agentplane-testing-mcp", "client-secret": '{{ index . "client-secret" }}'},
-                ),
-            ),
-            data_from=[rewrite("agentplane-testing-mcp-client-secret", "client-secret")],
-        ),
-    )
-
-    ExternalSecret(
-        scope,
-        "acceptance-operator-credentials",
-        metadata=metadata(
-            "agentplane-testing-acceptance-operator",
-            _NAMESPACE,
-            annotations={
-                "description": "Generates the acceptance password and Dex config together from one password value."
+        name="agentplane-oidc",
+        namespace=_NAMESPACE,
+        refresh="8760h",
+        data_from=[
+            rewrite("agentplane-testing-dex-client-secret", "client-secret"),
+            rewrite("agentplane-testing-agentplane-session-secret", "session-secret"),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            data={
+                "client-id": "agentplane-testing",
+                "client-secret": '{{ index . "client-secret" }}',
+                "session-secret": '{{ index . "session-secret" }}',
             },
         ),
-        spec=ExternalSecretSpec(
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name="agentplane-testing-acceptance-operator",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "public-coder-agent",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "public-coder-agent",
-                        }
-                    ),
-                    data={
-                        "login": _ACCEPTANCE_EMAIL,
-                        "username": _ACCEPTANCE_USERNAME,
-                        "password": "{{ .password }}",
-                        "issuer": _ISSUER,
-                        # Dex v2.45.1 encodes IDTokenSubject{user_id: "test-subject", conn_id: "local"}
-                        # as unpadded base64url protobuf, not the bare staticPasswords.userID.
-                        # TODO: derive this from readable user/connector IDs instead of hand-maintaining
-                        # the encoded subject.
-                        "subject": "Cgx0ZXN0LXN1YmplY3QSBWxvY2Fs",
-                        "config.yaml": _dex_config_yaml(),
-                    },
-                ),
-            ),
-            # Dex's config and the acceptance client's password both come from this one
-            # dataFrom entry: two ExternalSecrets naming the same Password generator get two
-            # independent values (#7042).
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name="agentplane-testing-dex-operator-password",
-                        )
+        annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
+    )
+
+    add_external_secret(
+        scope,
+        "mcp-oauth-credentials",
+        name="agentplane-mcp-oauth",
+        namespace=_NAMESPACE,
+        refresh="8760h",
+        data_from=[rewrite("agentplane-testing-mcp-client-secret", "client-secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            data={"client-id": "agentplane-testing-mcp", "client-secret": '{{ index . "client-secret" }}'},
+        ),
+        annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
+    )
+
+    add_external_secret(
+        scope,
+        "acceptance-operator-credentials",
+        name="agentplane-testing-acceptance-operator",
+        namespace=_NAMESPACE,
+        refresh="8760h",
+        # Dex's config and the acceptance client's password both come from this one
+        # dataFrom entry: two ExternalSecrets naming the same Password generator get two
+        # independent values (#7042).
+        data_from=[
+            ExternalSecretSpecDataFrom(
+                source_ref=ExternalSecretSpecDataFromSourceRef(
+                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                        name="agentplane-testing-dex-operator-password",
                     )
                 )
-            ],
+            )
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            metadata=ExternalSecretSpecTargetTemplateMetadata(
+                annotations={
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "public-coder-agent",
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "public-coder-agent",
+                }
+            ),
+            data={
+                "login": _ACCEPTANCE_EMAIL,
+                "username": _ACCEPTANCE_USERNAME,
+                "password": "{{ .password }}",
+                "issuer": _ISSUER,
+                # Dex v2.45.1 encodes IDTokenSubject{user_id: "test-subject", conn_id: "local"}
+                # as unpadded base64url protobuf, not the bare staticPasswords.userID.
+                # TODO: derive this from readable user/connector IDs instead of hand-maintaining
+                # the encoded subject.
+                "subject": "Cgx0ZXN0LXN1YmplY3QSBWxvY2Fs",
+                "config.yaml": _dex_config_yaml(),
+            },
         ),
+        annotations={
+            "description": "Generates the acceptance password and Dex config together from one password value."
+        },
     )
 
 

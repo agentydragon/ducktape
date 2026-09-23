@@ -11,13 +11,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
@@ -50,6 +43,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -174,45 +168,33 @@ def _repository_store(scope: Construct) -> None:
     )
 
 
-def _remote_ref(secret_key: str, secret_name: str) -> ExternalSecretSpecData:
-    return ExternalSecretSpecData(
-        secret_key=secret_key, remote_ref=ExternalSecretSpecDataRemoteRef(key=secret_name, property=secret_key)
-    )
-
-
 def _repository(scope: Construct) -> None:
     """The combined repository Secret VolSync requires, rendered by ESO from the S3 credentials
     and the Restic password."""
-    ExternalSecret(
+    add_external_secret(
         scope,
         "repository",
-        metadata=metadata(_REPOSITORY_SECRET_NAME, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=_SECRET_STORE_NAME
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_REPOSITORY_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    # Preserve the data fetched below alongside the static Restic endpoint.
-                    merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
-                    template_from=[
-                        ExternalSecretSpecTargetTemplateTemplateFrom(
-                            literal=(
-                                f"RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/{_BUCKET_NAME}\n"
-                                "AWS_DEFAULT_REGION: us-east-1\n"
-                            )
-                        )
-                    ],
-                ),
-            ),
-            data=[
-                _remote_ref("AWS_ACCESS_KEY_ID", _S3_CREDENTIALS_SECRET_NAME),
-                _remote_ref("AWS_SECRET_ACCESS_KEY", _S3_CREDENTIALS_SECRET_NAME),
-                _remote_ref("RESTIC_PASSWORD", _RESTIC_PASSWORD_SECRET_NAME),
+        name=_REPOSITORY_SECRET_NAME,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=secret_store(_SECRET_STORE_NAME),
+        data=[
+            remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
+            remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),
+            remote_data(_RESTIC_PASSWORD_SECRET_NAME, "RESTIC_PASSWORD"),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            # Preserve the data fetched above alongside the static Restic endpoint.
+            merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
+            template_from=[
+                ExternalSecretSpecTargetTemplateTemplateFrom(
+                    literal=(
+                        f"RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/{_BUCKET_NAME}\n"
+                        "AWS_DEFAULT_REGION: us-east-1\n"
+                    )
+                )
             ],
         ),
     )
