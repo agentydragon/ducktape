@@ -15,6 +15,7 @@ filegroup(
         "//agentplane/app/migrations/versions:0008_thread_scope_source_id.py",
         "//agentplane/app/migrations/versions:0009_thread_entity_index.py",
         "//agentplane/app/migrations/versions:0010_drop_unread_fold_state.py",
+        "//agentplane/app/migrations/versions:0011_event_log_identity.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )

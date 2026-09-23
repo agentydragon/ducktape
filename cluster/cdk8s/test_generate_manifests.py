@@ -60,6 +60,8 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/kustomization.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
     "cluster/k8s/github-branch-protection/kustomization.yaml",
+    "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",
+    "cluster/k8s/agents/machine-access-tf/kustomization.yaml",
     "cluster/k8s/forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
     "cluster/k8s/forgejo/agentydragon/kustomization.yaml",
     "cluster/k8s/forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",

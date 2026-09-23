@@ -59,6 +59,7 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/descheduler/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/github-branch-protection/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/machine-access-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/agentydragon/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/agentydragon-repos/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/budget-ledger/kustomization.yaml linguist-generated=true

@@ -12,6 +12,7 @@ exports_files(
         "0008_thread_scope_source_id.py",
         "0009_thread_entity_index.py",
         "0010_drop_unread_fold_state.py",
+        "0011_event_log_identity.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -94,6 +95,15 @@ py_library(
 py_library(
     name = "0010_drop_unread_fold_state",
     srcs = ["0010_drop_unread_fold_state.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0011_event_log_identity",
+    srcs = ["0011_event_log_identity.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
