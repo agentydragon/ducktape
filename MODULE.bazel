@@ -1174,6 +1174,21 @@ http_file(
     urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
 )
 
+# Match the keda chart 2.20.2 in cluster/k8s/keda/helmrelease.yaml.
+http_file(
+    name = "keda_scaledjob_crd",
+    downloaded_file_path = "keda.sh_scaledjobs.yaml",
+    sha256 = "8805cd6c5b05161fb1541726e2c32c8e2990f435649fa74cbc616600b84b583a",
+    urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_scaledjobs.yaml"],
+)
+
+http_file(
+    name = "keda_triggerauthentication_crd",
+    downloaded_file_path = "keda.sh_triggerauthentications.yaml",
+    sha256 = "275307b4cb19ca8f0f506a879282aa4c67587ac16ec757f494d6585c5c185d65",
+    urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_triggerauthentications.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
