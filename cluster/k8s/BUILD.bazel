@@ -100,6 +100,8 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/forgejo-bucket/forgejo-bucket.k8s.yaml",
+        "seaweedfs/forgejo-bucket/kustomization.yaml",
         "seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",
         "seaweedfs/loom-gym-bucket/kustomization.yaml",
         "seaweedfs/drivefs-artifacts-bucket/drivefs-artifacts-bucket.k8s.yaml",
