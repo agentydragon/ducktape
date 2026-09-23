@@ -180,6 +180,11 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
             # Classic dockerd only mirrors Docker Hub -- ghcr/quay still go direct via the proxy.
             "--registry-mirror=http://oci-cache.oci-cache.svc.cluster.local",
             "--insecure-registry=oci-cache.oci-cache.svc.cluster.local",
+            # RootlessKit's slirp4netns forwards container DNS queries to CoreDNS as-is, and the
+            # resolv.conf it gives dockerd carries no search list, so without this a container
+            # cannot resolve a `<service>.<namespace>` name -- among them `forgejo-http.forgejo`,
+            # the runner's registered address, which job checkouts use as `github.server_url`.
+            "--dns-search=svc.cluster.local",
         ],
         env=[
             # --tls=false alone isn't enough: the dind entrypoint defaults DOCKER_TLS_CERTDIR to

@@ -32,8 +32,7 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
-export type EntityInterest = components["schemas"]["EntityInterestResponse"];
-export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
+export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
 export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
@@ -343,16 +342,13 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-export async function threadEntityInterest(
-  threadId: string,
-  beforeCursor?: string,
-  signal?: AbortSignal
-): Promise<EntityInterest> {
-  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
-  if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
+/** The epoch a thread's shapes are pinned to, or null while the thread has no fold yet. */
+export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Entity interest failed with ${response.status}`);
-  return (await response.json()) as EntityInterest;
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
+  return (await response.json()) as ThreadScope;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

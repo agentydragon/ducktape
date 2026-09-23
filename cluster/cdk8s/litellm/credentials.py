@@ -18,17 +18,11 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.metadata import metadata
 
 _LITELLM_NAMESPACE = "litellm"
@@ -90,27 +84,16 @@ class CheapExperimentsCredentials(Construct):
             ),
         )
 
-        ExternalSecret(
+        add_external_secret(
             self,
             "target-external-secret",
-            metadata=metadata(_KEY_SECRET_NAME, _AGENTPLANE_NAMESPACE),
-            spec=ExternalSecretSpec(
-                data=[
-                    ExternalSecretSpecData(
-                        secret_key="api-key",
-                        remote_ref=ExternalSecretSpecDataRemoteRef(key=_KEY_SECRET_NAME, property="api-key"),
-                    )
-                ],
-                refresh_interval="1m",
-                secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                    name=_SECRET_STORE_NAME, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-                ),
-                target=ExternalSecretSpecTarget(
-                    creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                    deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
-                    name=_KEY_SECRET_NAME,
-                ),
-            ),
+            name=_KEY_SECRET_NAME,
+            namespace=_AGENTPLANE_NAMESPACE,
+            refresh="1m",
+            store=cluster_secret_store(_SECRET_STORE_NAME),
+            data=[remote_data(_KEY_SECRET_NAME, "api-key")],
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
         )
 
 

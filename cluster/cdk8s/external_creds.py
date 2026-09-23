@@ -7,21 +7,10 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
-from constructs import Construct
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetDeletionPolicy,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.external_secrets.external_secret import cluster_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -29,7 +18,7 @@ from cluster.cdk8s.metadata import metadata
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = "cluster/k8s/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
-_STORE = "kubernetes-external-creds-secret-store"
+STORE = cluster_secret_store("kubernetes-external-creds-secret-store")
 
 
 @dataclass(frozen=True)
@@ -48,35 +37,6 @@ class Credential:
     secret_name: str
     consumers: tuple[ApprovedConsumer, ...] = ()
     namespace: str = NAMESPACE
-
-
-def add_external_secret(
-    scope: Construct, id: str, *, namespace: str, source_name: str, properties: tuple[str, ...], description: str
-) -> ExternalSecret:
-    """Create a namespace-local ESO copy from the canonical external-creds source."""
-    return ExternalSecret(
-        scope,
-        id,
-        metadata=metadata(source_name, namespace, annotations={"description": description}),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=_STORE
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=property_name,
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=source_name, property=property_name),
-                )
-                for property_name in properties
-            ],
-            target=ExternalSecretSpecTarget(
-                name=source_name,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-        ),
-    )
 
 
 # This roster is the authorization boundary: each consumer is an explicit approval.

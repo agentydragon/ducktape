@@ -38,13 +38,6 @@ from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
@@ -60,7 +53,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -413,28 +407,16 @@ def _github_token(chart: Chart, name: str) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
-    ExternalSecret(
+    add_external_secret(
         chart,
         name,
-        metadata=metadata(name, NAME),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=name,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="GITHUB_TOKEN",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="github-agentydragon-agent", property="token"),
-                )
-            ],
-        ),
+        name=name,
+        namespace=NAME,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
 
 

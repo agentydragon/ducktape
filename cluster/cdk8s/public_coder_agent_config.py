@@ -18,24 +18,14 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
@@ -776,28 +766,16 @@ def _credentials(scope: Construct) -> None:
     #
     # Consumed by the **egress proxy**, not by the agent. The agent container holds only a
     # placeholder, which the proxy swaps for this value on requests bound for GitHub.
-    ExternalSecret(
+    add_external_secret(
         scope,
         "github-token",
-        metadata=metadata(_GITHUB_TOKEN_NAME, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_GITHUB_TOKEN_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="GITHUB_TOKEN",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="github-agentydragon-agent", property="token"),
-                )
-            ],
-        ),
+        name=_GITHUB_TOKEN_NAME,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     # Gateway auth normally arrives through the Authentik trusted proxy. OpenClaw subagents and
     # other backend clients instead call the gateway over its loopback WebSocket, so they never
@@ -813,32 +791,18 @@ def _credentials(scope: Construct) -> None:
         metadata=metadata("public-coder-agent-gateway-password-generator", _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "gateway-password",
-        metadata=metadata(_GATEWAY_PASSWORD_NAME, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            # A generated password is stable for the generator's lifetime. Avoid an automatic
-            # rotation that would unnecessarily interrupt active sessions.
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name=_GATEWAY_PASSWORD_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_GATEWAY_PASSWORD_NAME,
+        namespace=_NAMESPACE,
+        # A generated password is stable for the generator's lifetime. Avoid an automatic
+        # rotation that would unnecessarily interrupt active sessions.
+        refresh="8760h",
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
     )
 
 

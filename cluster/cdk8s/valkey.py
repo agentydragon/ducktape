@@ -8,12 +8,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
@@ -51,6 +45,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "valkey"
@@ -75,32 +70,22 @@ def chart(app: App) -> Chart:
         metadata=metadata("ot-helm", "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://ot-container-kit.github.io/helm-charts"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(_RELEASE, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(
-                crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_RELEASE,
-                    version="0.26.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                "redisOperator": {"imageTag": _OPERATOR_TAG, "initContainerImageTag": _OPERATOR_TAG},
-                "featureGates": {"GenerateConfigInInitContainer": True},
-            },
+        _RELEASE,
+        NAMESPACE,
+        repository=repository,
+        chart=_RELEASE,
+        version="0.26.1",
+        interval="30m",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
+        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
+        values={
+            "redisOperator": {"imageTag": _OPERATOR_TAG, "initContainerImageTag": _OPERATOR_TAG},
+            "featureGates": {"GenerateConfigInInitContainer": True},
+        },
     )
     return chart
 

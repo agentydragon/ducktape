@@ -4,6 +4,7 @@ Nothing here touches the database."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
@@ -81,8 +82,21 @@ def _fold_ref(reference: ThreadPayloadReference | None) -> fold.PayloadRef | Non
     )
 
 
+def payload_references(result: fold.ProjectionBatch) -> set[fold.PayloadRef]:
+    """Every payload reference a batch's rows store."""
+    references = [
+        *(ref for item in result.item_upserts for ref in (item.text, item.arguments, item.output)),
+        *(value.text for value in result.confirmed_input_upserts),
+        *(value.input for value in result.command_upserts),
+    ]
+    return {ref for ref in references if ref is not None}
+
+
 def ordered_entity_rows(
-    thread_id: UUID, result: fold.ProjectionBatch, operational: ThreadOperationalState | None = None
+    thread_id: UUID,
+    result: fold.ProjectionBatch,
+    extents: Mapping[fold.PayloadRef, int],
+    operational: ThreadOperationalState | None = None,
 ) -> list[dict[str, object]]:
     """A batch's rows in thread order, which is the order they are numbered.
 
@@ -91,19 +105,22 @@ def ordered_entity_rows(
     a batch numbers the same rows the same way however it was assembled.
     """
     return sorted(
-        _entity_rows(thread_id, result, operational),
+        _entity_rows(thread_id, result, extents, operational),
         key=lambda row: (row["cursor"], row["entity_kind"], row["entity_id"]),
     )
 
 
 def _entity_rows(
-    thread_id: UUID, result: fold.ProjectionBatch, operational: ThreadOperationalState | None = None
+    thread_id: UUID,
+    result: fold.ProjectionBatch,
+    extents: Mapping[fold.PayloadRef, int],
+    operational: ThreadOperationalState | None = None,
 ) -> list[dict[str, object]]:
     entities: list[ThreadEntityView] = [_view_state_entity(thread_id, result.state, operational)]
-    entities.extend(_item_entity(thread_id, item) for item in result.item_upserts)
-    entities.extend(_confirmed_input_entity(thread_id, value) for value in result.confirmed_input_upserts)
+    entities.extend(_item_entity(thread_id, item, extents) for item in result.item_upserts)
+    entities.extend(_confirmed_input_entity(thread_id, value, extents) for value in result.confirmed_input_upserts)
     entities.extend(_lifecycle_entity(thread_id, value) for value in result.lifecycle_upserts)
-    entities.extend(_command_entity(thread_id, value) for value in result.command_upserts)
+    entities.extend(_command_entity(thread_id, value, extents) for value in result.command_upserts)
     return [entity.model_dump(mode="json") for entity in entities]
 
 
@@ -137,7 +154,7 @@ def _view_state_entity(
     )
 
 
-def _item_entity(thread_id: UUID, item: fold.Item) -> ThreadItemEntityView:
+def _item_entity(thread_id: UUID, item: fold.Item, extents: Mapping[fold.PayloadRef, int]) -> ThreadItemEntityView:
     tool = item.completion if isinstance(item.completion, fold.ToolCompletion) else None
     return ThreadItemEntityView(
         thread_id=thread_id,
@@ -154,14 +171,16 @@ def _item_entity(thread_id: UUID, item: fold.Item) -> ThreadItemEntityView:
             completion=None if item.completion is None else "tool" if tool is not None else "text",
             tool_succeeded=None if tool is None else tool.succeeded,
         ),
-        text_ref=_reference(item.text),
-        arguments_ref=_reference(item.arguments),
-        output_ref=_reference(item.output),
+        text_ref=_reference(item.text, extents),
+        arguments_ref=_reference(item.arguments, extents),
+        output_ref=_reference(item.output, extents),
         input_ref=None,
     )
 
 
-def _confirmed_input_entity(thread_id: UUID, value: fold.ConfirmedInput) -> ThreadConfirmedInputEntityView:
+def _confirmed_input_entity(
+    thread_id: UUID, value: fold.ConfirmedInput, extents: Mapping[fold.PayloadRef, int]
+) -> ThreadConfirmedInputEntityView:
     return ThreadConfirmedInputEntityView(
         thread_id=thread_id,
         projection_epoch=value.projection_epoch,
@@ -177,7 +196,7 @@ def _confirmed_input_entity(thread_id: UUID, value: fold.ConfirmedInput) -> Thre
         text_ref=None,
         arguments_ref=None,
         output_ref=None,
-        input_ref=_reference(value.text),
+        input_ref=_reference(value.text, extents),
     )
 
 
@@ -199,7 +218,9 @@ def _lifecycle_entity(thread_id: UUID, value: fold.LifecycleSegment) -> ThreadLi
     )
 
 
-def _command_entity(thread_id: UUID, value: fold.CommandSummary) -> ThreadCommandEntityView:
+def _command_entity(
+    thread_id: UUID, value: fold.CommandSummary, extents: Mapping[fold.PayloadRef, int]
+) -> ThreadCommandEntityView:
     return ThreadCommandEntityView(
         thread_id=thread_id,
         projection_epoch=value.projection_epoch,
@@ -218,11 +239,13 @@ def _command_entity(thread_id: UUID, value: fold.CommandSummary) -> ThreadComman
         text_ref=None,
         arguments_ref=None,
         output_ref=None,
-        input_ref=_reference(value.input),
+        input_ref=_reference(value.input, extents),
     )
 
 
-def _reference(reference: fold.PayloadRef | None) -> ThreadPayloadReference | None:
+def _reference(
+    reference: fold.PayloadRef | None, extents: Mapping[fold.PayloadRef, int]
+) -> ThreadPayloadReference | None:
     if reference is None:
         return None
     return ThreadPayloadReference(
@@ -232,4 +255,5 @@ def _reference(reference: fold.PayloadRef | None) -> ThreadPayloadReference | No
         field=reference.field,
         revision_cursor=str(reference.revision_cursor),
         generation=str(reference.generation),
+        chunk_count=str(extents[reference]),
     )

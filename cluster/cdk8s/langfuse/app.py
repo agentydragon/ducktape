@@ -25,12 +25,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallStrategy,
     HelmReleaseSpecInstallStrategyName,
@@ -80,6 +74,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -426,32 +421,22 @@ def _helm_release(scope: Construct) -> None:
         metadata=metadata(_NAME, _NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
     )
-    HelmRelease(
+    helm_release(
         scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            timeout="20m",
-            install=HelmReleaseSpecInstall(
-                strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    version="2.1.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
+        _NAME,
+        _NAMESPACE,
+        repository=repository,
+        chart=_NAME,
+        version="2.1.0",
+        interval="15m",
+        timeout="20m",
+        install=HelmReleaseSpecInstall(
+            strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
         ),
+        upgrade=HelmReleaseSpecUpgrade(
+            strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
+        ),
+        values=_values(),
     )
 
 
