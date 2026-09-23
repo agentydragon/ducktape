@@ -1,8 +1,5 @@
-"""The SeaweedFS CSI driver, pinned to OVH nodes, and its StorageClasses.
-
-The chart comes from the driver's GitRepository, which stays hand-written in
-`gitrepository.yaml` (no `GitRepository` binding yet) beside this output; the directory's
-`kustomization.yaml` lists both.
+"""The SeaweedFS CSI driver, pinned to OVH nodes, with the GitRepository its chart comes
+from, its StorageClasses, and the directory's Flux Kustomization.
 """
 
 from __future__ import annotations
@@ -12,6 +9,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
     HelmReleaseSpec,
@@ -24,7 +22,11 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeRemediation,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
@@ -208,6 +210,17 @@ def chart(app: App) -> Chart:
             },
         ),
     )
+    source = GitRepository(
+        chart,
+        "source",
+        metadata=metadata("seaweedfs-csi-driver", "flux-system"),
+        spec=GitRepositorySpec(
+            interval="24h",
+            url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+            ref=GitRepositorySpecRef(tag="v1.4.31"),
+            ignore="/*\n!/deploy/helm/seaweedfs-csi-driver\n",
+        ),
+    )
     HelmRelease(
         chart,
         "release",
@@ -237,8 +250,8 @@ def chart(app: App) -> Chart:
                     chart="deploy/helm/seaweedfs-csi-driver",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.GIT_REPOSITORY,
-                        name="seaweedfs-csi-driver",
-                        namespace="flux-system",
+                        name=source.name,
+                        namespace=source.metadata.namespace,
                     ),
                 )
             ),
@@ -271,3 +284,27 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def seaweedfs_csi(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="10m",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=RELEASE, namespace=NAMESPACE
+                )
+            ],
+            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        ),
+    )
