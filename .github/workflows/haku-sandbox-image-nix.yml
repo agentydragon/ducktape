@@ -18,6 +18,7 @@ on:
     branches: [devel]
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
+      - "nix/lib/nix-ld-image.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
@@ -32,6 +33,7 @@ on:
   pull_request:
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
+      - "nix/lib/nix-ld-image.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
