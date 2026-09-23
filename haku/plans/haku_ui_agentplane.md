@@ -3,21 +3,21 @@
 haku-ui's backend reads the operator's location (Home Assistant) and the Grocy shopping list
 through haku-console, and both servers left the console on 2026-09-23 (#7671, #7673). Location
 refreshes fail with `Unknown tool: 'home_assistant__ha_get_state'` and the backend serves the last
-known fix; the shopping list fails the same way. The `<tool-call>` buttons can only submit
-console-fronted tools.
+known fix. The shopping-list reader calls `grocy_sf__shopping_list_get`, which the console no longer
+lists either. The `<tool-call>` buttons can only submit console-fronted tools.
 
 **Target:** haku-ui reaches those through agentplane-staging as its own ServiceAccount,
 `haku-sandbox/haku-ui`, and holds no credential. Its pod gets the egress sidecar that sandboxes
 have, so a placeholder stands in for every credential:
 
-- location is `home_assistant/ha_get_state` on `person.rai`, auto-approved by a `haku-ui-reads`
-  policy set;
+- location is `home_assistant/ha_get_state` on `person.rai` and zones are `ha_get_overview`, both
+  auto-approved by a `haku-ui-reads` policy set;
 - the shopping list is a GET on Grocy's REST API through the existing `grocy-sf-readonly`
   egress route;
 - `<tool-call>` buttons become Action requests, which wait for the operator like any other write.
 
 **Why not `claude-ai`:** that binding auto-approves sandbox create and exec, so anything acting as
-`claude-ai` runs arbitrary code holding all of its egress credentials. haku-ui needs two reads.
+`claude-ai` runs arbitrary code holding all of its egress credentials. haku-ui needs three reads.
 Its requests would also be indistinguishable from Claude sessions in the request log and the
 approval queue.
 
@@ -49,7 +49,7 @@ would then have to own the Deployment: Haku-authored manifests applied there cou
 1. **Action Service:** split caller namespaces from the policy namespace, as above.
 2. **ducktape** (`cluster/cdk8s/agentplane/`):
    - the `haku-sandbox/haku-ui` ServiceAccount, carrying `agentplane.allegedly.works/use-action-service`;
-   - a `haku-ui-reads` ActionPolicySet (`home_assistant`: `ha_get_state`, `ha_get_history`) and a
+   - a `haku-ui-reads` ActionPolicySet (`home_assistant`: `ha_get_state`, `ha_get_overview`) and a
      binding naming that account;
    - an egress binding for it: `grocy-sf-readonly`, and the Action Service rule on its own —
      `basic` carries it but also LLM access, which haku-ui does not need;
