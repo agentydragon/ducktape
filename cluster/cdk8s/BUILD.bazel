@@ -1579,6 +1579,7 @@ py_test(
         "//cluster/k8s:headlamp/headlamp.k8s.yaml",
         "//cluster/k8s:headlamp/kustomization.yaml",
         "//cluster/k8s:home-assistant/backup/home-assistant-backups.k8s.yaml",
+        "//cluster/k8s:home-assistant/backup/kustomization.yaml",
         "//cluster/k8s:home-assistant/namespace.k8s.yaml",
         "//cluster/k8s:hubble-ui/hubble-ui.k8s.yaml",
         "//cluster/k8s:hubble-ui/kustomization.yaml",
