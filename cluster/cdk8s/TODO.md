@@ -147,7 +147,6 @@ differs keeps building the object directly.
 - **`seaweed_bucket(...)`** for the Bucket + S3Identity + S3Credentials +
   ResourceReferenceGrant bundle repeated in ~14 modules (~890 lines). It is also the
   one place to hold the operator's rules (`seaweed_operator` skill).
-- **CNPG `Cluster`s onto `cnpg.py`**: 18 built in 18 modules (~670 lines).
 
 ## Parked — lower priority
 

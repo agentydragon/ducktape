@@ -92,7 +92,11 @@ py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//cluster/cdk8s/crd_bindings/cnpg:cluster"],
+    deps = [
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "@pypi//constructs",
+    ],
 )
 
 py_library(
