@@ -54,6 +54,7 @@ cluster/k8s/authentik/db/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/proxy-routes/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
+cluster/k8s/kubevirt/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
 # automation updates its inline `images:` pins.

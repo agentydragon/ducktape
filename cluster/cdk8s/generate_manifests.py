@@ -171,7 +171,10 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
-from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
+from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
+from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
+from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
+from cluster.cdk8s.kubevirt import app as kubevirt_app, flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
@@ -266,6 +269,7 @@ def generate_manifests(root: Path) -> None:
     authentik_db.write_manifests(root)
     clickhouse_operator.write_manifests(root)
     clickhouse_installation.write_manifests(root)
+    kubevirt_app.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     authentik_db_backups.write_manifests(root)
@@ -453,12 +457,14 @@ def generate_manifests(root: Path) -> None:
     gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
+    haku_rbac_artifact = artifact("haku-rbac", "cluster/k8s/haku/rbac")
+    haku_rbac_kustomization = haku_flux_kustomizations.haku_rbac(
+        flux_chart, haku_rbac_artifact, haku_namespace_kustomization
+    )
+    kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
+    kubevirt_kustomization = kubevirt_app.kubevirt(flux_chart, kubevirt_artifact, kubevirt_operator_kustomization)
     haku_rbac_artifact = artifact(haku_rbac.NAME, haku_rbac.OUTPUT_DIR)
     haku_rbac_kustomization = haku_rbac.haku_rbac(flux_chart, haku_rbac_artifact, root, haku_namespace_kustomization)
-    kubevirt_artifact = artifact("kubevirt", "cluster/k8s/kubevirt/app")
-    kubevirt_kustomization = kubevirt_flux_kustomizations.kubevirt(
-        flux_chart, kubevirt_artifact, kubevirt_operator_kustomization
-    )
     descheduler_artifact = artifact("descheduler", descheduler.OUTPUT_DIR)
     descheduler.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
     kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)

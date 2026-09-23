@@ -1,10 +1,10 @@
 apiVersion: kubevirt.io/v1
 kind: KubeVirt
 metadata:
-  name: kubevirt
-  namespace: kubevirt
   annotations:
     description: KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers.
+  name: kubevirt
+  namespace: kubevirt
 spec:
   certificateRotateStrategy: {}
   configuration:
@@ -16,8 +16,8 @@ spec:
       usb:
         - resourceName: kubevirt.io/cpap-wifi
           selectors:
-            - vendor: "0e8d"
-              product: "7961"
+            - product: "7961"
+              vendor: 0e8d
     smbios:
       manufacturer: Talos Virtualization
       product: allegedly-works-kubevirt
@@ -29,6 +29,7 @@ spec:
     nodePlacement:
       nodeSelector:
         topology.kubernetes.io/region: hil
+  workloadUpdateStrategy: {}
   workloads:
     nodePlacement:
       affinity:
@@ -44,4 +45,3 @@ spec:
                       - proxmox
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-  workloadUpdateStrategy: {}
