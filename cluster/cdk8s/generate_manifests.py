@@ -61,7 +61,11 @@ from cluster.cdk8s.clickhouse import (
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
-from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
+from cluster.cdk8s.external_secrets import (
+    config as external_secrets_config,
+    flux_kustomizations as external_secrets_flux_kustomizations,
+    operator as external_secrets_operator,
+)
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
 from cluster.cdk8s.flux_image_automation_ghcr import (
@@ -199,6 +203,8 @@ def generate_manifests(root: Path) -> None:
     cert_manager_environment.write_manifests(root)
     cert_manager_config.write_manifests(root)
     cert_manager_cluster_ca.write_manifests(root)
+    external_secrets_config.write_manifests(root)
+    external_secrets_operator.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -403,8 +409,8 @@ def generate_manifests(root: Path) -> None:
     external_secrets_operator_kustomization = external_secrets_flux_kustomizations.external_secrets_operator(
         flux_chart, external_secrets_operator_artifact, external_secrets_crds_kustomization, cert_manager_kustomization
     )
-    external_secrets_config_artifact = artifact("external-secrets-config", "cluster/k8s/external-secrets/config")
-    external_secrets_config_kustomization = external_secrets_flux_kustomizations.external_secrets_config(
+    external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
+    external_secrets_config_kustomization = external_secrets_config.external_secrets_config(
         flux_chart, external_secrets_config_artifact, external_secrets_operator_kustomization
     )
     gateway_artifact = artifact("gateway", "cluster/k8s/gateway")

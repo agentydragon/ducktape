@@ -87,7 +87,7 @@ _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calenda
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
-# cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml
+# cluster/cdk8s/external_secrets/config.py
 _GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"

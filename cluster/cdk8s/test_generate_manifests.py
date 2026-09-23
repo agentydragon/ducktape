@@ -114,6 +114,9 @@ _GENERATED_FILES = (
     "cluster/k8s/cert-manager/environment/kustomization.yaml",
     "cluster/k8s/cert-manager/config/base/letsencrypt-root-cas.k8s.yaml",
     "cluster/k8s/cert-manager/cluster-ca/base/cluster-ca.k8s.yaml",
+    "cluster/k8s/external-secrets/config/external-secrets-config.k8s.yaml",
+    "cluster/k8s/external-secrets/config/kustomization.yaml",
+    "cluster/k8s/external-secrets/operator/external-secrets-operator.k8s.yaml",
 )
 
 
