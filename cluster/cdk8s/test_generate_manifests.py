@@ -84,6 +84,7 @@ _GENERATED_FILES = (
     "cluster/k8s/forgejo/cpap-data/kustomization.yaml",
     "cluster/k8s/forgejo/haku-state/haku-state.k8s.yaml",
     "cluster/k8s/forgejo/haku-state/kustomization.yaml",
+    "cluster/k8s/forgejo-images/forgejo-images.k8s.yaml",
     "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
     "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
 )

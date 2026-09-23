@@ -1,8 +1,11 @@
-"""The Forgejo private-registry pull-credentials `ExternalSecret`, shared by
-every generated directory that pulls a `git.allegedly.works`-hosted image.
+"""The ducktape-ci Forgejo registry tenant: the `Terraform` CR provisioning it
+(tf/gitops/forgejo-images) and the pull-credentials `ExternalSecret`, shared by every
+generated directory that pulls a `git.allegedly.works`-hosted image.
 """
 
-from cdk8s import ApiObjectMetadata
+from pathlib import Path
+
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ISecret, Secret
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -17,7 +20,22 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
 
+from cluster.cdk8s import terraform
+from cluster.cdk8s.generation import write_charts
+
+NAME = "forgejo-images"
+OUTPUT_DIR = "cluster/k8s/forgejo-images"
 SECRET_NAME = "forgejo-images-creds"
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)
 
 
 def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace: str) -> ExternalSecret:

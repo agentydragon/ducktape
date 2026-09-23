@@ -15,6 +15,7 @@ from cluster.cdk8s import (
     etcd,
     external_creds,
     forgejo_image_automation,
+    forgejo_images,
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
     github_branch_protection,
@@ -172,6 +173,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    forgejo_images.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -782,7 +784,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         claude_rbac_kustomization,
     )
-    forgejo_images_artifact = artifact("forgejo-images", "cluster/k8s/forgejo-images")
+    forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_kustomization = forgejo_images_flux_kustomizations.forgejo_images(
         flux_chart,
         forgejo_images_artifact,
