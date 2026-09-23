@@ -165,6 +165,7 @@ exports_files(
         "monitoring/tempo/kustomization.yaml",
         "monitoring/grafana-instance/grafana-instance.k8s.yaml",
         "grafana/clickhouse-grafana.k8s.yaml",
+        "github-exporter/github-exporter.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

@@ -1,0 +1,560 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: monitoring
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: monitoring
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-exporter-agentydragon-token
+  namespace: monitoring
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-2
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: github-exporter-agentydragon-token
+    template:
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: GitHub API rate-limit exporter for the agentydragon account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-token
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon
+  name: github-exporter-agentydragon
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-exporter
+      github_account: agentydragon
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: quota
+        app.kubernetes.io/name: github-exporter
+        github_account: agentydragon
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+            - name: GITHUB_RATE_LIMIT_ENABLED
+              value: "true"
+            - name: FETCH_REPO_RELEASES_ENABLED
+              value: "false"
+            - name: LISTEN_PORT
+              value: "9171"
+            - name: LOG_LEVEL
+              value: info
+          image: githubexporter/github-exporter:v2.3.1
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          name: exporter
+          ports:
+            - containerPort: 9171
+              name: http
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /var/run/secrets/github
+              name: github-token
+              readOnly: true
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: github-token
+          secret:
+            defaultMode: 288
+            items:
+              - key: token
+                path: token
+            secretName: github-exporter-agentydragon-token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon
+  name: github-exporter-agentydragon
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 9171
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-exporter-agentydragon-agent-token
+  namespace: monitoring
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: github-exporter-agentydragon-agent-token
+    template:
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: GitHub API rate-limit exporter for the agentydragon-agent account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-agent-token
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon-agent
+  name: github-exporter-agentydragon-agent
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-exporter
+      github_account: agentydragon-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: quota
+        app.kubernetes.io/name: github-exporter
+        github_account: agentydragon-agent
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+            - name: GITHUB_RATE_LIMIT_ENABLED
+              value: "true"
+            - name: FETCH_REPO_RELEASES_ENABLED
+              value: "false"
+            - name: LISTEN_PORT
+              value: "9171"
+            - name: LOG_LEVEL
+              value: info
+          image: githubexporter/github-exporter:v2.3.1
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          name: exporter
+          ports:
+            - containerPort: 9171
+              name: http
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /var/run/secrets/github
+              name: github-token
+              readOnly: true
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: github-token
+          secret:
+            defaultMode: 288
+            items:
+              - key: token
+                path: token
+            secretName: github-exporter-agentydragon-agent-token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon-agent
+  name: github-exporter-agentydragon-agent
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 9171
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-exporter
+    github_account: agentydragon-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: GitHub GraphQL rate-limit exporter for the agentydragon account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-token
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon
+  name: github-graphql-rate-exporter-agentydragon
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-graphql-rate-exporter
+      github_account: agentydragon
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: quota
+        app.kubernetes.io/name: github-graphql-rate-exporter
+        github_account: agentydragon
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: GITHUB_ACCOUNT
+              value: agentydragon
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+          image: git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: exporter
+          ports:
+            - containerPort: 9172
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/secrets/github
+              name: github-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: github-token
+          secret:
+            defaultMode: 288
+            items:
+              - key: token
+                path: token
+            secretName: github-exporter-agentydragon-token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon
+  name: github-graphql-rate-exporter-agentydragon
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 9172
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: GitHub GraphQL rate-limit exporter for the agentydragon-agent account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-agent-token
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon-agent
+  name: github-graphql-rate-exporter-agentydragon-agent
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-graphql-rate-exporter
+      github_account: agentydragon-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: quota
+        app.kubernetes.io/name: github-graphql-rate-exporter
+        github_account: agentydragon-agent
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: GITHUB_ACCOUNT
+              value: agentydragon-agent
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+          image: git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: exporter
+          ports:
+            - containerPort: 9172
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/secrets/github
+              name: github-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: github-token
+          secret:
+            defaultMode: 288
+            items:
+              - key: token
+                path: token
+            secretName: github-exporter-agentydragon-agent-token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon-agent
+  name: github-graphql-rate-exporter-agentydragon-agent
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 9172
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    github_account: agentydragon-agent
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: github-exporter
+  namespace: monitoring
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_service_label_github_account
+          targetLabel: github_account
+      scheme: http
+      scrapeTimeout: 15s
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: github-graphql-rate-exporter
+  namespace: monitoring
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+      scheme: http
+      scrapeTimeout: 15s
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: quota
+      app.kubernetes.io/name: github-graphql-rate-exporter
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: github-exporter
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: dashboard.json
+    name: github-exporter-dashboard
+  folder: GitHub
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
