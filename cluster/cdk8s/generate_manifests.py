@@ -73,7 +73,10 @@ from cluster.cdk8s.flux_image_automation_ghcr import (
     flux_kustomizations as flux_image_automation_ghcr_flux_kustomizations,
 )
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
-from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_kustomizations
+from cluster.cdk8s.flux_webhook import (
+    chart as flux_webhook_chart,
+    flux_kustomizations as flux_webhook_flux_kustomizations,
+)
 from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     db as forgejo_db,
@@ -207,6 +210,7 @@ def generate_manifests(root: Path) -> None:
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
+    flux_webhook_chart.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)

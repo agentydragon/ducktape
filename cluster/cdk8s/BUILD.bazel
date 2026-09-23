@@ -440,6 +440,7 @@ py_test(
 py_library(
     name = "ntfy",
     srcs = ["ntfy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
         ":cnpg",
@@ -544,6 +545,7 @@ py_library(
         "//cluster/cdk8s/flux_grafana_secrets:flux_kustomizations",
         "//cluster/cdk8s/flux_image_automation_ghcr:flux_kustomizations",
         "//cluster/cdk8s/flux_monitoring:flux_kustomizations",
+        "//cluster/cdk8s/flux_webhook:chart",
         "//cluster/cdk8s/flux_webhook:flux_kustomizations",
         "//cluster/cdk8s/flux_webhook_token",
         "//cluster/cdk8s/forgejo:db",
@@ -717,6 +719,7 @@ py_test(
         "//cluster/k8s:flux-image-automation-forgejo/kustomization.yaml",
         "//cluster/k8s:flux-webhook-token/flux-webhook-token.k8s.yaml",
         "//cluster/k8s:flux-webhook-token/kustomization.yaml",
+        "//cluster/k8s:flux-webhook/flux-webhook.k8s.yaml",
         "//cluster/k8s:flux/ducktape-flux/ducktape-flux.k8s.yaml",
         "//cluster/k8s:flux/kustomizations.k8s.yaml",
         "//cluster/k8s:forgejo-images/forgejo-images.k8s.yaml",
