@@ -1983,8 +1983,16 @@ fn alpha_scope_kind(kind: NodeKind) -> Option<AlphaScopeKind> {
     )
     .then_some(AlphaScopeKind::Var)
     .or_else(|| {
-        matches!(kind, NodeKind::Block | NodeKind::Catch | NodeKind::Switch)
-            .then_some(AlphaScopeKind::Lexical)
+        matches!(
+            kind,
+            NodeKind::Block
+                | NodeKind::Catch
+                | NodeKind::Switch
+                | NodeKind::For
+                | NodeKind::ForIn
+                | NodeKind::ForOf
+        )
+        .then_some(AlphaScopeKind::Lexical)
     })
 }
 

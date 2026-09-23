@@ -709,6 +709,23 @@ rust_test(
 )
 
 rust_test(
+    name = "selector_commands_agree_test",
+    size = "small",
+    srcs = ["selector_commands_agree_test.rs"],
+    crate_root = "selector_commands_agree_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
     name = "spec_validate_cli_test",
     size = "small",
     srcs = ["spec_validate_cli_test.rs"],

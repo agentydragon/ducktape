@@ -103,7 +103,7 @@ flowchart TB
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
     THREAD_VIEW_PROJECTION["Planned backend<br/>incremental projection and transactional read model"]:::future
-    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric + TanStack DB<br/>limited subsets and recovery"]:::decision
+    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric<br/>limited subsets and recovery"]:::decision
     THREAD_VIEW_READ["Planned integration<br/>engine-backed queries and synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
     THREAD_VIEW_CATCHUP["Planned reconnect correctness<br/>bounded catch-up after long gaps<br/>refresh state without losing reading position"]:::future
@@ -1338,12 +1338,11 @@ batch atomicity and source fencing. No all-history map reconstruction per batch.
 
 ### `THREAD_VIEW_ENGINE` — evaluate existing synchronization
 
-Evaluate Electric with TanStack DB before implementing a custom change journal or browser
-replay protocol. The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
+Evaluate Electric before implementing a custom change journal or browser replay protocol.
+The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
 cover on-demand tail/history, snapshot/live races, reconnect expiry without full-shape
 fallback, content selection, transaction visibility, auth and replica failure. Pin versions
-and exercise the actual engine/client. The merged [collection spike](https://github.com/agentydragon/ducktape/pull/7069)
-is useful library evidence, not proof of this integration.
+and exercise the actual engine/client.
 
 ### `THREAD_VIEW_READ` — integrate the selected engine
 
