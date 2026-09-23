@@ -88,7 +88,7 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.hubble_ui import flux_kustomizations as hubble_ui_flux_kustomizations
-from cluster.cdk8s.infra_drift import flux_kustomizations as infra_drift_flux_kustomizations
+from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
@@ -179,6 +179,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
     forgejo_images.write_manifests(root)
     gatus_sso.write_manifests(root)
@@ -491,7 +492,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_modules.forgejo_agentydragon(
         flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
-    infra_drift_artifact = artifact("infra-drift", "cluster/k8s/infra-drift")
+    infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     infra_drift_flux_kustomizations.infra_drift(
         flux_chart, infra_drift_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
