@@ -224,6 +224,7 @@ from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flu
 from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import (
+    cluster as seaweedfs_cluster,
     flux_kustomizations as seaweedfs_flux_kustomizations,
     namespace as seaweedfs_namespace,
 )
@@ -278,6 +279,7 @@ def generate_manifests(root: Path) -> None:
     kyverno_app.write_manifests(root)
     kyverno_policies.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
+    seaweedfs_cluster.write_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)

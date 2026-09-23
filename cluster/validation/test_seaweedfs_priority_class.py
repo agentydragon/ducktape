@@ -16,7 +16,7 @@ import yaml
 from cluster.cdk8s import stateful_infra
 from util.bazel.runfiles import get_required_path
 
-_SEAWEEDFS_CR = "_main/cluster/k8s/seaweedfs/cluster/seaweed.yaml"
+_SEAWEEDFS_CR = "_main/cluster/k8s/seaweedfs/cluster/seaweedfs.k8s.yaml"
 
 
 def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, Any]]:
