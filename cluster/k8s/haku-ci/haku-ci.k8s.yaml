@@ -150,6 +150,7 @@ spec:
               - --tls=false
               - --registry-mirror=http://oci-cache.oci-cache.svc.cluster.local
               - --insecure-registry=oci-cache.oci-cache.svc.cluster.local
+              - --dns-search=svc.cluster.local
             env:
               - name: DOCKER_TLS_CERTDIR
                 value: ""
