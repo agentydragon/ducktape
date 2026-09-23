@@ -8,7 +8,6 @@ from cluster.cdk8s import (
     aiquota,
     cnpg_flux_kustomizations,
     descheduler,
-    descheduler_flux_kustomizations,
     dns_automation,
     dns_automation_flux_kustomizations,
     egress_fences,
@@ -252,8 +251,8 @@ def generate_manifests(root: Path) -> None:
     kubevirt_kustomization = kubevirt_flux_kustomizations.kubevirt(
         flux_chart, kubevirt_artifact, kubevirt_operator_kustomization
     )
-    descheduler_artifact = artifact("descheduler", "cluster/k8s/descheduler")
-    descheduler_flux_kustomizations.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
+    descheduler_artifact = artifact("descheduler", descheduler.OUTPUT_DIR)
+    descheduler.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
     keda_artifact = artifact("keda", "cluster/k8s/keda")
     keda_kustomization = keda_flux_kustomizations.keda(flux_chart, keda_artifact, kyverno_kustomization)
     kyverno_policies_artifact = artifact("kyverno-policies", "cluster/k8s/kyverno/policies")
