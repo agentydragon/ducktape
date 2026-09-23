@@ -108,11 +108,13 @@ py_library(
         "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 

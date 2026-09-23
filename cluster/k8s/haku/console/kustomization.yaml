@@ -8,7 +8,6 @@ resources:
   - haku-console-github-mcp-client-credentials.sops.yaml
   - routine-launch-token.sops.yaml
   - web-push-vapid.sops.yaml
-  - ../console-namespace
   - static-metadata.yaml
   - image-metadata.yaml
 components:
