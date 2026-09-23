@@ -1256,7 +1256,6 @@ py_library(
         "//cluster/cdk8s/home_assistant:flux_kustomizations",
         "//cluster/cdk8s/home_assistant:namespace",
         "//cluster/cdk8s/infra_drift:drift_watch",
-        "//cluster/cdk8s/infra_drift:flux_kustomizations",
         "//cluster/cdk8s/kubevirt:app",
         "//cluster/cdk8s/kubevirt:cdi",
         "//cluster/cdk8s/kubevirt:flux_kustomizations",
