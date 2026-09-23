@@ -92,51 +92,6 @@ def grafana_instance(
     )
 
 
-def mimir(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "mimir",
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-blocks", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-ruler", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="mimir", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="mimir", namespace="monitoring"
-                ),
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(
-                # the chart's metaMonitoring.serviceMonitor
-                monitoring_crds,
-                grafana_helmrepository,
-                # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
-                # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
-                seaweedfs_cluster,
-            ),
-        ),
-    )
-
-
 def monitoring_rules(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:

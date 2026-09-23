@@ -159,6 +159,8 @@ exports_files(
         "monitoring/alloy/alloy.k8s.yaml",
         "monitoring/loki/loki.k8s.yaml",
         "monitoring/loki/kustomization.yaml",
+        "monitoring/mimir/mimir.k8s.yaml",
+        "monitoring/mimir/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

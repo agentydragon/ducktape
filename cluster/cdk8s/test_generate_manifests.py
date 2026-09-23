@@ -121,6 +121,8 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/alloy/alloy.k8s.yaml",
     "cluster/k8s/monitoring/loki/loki.k8s.yaml",
     "cluster/k8s/monitoring/loki/kustomization.yaml",
+    "cluster/k8s/monitoring/mimir/mimir.k8s.yaml",
+    "cluster/k8s/monitoring/mimir/kustomization.yaml",
 )
 
 

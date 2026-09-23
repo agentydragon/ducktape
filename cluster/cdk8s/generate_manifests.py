@@ -113,6 +113,7 @@ from cluster.cdk8s.monitoring import (
     grafana_helmrepository,
     grafana_operator,
     loki,
+    mimir,
     namespace as monitoring_namespace,
     stack as monitoring_stack,
 )
@@ -204,6 +205,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
     loki.write_manifests(root)
+    mimir.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -629,8 +631,8 @@ def generate_manifests(root: Path) -> None:
     loki_kustomization = loki.loki(
         flux_chart, monitoring_loki_artifact, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
     )
-    monitoring_mimir_artifact = artifact("monitoring-mimir", "cluster/k8s/monitoring/mimir")
-    mimir_kustomization = monitoring_flux_kustomizations.mimir(
+    monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
+    mimir_kustomization = mimir.mimir(
         flux_chart,
         monitoring_mimir_artifact,
         monitoring_crds_kustomization,
