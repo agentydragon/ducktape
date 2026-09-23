@@ -21,6 +21,7 @@ from cluster.cdk8s import (
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
+    mitmproxy,
     ntfy,
     public_coder_agent_config,
     public_coder_devbox,
@@ -455,7 +456,7 @@ def generate_manifests(root: Path) -> None:
     website_flux_kustomizations.website(flux_chart, website_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", "cluster/k8s/kube-system")
     kube_system_flux_kustomizations.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
-    agents_flux_kustomizations.agents_mitmproxy(flux_chart, cert_manager_trust_kustomization)
+    mitmproxy.agents_mitmproxy(flux_chart, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", "cluster/k8s/parked/docker-ci")
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization

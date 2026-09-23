@@ -50,6 +50,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
     "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
     "cluster/k8s/agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
+    "cluster/k8s/agents/mitmproxy/kustomization.yaml",
+    "cluster/k8s/agents/mitmproxy/mitmproxy.k8s.yaml",
     "cluster/k8s/dns-automation/dns-records.k8s.yaml",
     "cluster/k8s/litellm/keys-tf/litellm-keys.k8s.yaml",
     "cluster/k8s/monitoring/etcd/etcd-monitoring.k8s.yaml",
