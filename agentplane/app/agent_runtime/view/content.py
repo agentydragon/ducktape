@@ -12,7 +12,6 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app import thread_fold
 from agentplane.app.agent_runtime.events.debug import (
     EvidenceObservation,
     EvidencePage,
@@ -31,7 +30,8 @@ from agentplane.app.agent_runtime.models import (
     ThreadNativeLink,
     ThreadPayloadManifest,
 )
-from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
+from agentplane.app.agent_runtime.view import fold
+from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -269,7 +269,7 @@ class ContentStore:
 
     async def command_outcomes(
         self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, thread_fold.CommandOutcome | None]:
+    ) -> dict[str, fold.CommandOutcome | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:

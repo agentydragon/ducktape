@@ -17,8 +17,8 @@ from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.models import ThreadEntity
 from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.conftest import SPEC, event_entry
-from agentplane.app.thread.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

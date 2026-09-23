@@ -23,7 +23,7 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
-        "//agentplane/app/thread:content",
+        "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",

@@ -19,9 +19,9 @@ from agentplane.app.agent_runtime.models import (
     ThreadPayloadManifest,
 )
 from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.view.recording import ThreadFoldError
+from agentplane.app.agent_runtime.view.views import EntityKind, ThreadOperationalState
 from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.thread.recording import ThreadFoldError
-from agentplane.app.thread.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

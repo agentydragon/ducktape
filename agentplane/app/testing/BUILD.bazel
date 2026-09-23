@@ -45,7 +45,7 @@ py_library(
         "//agentplane/app/agent_runtime/runner:bridge",
         "//agentplane/app/agent_runtime/runner:runners",
         "//agentplane/app/agent_runtime/thread:store",
-        "//agentplane/app/thread:content",
+        "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:event_log_pb2",
         "@pypi//asyncpg",
         "@pypi//fastapi",

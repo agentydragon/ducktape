@@ -9,7 +9,7 @@ py_library(
         "//agentplane/app/agent_runtime:models",
         "//agentplane/app/agent_runtime:updates",
         "//agentplane/app/agent_runtime/events:event_log",
-        "//agentplane/app/thread:views",
+        "//agentplane/app/agent_runtime/view:views",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
