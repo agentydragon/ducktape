@@ -107,14 +107,14 @@ as a pass in its `procedures/`).
   Google account — so `keep_notes` stays an illustrative example only. Further
   read-only Google scopes light up the same way as added.
 
-## Mutating-tool sources behind haku-console
+## Mutating-tool sources behind agentplane
 
 A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
-facade: wire the full server behind haku-console (`cluster/cdk8s/haku/console_config.py`) and
-let the console's approval gate filter it — reads auto-approve, every mutating/paid/destructive
-call queues for operator approval (`haku/console/auto_approval.py`). Authentik OAuth facades
-handle authentication separately from tool filtering; the console approval gate applies the
-tool policy.
+facade: wire the full server as an agentplane ActionGroup (`cluster/cdk8s/agentplane/staging.py`)
+and let action policy filter it — reads go in a policy set bound to `claude-ai`
+(`actions_staging_policies.py`), and every mutating/paid/destructive call waits for operator
+approval. Backend authentication (a static bearer, or the operator's OAuth linkage) is separate
+from that tool policy.
 
 ## Autonomous write capabilities
 
