@@ -1,10 +1,9 @@
-"""Airlock's namespace, identity, session secret, Service, route and ingress policy
+"""Airlock's namespace, identity, session secret, Deployment, Service, route and ingress policy
 (cluster/k8s/agents/airlock).
 
-Hand-written beside the output (`kustomization.yaml` lists both): `deployment.yaml`, whose
-`AIRLOCK_IMAGE_TAG` env value carries a Flux image-automation marker that an `images:`
-Component cannot set; the SOPS client credentials; and `config.yaml`, rendered into the
-Deployment's ConfigMap.
+Hand-written beside the output: the SOPS client credentials; `config.yaml`, rendered into the
+Deployment's ConfigMap by `kustomization.yaml`; and `image-pins/kustomization.yaml`, which pins
+the image tag and copies it into `AIRLOCK_IMAGE_TAG`.
 """
 
 from __future__ import annotations
@@ -45,18 +44,97 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
 NAME = "airlock"
 OUTPUT_DIR = "cluster/k8s/agents/airlock"
-# The hand-written deployment.yaml's pod labels.
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
 _PORT = 8765
 _SESSION_SECRET = "airlock-session-secret"
 _SECRET_WRITER = "airlock-secret-writer"
+# image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
+_PLACEHOLDER_TAG = "unset"
+_CONFIG_MOUNT = "/etc/airlock"
+
+
+def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
+    return k8s.EnvVar(
+        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
+    )
+
+
+def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
+    return k8s.Probe(
+        http_get=k8s.HttpGetAction(path=path, port=k8s.IntOrString.from_number(_PORT)),
+        initial_delay_seconds=initial_delay_seconds,
+        period_seconds=period_seconds,
+    )
+
+
+def _deployment(chart: Chart) -> None:
+    k8s.KubeDeployment(
+        chart,
+        "deployment",
+        metadata=k8s.ObjectMeta(
+            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
+        spec=k8s.DeploymentSpec(
+            replicas=1,
+            selector=k8s.LabelSelector(match_labels=_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_LABELS),
+                spec=k8s.PodSpec(
+                    image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+                    service_account_name=NAME,
+                    security_context=k8s.PodSecurityContext(fs_group=1000),
+                    containers=[
+                        k8s.Container(
+                            name=NAME,
+                            image=f"git.allegedly.works/ducktape-ci/airlock:{_PLACEHOLDER_TAG}",
+                            image_pull_policy="Always",
+                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            env=[
+                                k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
+                                k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
+                                _secret_env("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
+                                _secret_env("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
+                                _secret_env("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
+                                _secret_env("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
+                                _secret_env("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
+                                _secret_env("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                _secret_env("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                # The `google-write` provider reuses this same GCP OAuth client
+                                # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
+                                # the client registration.
+                                _secret_env("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                _secret_env("GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                _secret_env("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
+                                _secret_env("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
+                            ],
+                            volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "memory": k8s.Quantity.from_string("256Mi"),
+                                    "cpu": k8s.Quantity.from_string("100m"),
+                                },
+                                limits={
+                                    "memory": k8s.Quantity.from_string("512Mi"),
+                                    "cpu": k8s.Quantity.from_string("500m"),
+                                },
+                            ),
+                            liveness_probe=_probe("/healthz", 15, 20),
+                            readiness_probe=_probe("/healthz", 5, 10),
+                        )
+                    ],
+                    # Generated by kustomization.yaml's configMapGenerator.
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name="airlock-config"))],
+                ),
+            ),
+        ),
+    )
 
 
 def _session_secret(chart: Chart) -> None:
@@ -161,6 +239,7 @@ def chart(app: App) -> Chart:
         ),
     )
     _session_secret(chart)
+    _deployment(chart)
     k8s.KubeServiceAccount(chart, "serviceaccount", metadata=k8s.ObjectMeta(name=NAME, namespace=NAME))
     k8s.KubeRole(
         chart,

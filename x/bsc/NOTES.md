@@ -129,7 +129,7 @@ code_verifier=...)` sends the verifier in the token POST.
   redirect `https://airlock.allegedly.works/oauth/callback/bsc`. Tokens stored
   in `airlock` namespace only (no reflector annotations — keep BSC tokens
   unreflected for now).
-- `cluster/k8s/agents/airlock/deployment.yaml`: `BSC_CLIENT_ID` /
+- `cluster/cdk8s/airlock.py` (Deployment): `BSC_CLIENT_ID` /
   `BSC_CLIENT_SECRET` env vars from `bsc-client-credentials` k8s Secret.
 - Tests in `airlock/oauth/test_provider.py` cover PKCE pair generation, S256
   challenge correctness, authorize URL with PKCE+aud, exchange with verifier,

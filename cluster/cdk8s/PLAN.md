@@ -167,9 +167,6 @@ kustomizations; ConfigMaps carrying `$imagepolicy` markers.
 
 Open decisions, each "stays" or a conversion:
 
-- **The `airlock` and `study-casino` Deployments**: an image marker on an env value as
-  well as on `image:`, which the `image-pins/` Component (a Kustomize `images:` override)
-  cannot reach.
 - **`gaffer-private-source/bridge.yaml`**: a Flux Kustomization outside the generated
   graph, reconciling another repository's tree.
 

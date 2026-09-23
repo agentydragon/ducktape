@@ -50,10 +50,8 @@ the Kustomization that owns it through `generation.write_namespace`.
   and the `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
-- One-offs: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
-  another repository, outside the generated graph); and the `airlock` and
-  `study-casino` Deployments, which carry an image marker on an env value as well as on
-  `image:`.
+- One-off: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
+  another repository, outside the generated graph).
 
 Open decisions on each of these are in <../cdk8s/PLAN.md>.
 
