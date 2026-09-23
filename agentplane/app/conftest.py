@@ -12,16 +12,19 @@ import pytest
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -32,6 +35,7 @@ from agentplane.app.testing.kubernetes import (
 )
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -93,23 +97,42 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 
 
 @pytest.fixture
-async def store(db_url: str) -> AsyncIterator[ThreadStore]:
-    store = ThreadStore.connect(db_url)
-    await store.start_updates()
+async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = connect(db_url)
     try:
-        yield store
+        yield engine
     finally:
-        await store.close()
+        await engine.dispose()
+
+
+@pytest.fixture
+def store(engine: AsyncEngine) -> ThreadStore:
+    return ThreadStore(engine)
+
+
+@pytest.fixture
+async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
+    updates = ThreadUpdates(engine.url)
+    await updates.start()
+    try:
+        yield updates
+    finally:
+        await updates.close()
 
 
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[ThreadStore]:
-    replica = ThreadStore.connect(db_url)
-    await replica.start_updates()
+    """Another app replica's store: its own connection pool on the same database."""
+    engine = connect(db_url)
     try:
-        yield replica
+        yield ThreadStore(engine)
     finally:
-        await replica.close()
+        await engine.dispose()
+
+
+@pytest.fixture
+def operator_sessions(engine: AsyncEngine) -> OperatorSessionStore:
+    return OperatorSessionStore(engine)
 
 
 SPEC = protocol_pb2.SessionSpec(
@@ -145,13 +168,13 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def bridge(store: ThreadStore) -> RunnerBridge:
+def bridge(store: ThreadStore, thread_updates: ThreadUpdates) -> RunnerBridge:
     """A bridge with nothing to dial, for the inventory and thread routes."""
 
     async def unreachable(name: str) -> str:
         raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
-    return RunnerBridge(address_of=unreachable, store=store)
+    return RunnerBridge(address_of=unreachable, store=store, thread_changes=thread_updates.changes)
 
 
 @pytest.fixture
