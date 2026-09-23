@@ -5,7 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",

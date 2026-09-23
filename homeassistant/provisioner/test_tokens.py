@@ -8,7 +8,7 @@ import pytest_bazel
 import respx
 from client import HomeAssistantClient
 from settings import ProvisionerSettings, TokenConfig
-from tokens import LIFESPAN_DAYS, provision_token, replace_long_lived_token
+from tokens import LIFESPAN_DAYS, READ_ONLY_GROUP, provision_token, replace_long_lived_token, reset_read_only_user
 
 TOKEN = TokenConfig(
     client_name="test-consumer",
@@ -146,6 +146,110 @@ async def test_a_refused_token_is_replaced_in_place(
     assert login.called
     assert [secret.string_data for secret in v1.patched] == [{"token": "fresh-token"}]
     assert v1.created == []
+
+
+def fake_owner_users(monkeypatch, home_assistant_client: HomeAssistantClient, users: list[dict]):
+    """Answer the owner's user-management commands; return the commands sent, in order."""
+    sent: list[dict[str, object]] = []
+
+    async def websocket_command(message: dict[str, object]) -> object:
+        sent.append(message)
+        match message["type"]:
+            case "config/auth/list":
+                return users
+            case "config/auth/create":
+                return {"user": {"id": "created-user"}}
+        return None
+
+    monkeypatch.setattr(home_assistant_client, "websocket_command", websocket_command)
+    return sent
+
+
+async def test_a_missing_read_only_user_is_created_local_only_in_the_read_only_group(
+    monkeypatch, home_assistant_client
+):
+    sent = fake_owner_users(monkeypatch, home_assistant_client, [{"id": "someone", "username": "someone-else"}])
+
+    await reset_read_only_user(home_assistant_client, "reader", "fresh-password")
+
+    assert sent == [
+        {"id": 1, "type": "config/auth/list"},
+        {"id": 1, "type": "config/auth/create", "name": "reader", "group_ids": [READ_ONLY_GROUP], "local_only": True},
+        {
+            "id": 1,
+            "type": "config/auth_provider/homeassistant/create",
+            "user_id": "created-user",
+            "username": "reader",
+            "password": "fresh-password",
+        },
+    ]
+
+
+async def test_an_existing_read_only_user_is_confined_again_and_given_the_new_password(
+    monkeypatch, home_assistant_client
+):
+    """Whatever groups the user gained since, it ends in the read-only group alone."""
+    sent = fake_owner_users(monkeypatch, home_assistant_client, [{"id": "reader-id", "username": "reader"}])
+
+    await reset_read_only_user(home_assistant_client, "reader", "fresh-password")
+
+    assert sent == [
+        {"id": 1, "type": "config/auth/list"},
+        {
+            "id": 1,
+            "type": "config/auth/update",
+            "user_id": "reader-id",
+            "group_ids": [READ_ONLY_GROUP],
+            "local_only": True,
+        },
+        {
+            "id": 1,
+            "type": "config/auth_provider/homeassistant/admin_change_password",
+            "user_id": "reader-id",
+            "password": "fresh-password",
+        },
+    ]
+
+
+async def test_a_read_only_users_token_is_minted_in_that_users_session(
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, provisioner_settings
+):
+    """The owner only resets the user; a token the owner minted would carry the owner's authority."""
+    url = provisioner_settings.home_assistant_url
+    httpx2_mock.post(f"{url}/auth/login_flow").respond(json={"flow_id": "flow"})
+    for username in (provisioner_settings.username, "reader"):
+        httpx2_mock.post(f"{url}/auth/login_flow/flow", json__username=username).respond(json={"result": username})
+        httpx2_mock.post(
+            f"{url}/auth/token",
+            data={"grant_type": "authorization_code", "code": username, "client_id": provisioner_settings.client_id},
+        ).respond(json={"access_token": f"session-of-{username}"})
+    sent: list[tuple[str | None, str]] = []
+
+    async def websocket_command(self: HomeAssistantClient, message: dict[str, object]) -> object:
+        sent.append((self._access_token, str(message["type"])))
+        match message["type"]:
+            case "config/auth/list" | "auth/refresh_tokens":
+                return []
+            case "config/auth/create":
+                return {"user": {"id": "reader-id"}}
+            case "auth/long_lived_access_token":
+                return "reader-token"
+        return None
+
+    monkeypatch.setattr(HomeAssistantClient, "websocket_command", websocket_command)
+    token = TOKEN.model_copy(update={"read_only_user": "reader"})
+    v1 = FakeCoreV1(None)
+
+    assert await provision_token(home_assistant_client, v1, token, "secret-password") is True
+    owner = f"session-of-{provisioner_settings.username}"
+    assert sent == [
+        (owner, "config/auth/list"),
+        (owner, "config/auth/create"),
+        (owner, "config/auth_provider/homeassistant/create"),
+        ("session-of-reader", "auth/refresh_tokens"),
+        ("session-of-reader", "auth/long_lived_access_token"),
+    ]
+    assert [secret.string_data for secret in v1.created] == [{"token": "reader-token"}]
 
 
 if __name__ == "__main__":

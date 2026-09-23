@@ -272,6 +272,7 @@ rules:
       - ""
     resourceNames:
       - ha-mcp-home-assistant-token
+      - agentplane-home-assistant-token
     resources:
       - secrets
     verbs:
@@ -331,7 +332,7 @@ spec:
                       key: password
                       name: home-assistant-break-glass
                 - name: HOME_ASSISTANT_PROVISIONER_TOKENS
-                  value: "[{\"client_name\": \"ha-mcp-cluster\", \"secret_name\": \"ha-mcp-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's local owner, which ha-mcp copies\"}]"
+                  value: "[{\"client_name\": \"ha-mcp-cluster\", \"read_only_user\": null, \"secret_name\": \"ha-mcp-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's local owner, which ha-mcp copies\"}, {\"client_name\": \"agentplane-egress\", \"read_only_user\": \"agentplane-reader\", \"secret_name\": \"agentplane-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress proxy presents\"}]"
               image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
               imagePullPolicy: Always
               name: provision-tokens

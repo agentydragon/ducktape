@@ -247,7 +247,7 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     async def wait_until_ready():
         return None
 
-    async def login(password):
+    async def login(username, password):
         home_assistant_client._access_token = "refreshed-token"
 
     monkeypatch.setattr(home_assistant_client, "wait_until_ready", wait_until_ready)

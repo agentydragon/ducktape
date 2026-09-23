@@ -49,6 +49,7 @@ py_library(
         ":client",
         ":settings",
         "@pypi//kubernetes",
+        "@pypi//more_itertools",
     ],
 )
 

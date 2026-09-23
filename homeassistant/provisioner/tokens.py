@@ -1,17 +1,21 @@
-"""Keep each configured Secret holding a long-lived token of the local owner that Home Assistant
-accepts, minting a replacement when it holds none or one Home Assistant refuses."""
+"""Keep each configured Secret holding a long-lived token that Home Assistant accepts, minting a
+replacement when it holds none or one Home Assistant refuses."""
 
 from __future__ import annotations
 
 import base64
+import secrets
 
 import kubernetes
 from client import HomeAssistantClient
+from more_itertools import one
 from settings import TokenConfig
 
 LIFESPAN_DAYS = 3650
 # `type` in an auth/refresh_tokens entry; homeassistant.auth.models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN.
 LONG_LIVED_TOKEN_TYPE = "long_lived_access_token"
+# homeassistant.auth.const.GROUP_ID_READ_ONLY: reads every entity, calls no service.
+READ_ONLY_GROUP = "system-read-only"
 
 
 async def replace_long_lived_token(home_assistant: HomeAssistantClient, client_name: str) -> str:
@@ -39,6 +43,53 @@ async def replace_long_lived_token(home_assistant: HomeAssistantClient, client_n
     if not isinstance(minted, str):
         raise TypeError(f"Home Assistant returned a non-string token: {type(minted).__name__}")
     return minted
+
+
+async def reset_read_only_user(owner: HomeAssistantClient, username: str, password: str) -> None:
+    """As the owner, make `username` a local-only member of the read-only group alone, with
+    `password`, creating the user when there is none.
+
+    The password lives for one run: set here, used once to log in and mint the long-lived token,
+    then forgotten. Setting it on every mint is what lets a run recover a user whose password no
+    one holds.
+    """
+    listed = await owner.websocket_command({"id": 1, "type": "config/auth/list"})
+    if not isinstance(listed, list):
+        raise TypeError(f"Home Assistant returned an invalid user list: {listed!r}")
+    users = [user for user in listed if user.get("username") == username]
+    if not users:
+        created = await owner.websocket_command(
+            {
+                "id": 1,
+                "type": "config/auth/create",
+                "name": username,
+                "group_ids": [READ_ONLY_GROUP],
+                "local_only": True,
+            }
+        )
+        await owner.websocket_command(
+            {
+                "id": 1,
+                "type": "config/auth_provider/homeassistant/create",
+                "user_id": HomeAssistantClient.required_string(created, "user", "id"),
+                "username": username,
+                "password": password,
+            }
+        )
+        print(f"Created Home Assistant user {username}")
+        return
+    user_id = HomeAssistantClient.required_string(one(users), "id")
+    await owner.websocket_command(
+        {"id": 1, "type": "config/auth/update", "user_id": user_id, "group_ids": [READ_ONLY_GROUP], "local_only": True}
+    )
+    await owner.websocket_command(
+        {
+            "id": 1,
+            "type": "config/auth_provider/homeassistant/admin_change_password",
+            "user_id": user_id,
+            "password": password,
+        }
+    )
 
 
 def read_token_secret(v1: kubernetes.client.CoreV1Api, token: TokenConfig) -> tuple[bool, str | None]:
@@ -71,17 +122,22 @@ def write_token_secret(v1: kubernetes.client.CoreV1Api, token: TokenConfig, *, e
 
 
 async def provision_token(
-    home_assistant: HomeAssistantClient, v1: kubernetes.client.CoreV1Api, token: TokenConfig, password: str
+    owner: HomeAssistantClient, v1: kubernetes.client.CoreV1Api, token: TokenConfig, password: str
 ) -> bool:
-    """Leave a Secret whose token Home Assistant accepts, else mint one into it; return whether it
-    changed."""
+    """Leave a Secret whose token Home Assistant accepts, else mint one into it as the token's
+    user; return whether it changed. `owner` logs in with `password` to mint the owner's token,
+    or to reset the read-only user a token belongs to."""
     exists, current = read_token_secret(v1, token)
-    if current is not None and await home_assistant.token_is_valid(current):
+    if current is not None and await owner.token_is_valid(current):
         print(f"{token.secret_name} holds a valid token")
         return False
-    await home_assistant.login(password)
-    write_token_secret(
-        v1, token, exists=exists, value=await replace_long_lived_token(home_assistant, token.client_name)
-    )
+    await owner.login(owner.settings.username, password)
+    holder = owner
+    if token.read_only_user is not None:
+        user_password = secrets.token_urlsafe(32)
+        await reset_read_only_user(owner, token.read_only_user, user_password)
+        holder = HomeAssistantClient(owner.http_client, owner.settings)
+        await holder.login(token.read_only_user, user_password)
+    write_token_secret(v1, token, exists=exists, value=await replace_long_lived_token(holder, token.client_name))
     print(f"Provisioned a valid token into {token.secret_name}")
     return True

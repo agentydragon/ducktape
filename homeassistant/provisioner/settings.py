@@ -40,11 +40,18 @@ class ComponentConfig(BaseModel):
 
 
 class TokenConfig(BaseModel):
-    """A Secret the provisioner keeps holding a long-lived token of the local owner that Home
-    Assistant accepts, under the key `token`."""
+    """A Secret the provisioner keeps holding a long-lived token that Home Assistant accepts,
+    under the key `token`."""
 
     client_name: str = Field(
-        description="The token's name in Home Assistant. Minting one revokes the owner's other tokens of this name."
+        description="The token's name in Home Assistant. Minting one revokes its user's other tokens of this name."
+    )
+    read_only_user: str | None = Field(
+        default=None,
+        description=(
+            "A local-only member of Home Assistant's read-only group alone, which the provisioner creates, "
+            "whose token this is; None for the owner's."
+        ),
     )
     secret_name: str
     secret_namespace: str
