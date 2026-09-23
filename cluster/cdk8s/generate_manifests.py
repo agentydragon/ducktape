@@ -1349,8 +1349,8 @@ def generate_manifests(root: Path) -> None:
     )
     haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", "cluster/k8s/haku/ui-image-webhook")
     haku_flux_kustomizations.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
-    haku_workloads_artifact = artifact("haku-workloads", "cluster/k8s/haku/workloads")
-    haku_flux_kustomizations.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
+    haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
+    haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
     litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
         flux_chart,

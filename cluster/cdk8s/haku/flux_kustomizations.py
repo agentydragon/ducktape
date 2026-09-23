@@ -85,31 +85,6 @@ def haku_ui_image_webhook(
     )
 
 
-def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization) -> Kustomization:
-    name = "haku-workloads"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
-            # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
-            wait=False,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-                # haku-forgejo-git Secret (now also reflected into flux-system for the
-                # GitRepository's basic auth).
-                flux_kustomization_depends_on(haku_state)
-            ],
-        ),
-    )
-
-
 def haku_workspaces(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
