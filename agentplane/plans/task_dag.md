@@ -401,13 +401,14 @@ tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `t
 - A Nix-built sandbox image holds the tool set as one reviewable list, on the substrate the Haku
   workspace image (`cluster/k8s/haku/workspaces/image/default.nix`) and `x/codex_pod_image` share:
   nix-ld's filesystem fallback and static `/usr/bin/env` and `/bin/bash` links, without which an
-  FHS binary (the runner's hermetic Python, the harness CLIs, a toolchain Bazel downloads) finds
-  no loader.
-- The runner image is the same definition plus the runner, also built by Nix; Bazel pulls no image
-  from Forgejo. The runner comes in as a release artifact Bazel builds and tests: one tarball of
-  the runner, its hermetic Python and both harnesses, the content of the Bazel image's own layers.
-  `release.yml` publishes it and `sync-pins.yml` pins it in `nix/artifact-pins.json`, as for the
-  repository's other released tools.
+  FHS binary (a toolchain Bazel downloads, a prebuilt binary a run fetches) finds no loader.
+- The runner image is the same definition plus the runner, Claude Code and Codex, also built by
+  Nix; Bazel pulls no image from Forgejo. The runner comes in as a wheel Bazel builds and tests,
+  carrying its harness supervisor; `release.yml` publishes it and `sync-pins.yml` pins it in
+  `nix/artifact-pins.json`, as for the repository's other released tools. Claude Code and Codex
+  come from nixpkgs, so the image's harnesses are nixpkgs' versions rather than the ones
+  `//agentplane/runner/...` pins, and the image's container tests are what run the runner against
+  them.
 - `test_image` and `test_image_packaging` move to the runner image's workflow and run against the
   image it built, before it publishes. A runner change then reaches the image through a release, a
   pin and an image build; its container tests run on devel once the pin moves, not on the change's
@@ -419,11 +420,10 @@ tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `t
 **Steps:**
 
 1. The Nix sandbox image, published to the Forgejo registry.
-2. The runner release artifact, a row in `devinfra/ci/artifact_targets.json`.
-3. The Nix runner image from the shared definition and that pin, with the container tests in its
-   workflow, where the runner's hermetic Python first runs through nix-ld.
-   `devinfra/ci/image_targets.json` stops publishing the Bazel runner image, and its apt tool set
-   (`trixie_agentplane_runner`) goes.
+2. The runner wheel, a row in `devinfra/ci/artifact_targets.json`.
+3. The Nix runner image from the shared definition, that pin and nixpkgs' `claude-code` and
+   `codex`, with the container tests in its workflow. `devinfra/ci/image_targets.json` stops
+   publishing the Bazel runner image, and its apt tool set (`trixie_agentplane_runner`) goes.
 4. The sandbox `SandboxTemplate` and environment, described by what the image holds.
 
 **What waits on it:**
