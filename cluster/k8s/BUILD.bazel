@@ -156,6 +156,7 @@ exports_files(
         "monitoring/cilium/kustomization.yaml",
         "monitoring/stack/monitoring-stack.k8s.yaml",
         "monitoring/stack/kustomization.yaml",
+        "monitoring/alloy/alloy.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
