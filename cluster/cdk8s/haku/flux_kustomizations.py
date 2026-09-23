@@ -22,33 +22,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def haku_forgejo_tea(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_rbac: Kustomization) -> Kustomization:
-    name = "haku-forgejo-tea"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=[
-                # haku-sandbox ns the secret lives in
-                flux_kustomization_depends_on(haku_rbac)
-            ],
-        ),
-        description=(
-            "Forgejo API token Reflector mirrors into haku-ci's KEDA scaler. "
-            "Split out of haku/managed-agent so haku-ci doesn't depend on the "
-            "(parked) worker."
-        ),
-    )
-
-
 def haku_mailbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

@@ -84,6 +84,7 @@ from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
 from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
+    forgejo_tea as haku_forgejo_tea,
     namespace as haku_namespace,
     rbac as haku_rbac,
 )
@@ -368,8 +369,8 @@ def generate_manifests(root: Path) -> None:
     forgejo_flux_kustomizations.forgejo_cache(
         flux_chart, forgejo_cache_artifact, valkey_kustomization, local_path_provisioner_kustomization
     )
-    haku_forgejo_tea_artifact = artifact("haku-forgejo-tea", "cluster/k8s/haku/forgejo-tea")
-    haku_flux_kustomizations.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, haku_rbac_kustomization)
+    haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
+    haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, root, haku_rbac_kustomization)
     claude_rbac_artifact = artifact("claude-rbac", "cluster/k8s/agents/agent-rbac-base")
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(
         flux_chart, claude_rbac_artifact, kyverno_policies_kustomization
