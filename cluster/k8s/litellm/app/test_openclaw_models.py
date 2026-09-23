@@ -1,5 +1,5 @@
 import pytest_bazel
-import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
@@ -12,9 +12,6 @@ from cluster.cdk8s.model_rosters import (
     Provider,
     exposed_name,
 )
-from util.bazel.runfiles import get_required_path
-
-_HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -28,7 +25,8 @@ def _haku_claude_models() -> tuple[dict, dict]:
 
 
 def _haku_openclaw_env() -> dict[str, str]:
-    deployment = yaml.safe_load(get_required_path(_HAKU_OPENCLAW_DEPLOYMENT).read_text())
+    manifests = Cdk8sTesting.synth(haku_openclaw_spike_config.app_chart(Cdk8sTesting.app()))
+    deployment = next(manifest for manifest in manifests if manifest["kind"] == "Deployment")
     container = next(
         entry for entry in deployment["spec"]["template"]["spec"]["containers"] if entry["name"] == "openclaw"
     )

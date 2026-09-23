@@ -61,6 +61,7 @@ exports_files(
         "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
         "agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
         "agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
@@ -136,12 +137,6 @@ filegroup(
         "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-filegroup(
-    name = "openclaw_model_config",
-    srcs = ["agents/haku-openclaw-spike/app/deployment.yaml"],
-    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 
 filegroup(

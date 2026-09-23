@@ -1,18 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # cdk8s-generated (cluster/cdk8s/haku_openclaw_spike_config.py,
+  # cluster/cdk8s/agents/namespaces.py) -- see cluster/docs/cdk8s.md.
   - namespace.k8s.yaml
-  - forgejo-images-creds-eso.yaml
-  - gateway-password-eso.yaml
-  - seaweed.yaml
-  - pvc.yaml
-  - pvc-v2.yaml
-  - deployment.yaml
-  - service.yaml
-  - networkpolicy-ingress.yaml
-  - networkpolicy-egress.yaml
-  # cdk8s-generated (cluster/cdk8s/haku_openclaw_spike_config.py) -- see cluster/docs/cdk8s.md.
   - haku-openclaw-spike-config.k8s.yaml
+  - haku-openclaw-spike.k8s.yaml
+  # Hand-written: no SeaweedFS CRD binding exists for cdk8s yet.
+  - seaweed.yaml
+components:
+  - ./image-pins
 
 generatorOptions:
   disableNameSuffixHash: true
