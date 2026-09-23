@@ -17,10 +17,10 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.ingestion import Ingestion, event_batches
-from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
-from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.thread.models import SandboxIngestion
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import notify

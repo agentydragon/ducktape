@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.thread.event_log import ThreadNotFoundError
+from agentplane.app.agent_runtime.events.event_log import ThreadNotFoundError
 from agentplane.app.thread.models import Event, EventLog, FeedState, Thread
 from agentplane.app.thread.updates import notify
 from agentplane.app.thread.views import ThreadView

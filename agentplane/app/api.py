@@ -23,7 +23,7 @@ from agentplane.action_service.connections import Connection, ConnectionRename, 
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
-from agentplane.app import auth_routes, bridge as runner_bridge, event_stream
+from agentplane.app import auth_routes, bridge as runner_bridge
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
@@ -31,6 +31,16 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
+from agentplane.app.agent_runtime.events import stream
+from agentplane.app.agent_runtime.events.debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -64,18 +74,9 @@ from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, Sandb
 from agentplane.app.runners import SandboxNotReachableError
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.thread.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
-from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.app.thread.views import ThreadView
-from agentplane.app.thread_debug import (
-    ArchivedObservationEntry,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
-    ThreadEvidenceNotFoundError,
-    ThreadScopeChangedError,
-)
 from agentplane.app.thread_fold import CommandOutcome
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
@@ -774,7 +775,7 @@ async def thread_event_stream(
     if cursor > thread.last_cursor:
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return StreamingResponse(
-        shutdown.until(event_stream.follow(event_logs, updates.changes, thread_id, after_cursor=cursor)),
+        shutdown.until(stream.follow(event_logs, updates.changes, thread_id, after_cursor=cursor)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
