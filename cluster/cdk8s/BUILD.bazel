@@ -635,6 +635,30 @@ py_binary(
     deps = [":generate_manifests_lib"],
 )
 
+py_library(
+    name = "render_diff",
+    srcs = ["render_diff.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "render_diff_bin",
+    main_module = "cluster.cdk8s.render_diff",
+    deps = [":render_diff"],
+)
+
+py_test(
+    name = "test_render_diff",
+    srcs = ["test_render_diff.py"],
+    data = ["@multitool//tools/kustomize"],
+    deps = [
+        ":render_diff",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_generate_manifests",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
