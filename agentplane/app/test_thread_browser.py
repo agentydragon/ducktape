@@ -151,9 +151,9 @@ async def thread_browser(
     thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
-        source.serve() as target,
+        source.serve() as runner_port,
         app_process(
-            db_url, target, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
+            db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -183,7 +183,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -250,7 +250,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -410,9 +410,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
         try:
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             async with (
-                source.serve() as target,
+                source.serve() as runner_port,
                 app_process(
-                    service.database_url, target, frontend_directory=directory, electric_url=service.url
+                    service.database_url, runner_port, frontend_directory=directory, electric_url=service.url
                 ) as app,
                 http2_proxy(app.url, certificate) as ingress,
                 asyncio.timeout(60),

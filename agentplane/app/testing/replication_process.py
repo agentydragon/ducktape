@@ -31,17 +31,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from agentplane.app.ingestion import Ingestion
-from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
+from agentplane.app.ingestion import Ingester, Ingestion
+from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
+from agentplane.app.runners import Runners
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.thread.content import ContentStore
@@ -201,7 +202,7 @@ class ReadyServer(uvicorn.Server):
 
 def _run(
     database_url: str,
-    target: str,
+    runner_port: int,
     connection: Connection,
     boundary: CommitBoundary | None,
     cursor: int,
@@ -213,7 +214,7 @@ def _run(
     asyncio.run(
         _serve(
             database_url,
-            target,
+            runner_port,
             connection,
             boundary,
             cursor,
@@ -227,7 +228,7 @@ def _run(
 
 async def _serve(
     database_url: str,
-    target: str,
+    runner_port: int,
     connection: Connection,
     boundary: CommitBoundary | None,
     cursor: int,
@@ -240,22 +241,6 @@ async def _serve(
     store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
     ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
     thread_updates = ThreadUpdates(engine.url)
-
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        if sandbox_state is None:
-            raise SandboxNotFoundError(name)
-        if sandbox_state is not ProvisioningState.RUNNING:
-            raise SandboxNotReachableError(name, sandbox_state)
-        return target
-
-    bridge = RunnerBridge(
-        address_of=address_of,
-        event_logs=event_logs,
-        ingestion=ingestion,
-        content=content,
-        thread_changes=thread_updates.changes,
-    )
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -265,9 +250,19 @@ async def _serve(
         custom.objects[("sandboxes", SANDBOX)] = raw
         index.sandboxes[SANDBOX] = raw
         if sandbox_state in (ProvisioningState.RUNNING, ProvisioningState.WAITING_FOR_POD_READY):
+            # Where `ReplicationSource.serve` listens: the bridge dials this address at `runner_port`.
             running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
             core.pods[SANDBOX] = running
             index.pods[SANDBOX] = running
+    runners = Runners(index, runner_port)
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+    bridge = RunnerBridge(
+        runners=runners,
+        event_logs=event_logs,
+        content=content,
+        ingester=ingester,
+        thread_changes=thread_updates.changes,
+    )
     async with (
         httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
         httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
@@ -297,14 +292,15 @@ async def _serve(
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await thread_updates.start()
-        await bridge.start([SANDBOX] if sandbox_state is ProvisioningState.RUNNING else [])
+        await ingester.start()
         try:
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 url = f"http://127.0.0.1:{listener.getsockname()[1]}"
                 await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
         finally:
-            await bridge.close()
+            await ingester.close()
+            await runners.close()
             await thread_updates.close()
             await engine.dispose()
 
@@ -351,7 +347,7 @@ class AppProcess:
 @asynccontextmanager
 async def app_process(
     database_url: str,
-    target: str,
+    runner_port: int,
     *,
     boundary: CommitBoundary | None = None,
     cursor: int = 0,
@@ -366,7 +362,7 @@ async def app_process(
         target=_run,
         args=(
             database_url,
-            target,
+            runner_port,
             child,
             boundary,
             cursor,

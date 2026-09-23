@@ -15,25 +15,22 @@ from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse
-from agentplane.app.ingestion import Ingestion
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.ingestion import Ingester, Ingestion
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
+from agentplane.app.runners import Runners
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.app.thread.views import ThreadEntityView
-
-
-async def _unreachable(name: str) -> str:
-    raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
 
 def openapi_document() -> dict[str, Any]:
@@ -43,20 +40,22 @@ def openapi_document() -> dict[str, Any]:
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     thread_updates = ThreadUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
+    live = LiveIndex(stale_after_seconds=900)
+    runners = Runners(live, port=1)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
-            address_of=_unreachable,
+            runners=runners,
             event_logs=event_logs,
-            ingestion=Ingestion(engine),
             content=content,
+            ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
             thread_changes=thread_updates.changes,
         ),
         ThreadStore(engine),
         {harness: ["schema-model"] for harness in Harness},
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
-        LiveIndex(stale_after_seconds=900),
+        live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
         event_logs=event_logs,
         content=content,

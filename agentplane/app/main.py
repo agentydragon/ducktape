@@ -25,18 +25,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, create_app
-from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingestion
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.ingestion import Ingester, Ingestion
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.runners import Runners
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
@@ -159,7 +160,7 @@ class Settings(BaseSettings):
     shutdown_timeout: int = Field(
         default=5,
         description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
-        "them; the rest of the Deployment's grace period is the bridge's lease release and closing the database.",
+        "them; the rest of the Deployment's grace period is the ingester's lease release and closing the database.",
     )
     resync_seconds: int = Field(
         default=300,
@@ -265,18 +266,14 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
-
-        async def running_sandboxes() -> list[str]:
-            return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
-
+        runners = Runners(live, settings.runner_port)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
         bridge = RunnerBridge(
-            address_of=runner_address(live, settings.runner_port),
+            runners=runners,
             event_logs=event_logs,
-            ingestion=Ingestion(engine),
             content=content,
+            ingester=ingester,
             thread_changes=thread_updates.changes,
-            discover_sandboxes=running_sandboxes,
-            sandbox_changes=live.changes,
         )
 
         operator_actions = (
@@ -333,10 +330,10 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                bridge=bridge,
+                ingester=ingester,
+                runners=runners,
                 thread_updates=thread_updates,
                 engine=engine,
-                sandboxes=running_sandboxes,
             )
         finally:
             watch_task.cancel()
@@ -344,21 +341,17 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server,
-    *,
-    bridge: RunnerBridge,
-    thread_updates: ThreadUpdates,
-    engine: AsyncEngine,
-    sandboxes: DiscoverSandboxes,
+    server: uvicorn.Server, *, ingester: Ingester, runners: Runners, thread_updates: ThreadUpdates, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
-    timeout bounds the requests and streams still open, and the bridge's lease release and closing the
-    database have the rest of the Pod's grace period to themselves."""
+    timeout bounds the requests and streams still open, and the ingester's lease release and closing the
+    runner connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        await bridge.start(await sandboxes())
+        await ingester.start()
         await server.serve()
     finally:
-        await bridge.close()
+        await ingester.close()
+        await runners.close()
         await thread_updates.close()
         await engine.dispose()
 

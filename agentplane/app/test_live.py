@@ -21,13 +21,13 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import Replica
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -43,6 +43,7 @@ from agentplane.app.live import (
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
+from agentplane.app.runners import Runners
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -273,18 +274,15 @@ def app(
 ) -> FastAPI:
     """Neither test below reaches a database or a runner -- the guard answers before a route body
     runs, and the document comes from the signatures -- so the engine here never connects."""
-
-    async def unreachable(name: str) -> str:
-        raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
-
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     thread_updates = ThreadUpdates(engine.url)
+    runners = Runners(live_index, port=1)
     bridge = RunnerBridge(
-        address_of=unreachable,
+        runners=runners,
         event_logs=event_logs,
-        ingestion=Ingestion(engine),
         content=content,
+        ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
         thread_changes=thread_updates.changes,
     )
     return create_app(

@@ -24,7 +24,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.bridge import Feed, RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
@@ -32,11 +32,13 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.event_stream import follow
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
+from agentplane.app.runners import Runners
+from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore, FeedError
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
@@ -124,8 +126,18 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
+async def local_runners(live_index: LiveIndex, runner: RunnerHandle) -> AsyncIterator[Runners]:
+    """`SANDBOX` running, its Pod at the local runner's address."""
+    live_index.sandboxes[SANDBOX] = sandbox(SANDBOX)
+    live_index.pods[SANDBOX] = pod(SANDBOX, phase="Running", ready=True, ip="127.0.0.1")
+    runners = Runners(live_index, runner.port)
+    yield runners
+    await runners.close()
+
+
+@pytest.fixture
 async def app_url(
-    runner: RunnerHandle,
+    local_runners: Runners,
     inventory: SandboxInventory,
     store: ThreadStore,
     thread_updates: ThreadUpdates,
@@ -142,19 +154,15 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        return runner.target
-
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = int(probe.getsockname()[1])
+    ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     bridge = RunnerBridge(
-        address_of=address_of,
+        runners=local_runners,
         event_logs=event_logs,
-        ingestion=ingestion,
         content=content,
+        ingester=ingester,
         thread_changes=thread_updates.changes,
     )
     server = uvicorn.Server(
@@ -192,7 +200,7 @@ async def app_url(
     finally:
         server.should_exit = True
         await serving
-        await bridge.close()
+        await ingester.close()
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
@@ -513,10 +521,10 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
+    bridge: RunnerBridge,
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
-    thread_updates: ThreadUpdates,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     thread = await event_logs.open(
@@ -528,17 +536,6 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
     assert lease is not None
     command = command_pb2.Command(
         command_id="unnotified-admission", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
-    )
-
-    async def unavailable(_sandbox: str) -> str:
-        raise AssertionError("a durable reread must not contact the runner")
-
-    bridge = RunnerBridge(
-        address_of=unavailable,
-        event_logs=event_logs,
-        ingestion=ingestion,
-        content=content,
-        thread_changes=thread_updates.changes,
     )
     original_lookup = content.admitted_command
     waiting = asyncio.Event()
@@ -564,7 +561,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
     )
     monkeypatch.setattr(content, "admitted_command", observed_lookup)
     monkeypatch.setattr("agentplane.app.ingestion.notify", drop_notification)
-    monkeypatch.setattr("agentplane.app.bridge.RECONCILE_S", 0.01)
+    monkeypatch.setattr("agentplane.app.bridge.ADMISSION_REREAD_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
         async with asyncio.timeout(10):
@@ -582,7 +579,9 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
 @dataclass
 class Replicas:
     owner: RunnerBridge
+    owner_ingester: Ingester
     survivor: RunnerBridge
+    survivor_ingester: Ingester
     # What the survivor streams a thread from: its own pool and its own listener.
     survivor_event_logs: EventLogStore
     survivor_changes: Changes
@@ -590,6 +589,8 @@ class Replicas:
 
 @pytest.fixture
 async def replicas(
+    local_runners: Runners,
+    live_index: LiveIndex,
     runner: RunnerHandle,
     thread_updates: ThreadUpdates,
     db_url: str,
@@ -597,35 +598,37 @@ async def replicas(
     content: ContentStore,
     ingestion: Ingestion,
 ) -> AsyncIterator[Replicas]:
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        return runner.target
-
     replica_engine = connect(db_url)
     replica_updates = ThreadUpdates(replica_engine.url)
     await replica_updates.start()
+    survivor_runners = Runners(live_index, runner.port)
+    survivor_event_logs = EventLogStore(replica_engine)
+    owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
+    survivor_ingester = Ingester(
+        runners=survivor_runners, event_logs=survivor_event_logs, ingestion=Ingestion(replica_engine)
+    )
     owner = RunnerBridge(
-        address_of=address_of,
+        runners=local_runners,
         event_logs=event_logs,
-        ingestion=ingestion,
         content=content,
+        ingester=owner_ingester,
         thread_changes=thread_updates.changes,
     )
-    survivor_event_logs = EventLogStore(replica_engine)
     survivor = RunnerBridge(
-        address_of=address_of,
+        runners=survivor_runners,
         event_logs=survivor_event_logs,
-        ingestion=Ingestion(replica_engine),
         content=ContentStore(replica_engine),
+        ingester=survivor_ingester,
         thread_changes=replica_updates.changes,
     )
-    await owner.start([SANDBOX])
-    await owner.reconcile()
+    await owner_ingester.start()
+    await owner_ingester.reconcile()
     try:
-        yield Replicas(owner, survivor, survivor_event_logs, replica_updates.changes)
+        yield Replicas(owner, owner_ingester, survivor, survivor_ingester, survivor_event_logs, replica_updates.changes)
     finally:
-        await owner.close()
-        await survivor.close()
+        await owner_ingester.close()
+        await survivor_ingester.close()
+        await survivor_runners.close()
         await replica_updates.close()
         await replica_engine.dispose()
 
@@ -669,6 +672,7 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
 
 async def test_semantic_feed_failure_survives_replica_reconcile(
     runner: RunnerHandle,
+    local_runners: Runners,
     event_logs: EventLogStore,
     ingestion: Ingestion,
     db_url: str,
@@ -676,11 +680,6 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
-
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        return runner.target
-
     client = RunnerClient(runner.target, capture_history=True)
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
@@ -713,17 +712,20 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
         finally:
             attachment.cancel()
 
+        survivor_ingester = Ingester(
+            runners=local_runners, event_logs=replica_event_logs, ingestion=Ingestion(replica_engine)
+        )
         survivor = RunnerBridge(
-            address_of=address_of,
+            runners=local_runners,
             event_logs=replica_event_logs,
-            ingestion=Ingestion(replica_engine),
             content=ContentStore(replica_engine),
+            ingester=survivor_ingester,
             thread_changes=replica_updates.changes,
         )
         try:
-            await survivor.start([SANDBOX])
-            await survivor.reconcile()
-            assert not survivor._feeds
+            await survivor_ingester.start()
+            await survivor_ingester.reconcile()
+            assert not survivor_ingester._feeds
             assert await replica_event_logs.feed_state(thread) == failed
 
             dispatched = False
@@ -757,7 +759,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 await survivor.open_session(SANDBOX, SESSION, spec)
             assert not reattached
         finally:
-            await survivor.close()
+            await survivor_ingester.close()
     finally:
         await replica_updates.close()
         await replica_engine.dispose()
@@ -823,7 +825,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
             command_pb2.Command(command_id="input-2", submit_input=command_pb2.SubmitInput(text="AFTER_OWNER_EXIT")),
         )
         request = await model.request()
-        await replicas.owner.close()
+        await replicas.owner_ingester.close()
         await model.reply(request, Text("AFTER_OWNER_EXIT"))
         async with asyncio.timeout(10):
             second = await read_until(lines, "turnCompleted")
@@ -847,49 +849,38 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     runner: RunnerHandle,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
     model: ScriptedModel,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
-    content: ContentStore,
     ingestion: Ingestion,
+    live_index: LiveIndex,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
-    monkeypatch.setattr("agentplane.app.bridge.RECONCILE_S", 3600)
-    running: list[str] = []
-    changes = Changes()
+    monkeypatch.setattr("agentplane.app.ingestion.RECONCILE_S", 3600)
+    runners = Runners(live_index, runner.port)
     discovered = asyncio.Event()
+    running = runners.running
 
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        return runner.target
-
-    async def discover() -> list[str]:
+    def observed_running() -> set[str]:
         discovered.set()
-        return list(running)
+        return running()
 
-    bridge = RunnerBridge(
-        address_of=address_of,
-        event_logs=event_logs,
-        ingestion=ingestion,
-        content=content,
-        discover_sandboxes=discover,
-        sandbox_changes=changes,
-        thread_changes=thread_updates.changes,
-    )
+    monkeypatch.setattr(runners, "running", observed_running)
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
     client = RunnerClient(runner.target, capture_history=True)
     try:
         async with await client.attach(SESSION, spec=spec):
             pass
-        await bridge.start([])
+        await ingester.start()
         async with asyncio.timeout(10):
             await discovered.wait()
         discovered.clear()
-        running.append(SANDBOX)
-        changes.notify()
+        live_index.sandboxes[SANDBOX] = sandbox(SANDBOX)
+        live_index.pods[SANDBOX] = pod(SANDBOX, phase="Running", ready=True, ip="127.0.0.1")
+        live_index.changes.notify()
         async with asyncio.timeout(10):
             await discovered.wait()
-        # Only the discovery coordinator can create this row: no app Open, command, or SSE request ran.
+        # Only the ingester can create this row: no bridge exists, so no Open, command, or SSE request ran.
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
@@ -900,7 +891,8 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         assert threads[0].sandbox == SANDBOX
         assert threads[0].session_id == SESSION
     finally:
-        await bridge.close()
+        await ingester.close()
+        await runners.close()
         await client.close()
 
 
@@ -958,6 +950,8 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 
 async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
+    local_runners: Runners,
+    live_index: LiveIndex,
     event_logs: EventLogStore,
     thread_updates: ThreadUpdates,
     spec: protocol_pb2.SessionSpec,
@@ -976,28 +970,23 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         async with asyncio.timeout(10):
             stored = await read_until(lines, "harnessExited")
             assert (await next_message(lines)).event == "end"
-    await replicas.owner.close()
-    await replicas.survivor.close()
+    await replicas.owner_ingester.close()
+    await replicas.survivor_ingester.close()
 
-    tried_to_contact_runner = False
-
-    async def unavailable(name: str) -> str:
-        nonlocal tried_to_contact_runner
-        tried_to_contact_runner = True
-        raise ConnectionError(f"test runner {name} is unavailable")
-
+    del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
+    offline_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     offline = RunnerBridge(
-        address_of=unavailable,
+        runners=local_runners,
         event_logs=event_logs,
-        ingestion=ingestion,
         content=content,
+        ingester=offline_ingester,
         thread_changes=thread_updates.changes,
     )
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
-        # sandbox disappears: this answer must not attempt a new runner attachment.
+        # sandbox disappears: this answer must not attempt a new runner attachment, which with the
+        # sandbox gone from the index would raise.
         assert await offline.command(thread, stop) == admitted
-        assert not tried_to_contact_runner
         async with (
             asyncio.timeout(10),
             aclosing(follow(event_logs, thread_updates.changes, thread, after_cursor=0)) as frames,
@@ -1006,9 +995,8 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
             assert (await next_message(lines)).event == "attached"
             assert await read_until(lines, "harnessExited") == stored
             assert (await next_message(lines)).event == "end"
-        assert not tried_to_contact_runner
     finally:
-        await offline.close()
+        await offline_ingester.close()
 
 
 if __name__ == "__main__":
