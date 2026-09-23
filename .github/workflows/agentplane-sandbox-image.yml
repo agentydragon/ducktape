@@ -1,6 +1,7 @@
 # Build agentplane's Nix sandbox image (agentplane/sandbox_image/default.nix) and push it to
 # the Forgejo OCI registry: a dockerTools.buildLayeredImage docker archive, so
-# `skopeo copy docker-archive:`, as in haku-sandbox-image-nix.yml.
+# `skopeo copy docker-archive:`, as in haku-sandbox-image-nix.yml. The archive also goes to
+# the Attic cache, so a host building the same revision substitutes it instead of building it.
 name: Agentplane Sandbox Image
 
 on:
@@ -54,8 +55,15 @@ jobs:
           SHA="${{ github.sha }}"
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      # Fork PRs do not receive the Forgejo publish credentials, and only a merged image is a
-      # base anything pins.
+      # Both pushes run on devel only: fork PRs do not receive the publish credentials, and only
+      # a merged image is one anything pins.
+      - name: Push to Attic
+        if: github.ref_name == 'devel'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          attic push ducktape:main result
+
       - name: Push to Forgejo
         if: github.ref_name == 'devel'
         run: |
