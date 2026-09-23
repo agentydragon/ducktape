@@ -132,6 +132,7 @@ exports_files(
         "agents/machine-access-tf/kustomization.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
         "forgejo-images/forgejo-images.k8s.yaml",
+        "forgejo-images/kustomization.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
         "infra-drift/infra-drift.k8s.yaml",
         "github-secrets-sync/github-secrets-sync.k8s.yaml",

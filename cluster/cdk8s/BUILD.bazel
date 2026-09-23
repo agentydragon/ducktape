@@ -181,9 +181,13 @@ py_library(
     srcs = ["forgejo_images.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":artifact_generators",
+        ":flux",
         ":generation",
         ":terraform",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -498,7 +502,6 @@ py_library(
         ":stateful_infra",
         "//cluster/cdk8s:flux_kustomizations_cnpg",
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
-        "//cluster/cdk8s:flux_kustomizations_forgejo_images",
         "//cluster/cdk8s:flux_kustomizations_gateway",
         "//cluster/cdk8s/activitywatch:flux_kustomizations",
         "//cluster/cdk8s/agentplane:generation",
@@ -687,6 +690,7 @@ py_test(
         "//cluster/k8s:flux-webhook-token/kustomization.yaml",
         "//cluster/k8s:flux/kustomizations.k8s.yaml",
         "//cluster/k8s:forgejo-images/forgejo-images.k8s.yaml",
+        "//cluster/k8s:forgejo-images/kustomization.yaml",
         "//cluster/k8s:forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",
         "//cluster/k8s:forgejo/agentydragon-repos/kustomization.yaml",
         "//cluster/k8s:forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
@@ -759,20 +763,6 @@ py_library(
 py_library(
     name = "flux_kustomizations_dns_automation",
     srcs = ["dns_automation_flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":artifact_generators",
-        ":flux",
-        ":generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
-    name = "flux_kustomizations_forgejo_images",
-    srcs = ["forgejo_images_flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":artifact_generators",
