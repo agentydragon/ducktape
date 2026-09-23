@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
@@ -39,7 +40,6 @@ from agentplane.app.runners import Runners
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {

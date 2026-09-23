@@ -23,6 +23,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.api import create_app
@@ -38,7 +39,6 @@ from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStor
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair

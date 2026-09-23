@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 
 import pytest_bazel
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.thread.event_log import EventLogStore
-from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

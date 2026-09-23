@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.updates import ThreadUpdates
@@ -42,7 +43,6 @@ from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.runners import Runners
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient

@@ -10,12 +10,12 @@ import pytest
 import pytest_bazel
 from sqlalchemy import text
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.presets import Harness
-from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 

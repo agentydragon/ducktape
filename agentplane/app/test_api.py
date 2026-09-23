@@ -12,6 +12,7 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.updates import ThreadUpdates
@@ -40,7 +41,6 @@ from agentplane.app.testing.kubernetes import (
     sandbox,
 )
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2

@@ -27,6 +27,7 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.models import (
     FeedState,
@@ -44,7 +45,6 @@ from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certi
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path

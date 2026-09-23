@@ -3584,6 +3584,57 @@ spec:
       credentialRef:
         name: google-readonly
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-egress-grocy-sf-reader
+  namespace: agents-infra
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-grocy-sf-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-egress-grocy-sf-reader
+  namespace: agents-infra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-egress-grocy-sf-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-grocy-sf-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: agents-infra
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -3592,13 +3643,13 @@ metadata:
 spec:
   data:
     - remoteRef:
-        key: grocy-sf-readonly-token
-        property: token
-      secretKey: token
+        key: agentplane-grocy-sf-readonly
+        property: password
+      secretKey: password
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-flux-system-secret-store
+    name: kubernetes-agentplane-staging-grocy-sf-secret-store
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
@@ -3610,15 +3661,14 @@ metadata:
   name: grocy-sf-readonly
   namespace: agentplane-staging
 spec:
-  description: An Authentik-outpost-scoped bearer token minted and refreshed by the authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works outpost accepts. The proxy does not narrow what the token itself may do -- `grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read routes.
+  description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the password only on GETs to Grocy's read routes.
   source:
     secretRef:
       name: grocy-sf-readonly
-      key: token
+      key: password
   targets:
     - header: Authorization
-      method: schemeToken
-      scheme: Bearer
+      method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
