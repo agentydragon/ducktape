@@ -45,10 +45,11 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         deps: Test dependencies.
         env_inherit: Extra env vars to inherit. Docker vars are added automatically
             when requires_docker is True.
-        shard_count: Split the test's cases across this many Bazel shards. Adds the
-            pytest-shard plugin, which is what reads the --shard-id/--num-shards
-            pytest_bazel derives from Bazel's shard environment; without it pytest
-            rejects those flags and the test fails at startup rather than sharding.
+        shard_count: Split the test's cases across this many Bazel shards, item i of
+            the collection on shard i mod shard_count. Loads util/testing/sharding.py,
+            which is what reads the --shard-id/--num-shards pytest_bazel derives from
+            Bazel's shard environment; without it pytest rejects those flags and the
+            test fails at startup rather than sharding.
             Shard only tests whose per-case cost dominates their per-process setup --
             a suite that recompiles the same program in every shard pays that cost
             per shard instead of once.
@@ -73,7 +74,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         base_args = base_args + ["-p", "util.testing.docker_mtls"]
         base_deps = base_deps + ["//util/testing:docker_mtls"]
     if shard_count != None:
-        base_deps = base_deps + ["@pypi//pytest_shard"]
+        base_args = base_args + ["-p", "util.testing.sharding"]
+        base_deps = base_deps + ["//util/testing:sharding"]
         kwargs["shard_count"] = shard_count
     if uses_syrupy:
         base_args = base_args + [
