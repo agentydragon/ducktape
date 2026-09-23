@@ -159,6 +159,8 @@ exports_files(
         "flux-webhook-token/kustomization.yaml",
         "authentik/sso-providers-tf/sso-providers.k8s.yaml",
         "authentik/sso-providers-tf/kustomization.yaml",
+        "kube-system/kube-system.k8s.yaml",
+        "kube-system/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

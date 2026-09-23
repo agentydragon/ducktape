@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
+    kube_system,
     mitmproxy,
     ntfy,
     public_coder_agent_config,
@@ -93,7 +94,6 @@ from cluster.cdk8s.hubble_ui import flux_kustomizations as hubble_ui_flux_kustom
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
-from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
@@ -196,6 +196,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    kube_system.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -474,8 +475,9 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy_flux_kustomizations.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
     website_artifact = artifact("website", "cluster/k8s/website")
     website_flux_kustomizations.website(flux_chart, website_artifact, gateway_kustomization)
-    kube_system_artifact = artifact("kube-system", "cluster/k8s/kube-system")
-    kube_system_flux_kustomizations.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
+    kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
+    kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
+    agents_flux_kustomizations.agents_mitmproxy(flux_chart, cert_manager_trust_kustomization)
     mitmproxy.agents_mitmproxy(flux_chart, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", "cluster/k8s/parked/docker-ci")
     parked_flux_kustomizations.docker_ci(
