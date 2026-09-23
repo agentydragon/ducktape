@@ -3,15 +3,14 @@ that keeps other workloads' tokens valid, the config volume and its VolSync back
 credentials, metrics token, route, the backup mover's egress policy, and the ServiceMonitor and
 PrometheusRule.
 
-The provisioner image tag is the placeholder "unset"; the hand-written
-`cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides it at
-`kustomize build` time via Flux's image-automation marker. Hand-written beside the generated
+The provisioner images' tags are the placeholder "unset"; the hand-written
+`cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides them at
+`kustomize build` time via Flux's image-automation markers. Hand-written beside the generated
 output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `kustomization.yaml` that generates the ConfigMaps.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -57,17 +56,21 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
-from homeassistant.provisioner.settings import ProvisionerSettings, TokenConfig
-from util.settings_contract import env_name
+from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
+from homeassistant.provisioner.settings import ProvisionerSettings
+from homeassistant.provisioner.tokens.settings import CONFIG_FILE_ENV, Settings, TokenConfig
+from util.settings_contract import env_name, settings_file
 
 _OUTPUT_DIR = "cluster/k8s/home-assistant/app"
 _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
+_HOSTNAME = "home.allegedly.works"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _NODE_SELECTOR = {"kubernetes.io/hostname": "optiplex"}
 _CONFIG_CLAIM = "home-assistant-config"
@@ -83,6 +86,16 @@ _CONFIGURATION_CONFIG_MAP = "home-assistant-configuration"
 _PROVISIONER_CONFIG_MAP = "home-assistant-provisioner-config"
 _CADDY_CONFIG_MAP = "home-assistant-caddy"
 _TOKEN_PROVISIONER = "home-assistant-token-provisioner"
+_TOKEN_PROVISIONER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-token-provisioner:unset"
+_TOKEN_PROVISIONER_CONFIG_DIR = "/etc/home-assistant-token-provisioner"
+
+# The local owner the token provisioner logs in as, through the in-cluster Service.
+_ENDPOINT = HomeAssistantEndpoint(
+    url=f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:8123",
+    client_id=f"https://{_HOSTNAME}/",
+    redirect_uri=f"https://{_HOSTNAME}/",
+)
+_OWNER_USERNAME = "ha-local-admin"
 
 # The long-lived tokens the provisioner keeps valid. It writes only in this namespace; a workload
 # holding one copies it with ESO.
@@ -104,15 +117,12 @@ AGENTPLANE_READER_TOKEN = TokenConfig(
 )
 _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 
+_BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
+    secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
+)
 _CONFIG_FILE_ENV = k8s.EnvVar(name=ProvisionerSettings.config_file_env, value=_PROVISIONER_CONFIG)
 _LOCAL_ADMIN_PASSWORD_ENV = k8s.EnvVar(
-    name=env_name(ProvisionerSettings, "local_admin_password"),
-    value_from=k8s.EnvVarSource(
-        secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
-    ),
-)
-_TOKENS_ENV = k8s.EnvVar(
-    name=env_name(ProvisionerSettings, "tokens"), value=json.dumps([token.model_dump() for token in _TOKENS])
+    name=env_name(ProvisionerSettings, "local_admin_password"), value_from=_BREAK_GLASS_PASSWORD
 )
 _ONBOARDING_DISABLED_ENV = k8s.EnvVar(name=env_name(ProvisionerSettings, "onboarding_enabled"), value="false")
 
@@ -316,6 +326,24 @@ def _token_provisioner(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
         ],
     )
+    config = k8s.KubeConfigMap(
+        scope,
+        "token-provisioner-config",
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        data={
+            "settings.yaml": yaml_config(
+                settings_file(
+                    Settings,
+                    {
+                        "endpoint": _ENDPOINT.model_dump(),
+                        "owner_username": _OWNER_USERNAME,
+                        "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
+                    },
+                    supplied=[("owner_password",)],
+                )
+            )
+        },
+    )
     k8s.KubeRoleBinding(
         scope,
         "token-provisioner-binding",
@@ -335,6 +363,9 @@ def _token_provisioner(scope: Construct) -> None:
             concurrency_policy="Forbid",
             job_template=k8s.JobTemplateSpec(
                 spec=k8s.JobSpec(
+                    # Ends a run that never starts, such as one still pulling an image Flux has not
+                    # pinned yet; under `Forbid` it would otherwise hold off every later run.
+                    active_deadline_seconds=600,
                     backoff_limit=3,
                     template=k8s.PodTemplateSpec(
                         metadata=k8s.ObjectMeta(labels=labels),
@@ -349,11 +380,17 @@ def _token_provisioner(scope: Construct) -> None:
                             containers=[
                                 k8s.Container(
                                     name="provision-tokens",
-                                    image=_PROVISIONER_IMAGE,
+                                    image=_TOKEN_PROVISIONER_IMAGE,
                                     image_pull_policy="Always",
-                                    command=_PROVISIONER_COMMAND,
-                                    args=["tokens"],
-                                    env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV, _TOKENS_ENV],
+                                    command=["/homeassistant/provisioner/tokens/provision_bin"],
+                                    env=[
+                                        k8s.EnvVar(
+                                            name=CONFIG_FILE_ENV, value=f"{_TOKEN_PROVISIONER_CONFIG_DIR}/settings.yaml"
+                                        ),
+                                        k8s.EnvVar(
+                                            name=env_name(Settings, "owner_password"), value_from=_BREAK_GLASS_PASSWORD
+                                        ),
+                                    ],
                                     resources=k8s.ResourceRequirements(
                                         requests=_quantities(cpu="20m", memory="64Mi"),
                                         limits=_quantities(memory="256Mi"),
@@ -363,15 +400,12 @@ def _token_provisioner(scope: Construct) -> None:
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(
-                                            name="provisioner-config",
-                                            mount_path=_PROVISIONER_CONFIG,
-                                            sub_path="provisioner.yaml",
-                                            read_only=True,
+                                            name="config", mount_path=_TOKEN_PROVISIONER_CONFIG_DIR, read_only=True
                                         )
                                     ],
                                 )
                             ],
-                            volumes=[_config_map_volume("provisioner-config", _PROVISIONER_CONFIG_MAP)],
+                            volumes=[_config_map_volume("config", config.name)],
                         ),
                     ),
                 )
@@ -568,7 +602,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="home.allegedly.works",
+        hostname=_HOSTNAME,
         backend=_NAME,
         port=8123,
         hsts=False,

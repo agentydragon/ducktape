@@ -8,8 +8,12 @@ from urllib import parse
 
 import httpx2
 from pydantic import BaseModel, StrictBool, TypeAdapter
-from settings import ProvisionerSettings
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
+
+from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
+
+# httpx2's optional WebSocket implementation, which `websocket_command` needs.
+# gazelle:include_dep @pypi//wsproto
 
 
 class OnboardingStep(StrEnum):
@@ -40,9 +44,9 @@ class HomeAssistantClient:
     readiness_timeout_secs = 300
     readiness_retry_interval_secs = 5
 
-    def __init__(self, http_client: httpx2.AsyncClient, settings: ProvisionerSettings) -> None:
+    def __init__(self, http_client: httpx2.AsyncClient, endpoint: HomeAssistantEndpoint) -> None:
         self.http_client = http_client
-        self.settings = settings
+        self.endpoint = endpoint
         self._access_token: str | None = None
 
     async def request_json(
@@ -55,7 +59,7 @@ class HomeAssistantClient:
             if self._access_token is None:
                 raise RuntimeError("Home Assistant client has no access token; log in first")
             headers["Authorization"] = f"Bearer {self._access_token}"
-        url = f"{self.settings.home_assistant_url}{path}"
+        url = f"{self.endpoint.url}{path}"
         if data is None:
             response = await self.http_client.request(method, url, headers=headers, timeout=30)
         elif form:
@@ -90,7 +94,7 @@ class HomeAssistantClient:
     async def token_is_valid(self, token: str) -> bool:
         """Whether Home Assistant accepts `token`."""
         response = await self.http_client.get(
-            f"{self.settings.home_assistant_url}/api/", headers={"Authorization": f"Bearer {token}"}, timeout=30
+            f"{self.endpoint.url}/api/", headers={"Authorization": f"Bearer {token}"}, timeout=30
         )
         if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
             return False
@@ -120,16 +124,16 @@ class HomeAssistantClient:
             raise TypeError(f"Home Assistant response field {'.'.join(path)} is not a string")
         return value
 
-    async def create_owner(self, password: str) -> None:
+    async def create_owner(self, name: str, username: str, password: str) -> None:
         """Create the local owner and authenticate it for subsequent API calls."""
         response = await self.request_json(
             "/api/onboarding/users",
             authenticated=False,
             data={
-                "name": self.settings.display_name,
-                "username": self.settings.username,
+                "name": name,
+                "username": username,
                 "password": password,
-                "client_id": self.settings.client_id,
+                "client_id": self.endpoint.client_id,
                 "language": "en",
             },
         )
@@ -142,16 +146,16 @@ class HomeAssistantClient:
             "/auth/login_flow",
             authenticated=False,
             data={
-                "client_id": self.settings.client_id,
+                "client_id": self.endpoint.client_id,
                 "handler": ["homeassistant", None],
-                "redirect_uri": self.settings.redirect_uri,
+                "redirect_uri": self.endpoint.redirect_uri,
             },
         )
         flow_id = self.required_string(response, "flow_id")
         response = await self.request_json(
             f"/auth/login_flow/{flow_id}",
             authenticated=False,
-            data={"client_id": self.settings.client_id, "username": username, "password": password},
+            data={"client_id": self.endpoint.client_id, "username": username, "password": password},
         )
         auth_code = self.required_string(response, "result")
         await self._exchange_token(auth_code)
@@ -161,14 +165,14 @@ class HomeAssistantClient:
         response = await self.request_json(
             "/auth/token",
             authenticated=False,
-            data={"grant_type": "authorization_code", "code": auth_code, "client_id": self.settings.client_id},
+            data={"grant_type": "authorization_code", "code": auth_code, "client_id": self.endpoint.client_id},
             form=True,
         )
         self._access_token = self.required_string(response, "access_token")
 
     def websocket_url(self) -> str:
         """Return the Home Assistant WebSocket API URL."""
-        parsed = parse.urlsplit(self.settings.home_assistant_url)
+        parsed = parse.urlsplit(self.endpoint.url)
         websocket_scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme)
         if websocket_scheme is None:
             raise ValueError(f"Unsupported Home Assistant URL scheme: {parsed.scheme}")
@@ -191,35 +195,3 @@ class HomeAssistantClient:
         if not isinstance(result, dict) or result.get("type") != "result" or result.get("success") is not True:
             raise RuntimeError(f"Home Assistant WebSocket command failed: {result!r}")
         return result.get("result")
-
-    @staticmethod
-    def config_without_metadata(config: object) -> dict[str, object]:
-        """Validate and remove runtime metadata from a stored HTTP config."""
-        if not isinstance(config, dict):
-            raise TypeError(f"Home Assistant returned an invalid HTTP config: {config!r}")
-        return {key: value for key, value in config.items() if key not in {"created_at", "error", "error_message"}}
-
-    async def configure_http(self, password: str) -> None:
-        """Converge Home Assistant's UI-managed HTTP settings through its admin API."""
-        http_config = self.settings.http_config.model_dump()
-        current = await self.websocket_command({"id": 1, "type": "http/config"})
-        if not isinstance(current, dict):
-            raise TypeError(f"Home Assistant returned an invalid HTTP config response: {current!r}")
-        stable = self.config_without_metadata(current.get("stable"))
-        pending = current.get("pending")
-        pending_config = self.config_without_metadata(pending) if pending is not None else None
-        if stable == http_config and pending is None:
-            return
-        if pending_config == http_config and current.get("active_config_type") == "pending":
-            await self.websocket_command({"id": 1, "type": "http/config/promote"})
-            return
-
-        result = await self.websocket_command({"id": 1, "type": "http/config/configure", "config": http_config})
-        if not isinstance(result, dict) or not isinstance(result.get("restart"), bool):
-            raise TypeError(f"Home Assistant returned an invalid HTTP configure response: {result!r}")
-        if not result["restart"]:
-            return
-
-        await self.wait_until_ready()
-        await self.login(self.settings.username, password)
-        await self.websocket_command({"id": 1, "type": "http/config/promote"})

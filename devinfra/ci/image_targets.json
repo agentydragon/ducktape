@@ -172,6 +172,11 @@
       "test": "//homeassistant/provisioner/...",
       "registry": "forgejo"
     },
+    "homeassistant-token-provisioner": {
+      "target": "//homeassistant/provisioner/tokens:image",
+      "test": "//homeassistant/provisioner/tokens/...",
+      "registry": "forgejo"
+    },
     "grocy-user-perms-provisioner": {
       "target": "//cluster/provisioners/grocy_user_perms:image",
       "test": "//cluster/provisioners/grocy_user_perms/...",

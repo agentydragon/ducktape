@@ -1,4 +1,3 @@
-# gazelle:ignore
 """Home Assistant onboarding provisioner OCI image."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
@@ -6,133 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "component_installer",
-    srcs = ["component_installer.py"],
-    imports = ["."],
-    deps = [
-        ":settings",
-        "@pypi//httpx2",
-    ],
-)
-
-py_library(
-    name = "client",
-    srcs = ["client.py"],
-    imports = ["."],
-    deps = [
-        ":settings",
-        "@pypi//httpx2",
-        "@pypi//pydantic",
-        "@pypi//tenacity",
-        "@pypi//wsproto",  # keep: required by httpx2's optional WebSocket implementation
-    ],
-)
-
-py_library(
-    name = "tokens",
-    srcs = ["tokens.py"],
-    imports = ["."],
-    deps = [
-        ":client",
-        ":settings",
-        "@pypi//kubernetes",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
-    name = "provision",
-    srcs = ["provision.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":client",
-        ":component_installer",
-        ":settings",
-        ":tokens",
-        "@pypi//httpx2",
-        "@pypi//kubernetes",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    imports = ["."],
-    deps = [
-        ":client",
-        ":settings",
-        "@pypi//httpx2",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_provision",
-    srcs = ["test_provision.py"],
-    imports = ["."],
-    deps = [
-        ":client",
-        ":conftest",
-        ":provision",
-        ":settings",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
-        "@pypi//respx",
-    ],
-)
-
-py_test(
-    name = "test_tokens",
-    srcs = ["test_tokens.py"],
-    imports = ["."],
-    deps = [
-        ":client",
-        ":conftest",
-        ":settings",
-        ":tokens",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//kubernetes",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
-        "@pypi//respx",
-    ],
-)
-
-py_test(
-    name = "test_component_installer",
-    srcs = ["test_component_installer.py"],
-    imports = ["."],
-    deps = [
-        ":component_installer",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
-    ],
-)
+package(default_visibility = ["//homeassistant/provisioner:__subpackages__"])
 
 aspect_py_binary(
     name = "provision_bin",
@@ -161,4 +34,123 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["homeassistant-provisioner:latest"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":endpoint",
+        "@pypi//httpx2",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+        "@pypi//wsproto",
+    ],
+)
+
+py_library(
+    name = "component_installer",
+    srcs = ["component_installer.py"],
+    deps = [
+        ":settings",
+        "@pypi//httpx2",
+    ],
+)
+
+py_library(
+    name = "endpoint",
+    srcs = ["endpoint.py"],
+    visibility = [
+        "//cluster/cdk8s/home_assistant:__pkg__",
+        "//homeassistant/provisioner:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "provision",
+    srcs = ["provision.py"],
+    deps = [
+        ":client",
+        ":component_installer",
+        ":endpoint",
+        ":settings",
+        "@pypi//httpx2",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//cluster/cdk8s/home_assistant:__pkg__",
+        "//homeassistant/provisioner:__subpackages__",
+    ],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":client",
+        ":endpoint",
+        ":settings",
+        "@pypi//httpx2",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":conftest",
+        ":endpoint",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_component_installer",
+    srcs = ["test_component_installer.py"],
+    deps = [
+        ":component_installer",
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",
+    ],
+)
+
+py_test(
+    name = "test_provision",
+    srcs = ["test_provision.py"],
+    deps = [
+        ":client",
+        ":conftest",
+        ":endpoint",
+        ":provision",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",
+        "@pypi//respx",
+    ],
 )

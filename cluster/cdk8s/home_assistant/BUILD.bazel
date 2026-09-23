@@ -7,6 +7,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -17,7 +18,9 @@ py_library(
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/crd_bindings/volsync:replicationsource",
         "//cluster/cdk8s/external_secrets:external_secret",
+        "//homeassistant/provisioner:endpoint",
         "//homeassistant/provisioner:settings",
+        "//homeassistant/provisioner/tokens:settings",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
