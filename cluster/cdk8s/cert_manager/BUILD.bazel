@@ -30,6 +30,7 @@ py_library(
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/cert_manager:clusterissuer",
         "@pypi//cdk8s",
     ],
 )
