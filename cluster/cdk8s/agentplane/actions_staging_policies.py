@@ -61,6 +61,7 @@ _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
+_TANA_READS_SET = "tana-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -207,6 +208,19 @@ _GMAIL_READS_ACTIONS = [
 # Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
 # stays on the human path.
 _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_events"]
+
+# Tana's read-only surface, plus `get_or_create_calendar_node`, whose only write is creating a
+# date's calendar node when it is missing. Reviewed exclusion: `open_node` navigates the
+# operator's Tana desktop app. New upstream tools stay manual until reviewed here.
+_TANA_READS_ACTIONS = [
+    "get_children",
+    "get_or_create_calendar_node",
+    "get_tag_schema",
+    "list_tags",
+    "list_workspaces",
+    "read_node",
+    "search_nodes",
+]
 
 
 def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
@@ -512,9 +526,29 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
-    # What the console's `haku_v1` grants for GitHub (github-reads and
-    # github-identity-reads), Home Assistant (home-assistant-reads), and now Gmail/Calendar
-    # (gmail-reads, google-calendar-reads), attached to the Claude.ai connector's principal.
+    _policy_set(
+        scope,
+        "actionpolicyset-tana-reads",
+        metadata=ApiObjectMetadata(
+            name=_TANA_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"tana": _TANA_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+
+    # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
+    # Assistant, Gmail, Google Calendar and Tana, plus sandbox use, attached to the Claude.ai
+    # connector's principal.
     # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
     # puts every one of these Actions back on the human path.
     _binding(
@@ -524,7 +558,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
@@ -536,6 +570,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 _HOME_ASSISTANT_READS_SET,
                 _GMAIL_READS_SET,
                 _GOOGLE_CALENDAR_READS_SET,
+                _TANA_READS_SET,
             ],
         ),
     )
