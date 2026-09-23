@@ -1109,7 +1109,9 @@ operator's affected Thread. Archive-before-deletion work does not gate this regr
 VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
 its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
 for availability as well as container escape. Verify the suggested Claude Code Web
-comparison before using it as evidence; no runtime is selected by this task.
+comparison before using it as evidence; no runtime is selected by this task. In-container
+alternatives and each harness's interception points are compared in
+[harness tool memory isolation](../docs/harness_tool_memory_isolation.md).
 
 If implemented, make the Sandbox implementation an explicit creation-time choice,
 retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
