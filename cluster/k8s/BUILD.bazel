@@ -146,6 +146,7 @@ exports_files(
         "website/kustomization.yaml",
         "ollama/ollama.k8s.yaml",
         "gatus/gatus.k8s.yaml",
+        "activitywatch/activitywatch.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

@@ -500,6 +500,7 @@ py_library(
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s:flux_kustomizations_forgejo_images",
         "//cluster/cdk8s:flux_kustomizations_gateway",
+        "//cluster/cdk8s/activitywatch:app",
         "//cluster/cdk8s/activitywatch:flux_kustomizations",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
@@ -643,6 +644,7 @@ py_test(
     size = "medium",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s:activitywatch/activitywatch.k8s.yaml",
         "//cluster/k8s:agentplane-staging/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
