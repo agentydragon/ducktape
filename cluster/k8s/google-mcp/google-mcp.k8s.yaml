@@ -163,7 +163,6 @@ spec:
       volumes:
         - name: secret-google-write-access-token
           secret:
-            optional: true
             secretName: google-write-access-token
 ---
 apiVersion: v1
