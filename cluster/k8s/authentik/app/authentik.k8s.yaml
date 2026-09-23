@@ -271,3 +271,17 @@ spec:
         - ports:
             - port: "9000"
               protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: authentik-server
+  namespace: authentik
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: authentik
