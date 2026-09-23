@@ -23,6 +23,8 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedError
+from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
@@ -30,7 +32,6 @@ from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
-from agentplane.app.event_stream import follow
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
@@ -40,7 +41,6 @@ from agentplane.app.presets import Harness
 from agentplane.app.runners import Runners
 from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore, FeedError
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
