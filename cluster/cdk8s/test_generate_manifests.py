@@ -45,6 +45,8 @@ _GENERATED_FILES = (
     "cluster/k8s/descheduler/rbac.k8s.yaml",
     "cluster/k8s/descheduler/kustomization.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",
+    "cluster/k8s/seaweedfs/loom-gym-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/drivefs-artifacts-bucket.k8s.yaml",
     "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/kustomization.yaml",
     "cluster/k8s/seaweedfs/cluster/seaweedfs.k8s.yaml",

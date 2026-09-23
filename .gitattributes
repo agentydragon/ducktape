@@ -73,6 +73,7 @@ cluster/k8s/gatus/sso-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/loom-gym-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/drivefs-artifacts-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync/kustomization.yaml linguist-generated=true

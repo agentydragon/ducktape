@@ -65,3 +65,21 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "loom_gym_bucket",
+    srcs = ["loom_gym_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
