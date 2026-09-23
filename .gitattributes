@@ -99,6 +99,7 @@ cluster/k8s/agents/loki-read-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
+cluster/k8s/seaweedfs/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/pr-visuals-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/registry-cache-bucket/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/kustomization.yaml linguist-generated=true
