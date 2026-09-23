@@ -34,6 +34,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
@@ -338,7 +339,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
     # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
     # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
-    # (egress_staging_credentials.py).
+    # (egress_staging_credentials.py). `grocy-sf-readonly` substitutes an Authentik-outpost token
+    # scoped to GET on Grocy's own REST API (see that module's `grocy-sf-readonly` EgressPolicy for
+    # why that's Grocy's API rather than the grocy-mcp-sf MCP server).
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
@@ -358,7 +361,14 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY, GOOGLE_READONLY_POLICY],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+            ],
         ),
     )
 

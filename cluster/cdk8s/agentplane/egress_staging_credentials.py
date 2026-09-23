@@ -35,7 +35,7 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 
-from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY
+from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
@@ -61,6 +61,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
+    _grocy_sf_readonly(construct, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -224,6 +225,71 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
                     paths=["/v2/activity:query"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
                 ),
+            ]
+        ),
+    )
+
+
+def _grocy_sf_readonly(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="grocy-sf-readonly",
+        source="grocy-sf-readonly-token",
+        key="token",
+        store="kubernetes-flux-system-secret-store",
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "An Authentik-outpost-scoped bearer token minted and refreshed by the "
+                "authentik-jwt-rotation CronJob's grocy-sf-readonly rotation, mirrored into "
+                "this namespace by ESO. It is the same client credentials the grocy-mcp-sf MCP "
+                "server itself uses to log in, exchanged for a token the grocy-sf.allegedly.works "
+                "outpost accepts. The proxy does not narrow what the token itself may do -- "
+                "`grocy-sf-readonly`'s own rule restricts this credential to GET on Grocy's read "
+                "routes."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
+                # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
+                # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
+                # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
+                # that distinction directly, so GET-only admits exactly the routes
+                # haku-console's `grocy_reads` ActionPolicySet names as tools (entities/stock/
+                # user/system/file reads); PUT, POST and DELETE -- every write -- are refused by
+                # the proxy regardless of path.
+                EgressPolicySpecRules(
+                    hosts=["grocy-sf.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=[
+                        "/api/objects/**",
+                        "/api/stock/**",
+                        "/api/user",
+                        "/api/system/info",
+                        "/api/system/db-changed-time",
+                        "/api/files/**",
+                    ],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
+                )
             ]
         ),
     )
