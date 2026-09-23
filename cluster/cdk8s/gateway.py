@@ -1,12 +1,18 @@
 """The cluster's shared Gateway API `Gateway` -- every generated `HttpRoute` in this
-repo attaches to it.
+repo attaches to it -- and the generated part of its directory: the `gateway-system`
+Namespace and the plaintext listener's redirect to HTTPS.
+
+Hand-written beside the generated output: `gateway.yaml`, the `Gateway` itself, since no
+cdk8s binding covers Gateway.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
@@ -15,6 +21,9 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFilters,
+    HttpRouteSpecRulesFiltersRequestRedirect,
+    HttpRouteSpecRulesFiltersRequestRedirectScheme,
+    HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
     HttpRouteSpecRulesFiltersResponseHeaderModifier,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
     HttpRouteSpecRulesFiltersType,
@@ -24,8 +33,12 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesTimeouts,
 )
 
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.metadata import metadata
+
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
+OUTPUT_DIR = "cluster/k8s/gateway"
 # Not the plaintext listener: the gateway's HTTP-only route owns port 80 and redirects it.
 HTTPS_LISTENER = "https-wildcard"
 
@@ -86,3 +99,34 @@ def https_route(
             ],
         ),
     )
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
+    k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=_NAMESPACE))
+    HttpRoute(
+        chart,
+        "http-redirect",
+        metadata=metadata("http-to-https-redirect", _NAMESPACE),
+        spec=HttpRouteSpec(
+            parent_refs=[HttpRouteSpecParentRefs(name=_NAME, section_name="http")],
+            rules=[
+                HttpRouteSpecRules(
+                    filters=[
+                        HttpRouteSpecRulesFilters(
+                            type=HttpRouteSpecRulesFiltersType.REQUEST_REDIRECT,
+                            request_redirect=HttpRouteSpecRulesFiltersRequestRedirect(
+                                scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
+                                status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
+                            ),
+                        )
+                    ]
+                )
+            ],
+        ),
+    )
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)

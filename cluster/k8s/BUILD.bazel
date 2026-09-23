@@ -99,6 +99,7 @@ exports_files(
         "tofu-controller/kustomization.yaml",
         "cnpg/cnpg.k8s.yaml",
         "cnpg/kustomization.yaml",
+        "gateway/gateway-system.k8s.yaml",
         "dns-automation/dns-records.k8s.yaml",
         "external-creds/external-creds.k8s.yaml",
         "external-creds/kustomization.yaml",

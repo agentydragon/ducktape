@@ -18,6 +18,7 @@ from cluster.cdk8s import (
     forgejo_image_automation,
     forgejo_images,
     forgejo_images_flux_kustomizations,
+    gateway,
     gateway_flux_kustomizations,
     github_branch_protection,
     google_mcp,
@@ -215,6 +216,7 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_ghcr_openclaw.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
+    gateway.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
