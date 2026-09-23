@@ -6,8 +6,6 @@ resources:
   - ../../mcp-servicemonitor-base
   # cdk8s-generated (cluster/cdk8s/grocy/mcp.py) -- see cluster/docs/cdk8s.md.
   - grocy-mcp-sf.k8s.yaml
-  # Hand-written: no RedisReplication binding exists for cdk8s.
-  - valkey-ovh-instance.yaml
 configMapGenerator:
   - name: grocy-mcp-config
     files:
