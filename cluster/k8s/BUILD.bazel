@@ -151,6 +151,7 @@ exports_files(
         "agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
         "agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "agents/airlock/airlock.k8s.yaml",
+        "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

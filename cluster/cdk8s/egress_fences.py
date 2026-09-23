@@ -1,7 +1,6 @@
 """The FQDN fences on the agent egress proxies: one CiliumNetworkPolicy per proxy Pod naming
 what it may resolve and connect to on the public internet, each in its own chart so the
-committed file keeps the name its hand-written predecessor had. The directories around them
-(`cluster/k8s/agents/{haku-egress-proxy,mitmproxy}`) stay hand-written.
+committed file keeps the name its hand-written predecessor had.
 
 A fence bounds the proxy Pod, not the sandboxes behind it, whose force-proxy
 CiliumClusterwideNetworkPolicies admit kube-dns as a plain L4 rule. In-cluster traffic is not

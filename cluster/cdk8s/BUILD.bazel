@@ -340,6 +340,21 @@ py_library(
 )
 
 py_library(
+    name = "haku_egress_proxy",
+    srcs = ["haku_egress_proxy.py"],
+    deps = [
+        ":forgejo_images",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
+        "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -600,6 +615,7 @@ py_library(
         ":github_branch_protection",
         ":google_mcp",
         ":ha_mcp",
+        ":haku_egress_proxy",
         ":haku_openclaw_spike_config",
         ":kubectl_passthrough_mcp",
         ":loki_read_proxy",
@@ -763,6 +779,7 @@ py_test(
         "//cluster/k8s:agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
+        "//cluster/k8s:agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/namespace.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
