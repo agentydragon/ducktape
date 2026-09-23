@@ -13,21 +13,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "external-secrets"
@@ -116,26 +107,16 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.external-secrets.io"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="external-secrets",
-                    version="2.10.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(webhook_issuer.name),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="external-secrets",
+        version="2.10.0",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(webhook_issuer.name),
     )
     return chart
 

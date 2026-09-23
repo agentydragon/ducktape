@@ -10,6 +10,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",

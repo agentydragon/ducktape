@@ -19,21 +19,12 @@ from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot impor
     VolumeSnapshotClass,
     VolumeSnapshotClassDeletionPolicy,
 )
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "openebs-lvm"
@@ -92,26 +83,16 @@ def chart(app: App) -> Chart:
         metadata=metadata(RELEASE, "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://openebs.github.io/lvm-localpv"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(RELEASE, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="lvm-localpv",
-                    version="1.10.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={"lvmNode": {"nodeSelector": _PROXMOX}, "lvmController": {"nodeSelector": _PROXMOX}},
-        ),
+        RELEASE,
+        NAMESPACE,
+        repository=repository,
+        chart="lvm-localpv",
+        version="1.10.1",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        values={"lvmNode": {"nodeSelector": _PROXMOX}, "lvmController": {"nodeSelector": _PROXMOX}},
     )
     _storage_classes(chart)
     VolumeSnapshotClass(
