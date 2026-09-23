@@ -80,7 +80,12 @@ from cluster.cdk8s.github_secrets_sync import (
 )
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
-from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
+from cluster.cdk8s.grocy import (
+    app as grocy_app,
+    flux_kustomizations as grocy_flux_kustomizations,
+    mcp as grocy_mcp,
+    user_perms as grocy_user_perms,
+)
 from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
@@ -186,6 +191,9 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    grocy_app.write_manifests(root)
+    grocy_mcp.write_manifests(root)
+    grocy_user_perms.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

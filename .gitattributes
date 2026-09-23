@@ -76,6 +76,9 @@ cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/app-base/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/mcp-base/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/mcp-servicemonitor-base/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true

@@ -106,6 +106,17 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-webhook-token/kustomization.yaml",
     "cluster/k8s/authentik/sso-providers-tf/sso-providers.k8s.yaml",
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
+    "cluster/k8s/grocy/app-base/grocy.k8s.yaml",
+    "cluster/k8s/grocy/app-base/kustomization.yaml",
+    "cluster/k8s/grocy/mcp-base/grocy-mcp.k8s.yaml",
+    "cluster/k8s/grocy/mcp-base/kustomization.yaml",
+    "cluster/k8s/grocy/mcp-servicemonitor-base/grocy-mcp-servicemonitor.k8s.yaml",
+    "cluster/k8s/grocy/mcp-servicemonitor-base/kustomization.yaml",
+    "cluster/k8s/grocy/sf/app/grocy-sf.k8s.yaml",
+    "cluster/k8s/grocy/vallejo/app/grocy-vallejo.k8s.yaml",
+    "cluster/k8s/grocy/sf/mcp/grocy-mcp-sf.k8s.yaml",
+    "cluster/k8s/grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
+    "cluster/k8s/grocy/user-perms-base/grocy-user-perms.k8s.yaml",
 )
 
 

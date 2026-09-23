@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling Grocy.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: grocy-mcp
+  name: grocy-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: grocy-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/name: grocy-mcp
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      containers:
+        - env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: GROCY_MCP_CONFIG_FILE
+              value: /etc/grocy-mcp/config.yaml
+            - name: GROCY_MCP_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: grocy-mcp-oidc
+            - name: GROCY_MCP_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: grocy-mcp-oidc
+            - name: GROCY_MCP_AUTH__PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: grocy_proxy_client_id
+                  name: grocy-mcp-oidc
+          image: git.allegedly.works/ducktape-ci/grocy-mcp:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            tcpSocket:
+              port: 8765
+          name: server
+          ports:
+            - containerPort: 8765
+              name: http
+              protocol: TCP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            tcpSocket:
+              port: 8765
+          resources:
+            limits:
+              cpu: 200m
+              memory: 768Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /etc/grocy-mcp
+              name: config
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - configMap:
+            name: grocy-mcp-config
+          name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: grocy-mcp
+  name: grocy-mcp-server
+spec:
+  ports:
+    - name: http
+      port: 8765
+      protocol: TCP
+      targetPort: 8765
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: grocy-mcp
+  type: ClusterIP

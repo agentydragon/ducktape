@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: grocy
+  name: grocy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grocy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grocy
+    spec:
+      containers:
+        - env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: UTC
+          image: lscr.io/linuxserver/grocy:v4.6.0-ls318
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - i=0; while [ $i -lt 60 ]; do curl -fsS -o /dev/null http://localhost:80/ && exit 0; sleep 2; i=$((i+1)); done
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          name: grocy
+          ports:
+            - containerPort: 80
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /config/data/settingoverrides
+              name: settingoverrides
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: grocy-config-ovh
+        - configMap:
+            name: grocy-settingoverrides
+          name: settingoverrides
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grocy
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app.kubernetes.io/name: grocy
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grocy-settingoverrides
+data:
+  AUTH_CLASS.txt: Grocy\Middleware\ReverseProxyAuthMiddleware
+  DEFAULT_PERMISSIONS.txt: none
+  REVERSE_PROXY_AUTH_HEADER.txt: X-authentik-username
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grocy-ingress
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 80
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 80
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grocy
+  policyTypes:
+    - Ingress
