@@ -465,6 +465,20 @@ py_test(
 )
 
 py_library(
+    name = "kube_system",
+    srcs = ["kube_system.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -492,6 +506,7 @@ py_library(
         ":google_mcp",
         ":ha_mcp",
         ":haku_openclaw_spike_config",
+        ":kube_system",
         ":ntfy",
         ":public_coder_agent_config",
         ":public_coder_devbox",
@@ -552,7 +567,6 @@ py_library(
         "//cluster/cdk8s/infra_drift:flux_kustomizations",
         "//cluster/cdk8s/keda:flux_kustomizations",
         "//cluster/cdk8s/kube_api_proxy:flux_kustomizations",
-        "//cluster/cdk8s/kube_system:flux_kustomizations",
         "//cluster/cdk8s/kubevirt:flux_kustomizations",
         "//cluster/cdk8s/kyverno:flux_kustomizations",
         "//cluster/cdk8s/langfuse:flux_kustomizations",
@@ -712,6 +726,8 @@ py_test(
         "//cluster/k8s:haku/console/kustomization.yaml",
         "//cluster/k8s:home-assistant/namespace.k8s.yaml",
         "//cluster/k8s:infra-drift/infra-drift.k8s.yaml",
+        "//cluster/k8s:kube-system/kube-system.k8s.yaml",
+        "//cluster/k8s:kube-system/kustomization.yaml",
         "//cluster/k8s:litellm/keys-tf/litellm-keys.k8s.yaml",
         "//cluster/k8s:litellm/namespace.k8s.yaml",
         "//cluster/k8s:monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
