@@ -520,13 +520,6 @@ replaces it.
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
   matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
-- **Kubectl passthrough redundancy check** (`kubectl_passthrough_redundancy_check`, commented out
-  in the console): auto-deny a `kubectl-passthrough-mcp` call the caller's own Kubernetes identity
-  already covers by SubjectAccessReview, pointing at the direct path. A kind with an injected
-  authorization service and a caller-to-Kubernetes-identity mapping, on `autoDenyIf`. The console
-  keeps it disabled because direct access is not yet an equivalent substitute (its kubeconfig
-  cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
-  here.
 
 **The composition layer, which the list above omits.** Four of the console's sixteen entries are
 `any_of` bundles rather than leaves, and they are what is actually bound to an agent:
@@ -1517,8 +1510,8 @@ semantics are settled in the [action policies design](../docs/action_policies.md
 `autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
 auto-denied, deny wins over approve, and a request matching nothing takes the human path.
 `autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
-console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
-passthrough redundancy check) are under `CONSOLE_POLICIES`.
+console policy that needs it (schema misses recorded as denied Decisions) is under
+`CONSOLE_POLICIES`.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

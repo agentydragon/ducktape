@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from cluster.cdk8s.ssh_mcp.config import MCP_URL
-
 # Every fixed-repository GitHub read policy grants the same tool list; only the trusted
 # owner/repository differs. search_pull_requests is safe only with its matching owner/repo
 # arguments and no query-level `repo:` qualifier; search_code only with one unquoted
@@ -61,21 +59,6 @@ def _exact_tools(policy_id: str, server: str, tools: list[str]) -> dict[str, Any
 
 def _any_of(policy_id: str, *policies: str) -> dict[str, Any]:
     return {"id": policy_id, "type": "any_of", "policies": list(policies)}
-
-
-def _remote_oauth_server(server_id: str, url: str, client_registration: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": server_id,
-        "backend": {
-            "kind": "remote_mcp",
-            "url": url,
-            "auth": {"kind": "remote_server_oauth", "client_registration": client_registration},
-        },
-    }
-
-
-def _static_bearer_server(server_id: str, url: str) -> dict[str, Any]:
-    return {"id": server_id, "backend": {"kind": "remote_mcp", "url": url, "auth": {"kind": "static_bearer"}}}
 
 
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing
@@ -193,11 +176,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         # `owner_agent_id` is operator-only and rejected for an Agent. A narrowing
         # self-service operation, so click-free, while `create_grant` (widening) stays manual.
         _exact_tools("grants_own_revoke", "grants", ["revoke_grants"]),
-        # A `kubernetes_passthrough` atom (`kubectl_passthrough_redundancy_check`) is
-        # deliberately absent: direct-SAR coverage must not auto-deny the operator-linked
-        # passthrough route while the public-coder kubeconfig cannot execute its required
-        # POST/SPDY transport through haku-kubeapi and only the passthrough service carries
-        # the working WebSocket path.
         _any_of(
             "public_coder_v1",
             "public_coder_github_reads",
@@ -286,25 +264,6 @@ def _mcp_servers() -> dict[str, Any]:
         # auto-approval policy: grant creation requires a manually approved source ToolCall
         # (an auto-approved call cannot mint a grant).
         "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
-        "ssh": _static_bearer_server("ssh", MCP_URL),
-        # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight to
-        # kube-apiserver (cluster_auth_mode=passthrough) -- no group override, no scoped
-        # credential of its own. RBAC is agentydragon's real cluster-admin binding
-        # (oidc-ksbx-agentydragon-admin, cluster/k8s/agents/kubectl-passthrough-mcp/app/), so
-        # every kubectl-shaped tool runs with full cluster-admin once approved; the approval
-        # click in trusted console chrome is the only gate, by design (haku/docs/security.md).
-        "kubectl_passthrough_mcp": _remote_oauth_server(
-            "kubectl-passthrough-mcp",
-            "https://kubectl-passthrough-mcp.allegedly.works/mcp",
-            # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
-            # mirrors Authentik's own OAuth metadata, which omits registration_endpoint), so
-            # DCR would 401 against the guessed {server}/register fallback. The pre-registered
-            # public/PKCE client_id from the kubectl_passthrough_mcp Authentik provider
-            # (tf/gitops/agent-machine-access/main.tf) already allows multiple redirect URIs,
-            # haku-console's operator-auth callback included; PKCE plus per-request
-            # redirect_uri validation secure each caller independently.
-            {"kind": "preregistered", "client_id": "kubectl-passthrough-mcp"},
-        ),
     }
 
 
