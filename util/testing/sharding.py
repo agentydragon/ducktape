@@ -22,7 +22,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    # Bazel refuses to shard a runner that does not advertise support by touching this file, and
+    # Bazel fails a sharded test whose runner does not touch this file to advertise support, and
     # pytest_bazel touches it only when it can import pytest-shard.
     if status_file := os.environ.get("TEST_SHARD_STATUS_FILE"):
         Path(status_file).touch()
