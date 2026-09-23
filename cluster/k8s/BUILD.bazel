@@ -128,6 +128,7 @@ exports_files(
         "flux-webhook/flux-webhook.k8s.yaml",
         "flux-image-automation-ghcr/image-update-automation.k8s.yaml",
         "flux-image-automation-ghcr/openclaw-image.k8s.yaml",
+        "flux-monitoring/flux-monitoring.k8s.yaml",
         "tofu-controller/tofu-controller.k8s.yaml",
         "tofu-controller/kustomization.yaml",
         "cnpg/cnpg.k8s.yaml",

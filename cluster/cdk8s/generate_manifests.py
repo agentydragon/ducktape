@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     egress_fences,
     etcd,
     external_creds,
+    flux_monitoring,
     forgejo_image_automation,
     forgejo_images,
     forgejo_token_rotation,
@@ -117,7 +118,6 @@ from cluster.cdk8s.external_secrets import (
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
-from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import (
     chart as flux_webhook_chart,
     flux_kustomizations as flux_webhook_flux_kustomizations,
@@ -389,6 +389,7 @@ def generate_manifests(root: Path) -> None:
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr.write_manifests(root)
+    flux_monitoring.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
     gateway.write_manifests(root)
@@ -531,10 +532,8 @@ def generate_manifests(root: Path) -> None:
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
         flux_chart, clickhouse_operator_artifact, monitoring_crds_kustomization
     )
-    flux_monitoring_artifact = artifact("flux-monitoring", "cluster/k8s/flux-monitoring")
-    flux_monitoring_flux_kustomizations.flux_monitoring(
-        flux_chart, flux_monitoring_artifact, monitoring_crds_kustomization
-    )
+    flux_monitoring_artifact = artifact("flux-monitoring", flux_monitoring.OUTPUT_DIR)
+    flux_monitoring.flux_monitoring(flux_chart, flux_monitoring_artifact, monitoring_crds_kustomization)
     monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
     cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)

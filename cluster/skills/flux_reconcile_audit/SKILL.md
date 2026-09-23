@@ -72,7 +72,7 @@ finished` count + `Reconciliation failed` count) by
 
 ### Mimir scraping the Flux controllers
 
-`cluster/k8s/flux-monitoring/podmonitor.yaml` points Prometheus at every
+The PodMonitor in `cluster/cdk8s/flux_monitoring.py` points Prometheus at every
 controller's `http-prom` port. Verify:
 
 ```bash
@@ -174,5 +174,5 @@ live cluster in this order:
 4. Always wait ≥5 s after starting the Mimir + Loki port-forwards
    before invoking the script.
 
-See <../../cluster/k8s/flux-monitoring/podmonitor.yaml> for the
+See <../../cdk8s/flux_monitoring.py> for the
 metric-scraping wiring this depends on.
