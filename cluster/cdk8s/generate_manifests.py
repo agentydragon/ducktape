@@ -23,6 +23,7 @@ from cluster.cdk8s import (
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
+    headlamp,
     hubble_ui,
     keda,
     kube_system,
@@ -91,7 +92,6 @@ from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizat
 from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
 from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
-from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
@@ -196,6 +196,7 @@ def generate_manifests(root: Path) -> None:
     valkey.write_manifests(root)
     local_path_provisioner.write_manifests(root)
     goldilocks.write_manifests(root)
+    headlamp.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -702,10 +703,8 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
-    headlamp_app_artifact = artifact("headlamp-app", "cluster/k8s/headlamp")
-    headlamp_flux_kustomizations.headlamp(
-        flux_chart, headlamp_app_artifact, gateway_kustomization, sso_providers_tf_kustomization
-    )
+    headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
+    headlamp.headlamp(flux_chart, headlamp_app_artifact, gateway_kustomization, sso_providers_tf_kustomization)
     matrix_app_artifact = artifact("matrix-app", "cluster/k8s/matrix")
     matrix_kustomization = matrix_flux_kustomizations.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     grafana_instance_artifact = artifact("grafana-instance", "cluster/k8s/monitoring/grafana-instance")

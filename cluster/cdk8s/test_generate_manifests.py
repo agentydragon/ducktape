@@ -124,6 +124,8 @@ _GENERATED_FILES = (
     "cluster/k8s/local-path-provisioner/kustomization.yaml",
     "cluster/k8s/goldilocks/goldilocks.k8s.yaml",
     "cluster/k8s/goldilocks/kustomization.yaml",
+    "cluster/k8s/headlamp/headlamp.k8s.yaml",
+    "cluster/k8s/headlamp/kustomization.yaml",
 )
 
 
