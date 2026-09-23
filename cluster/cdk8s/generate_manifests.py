@@ -805,8 +805,8 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_backup.haku_openclaw_spike_backup(
         flux_chart, haku_openclaw_spike_backup_artifact, external_secrets_operator_kustomization, volsync_kustomization
     )
-    authentik_db_backups_artifact = artifact("authentik-db-backups", "cluster/k8s/authentik/db-backups")
-    authentik_flux_kustomizations.authentik_db_backups(
+    authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
+    authentik_db_backups.authentik_db_backups(
         flux_chart, authentik_db_backups_artifact, cnpg_kustomization, seaweedfs_cluster_kustomization
     )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
