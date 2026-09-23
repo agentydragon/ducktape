@@ -21,6 +21,7 @@ from cluster.cdk8s import (
     etcd,
     external_creds,
     flux_monitoring,
+    flux_sources,
     forgejo_image_automation,
     forgejo_images,
     forgejo_token_rotation,
@@ -387,6 +388,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr.write_manifests(root)
     flux_monitoring.write_manifests(root)
+    flux_sources.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
     gateway.write_manifests(root)

@@ -294,6 +294,7 @@ _GENERATED_FILES = (
     "cluster/k8s/external-secrets/config/kustomization.yaml",
     "cluster/k8s/external-secrets/operator/external-secrets-operator.k8s.yaml",
     "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml",
+    "cluster/k8s/flux/sources/git-repositories.k8s.yaml",
     "cluster/k8s/flux-webhook/flux-webhook.k8s.yaml",
     "cluster/k8s/flux-image-automation-ghcr/image-update-automation.k8s.yaml",
     "cluster/k8s/flux-image-automation-ghcr/openclaw-image.k8s.yaml",
