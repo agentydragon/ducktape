@@ -3773,6 +3773,7 @@ spec:
         - GET
       paths:
         - /api/objects/**
+        - /api/stock
         - /api/stock/**
         - /api/user
         - /api/system/info
