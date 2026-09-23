@@ -8,6 +8,10 @@ spec:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
     topologyKey: kubernetes.io/hostname
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2
