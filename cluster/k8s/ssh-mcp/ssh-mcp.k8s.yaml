@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   annotations:
-    description: Standalone SSH MCP backend; private keys stay in this namespace.
+    description: SSH MCP backend; private keys stay in this namespace.
   labels:
     goldilocks.fairwinds.com/enabled: "false"
     name: ssh-mcp

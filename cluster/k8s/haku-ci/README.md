@@ -17,7 +17,7 @@ contained to roughly Haku's existing sandbox blast radius:
   registry/git push creds — but it is **egress-fenced**
   like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
   only).
-- **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
+- **Rootless daemon in a privileged pod** (a `docker:*-dind-rootless` image, `privileged: true`). The
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
   `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was

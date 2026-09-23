@@ -13,21 +13,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "local-path-provisioner"
@@ -117,51 +108,41 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.containeroo.ch"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="0.0.38",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                "storageClass": {"create": False},
-                "nodePathMap": [
-                    # /var/local-path-provisioner is writable on Talos and persists across reboots.
-                    _node_path("DEFAULT_PATH_FOR_NON_LISTED_NODES", "/var/local-path-provisioner"),
-                    # OVH Kimsufi nodes carve a dedicated XFS data disk via Talos
-                    # UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted at
-                    # /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
-                    # (allowedTopologies zone=hil-ovh) routes OVH-local PVCs here.
-                    #
-                    # KS-5 nodes use /dev/sdb; NVMe nodes use their second NVMe. List every
-                    # node that should be eligible for local-path-ovh placement.
-                    _node_path("ovh-ns103656", "/var/mnt/local-path-ovh-hdd/local-path"),
-                    _node_path("ovh-ns103711", "/var/mnt/local-path-ovh-hdd/local-path"),
-                    _node_path("ovh-ns102453", "/var/mnt/local-path-ovh-hdd/local-path"),
-                    _node_path("ovh-ns104952", "/var/mnt/seaweedfs-data/local-path"),
-                    _node_path("ovh-ns104963", "/var/mnt/seaweedfs-data/local-path"),
-                    _node_path("ovh-ns1001419", "/var/mnt/seaweedfs-data/local-path"),
-                    # Home Assistant is deliberately tied to the physical home LAN and the
-                    # OptiPlex's radios. Keep its local state on this machine's SSD.
-                    _node_path("optiplex", "/var/local-path-provisioner"),
-                ],
-                # Helper pods run in the privileged local-path-storage namespace, which
-                # avoids PodSecurity restrictions in workload namespaces.
-                "configmap": {"helperPodNamespace": NAMESPACE},
-            },
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        version="0.0.38",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            "storageClass": {"create": False},
+            "nodePathMap": [
+                # /var/local-path-provisioner is writable on Talos and persists across reboots.
+                _node_path("DEFAULT_PATH_FOR_NON_LISTED_NODES", "/var/local-path-provisioner"),
+                # OVH Kimsufi nodes carve a dedicated XFS data disk via Talos
+                # UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted at
+                # /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
+                # (allowedTopologies zone=hil-ovh) routes OVH-local PVCs here.
+                #
+                # KS-5 nodes use /dev/sdb; NVMe nodes use their second NVMe. List every
+                # node that should be eligible for local-path-ovh placement.
+                _node_path("ovh-ns103656", "/var/mnt/local-path-ovh-hdd/local-path"),
+                _node_path("ovh-ns103711", "/var/mnt/local-path-ovh-hdd/local-path"),
+                _node_path("ovh-ns102453", "/var/mnt/local-path-ovh-hdd/local-path"),
+                _node_path("ovh-ns104952", "/var/mnt/seaweedfs-data/local-path"),
+                _node_path("ovh-ns104963", "/var/mnt/seaweedfs-data/local-path"),
+                _node_path("ovh-ns1001419", "/var/mnt/seaweedfs-data/local-path"),
+                # Home Assistant is deliberately tied to the physical home LAN and the
+                # OptiPlex's radios. Keep its local state on this machine's SSD.
+                _node_path("optiplex", "/var/local-path-provisioner"),
+            ],
+            # Helper pods run in the privileged local-path-storage namespace, which
+            # avoids PodSecurity restrictions in workload namespaces.
+            "configmap": {"helperPodNamespace": NAMESPACE},
+        },
     )
     _storage_classes(chart)
     return chart

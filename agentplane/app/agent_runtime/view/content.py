@@ -1,5 +1,5 @@
-"""Reads of a thread's content as the fold assembled it: the scope it has materialized, windows
-and payloads within that scope, the evidence behind an entity, and command outcomes.
+"""Reads of a thread's content as the fold assembled it: the scope it has materialized, the
+evidence behind an entity, and command outcomes.
 """
 
 from __future__ import annotations
@@ -28,18 +28,13 @@ from agentplane.app.agent_runtime.models import (
     ThreadEntity,
     ThreadEvidence,
     ThreadNativeLink,
-    ThreadPayloadManifest,
 )
 from agentplane.app.agent_runtime.view import fold
-from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
+from agentplane.app.agent_runtime.view.views import EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-class ThreadInterestExpiredError(ValueError):
-    """A bounded browser interest must be resolved again at the current projection position."""
 
 
 class ThreadScopeResetError(ValueError):
@@ -56,27 +51,6 @@ class ThreadScope:
     through_cursor: int
 
 
-@dataclass(frozen=True)
-class ThreadEntityInterest:
-    scope: ThreadScope
-    anchor_cursor: int
-    tail_from: int
-    window_from: int | None = None
-    window_before: int | None = None
-
-
-@dataclass(frozen=True)
-class ThreadPayloadSelection:
-    scope: ThreadScope
-    owner_cursor: int
-    owner_id: str
-    field: str
-    generation: int
-    revision_cursor: int
-    chunk_count: int
-    content_bytes: int
-
-
 class ContentStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -88,90 +62,6 @@ class ContentStore:
             if checkpoint is None:
                 return None
             return ThreadScope(checkpoint.projection_epoch, checkpoint.through_cursor)
-
-    async def entity_interest(
-        self,
-        thread_id: UUID,
-        *,
-        anchor_cursor: int | None = None,
-        before_cursor: int | None = None,
-        page_size: int = 30,
-    ) -> ThreadEntityInterest | None:
-        if not 1 <= page_size <= 100:
-            raise ValueError("entity page size must be between 1 and 100")
-        async with self._sessions() as session:
-            checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
-            if checkpoint is None:
-                return None
-            scope = ThreadScope(checkpoint.projection_epoch, checkpoint.through_cursor)
-            anchor = scope.through_cursor if anchor_cursor is None else anchor_cursor
-            if anchor < 0 or anchor > scope.through_cursor:
-                raise ValueError("anchor is outside the projected prefix")
-            common = (
-                ThreadEntity.thread_id == thread_id,
-                ThreadEntity.projection_epoch == scope.projection_epoch,
-                ThreadEntity.entity_kind.in_(SEGMENT_KINDS),
-            )
-            if anchor_cursor is not None:
-                newer = list(
-                    await session.scalars(
-                        select(ThreadEntity.cursor)
-                        .where(*common, ThreadEntity.cursor > anchor)
-                        .order_by(ThreadEntity.cursor)
-                        .limit(page_size * 2 + 1)
-                    )
-                )
-                if len(newer) > page_size * 2:
-                    raise ThreadInterestExpiredError("entity interest must rotate")
-
-            async def lower(before: int) -> int:
-                cursors = list(
-                    await session.scalars(
-                        select(ThreadEntity.cursor)
-                        .where(*common, ThreadEntity.cursor < before)
-                        .order_by(ThreadEntity.cursor.desc())
-                        .limit(page_size)
-                    )
-                )
-                return cursors[-1] if cursors else before
-
-            tail_from = await lower(anchor + 1)
-            if before_cursor is None:
-                return ThreadEntityInterest(scope, anchor, tail_from)
-            if before_cursor < 0:
-                raise ValueError("before cursor cannot be negative")
-            return ThreadEntityInterest(scope, anchor, tail_from, await lower(before_cursor), before_cursor)
-
-    async def payload_selection(
-        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-    ) -> ThreadPayloadSelection | None:
-        async with self._sessions() as session:
-            checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
-            if checkpoint is None:
-                return None
-            manifest = await session.scalar(
-                select(ThreadPayloadManifest).where(
-                    ThreadPayloadManifest.thread_id == thread_id,
-                    ThreadPayloadManifest.projection_epoch == checkpoint.projection_epoch,
-                    ThreadPayloadManifest.owner_cursor == owner_cursor,
-                    ThreadPayloadManifest.owner_id == owner_id,
-                    ThreadPayloadManifest.field == field,
-                    ThreadPayloadManifest.generation == generation,
-                    ThreadPayloadManifest.revision_cursor == revision_cursor,
-                )
-            )
-            if manifest is None:
-                return None
-            return ThreadPayloadSelection(
-                ThreadScope(manifest.projection_epoch, checkpoint.through_cursor),
-                owner_cursor,
-                owner_id,
-                field,
-                generation,
-                revision_cursor,
-                manifest.chunk_count,
-                manifest.content_bytes,
-            )
 
     async def evidence(
         self, thread_id: UUID, *, projection_epoch: str, entity_kind: str, entity_id: str, after_cursor: int, limit: int

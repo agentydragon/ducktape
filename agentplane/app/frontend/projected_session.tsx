@@ -24,6 +24,7 @@ import {
   decimalBigInt,
   PayloadBody,
   type ThreadEntity,
+  type ThreadHistory,
   type PayloadRef,
 } from "./thread_store";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
@@ -57,20 +58,10 @@ function lifecyclePresentation(observation: string, event: unknown): { label: st
   return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
 }
 
-function Body({
-  threadId,
-  reference,
-  follow,
-  plain = false,
-}: {
-  threadId: string;
-  reference: PayloadRef | null;
-  follow: boolean;
-  plain?: boolean;
-}): JSX.Element {
+function Body({ reference, plain = false }: { reference: PayloadRef | null; plain?: boolean }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
   return (
-    <PayloadBody threadId={threadId} reference={reference} follow={follow}>
+    <PayloadBody reference={reference}>
       {(body) =>
         body === null ? (
           <Text c="dimmed">Loading complete revision…</Text>
@@ -86,16 +77,7 @@ function Body({
   );
 }
 
-function LazyBody({
-  label,
-  ...body
-}: {
-  label: string;
-  threadId: string;
-  reference: PayloadRef;
-  follow: boolean;
-  plain?: boolean;
-}): JSX.Element {
+function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; plain?: boolean }): JSX.Element {
   const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
@@ -286,7 +268,7 @@ function EntityCard({
     return (
       <Group justify="flex-end" data-thread-anchor={entity.cursor.toString()}>
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
-          <Body threadId={threadId} reference={entity.inputRef} follow={false} />
+          <Body reference={entity.inputRef} />
           <Evidence threadId={threadId} entity={entity} />
         </Paper>
       </Group>
@@ -341,17 +323,9 @@ function EntityCard({
         )}
       </Group>
       {entity.textRef &&
-        (reasoning ? (
-          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} follow={streaming} />
-        ) : (
-          <Body threadId={threadId} reference={entity.textRef} follow={streaming} />
-        ))}
-      {entity.argumentsRef && (
-        <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} follow={streaming} plain />
-      )}
-      {entity.outputRef && (
-        <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={streaming} plain />
-      )}
+        (reasoning ? <LazyBody label="Reasoning" reference={entity.textRef} /> : <Body reference={entity.textRef} />)}
+      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} plain />}
+      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} plain />}
       <Evidence threadId={threadId} entity={entity} />
     </Paper>
   );
@@ -408,15 +382,11 @@ function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
 }
 
 function SelectedCommandOutcomes({
-  threadId,
-  projectionEpoch,
   commands,
   store,
   errors,
   deliver,
 }: {
-  threadId: string;
-  projectionEpoch: string;
   commands: LocalCommand[];
   store: LocalCommands;
   errors: ReadonlyMap<string, string>;
@@ -424,30 +394,21 @@ function SelectedCommandOutcomes({
 }): JSX.Element {
   const ids = commands.slice(0, 128).map((value) => value.command.commandId);
   return (
-    <CommandSelection threadId={threadId} projectionEpoch={projectionEpoch} commandIds={ids}>
+    <CommandSelection commandIds={ids}>
       {(rows) => (
-        <SelectedCommandRows
-          threadId={threadId}
-          rows={rows}
-          commands={commands}
-          store={store}
-          errors={errors}
-          deliver={deliver}
-        />
+        <SelectedCommandRows rows={rows} commands={commands} store={store} errors={errors} deliver={deliver} />
       )}
     </CommandSelection>
   );
 }
 
 function SelectedCommandRows({
-  threadId,
   rows,
   commands,
   store,
   errors,
   deliver,
 }: {
-  threadId: string;
   rows: ThreadEntity[];
   commands: LocalCommand[];
   store: LocalCommands;
@@ -474,7 +435,7 @@ function SelectedCommandRows({
                   {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                {row.inputRef && <Body reference={row.inputRef} />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
@@ -527,7 +488,7 @@ function VirtualizedHistory({
   segments: ThreadEntity[];
   running: boolean;
   activeTurn: string | null;
-  onLoadOlder: (cursor: string) => void;
+  onLoadOlder: () => void;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
@@ -547,7 +508,6 @@ function VirtualizedHistory({
   const previousCount = useRef(segments.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
-  const requestedBefore = useRef<string | null>(null);
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
@@ -789,13 +749,7 @@ function VirtualizedHistory({
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
-        // Retain one segment across adjacent reading windows so the virtualizer can restore
-        // the same measured item and pixel offset after the old collection is evicted.
-        const boundary = (segments[1] ?? segments[0])?.cursor.toString();
-        if (element.scrollTop < 80 && boundary && requestedBefore.current !== boundary) {
-          requestedBefore.current = boundary;
-          onLoadOlder(boundary);
-        }
+        if (element.scrollTop < 80) onLoadOlder();
       }}
     >
       <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -828,13 +782,13 @@ function ProjectedSessionBody({
   threadId,
   entities,
   thread,
-  onLoadOlder,
+  history,
   available,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  onLoadOlder: (cursor: string) => void;
+  history: ThreadHistory;
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -893,14 +847,7 @@ function ProjectedSessionBody({
         style={{ flex: 1, minHeight: 0 }}
         data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        <Button
-          variant="subtle"
-          disabled={!segments.length}
-          onClick={() => {
-            const boundary = segments[1] ?? segments[0];
-            if (boundary) onLoadOlder(boundary.cursor.toString());
-          }}
-        >
+        <Button variant="subtle" disabled={!history.olderAvailable} onClick={history.loadOlder}>
           Load 30 earlier
         </Button>
         <VirtualizedHistory
@@ -908,7 +855,7 @@ function ProjectedSessionBody({
           segments={segments}
           running={running}
           activeTurn={activeTurn}
-          onLoadOlder={onLoadOlder}
+          onLoadOlder={history.loadOlder}
         />
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
@@ -920,26 +867,14 @@ function ProjectedSessionBody({
                     : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                {row.inputRef && <Body reference={row.inputRef} />}
                 <Evidence threadId={threadId} entity={row} />
               </Paper>
             ))}
           </Stack>
         )}
-        {view && selectedCommandIds.length > 0 && (
+        {selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
-            threadId={threadId}
-            projectionEpoch={view.projectionEpoch}
-            commands={selectedCommandIds}
-            store={commands.store}
-            errors={commands.errors}
-            deliver={commands.deliver}
-          />
-        )}
-        {!view && selectedCommandIds.length > 0 && (
-          <SelectedCommandRows
-            threadId={threadId}
-            rows={[]}
             commands={selectedCommandIds}
             store={commands.store}
             errors={commands.errors}
@@ -1037,7 +972,6 @@ function ProjectedSessionBody({
 
 export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const [before, setBefore] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
@@ -1099,13 +1033,13 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             </Text>
           )}
         {thread && (
-          <ThreadCollection key={threadId} threadId={threadId} beforeCursor={before}>
-            {(rows) => (
+          <ThreadCollection key={threadId} threadId={threadId}>
+            {(rows, history) => (
               <ProjectedSessionBody
                 threadId={threadId}
                 entities={rows}
                 thread={thread}
-                onLoadOlder={setBefore}
+                history={history}
                 available={sandboxAvailable}
               />
             )}

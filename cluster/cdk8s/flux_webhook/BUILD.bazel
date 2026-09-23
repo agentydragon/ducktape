@@ -17,6 +17,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:provider",
         "//cluster/cdk8s/crd_bindings/flux:receiver",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/external_secrets:external_secret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
