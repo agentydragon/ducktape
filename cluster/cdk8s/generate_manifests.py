@@ -222,6 +222,7 @@ from cluster.cdk8s.seaweedfs import (
     flux_kustomizations as seaweedfs_flux_kustomizations,
     forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
+    monitoring as seaweedfs_monitoring,
     namespace as seaweedfs_namespace,
     operator_release as seaweedfs_operator_release,
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
@@ -328,6 +329,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_drivefs_artifacts_bucket.write_manifests(root)
     seaweedfs_loom_gym_bucket.write_manifests(root)
     seaweedfs_forgejo_bucket.write_manifests(root)
+    seaweedfs_monitoring.write_manifests(root)
     seaweedfs_public_coder_agent_backups_bucket.write_manifests(root)
     seaweedfs_registry_cache_bucket.write_manifests(root)
     seaweedfs_pr_visuals_bucket.write_manifests(root)
@@ -862,8 +864,8 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
         flux_chart, seaweedfs_loom_gym_bucket_artifact, seaweedfs_cluster_kustomization
     )
-    seaweedfs_monitoring_artifact = artifact("seaweedfs-monitoring", "cluster/k8s/seaweedfs/monitoring")
-    seaweedfs_flux_kustomizations.seaweedfs_monitoring(
+    seaweedfs_monitoring_artifact = artifact("seaweedfs-monitoring", seaweedfs_monitoring.OUTPUT_DIR)
+    seaweedfs_monitoring.seaweedfs_monitoring(
         flux_chart, seaweedfs_monitoring_artifact, seaweedfs_cluster_kustomization, monitoring_crds_kustomization
     )
     seaweedfs_pr_visuals_bucket_artifact = artifact(
