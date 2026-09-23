@@ -135,17 +135,6 @@ retiring a test means deriving both sides from one value.
 - **`haku/mailbox`** — `test_mailbox_plan.py`'s init/prod image equality and
   configMapGenerator-name-vs-mount-name checks, now against `haku/mailbox.py`.
 
-## Deduplicate what the one-to-one conversion copied per module
-
-The conversion kept every module's objects literal, so repeated shapes were copied
-once per module. Each item below is its own PR, proven by `render_diff.py` printing
-`identical`. A helper earns its place where the shape truly repeats; a module that
-differs keeps building the object directly.
-
-- **`valkey_instance(...)`** for the six `RedisReplication`s (~80 near-identical
-  lines each): size, storage class, zone affinity and description differ.
-- **CNPG `Cluster`s onto `cnpg.py`**: 18 built in 18 modules (~670 lines).
-
 ## Parked — lower priority
 
 - **`haku/x/dispatch/` (`test_haku_dispatch_zones_contract.py`)** — `zones.yaml`'s

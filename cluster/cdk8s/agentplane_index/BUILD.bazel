@@ -20,6 +20,7 @@ py_library(
     srcs = ["workers.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",

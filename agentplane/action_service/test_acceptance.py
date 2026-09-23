@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest_bazel
@@ -434,6 +435,8 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
             arguments={"case": "safe"},
         ),
         CALLER_A,
+        request_id=uuid4(),
+        vote=None,
     )
     _, should_dispatch = await store.decide(
         pending_view.id,
@@ -461,6 +464,8 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
             arguments={"case": "unsafe"},
         ),
         CALLER_A,
+        request_id=uuid4(),
+        vote=None,
     )
     await store.decide(
         inflight_view.id,

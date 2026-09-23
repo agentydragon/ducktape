@@ -72,6 +72,8 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
             title="test title for test-wait",
         ),
         CALLER,
+        request_id=uuid4(),
+        vote=None,
     )
     updates = ActionUpdates(db_url)
     await updates.start()

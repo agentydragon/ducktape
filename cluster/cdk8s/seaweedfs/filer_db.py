@@ -16,25 +16,15 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
     ClusterSpecResourcesLimits,
     ClusterSpecResourcesRequests,
-    ClusterSpecStorage,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -43,7 +33,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-filer-db-ssd"
@@ -57,74 +46,50 @@ _CREDENTIALS_FILE = "seaweedfs-filer-db-ssd-creds.sops.yaml"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    Cluster(
+    cnpg.cluster(
         chart,
         "cluster",
-        metadata=metadata(
-            NAME,
-            namespace.NAME,
-            annotations={
-                "description": (
-                    "SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired"
-                    " seaweedfs-filer-db, Case B git-latency migration)"
-                )
+        name=NAME,
+        namespace=namespace.NAME,
+        annotations={
+            "description": (
+                "SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired"
+                " seaweedfs-filer-db, Case B git-latency migration)"
+            )
+        },
+        # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
+        # any future placement that is not constrained by an existing claim.
+        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=True),
+        storage_class="local-path-ovh-ssd",
+        size="2Gi",
+        # QoS / eviction protection. Without these the instance pods are BestEffort -- the
+        # kubelet's first node-pressure eviction target and the OOM-killer's first victim
+        # -- which is backwards for the store holding all filer metadata: every SeaweedFS
+        # and git op goes through it (postgres2 backend, metadata lives here and not in the
+        # filer). Every other component in this namespace is explicitly protected.
+        #
+        # Sized on 30d observation: the primary sits at 372Mi p50 / 410Mi max, the replica
+        # at 185Mi p50. Request 512Mi is above the primary's peak so eviction ranks it
+        # last; limit 1Gi leaves room for a checkpoint or autovacuum burst without being a
+        # cap Postgres can trip over.
+        resources=ClusterSpecResources(
+            requests={
+                "cpu": ClusterSpecResourcesRequests.from_string("100m"),
+                "memory": ClusterSpecResourcesRequests.from_string("512Mi"),
             },
+            limits={"memory": ClusterSpecResourcesLimits.from_string("1Gi")},
         ),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
-                # any future placement that is not constrained by an existing claim.
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh-ssd", size="2Gi"),
-            # QoS / eviction protection. Without these the instance pods are BestEffort -- the
-            # kubelet's first node-pressure eviction target and the OOM-killer's first victim
-            # -- which is backwards for the store holding all filer metadata: every SeaweedFS
-            # and git op goes through it (postgres2 backend, metadata lives here and not in the
-            # filer). Every other component in this namespace is explicitly protected.
-            #
-            # Sized on 30d observation: the primary sits at 372Mi p50 / 410Mi max, the replica
-            # at 185Mi p50. Request 512Mi is above the primary's peak so eviction ranks it
-            # last; limit 1Gi leaves room for a checkpoint or autovacuum burst without being a
-            # cap Postgres can trip over.
-            resources=ClusterSpecResources(
-                requests={
-                    "cpu": ClusterSpecResourcesRequests.from_string("100m"),
-                    "memory": ClusterSpecResourcesRequests.from_string("512Mi"),
-                },
-                limits={"memory": ClusterSpecResourcesLimits.from_string("1Gi")},
-            ),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # Application-user identity for CNPG's ongoing reconcile. NOT a re-initialization:
-            # CNPG runs bootstrap exactly once, at cluster creation on empty PGDATA (this
-            # cluster was actually created via pg_basebackup, see the module docstring) -- the
-            # running instances are never re-init'd by this stanza. Its sole purpose is to tell
-            # CNPG the application role is "seaweedfs" (this clone's owner) rather than CNPG's
-            # default "app": without it, the instance-manager loops forever on `role "app"
-            # does not exist` because no "app" role was cloned. CNPG keeps the seaweedfs role's
-            # password in sync with this Secret -- a no-op, since the Secret holds the value
-            # physically replicated from the source.
-            bootstrap=ClusterSpecBootstrap(
-                initdb=ClusterSpecBootstrapInitdb(
-                    database="seaweedfs",
-                    owner="seaweedfs",
-                    secret=ClusterSpecBootstrapInitdbSecret(name=CREDENTIALS_SECRET),
-                )
-            ),
+        # Application-user identity for CNPG's ongoing reconcile. NOT a re-initialization:
+        # CNPG runs bootstrap exactly once, at cluster creation on empty PGDATA (this
+        # cluster was actually created via pg_basebackup, see the module docstring) -- the
+        # running instances are never re-init'd by this stanza. Its sole purpose is to tell
+        # CNPG the application role is "seaweedfs" (this clone's owner) rather than CNPG's
+        # default "app": without it, the instance-manager loops forever on `role "app"
+        # does not exist` because no "app" role was cloned. CNPG keeps the seaweedfs role's
+        # password in sync with this Secret -- a no-op, since the Secret holds the value
+        # physically replicated from the source.
+        initdb=ClusterSpecBootstrapInitdb(
+            database="seaweedfs", owner="seaweedfs", secret=ClusterSpecBootstrapInitdbSecret(name=CREDENTIALS_SECRET)
         ),
     )
     return chart
