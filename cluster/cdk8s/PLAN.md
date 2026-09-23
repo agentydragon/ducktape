@@ -122,10 +122,11 @@ Decide from the count Wave 3 reports, not before.
 Roster-driven, parallel, each PR joining the graph the AGENTS.md way (chart, then
 node taking values, then dependents).
 
-- **Single-`Terraform`-CR directories** through `terraform.gitops_terraform`
-  (`forgejo/{agentydragon,agentydragon-repos,budget-ledger,claude,cpap-data,haku-state}`,
-  `github-branch-protection`, `agents/machine-access-tf`,
-  `monitoring/alloy-otlp-bearer-token-tf`), one exemplar then the rest.
+- **The remaining `Terraform` CRs** through `terraform.gitops_terraform` (the
+  `github-branch-protection` shape): `forgejo-images`, `authentik/sso-providers-tf`,
+  `infra-drift`, `github-secrets-sync`, `gatus/sso-tf`, `flux-webhook-token`. Most share
+  their directory with other hand-written files, so the CR converts alone and the
+  directory stays mixed until its neighbours do.
 - **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
   at most an ExternalSecret) need either conversion or consolidation into their
   application's owner. SSH-MCP includes its namespace in the application owner.
