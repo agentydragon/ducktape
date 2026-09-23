@@ -45,6 +45,8 @@ _GENERATED_FILES = (
     "cluster/k8s/descheduler/rbac.k8s.yaml",
     "cluster/k8s/descheduler/kustomization.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/seaweedfs/external-credentials/external-credentials.k8s.yaml",
+    "cluster/k8s/seaweedfs/external-credentials/kustomization.yaml",
     "cluster/k8s/seaweedfs/operator/seaweedfs-operator.k8s.yaml",
     "cluster/k8s/seaweedfs/operator/kustomization.yaml",
     "cluster/k8s/seaweedfs/pr-visuals-bucket/pr-visuals-bucket.k8s.yaml",

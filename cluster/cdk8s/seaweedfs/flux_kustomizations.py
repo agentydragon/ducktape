@@ -64,31 +64,6 @@ def seaweedfs_filer_db(
     )
 
 
-def seaweedfs_external_credentials(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
-) -> Kustomization:
-    name = "seaweedfs-external-credentials"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
-            wait=True,
-            timeout="5m",
-        ),
-        description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
-    )
-
-
 def seaweedfs_monitoring(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
