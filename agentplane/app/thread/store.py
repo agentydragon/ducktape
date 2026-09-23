@@ -1,8 +1,8 @@
 """`ThreadStore`, the thread component's API over PostgreSQL.
 
-It owns the engine and each transaction: it runs the levels' functions inside one, composes the
-writes that span levels, and sends the change notice after a write. What is set on a thread
-itself, its name and archive state, is read and written here.
+It owns each transaction: it runs the levels' functions inside one, composes the writes that span
+levels, and sends the change notice after a write. What is set on a thread itself, its name and
+archive state, is read and written here.
 """
 
 from __future__ import annotations
@@ -14,18 +14,16 @@ from uuid import UUID
 from google.protobuf.json_format import ParseDict
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app import thread_fold
-from agentplane.app.changes import Changes
-from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.thread import content, event_log, ingestion_lease
 from agentplane.app.thread.content import ThreadEntityInterest, ThreadPayloadSelection, ThreadScope
 from agentplane.app.thread.event_log import EventReplicationError, FeedSnapshot, ThreadNotFoundError
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.models import Event, EventLog, FeedState, Thread
 from agentplane.app.thread.recording import ThreadFoldError, record_thread_fold, set_operational
-from agentplane.app.thread.updates import ThreadUpdates, notify
+from agentplane.app.thread.updates import notify
 from agentplane.app.thread.views import ThreadView
 from agentplane.app.thread_debug import ArchivedObservationEntry, EvidencePage, NativeFramePage, ObservationPage
 from agentplane.protocol import command_pb2, event_log_pb2
@@ -33,32 +31,11 @@ from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-# SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
-# gazelle:include_dep @pypi//asyncpg
 
 
 class ThreadStore:
     def __init__(self, engine: AsyncEngine) -> None:
-        self._engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-        self.operator_sessions = OperatorSessionStore(engine)
-        self.changes = Changes()
-        self._updates = ThreadUpdates(engine.url, self.changes)
-
-    @classmethod
-    def connect(cls, database_url: str) -> ThreadStore:
-        return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
-
-    async def close(self) -> None:
-        await self._updates.close()
-        await self._engine.dispose()
-
-    async def start_updates(self) -> None:
-        await self._updates.start()
-
-    @property
-    def updates_connected(self) -> bool:
-        return self._updates.connected
 
     async def thread(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
         """The thread for a session: its event log, created from the spec on first sight."""

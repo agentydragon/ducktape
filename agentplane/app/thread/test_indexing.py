@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.thread.ingestion_lease import IngestionLease
@@ -29,6 +30,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
     store: ThreadStore,
+    engine: AsyncEngine,
     lease: IngestionLease,
     history_size: int,
     materialized_item_count: int,
@@ -66,7 +68,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         if statement.lstrip().startswith("SELECT") and ("thread_entity" in statement or " FROM event" in statement):
             captured.append((statement, parameters))
 
-    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    event.listen(engine.sync_engine, "before_cursor_execute", capture_select)
     gc.collect()
     tracemalloc.start()
     try:
@@ -85,7 +87,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
         after = tracemalloc.take_snapshot()
     finally:
         tracemalloc.stop()
-        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+        event.remove(engine.sync_engine, "before_cursor_execute", capture_select)
     assert peak < 1_000_000, f"bounded record/read path allocated {peak} bytes for {history_size} historical rows"
     async with store._sessions() as session:
         item = await session.get(ThreadEntity, (thread, scope.projection_epoch, "item", "old-item"))
@@ -93,7 +95,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     assert item.revision_cursor == history_size + 3
 
     plans: list[str] = []
-    async with store._engine.connect() as connection:
+    async with engine.connect() as connection:
         # Use normal planner statistics after the actual write workload.  The artifact below is
         # deliberately the captured production statements, not a hand-written query with planner
         # switches, so its buffers compare point lookups across entity cardinalities.
@@ -131,7 +133,7 @@ def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.E
 
 
 async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
-    store: ThreadStore, lease: IngestionLease, request: pytest.FixtureRequest
+    store: ThreadStore, engine: AsyncEngine, lease: IngestionLease, request: pytest.FixtureRequest
 ) -> None:
     """Tail-window bounds do not walk settled commands that sort after the last segment."""
     assert await store.renew_ingestion(lease, timedelta(minutes=10))
@@ -173,7 +175,7 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
         if statement.lstrip().startswith("SELECT") and "thread_entity" in statement:
             captured.append((statement, parameters))
 
-    event.listen(store._engine.sync_engine, "before_cursor_execute", capture_select)
+    event.listen(engine.sync_engine, "before_cursor_execute", capture_select)
     try:
         async with store._sessions() as session:
             cursors = list(
@@ -190,10 +192,10 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
                 )
             )
     finally:
-        event.remove(store._engine.sync_engine, "before_cursor_execute", capture_select)
+        event.remove(engine.sync_engine, "before_cursor_execute", capture_select)
     assert cursors == [1]
     assert len(captured) == 1
-    async with store._engine.connect() as connection:
+    async with engine.connect() as connection:
         await connection.exec_driver_sql("ANALYZE thread_entity")
         statement, parameters = captured[0]
         result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
