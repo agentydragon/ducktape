@@ -527,7 +527,7 @@ def generate_manifests(root: Path) -> None:
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
     reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
-    cdi_kustomization = kubevirt_flux_kustomizations.cdi(
+    cdi_kustomization = kubevirt_cdi.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
