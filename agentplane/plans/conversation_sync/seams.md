@@ -1,7 +1,7 @@
 # Where a sync implementation plugs in
 
-The goal: several thread-sync implementations live on `devel` at once, and a browser picks one at
-runtime. Image automation deploys `devel`, so trying implementation _N_ must not mean deleting the
+The goal: several thread-sync implementations live on `devel` at once, and a deployment picks one
+without a rebuild. Image automation deploys `devel`, so trying implementation _N_ must not mean deleting the
 other _N−1_.
 
 A sync implementation is what gets a thread's rows and bodies from the materialized fold (**C1**)
@@ -35,8 +35,7 @@ Electric already sits behind one module on each side, but both leak into the sha
   own settings. Electric moves there, taking `entity_interest` and `payload_selection` with it.
   There is no Python interface to implement: each implementation is a router over the shared stores.
 
-Every configured implementation is mounted at once, and no backend flag chooses between them — the
-browser chooses by which routes it calls.
+Which implementations are mounted is a deployment setting (§ Choosing one).
 
 ## Frontend
 
@@ -68,10 +67,39 @@ Paging becomes "load older", owned by the implementation; the renderer stops pas
 Epoch rotation and its double buffer move inside the Electric implementation, since only its fixed
 shape bounds need them (**P7** requires only the refusal).
 
-**Choosing one.** A `ThreadSync` context is set once at app start, from the `sync` query parameter,
-else a per-browser setting, else the deployment's default. The backend lists which implementations
-it has configured, so a browser cannot pick one the deployment lacks. Each implementation is loaded
-with a dynamic `import()`, so one that isn't picked costs no bytes on page load.
+## Shared between implementations
+
+Between the shared layers and a single implementation there may be pieces several implementations
+use. Candidates, from the options as written:
+
+- **Bodies by immutable reference.** The window poll, the moving window and SSE push all fetch
+  content the same way: a batch of references plus how many chunks the client holds, answered with
+  the missing chunks. One endpoint and one client-side body cache would serve all three.
+- **The range and delta read** above, which is already in the shared layer.
+- **A client row store** keyed by `(entity_kind, entity_id)` and ordered by `entity_index`, which
+  any non-Electric implementation needs to merge windows and revisions.
+
+They live in `thread_sync/` beside the implementations, not below the seam. None is extracted ahead
+of time: a piece moves there when a second implementation needs it, which is also when its real
+interface is known.
+
+## Choosing one
+
+The switch can sit at three points. Each keeps every implementation's code on `devel`; they differ
+in what has to change to try another.
+
+| Point                                       | To switch                          | Cost                                                                                        |
+| ------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| Build: a Bazel flag or one image per choice | rebuild, or publish an image each  | image automation tracks one image, so a second choice means a second published image target |
+| Deploy: an app setting                      | change the setting in the manifest | none beyond the setting; testing and staging can run different ones                         |
+| Browser: `?sync=`, else the deploy default  | reload with a parameter            | the deployment mounts every configured implementation                                       |
+
+**The deploy-time setting is the one to build.** It is an ordinary `Settings` field, set by the
+cdk8s app like `electric_url` is today. The backend mounts the chosen implementation's routes, and
+the frontend reads the choice from the app at start, so one image serves any choice. A per-browser
+override can be added on top later, for comparing two implementations on one deployment. Picking
+at build time buys only the absence of unused code, and loading each frontend implementation with
+a dynamic `import()` already keeps it off the page.
 
 ## Complications
 
@@ -107,5 +135,5 @@ Each step ships alone, and the first two change no behaviour.
 2. Move `electric.py`, `entity_interest` and `payload_selection` into `thread_sync/electric/`, and
    its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
    change.
-3. Runtime selection, and the endpoint listing configured implementations.
+3. The deployment setting that picks an implementation, which the frontend reads at start.
 4. A second implementation, with the shared range and delta read. The window poll is the cheapest.
