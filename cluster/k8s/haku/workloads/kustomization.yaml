@@ -1,7 +1,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/haku/workloads.py) -- see cluster/docs/cdk8s.md.
   - haku-workloads.k8s.yaml
-  # Hand-written: no source.toolkit.fluxcd.io GitRepository binding exists for cdk8s yet.
-  - gitrepository.yaml
