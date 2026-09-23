@@ -95,9 +95,11 @@ from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizat
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
+    database as litellm_database,
     keys as litellm_keys,
     namespace as litellm_namespace,
     proxy as litellm_proxy,
+    secrets as litellm_secrets,
 )
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
@@ -163,6 +165,8 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
+    litellm_database.write_manifests(root)
+    litellm_secrets.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
@@ -1045,7 +1049,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         authentik_jwt_rotation_kustomization,
     )
-    litellm_artifact = artifact("litellm", "cluster/k8s/litellm")
+    litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_kustomization = litellm_proxy.litellm(
         flux_chart,
         litellm_artifact,
