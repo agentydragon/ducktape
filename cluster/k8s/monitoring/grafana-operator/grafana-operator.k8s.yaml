@@ -4,9 +4,9 @@ metadata:
   name: grafana-operator
   namespace: flux-system
 spec:
+  interval: 12h
   type: oci
   url: oci://ghcr.io/grafana/helm-charts
-  interval: 12h
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -14,20 +14,18 @@ metadata:
   name: grafana-operator
   namespace: monitoring
 spec:
-  interval: 30m
-  # 2026-05-24: nothing else writes the operator's Deployment, so it's
-  # safe to have Flux re-apply on drift (e.g. accidental kubectl scale).
-  driftDetection:
-    mode: enabled
   chart:
     spec:
       chart: grafana-operator
-      version: "~5.22"
+      interval: 12h
       sourceRef:
         kind: HelmRepository
         name: grafana-operator
         namespace: flux-system
-      interval: 12h
+      version: ~5.22
+  driftDetection:
+    mode: enabled
+  interval: 30m
   values:
     resources:
       limits:

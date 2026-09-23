@@ -112,6 +112,8 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml",
     "cluster/k8s/flux-grafana-secrets/flux-grafana-secrets.k8s.yaml",
     "cluster/k8s/flux-grafana-secrets/kustomization.yaml",
+    "cluster/k8s/monitoring/grafana-operator/grafana-operator.k8s.yaml",
+    "cluster/k8s/monitoring/grafana-operator/kustomization.yaml",
 )
 
 

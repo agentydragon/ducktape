@@ -1105,7 +1105,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
 )
 
-# Match the grafana-operator release deployed by cluster/k8s/monitoring/grafana-operator/helmrelease.yaml
+# Match the grafana-operator release deployed by cluster/cdk8s/monitoring/grafana_operator.py
 # (chart `~5.22`, resolved to 5.22.2); the chart ships these CRD files unchanged.
 http_file(
     name = "grafana_grafana_crd",
