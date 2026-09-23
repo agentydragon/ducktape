@@ -10,19 +10,18 @@ rendering, scroll anchoring, sending commands — is shared.
 
 ## Today
 
-Electric already sits behind one module on each side, but both leak into the shared layers.
+Electric sits behind one module on each side:
 
-| Side     | Electric-specific                                                                                                                             | Leak                                                                                                                                                                                                                                                     |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend  | `electric.py`: `ElectricProxy` and the `/threads/{thread_id}/sync/*` router, mounted only when `electric_url` is set (`main.py`, `api.py`)    | `ContentStore.entity_interest` and `payload_selection` in `agent_runtime/view/content.py` exist only to pin shape predicates — including `ThreadInterestExpiredError`, the "must rotate" rule that exists because a shape's bounds are fixed at creation |
-| Frontend | `thread_store.tsx`: `ThreadCollection`, `CommandSelection` and `PayloadBody`, on `@electric-sql/client` and TanStack DB's Electric collection | `ThreadCollection` pages by `beforeCursor` and hands the renderer Electric's `EntityInterest`; the epoch double buffer and the `RefreshThread` context live inside it                                                                                    |
-
-`projected_session.tsx` imports only those three components plus `ThreadEntity`, `PayloadRef` and
-`decimalBigInt`, so the frontend seam mostly exists already.
+- **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
+  mounted only when `electric_url` is set (`main.py`, `api.py`). Its only read of the fold is
+  `ContentStore.current_scope`, which any implementation needs for **P7**.
+- **Frontend:** `thread_store.tsx` exports `ThreadCollection`, `CommandSelection` and `PayloadBody`,
+  on the raw `@electric-sql/client`. `projected_session.tsx` renders from those three, so the
+  frontend seam mostly exists already.
 
 ## Backend
 
-- **Shared, below the seam:** the fold tables; `ContentStore` minus the two Electric reads;
+- **Shared, below the seam:** the fold tables; `ContentStore`;
   `ThreadStore`; `ThreadUpdates.changes`, the replica-local signal that a thread was written — what
   a long poll or a push waits on. The `/threads` routes for thread metadata and commands
   (`POST /threads/{thread_id}/commands`, `/commands/reconcile`) stay shared: commands are writes,
@@ -32,7 +31,7 @@ Electric already sits behind one module on each side, but both leak into the sha
   protocol, so it belongs in `agent_runtime/view/`.
 - **Per implementation:** a package `agentplane/app/thread_sync/<name>/` owning a router mounted at
   `/threads/{thread_id}/sync/<name>/…` behind the same `require_caller` dependency (**C2**), and its
-  own settings. Electric moves there, taking `entity_interest` and `payload_selection` with it.
+  own settings. Electric moves there.
   There is no Python interface to implement: each implementation is a router over the shared stores.
 
 Which implementations are mounted is a deployment setting (§ Choosing one).
@@ -63,9 +62,8 @@ interface ThreadSync {
 }
 ```
 
-Paging becomes "load older", owned by the implementation; the renderer stops passing `beforeCursor`.
-Epoch rotation and its double buffer move inside the Electric implementation, since only its fixed
-shape bounds need them (**P7** requires only the refusal).
+Paging is "load older", owned by the implementation. Electric's swap to a new epoch without a
+reload stays inside it; **P7** requires only the refusal.
 
 ## Shared between implementations
 
@@ -107,13 +105,13 @@ a dynamic `import()` already keeps it off the page.
    path end to end and already sit near their time limits; parametrizing them whole by
    implementation multiplies the slowest suite by _N_. Instead, each implementation passes the same
    contract suite on each side — its backend routes, and the frontend `ThreadSync` interface — and
-   only the browser flows from <requirements.md> run per implementation: open on the tail, stream,
+   only the browser flows from <../../docs/thread_sync_requirements.md> run per implementation: open on the tail, stream,
    scroll up then stream, edit mid-window, reconnect. The rest of the browser suite runs on the
    default.
 2. **Electric costs something when nobody picks it.** Its replication slot retains WAL and its shape
    storage holds state regardless of traffic. Unsetting `electric_url` turns it off.
 3. **The interface must not be Electric-shaped.** Extracted from today's `thread_store.tsx` props,
-   it would hand every other implementation interest and rotation concepts it has no use for. It is
+   it would hand every other implementation shape and subset concepts it has no use for. It is
    written from the list above, and Electric is adapted to it.
 4. **The schema is shared.** An implementation that needs a column or index adds it to the fold
    for everyone. Additive changes are fine, and under **C3** there is no migration to stage, but no
@@ -132,8 +130,7 @@ Each step ships alone, and the first two change no behaviour.
 
 1. Define `ThreadSync` and put `thread_store.tsx` behind it as the Electric implementation;
    `projected_session.tsx` consumes only the interface.
-2. Move `electric.py`, `entity_interest` and `payload_selection` into `thread_sync/electric/`, and
-   its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
+2. Move `electric.py` into `thread_sync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
    change.
 3. The deployment setting that picks an implementation, which the frontend reads at start.
 4. A second implementation, with the shared range and delta read. The cheapest is the window poll,

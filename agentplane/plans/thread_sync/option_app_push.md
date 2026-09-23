@@ -19,8 +19,8 @@ The wire is the only real difference, and it buys two things:
 
 It costs the mirror of that: **per-reader server state (O1)**, which a shape model deliberately
 avoids by making the partition shared. A shape is a cache many readers hit; a push subscription is
-bookkeeping per reader. Which is better depends on reader count against conversation count, and
-this deployment has few readers and few conversations.
+bookkeeping per reader. Which is better depends on reader count against thread count, and
+this deployment has few readers and few threads.
 
 ## What it does and does not solve
 
@@ -31,7 +31,7 @@ this deployment has few readers and few conversations.
   the replay half. A1's poll carries its position in every request and so has nothing to resume.
 - **O2**: a reader is pinned to the replica holding its stream. The inventory already lives with
   this; a rolling deploy drops streams and clients reconnect. Whether that is acceptable for a
-  conversation is the same question answered for the inventory, and the answer there was yes.
+  thread is the same question answered for the inventory, and the answer there was yes.
 
 ## Prior art worth reading before building this
 

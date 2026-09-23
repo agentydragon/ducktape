@@ -48,7 +48,7 @@ Read 2026-09-23.
 - **Versioning.** A `schemaVersion` the server rejects gets a `VersionNotSupported` response. The client then calls
   `onUpdateNeeded`, which by default runs `location.reload()`.
 
-## Fit against requirements.md
+## Fit against the requirements
 
 Evidence labels:
 

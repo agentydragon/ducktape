@@ -1,6 +1,6 @@
 # Thread view synchronization
 
-Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
+Status: **implemented; acceptance incomplete.** The server-side fold in
 `agentplane/app/agent_runtime/view/fold.py` is connected to PostgreSQL through the
 transactional writer. The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
@@ -14,6 +14,9 @@ browser state. Record names below describe domain concepts; concrete schemas and
 representations remain implementation decisions to validate with the sync integration.
 
 ## Requirements
+
+[Thread sync requirements](thread_sync_requirements.md) states what any sync implementation
+owes the browser, with IDs; the list below is the whole view's.
 
 - A Thread has one ordered history. Existing items can change anywhere in it, including
   parallel tools completing out of order. Editing earlier user input, forks and branches
@@ -162,6 +165,15 @@ store gates subsets on the first subset's response, never on that message. It al
 stream to a subset response's offset, which skips changes to rows outside the subset; the store's
 fetch client hands a subset response the stream's own offset back.
 
+Against the [requirements](thread_sync_requirements.md), it falls short in four places:
+
+- **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
+- **O2:** Electric runs one active instance per replication slot, with shape logs on local disk.
+- **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
+- **E6:** a thread with no fold yet has its scope re-read on a one-second timer.
+
+Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
+
 Acceptance must still establish:
 
 1. **Limited bootstrap and recovery.** Establish changes-only/on-demand synchronization
@@ -193,6 +205,26 @@ Acceptance must still establish:
 6. **Library ownership.** Use the published client for reconciliation; do not hand-interpret
    Electric snapshot metadata or maintain a second mutable cache. Pin versions, generate
    domain types once, and verify exact 64-bit cursor handling.
+
+### Rejected designs
+
+- **The window in a shape's `where`.** A shape's predicate is fixed when it is created, so a moved
+  window is a new shape. It replays the overlap (D1, E5) and withdraws the old shape's rows (P5).
+  And a tail bound that moves with every appended row mints a fresh shape each time a growing
+  thread is opened, which spends `ELECTRIC_MAX_SHAPES` without ever hitting the cache.
+- **Fixed-bound pages.** Pages that never move meet D1, but they cost:
+  - a shape for every page and every field in use (O1);
+  - a landing pad for a row that crosses a page boundary;
+  - a caught-up signal gated across pages (S3).
+
+  Subsets of one shape meet D1 without any of these.
+
+- **TanStack DB's Electric collection.** Its on-demand mode deduplicates only identical requests,
+  so a live query whose `where` moves fetches the overlap again. The raw client's
+  `requestSnapshot` reads only the rows it asks for.
+- **Completed bodies over a separate HTTP route.** It gives one body two read paths (D2). It also
+  assumes that a body which has stopped streaming never changes, which P3 does not grant.
+- **Polling the whole thread.** It fails E6 by construction, and E2 and E5 with it.
 
 Zero is the next engine candidate if Electric fails a required case; it supports query-driven
 partial sync but introduces its own replica and client integration. Matrix supplies useful

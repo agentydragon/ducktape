@@ -1,7 +1,7 @@
 # Prior art, part 2: Convex, InstantDB, LiveStore, Triplit, Phoenix LiveView
 
 Read on 2026-09-23 from primary docs. Where the docs said nothing, the claim comes from the
-project's own source and is marked **source**. Verdicts use the IDs in <../requirements.md>.
+project's own source and is marked **source**. Verdicts use the IDs in <../../../docs/thread_sync_requirements.md>.
 **inferred** means no page states the claim directly.
 
 **Bottom line.** Convex, InstantDB, LiveStore and Triplit each own the store clients read, so

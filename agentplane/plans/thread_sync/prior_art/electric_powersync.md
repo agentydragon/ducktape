@@ -85,38 +85,17 @@ and our proxy authorizes each request and caps `limit`.
 | O1  | +   | State is per thread (≈4 + fields shapes), shared by all readers, independent of window; subsets are stateless PG queries.             | shapes: "Many clients can sync the same shape."; querying.ex `query_subset`                                                                       |
 | O2  | ~   | Single active Electric per slot; scale reads via CDN/collapsing; multi-instance needs separate storage + sticky sessions.             | upgrading: "Electric is designed to run as a **single active instance** per replication stream"                                                   |
 | O3  | +   | Proxy sees every shape and subset; server spans carry subset params, rows, bytes.                                                     | CHANGELOG 29a8cde: "capture POST body params as request telemetry attributes"                                                                     |
-| O4  | +   | Already deployed; no new engine.                                                                                                      | electric_primitives.md                                                                                                                            |
+| O4  | +   | Already deployed; no new engine.                                                                                                      | deployed                                                                                                                                          |
 | D1  | +   | Scroll = subset of unheld range; overlap never requested; held rows' changes arrive via the same log. Dropping 151–200 is local.      | http § Subset snapshots; TanStack caveat: a moved `where` re-fetches (subset-dedupe.ts)                                                           |
 | D2  | +   | Streaming (live log) and on-demand (subset) are the same shape.                                                                       | inferred                                                                                                                                          |
 | D3  | +   | Stepwise: switch the entity shape to changes_only+subsets first, then content, then drop pages/rotation.                              | inferred                                                                                                                                          |
 
-### What changed vs our notes
+### Operating it
 
-1. **option_electric_pages / requirements D1** ("Electric has no choice about it: … a moved range is a
-   different shape"). This no longer holds. Subset snapshots let the window move within one
-   fixed shape, and the page partition is not the only way to satisfy D1 on Electric. The cost moves
-   to E5 (the live log is whole-thread) rather than to shape count.
-2. **prior_art "What to check first" #3** is confirmed. A narrow subset of a wide shape works. The live
-   log carries the whole thread. For P8, per-field shapes still apply, because subsets cannot choose
-   columns.
-3. **option_electric_pages schema additions.** `owner_segment_index` on chunks is not required under
-   one-shape-per-thread: a chunk subset can be `entity_id = ANY($1)`, a documented POST example. The
-   **page-boundary landing pad** and the **composite catch-up gate** also disappear, because the
-   thread's live log has no boundary.
-4. **electric_primitives "evicted by an LRU bounded at 1024".** The bound is our configuration.
-   Electric's default is "no limit". Eviction runs about once a minute over the excess (CHANGELOG
-   8eb1071).
-5. **electric_primitives shape identity** is missing `log` mode. `log_mode` is part of `comparable/1`.
-6. **electric_primitives "`log=full` replays every change ever made".** This is still true by default.
-   Log compaction exists in the storage layer, but only behind the undocumented query param
-   `experimental_compaction` (default false, `params.ex`).
-7. **Our proxy should move subsets to POST.** "In Electric 2.0, GET requests for subset snapshots will
-   be deprecated." It should also set `queryable_columns` (1.6.10) so client subsets cannot filter on
-   columns outside an allow-list.
-8. **Scaling (the owner's question):** there is no Postgres- or object-storage shape backend.
+1. **Scaling:** there is no Postgres- or object-storage shape backend.
    `ELECTRIC_STORAGE` ∈ {`MEMORY`, `FAST_FILE`}. Shared NFS/EFS storage is supported, with
    `ELECTRIC_SHAPE_DB_EXCLUSIVE_MODE=true`.
-9. **Company status is new:** Electric is now at Databricks, and Electric Cloud is winding down. A lead,
+2. **Company status:** Electric is now at Databricks, and Electric Cloud is winding down. A lead,
    out of scope here: Electric now also ships **Durable Streams**, an Apache-2.0, append-only,
    offset-addressed HTTP stream protocol aimed at "agent loops". It is not a Postgres sync engine.
 

@@ -1,16 +1,15 @@
 # Option: one watch over a moving range
 
-One of the two ways to satisfy **D1**, written out — the other being non-overlapping partitions
-(§ option_electric_pages). The client states what range it wants and what it
+One of the ways to satisfy **D1** without an engine, written out. The client states what range it wants and what it
 already holds; the server sends the difference and keeps it informed of that range. There is one
 subscription and it moves.
 
 ## The exchange
 
-Using the owner's numbers — the client holds segments 100–200 at revision 9932 and scrolls up:
+Using the owner's numbers — the client holds rows 100–200 at revision 9932 and scrolls up:
 
 ```text
-GET /threads/{id}/conversation
+GET /threads/{id}/sync/window
       ?want=50:150              # the range I care about now
       &have=100:200             # what I already hold
       &since=9932               # …as of this revision
@@ -20,15 +19,15 @@ GET /threads/{id}/conversation
 The server answers with three things, from one query against the materialized fold:
 
 ```text
-{ "backfill": [ …segments 50–99, whole… ],          # want \ have
-  "changed":  [ …segments 100–150 with revision_cursor > 9932… ],   # want ∩ have, stale part
+{ "backfill": [ …rows 50–99, whole… ],          # want \ have
+  "changed":  [ …rows 100–150 with revision_cursor > 9932… ],   # want ∩ have, stale part
   "through":  10014 }                                # the new watermark
 ```
 
 The client drops 151–200 itself. Then it watches:
 
 ```text
-GET /threads/{id}/conversation?want=50:150&since=10014&content=…     # long poll
+GET /threads/{id}/sync/window?want=50:150&since=10014&content=…     # long poll
 ```
 
 which blocks until something in 50–150 changes, returns it, and is re-issued.
@@ -66,13 +65,13 @@ tail unconditionally. Both land here as: **two watches, not one** — the window
 at, and the tail it is not.
 
 ```text
-GET /conversation?want=50:150&have=…&since=…      # what I am reading
-GET /conversation?want=tail&since=…               # what is happening, wherever I am
+GET /sync/window?want=50:150&have=…&since=…      # what I am reading
+GET /sync/window?want=tail&since=…               # what is happening, wherever I am
 ```
 
-The window watch is what makes S4 hold: an edit to segment 60 is `revision_cursor > since` **and**
-inside 50–150, so it is delivered on exactly the terms an edit to the newest segment is. The delta
-query filters the two axes separately — `segment_index BETWEEN …` for position, `revision_cursor >
+The window watch is what makes S4 hold: an edit to row 60 is `revision_cursor > since` **and**
+inside 50–150, so it is delivered on exactly the terms an edit to the newest row is. The delta
+query filters the two axes separately — `entity_index BETWEEN …` for position, `revision_cursor >
 …` for freshness — which is what keeps the tail-only assumption out of the implementation rather
 than out of the prose.
 
@@ -81,8 +80,8 @@ two never overlap in what they deliver.
 
 ## What it costs, honestly
 
-- **The server owes the delta query.** `segment_index BETWEEN 50 AND 99` (whole) `OR
-(segment_index BETWEEN 100 AND 150 AND revision_cursor > 9932)` — one index range scan over the
+- **The server owes the delta query.** `entity_index BETWEEN 50 AND 99` (whole) `OR
+(entity_index BETWEEN 100 AND 150 AND revision_cursor > 9932)` — one index range scan over the
   fold. Tractable, and the load-bearing assumption is that **every mutation advances the entity's
   `revision_cursor`**, including a body change. In the current fold it does, because a body's
   reference is materialized into the entity row and carries the revision. That wants a test pinning
@@ -102,15 +101,11 @@ two never overlap in what they deliver.
 
 ## Why it is not just A1
 
-option_poll.md § A1 is the same family and lacks the one idea that matters: **`have`**. A1 polls a
+A delta poll over a fixed window (A1) is the same family and lacks the one idea that matters: **`have`**. A1 polls a
 delta against a fixed window; this moves the window and pays only for the move. Without `have`, a
-reader that scrolls up re-downloads its whole new window, which is the defect that started this.
+reader that scrolls up re-downloads its whole new window, which is the overlap re-transfer D1 forbids.
 
 ## What it needs that does not exist yet
 
-- `segment_index` on the fold, so a range is a range. This is the same stored monotone index
-  option_electric_pages.md needs, and it is the one piece of that design worth keeping whatever
-  wins — cursors cannot express "messages 50–150" because how many segments a cursor range covers
-  depends on how densely a turn packs them.
-- A `content` selection parameter honoured end to end, which the spec already specifies and no
-  implementation currently has.
+- A `content` selection parameter (**P8**). The Electric implementation meets P8 with a shape per
+  field; this option needs its own.

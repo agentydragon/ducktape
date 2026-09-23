@@ -4,22 +4,21 @@ No sync engine. The client asks for a fixed count of consecutive `entity_index` 
 re-asks for the same range on a timer. Bodies are fetched separately, by reference, and never
 refetched.
 
-It sits between `A0` and `A1` in <option_poll.md>'s family: more than "poll everything", less than
-"poll a delta". Referred to as **the window poll**, not a letter — `A2` would read as a rung past
-`A1`, and it is a rung before it.
+It sits between polling the whole thread (rejected: <../../docs/thread_view_sync.md> § Rejected
+designs) and polling a delta over a fixed window (`A1`).
 
 ## The protocol
 
 ```text
-GET  /threads/{id}/conversation/window?end={index}&limit=60&fields=text,reasoning
-POST /threads/{id}/conversation/bodies        # [{ref, have_chunks}, …]
+GET  /threads/{id}/sync/window/rows?end={index}&limit=60&fields=text,reasoning
+POST /threads/{id}/sync/window/bodies        # [{ref, have_chunks}, …]
 ```
 
 The window returns entity rows — metadata and the four payload references — for
 `entity_index` in `(end - limit, end]`, plus the `view_state` singleton whatever the range. No
 content. The client keeps a map keyed by `(entity_kind, entity_id)`, renders it sorted by
 `entity_index`, and re-issues the same request every second. `ETag`/`If-None-Match` makes an idle
-conversation a 304.
+thread a 304.
 
 The body request is a batch: the client names the references it wants resolved and how many chunks
 of each it already holds, and gets the chunks it is missing. It is a `POST` because the reference
@@ -40,20 +39,20 @@ A per-body fetch would reproduce the measured defect at half the request count, 
 The fold already stores bodies immutably and addresses them by content revision, and this option is
 mostly the observation that nothing else is needed.
 
-- `conversation_payload_manifest` is insert-only, keyed by `(…, field, generation, revision_cursor)`.
+- `thread_payload_manifest` is insert-only, keyed by `(…, field, generation, revision_cursor)`.
   A reference therefore names an exact, frozen revision: **if a body changed, the entity row carries
   a different reference**, so a resolved reference is never stale and never refetched.
-- `conversation_payload_chunk` is keyed by generation with a dense `chunk_index`, and an append
+- `thread_payload_chunk` is keyed by generation with a dense `chunk_index`, and an append
   writes one new chunk at the prior chunk count. A growing body transfers only its new chunks:
   the manifest gives `chunk_count`, the client holds _k_, it fetches `[k, chunk_count)`.
 
 So the polled window carries only entity rows. Sixty of them is tens of kilobytes; an idle
-conversation is a 304 with no body at all.
+thread is a 304 with no body at all.
 
 ## Against the requirements
 
 **What it gets for free, and the trap it avoids.** The window is re-read **wholesale, by position**.
-Recency plays no part in deciding what is returned, so an edit to a segment in the middle of the
+Recency plays no part in deciding what is returned, so an edit to a row in the middle of the
 held range arrives on exactly the same terms as an edit to the last one. **S4** holds by
 construction rather than by care. Every design that filters by `revision_cursor` has to keep
 position and freshness as separate axes and can get that wrong; this one has no freshness axis to
@@ -76,7 +75,7 @@ conflate.
   Chunks are owned by the generation, manifests by the revision; the bound comes from the manifest.
 - **S3**: `view_state` rides in every window response regardless of range, carrying
   `through_cursor` and `unresolved_count`. A reader scrolled into history still learns the
-  conversation moved, which is the one-row form of the tail subscription <requirements.md> § S4
+  thread moved, which is the one-row form of the tail subscription <../../docs/thread_sync_requirements.md> § S4
   permits, and what a "jump to latest" affordance renders from.
 - **O1/O2/O3**: there is no per-reader server state to bound, share, or lose. Any replica answers
   any request, and what a client is subscribed to is in the access log.
@@ -84,21 +83,19 @@ conflate.
 ## What it costs
 
 - **E4, E5, D1: `−`.** The held window's metadata is re-sent every poll — roughly 30–60 KB/s per
-  open tab while a conversation is moving, ~0 when idle — and a scroll re-sends the overlap. There
+  open tab while a thread is moving, ~0 when idle — and a scroll re-sends the overlap. There
   is no `have`, so nothing tells the server what the client already holds. This is the option's one
   real inefficiency and it is deliberate: `have` is the next rung, not this one.
 - A constant request floor of one or two per second per open tab, whether or not anything changed.
   Conditional requests make the idle case nearly free, but the floor is real and is what a long poll
   removes.
 
-## Why it is simpler than what is deployed
+## Why it is simpler than Electric
 
-It deletes rather than adds. Gone: shape identity and its `where`-predicate cache keys,
-`ELECTRIC_MAX_SHAPES` pressure, server-side interest resolution, `must-refetch`/409, handle-and-offset
-resume, and the pending-selection double buffer — about 460 lines of proxy
-(<../../app/electric.py>) and most of a 663-line `conversation_store.tsx`. The
-`source_id`/`projection_epoch` scope params stop mattering with it, since they exist in the deployed
-design as part of a shape's cache key.
+No shape identity, `ELECTRIC_MAX_SHAPES` pressure, `must-refetch`/409, handle-and-offset resume, or
+subset forms for the proxy to police; the Electric client's offset and `up-to-date` quirks
+(<../../docs/thread_view_sync.md> § Deviation) have no counterpart. The epoch stays in the request
+for **P7**'s refusal.
 
 Nothing here is a new engine, so **O4** costs nothing to argue.
 
@@ -116,8 +113,7 @@ Nothing here is a new engine, so **O4** costs nothing to argue.
    if measurement says the metadata re-send matters.
 
 Each rung is shippable and strictly better than the one below, which is **D3** in its strongest
-form: the first rung is also the fallback if the deployed design has to go before its replacement
-is designed.
+form: the long-poll rung is also the fallback if the Electric design has to go before a replacement is designed.
 
 ## What to settle
 
@@ -125,4 +121,4 @@ is designed.
   answer. An unbounded reference list is an unbounded read, which **C2** forbids.
 - Whether 60 positions is the right window, given that a position is any row and not only a rendered
   one — `view_state` and `command` rows occupy positions too, so a 60-position window renders fewer
-  than 60 segments.
+  than 60 rows.

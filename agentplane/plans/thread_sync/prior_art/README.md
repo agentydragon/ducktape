@@ -1,7 +1,7 @@
 # Prior art, scored
 
 Read on 2026-09-23 from primary docs, and from source where the docs were silent. Each file below
-scores one system against every ID in <../requirements.md>, with a URL and a verbatim quote per
+scores one system against every ID in <../../../docs/thread_sync_requirements.md>, with a URL and a verbatim quote per
 verdict, or `inferred` where nothing states it.
 
 - <electric_powersync.md> — ElectricSQL as it is now (the engine we run), and PowerSync.
@@ -29,10 +29,10 @@ keys, since it re-sends a changed value whole; Convex fails it, re-sending the w
 
 **Nothing here is adopted whole.** The four engines that can read our Postgres split on O4 and C2:
 
-- **Electric** is the only one already running, and it turns out to reach **D1** inside one fixed
-  shape per thread (§ below). Its remaining costs are a live log that carries every change in the
+- **Electric** is the only one already running, and reaches **D1** inside one fixed shape per
+  thread, which is what is deployed (<../../../docs/thread_view_sync.md>). Its remaining costs are a live log that carries every change in the
   thread, one active instance per replication slot, and a `409` that makes the stock client drop a
-  shape's rows.
+  shape's rows (the store keeps them on screen through the refetch).
 - **Zero** gets D1, E4, P8 and D2 by construction, with our app authorizing every query through a
   callback. It costs a new Node engine with two process roles, a SQLite replica per view-syncer, S3
   backups, a second replication slot and superuser event triggers, plus query definitions in both
@@ -42,31 +42,19 @@ keys, since it re-sends a changed value whole; Convex fails it, re-sending the w
 - **Replicache**'s _library_ is in maintenance mode and mostly solves offline use and optimistic
   rebase. Its _protocol_ is the valuable part (below).
 
-## What it changes in this plan
+## What to take from it
 
-1. **Electric can move a window without a new shape.** A shape in `log=changes_only` mode starts
-   with no snapshot, and **subset snapshots** — one-shot `POST`s that Electric ANDs with the shape's
-   own `where` ("subset queries can only narrow results, never widen them") — load the tail and then
-   each older range. The shape's predicate never moves, so the page partition, its landing pad and
-   its composite catch-up gate are not needed for **D1**. Written up as
-   <../option_electric_subsets.md>. Caveat: TanStack DB's on-demand mode deduplicates only
-   identical requests, so a live query whose `where` moves re-fetches the overlap; cursor paging
-   does not.
-2. **Our Electric notes were wrong in places.** The 1024-shape cap is our setting (Electric's
-   default is unlimited); shape identity includes the `log` mode; subset snapshots should be `POST`s
-   (`GET` is deprecated in Electric 2.0) with `queryable_columns` set; and log compaction exists
-   only behind an undocumented flag.
-3. **Electric has no Postgres- or object-storage shape backend.** Storage is memory or local files,
+1. **Electric has no Postgres- or object-storage shape backend.** Storage is memory or local files,
    with one active instance per replication slot; scaling out means a CDN, or separate instances
    with their own slots behind sticky sessions. Shared network storage is supported in an exclusive
    mode.
-4. **The moving window is Replicache's row-version pull.** Replicache stores, per client, the
+2. **The moving window is Replicache's row-version pull.** Replicache stores, per client, the
    version of every row it sent and diffs the next window against it; a cookie carrying
    `{have, through, epoch}` instead gives the same diff with no server state, which is
    <../option_moving_window.md>. Replicache's docs warn why a watermark can be wrong: it is correct
    only if a thread's `revision_cursor` becomes visible in commit order. A test has to pin that
    before `since` is trusted.
-5. **Ideas worth copying**, from systems that are not adoptable:
+3. **Ideas worth copying**, from systems that are not adoptable:
    - pages pinned by key range, so edits grow or shrink a page but never shift it — which
      `entity_index` gives us as long as it never renumbers (Convex);
    - pages capped by bytes, split on the server's advice (Convex);

@@ -1,4 +1,4 @@
-# Zero (Rocicorp) against requirements.md
+# Zero (Rocicorp) against the requirements
 
 - **Status:** GA. "As of March 2026, Zero is generally available and fully-supported" (1.0.0 on npm
   2026-03-24). Latest stable is **1.9.0 (2026-08-14)**, with 1.10/1.11 canaries published daily.
