@@ -42,6 +42,8 @@ smaller. The `O(bodies)` → `O(1)` conclusion does not depend on them.)
 - **<option_electric_pages.md>** — TanStack DB + Electric, repartitioned into stable pages.
 - **<electric_primitives.md>** — what Electric actually offers, for both of the above.
 - **<prior_art.md>** — how other systems cut this, and which are worth an afternoon.
+- **<seams.md>** — where a sync implementation plugs in on each side, so several can live on
+  `devel` at once and a browser picks one.
 
 ## Fit matrix
 
