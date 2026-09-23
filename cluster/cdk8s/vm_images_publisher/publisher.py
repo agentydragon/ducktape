@@ -13,118 +13,41 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster as seaweedfs_cluster, namespace as seaweedfs_namespace
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "vm-images-publisher"
 OUTPUT_DIR = "cluster/k8s/vm-images-publisher"
 _BUCKET = "vm-images"
 _WRITER = "vm-images-ci-writer"
 _READER = "vm-images-cdi-reader"
-_GROUP = "seaweed.seaweedfs.com"
 
 
 def _credentials_secret(identity: str) -> str:
     return f"{identity}-s3-credentials"
 
 
-def _identity(scope: Construct, name: str) -> None:
+def _identity(scope: Construct, name: str) -> s3.Identity:
     """A cluster-global S3Identity plus the publisher-local S3Credentials the operator mints
     its key pair into (Secret `<name>-s3-credentials` in this namespace)."""
-    S3Identity(
-        scope,
-        f"{name}-identity",
-        metadata=metadata(name, seaweedfs_namespace.NAME),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=seaweedfs_cluster.NAME),
-            reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
-        ),
-    )
-    S3Credentials(
-        scope,
-        f"{name}-credentials",
-        metadata=metadata(name, NAME),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=seaweedfs_cluster.NAME, namespace=seaweedfs_namespace.NAME),
-            identity_ref=S3CredentialsSpecIdentityRef(name=name),
-            secret_ref=S3CredentialsSpecSecretRef(name=_credentials_secret(name)),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
+    identity = s3.Identity(scope, name, name=name)
+    identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
+    return identity
 
 
 def _storage(scope: Construct) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(_BUCKET, NAME),
-        spec=BucketSpec(
-            name=_BUCKET,
-            # The physical bucket already exists; this CR is moving to the publisher's
-            # namespace without deleting or recreating its data.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=seaweedfs_cluster.NAME, namespace=seaweedfs_namespace.NAME),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_WRITER,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                ),
-                BucketSpecAccess(user=_READER, actions=[BucketSpecAccessActions.READ, BucketSpecAccessActions.LIST]),
-            ],
-        ),
+        name=_BUCKET,
+        namespace=NAME,
+        # The physical bucket already exists; this CR is moving to the publisher's
+        # namespace without deleting or recreating its data.
+        adopt_existing=True,
     )
-    _identity(scope, _WRITER)
-    _identity(scope, _READER)
-    # Permit the publisher-local Bucket and S3Credentials to reference the SeaweedFS cluster
-    # and identities in seaweedfs.
-    ResourceReferenceGrant(
-        scope,
-        "grant",
-        metadata=metadata(_BUCKET, seaweedfs_namespace.NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="Bucket", namespace=NAME),
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=NAME),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=seaweedfs_cluster.NAME)],
-        ),
-    )
+    bucket.grant_read_write(_identity(scope, _WRITER))
+    bucket.grant_read(_identity(scope, _READER))
 
 
 def _writer_env(name: str, key: str) -> k8s.EnvVar:

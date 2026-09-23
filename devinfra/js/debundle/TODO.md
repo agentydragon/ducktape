@@ -10,7 +10,8 @@ plans and evidence live here:
 
 - <docs/selector_resolution.md> — how selectors resolve, and the measured reason
   the architecture is shaped that way.
-- <plans/relational_selectors.md> — the remaining selector-language work (R1–R7).
+- <plans/selector_engine.md> — consolidating selector resolution into one engine.
+- <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
@@ -22,30 +23,23 @@ Planning hygiene: keep active dispatch order here. When a plan's core work is
 complete, summarize only its remaining tail here instead of leaving the plan as
 a second priority queue.
 
-### P0 — selector language and engine cost
+### P0 — one selector engine
 
-The resolution architecture is settled and shipped: one IR, one joint CP-SAT
-solve, with `ChunkResolver` generating candidates for shape selectors. Do not
-reopen it without a measurement that beats
-<debug/perf/2026_09_17_matcher_vs_native_lowering.md>. What is open is the
-selector _language_ and the joint solve's cost:
+Selector resolution runs through two matching engines that can disagree, and
+the solver is handed more than an assignment problem.
+<plans/selector_engine.md> consolidates it: the shape matcher is the only thing
+that matches, CP-SAT solves a CSP over candidate ids, and every command calls
+the same resolve function. Its steps are the dispatch order. The measured
+rejection of encoding tree matching as solver constraints
+(<debug/perf/2026_09_17_matcher_vs_native_lowering.md>) stands; the plan
+deletes that path.
 
-1. Extend the relational selector language — negation, counting/uniqueness,
-   transitive closure, shape-and-relation conjunction, and `@Name` inside a
-   shape. The language burn-down and its downstream acceptance cases live in
-   <plans/relational_selectors.md>.
-2. Cut the joint solve's per-chunk floor: `FactDomains` still builds eager
-   `BTreeSet<String>` domains and every derived relation regardless of demand
-   (<debug/perf/2026_06_27_large_bundle_selector_csp_profile.md>).
-3. Prune unreferenced full-domain AST variables out of native `source_match`
-   lowering before backend serialization
-   (<debug/perf/2026_07_13_match_selector_full_domain_profile.md>).
-4. Wire `e2e/testdata/global_selector_assignment_stress/broad_specific_injective/`
-   to a test. `all_different` propagation is covered at model and backend level
-   but has no end-to-end case.
-5. Measure the complete downstream `run` wall with an execution-config
-   debundler. Selector resolution is the largest single component on a
-   `source_match`-heavy spec, but the end-to-end number is unmeasured.
+Selector-language work (<plans/relational_selectors.md>) lands on top of the
+consolidated engine.
+
+Also open: measure the complete downstream `run` wall with an execution-config
+debundler. Selector resolution is the largest single component on a
+`source_match`-heavy spec, but the end-to-end number is unmeasured.
 
 Interactive agent-facing commands should target under 10 seconds on warmed
 inputs for the largest known downstream specs. Anything over 60 seconds is a
@@ -121,12 +115,12 @@ progress output and a resumable or cacheable plan.
    path-keyed index if fresh profiles show chunk file lookup hot.
 5. Move `split_entry_body` to a draining/move-based implementation if fresh
    profiles show retained-statement cloning hot.
-6. Replace diagnostic-only matcher mirrors with solver-native explanations:
-   generic `NoMatch` fallback reporting, empty `nearest_candidates`, fact
-   near-miss/source-aware debt scoring, `match-selector` slack relaxation, and
-   selector-IR row/stat stderr diagnostics.
-   Keep cheap wrappers over production data; remove side data structures that
-   exist only for the old matcher/row-solver path.
+6. Derive every selector diagnostic from the one matcher and the resolve
+   outcomes in <plans/selector_engine.md>: generic `NoMatch` fallback
+   reporting, empty `nearest_candidates`, fact near-miss/source-aware debt
+   scoring, `match-selector` slack relaxation, and selector-IR row/stat stderr
+   diagnostics. Remove side data structures that exist only for the
+   native-lowering path.
 
 ### P3 — read-off minimizer polish
 

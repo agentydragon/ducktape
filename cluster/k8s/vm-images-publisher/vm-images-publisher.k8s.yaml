@@ -34,6 +34,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: vm-images
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: vm-images-publisher
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: vm-images-ci-writer
@@ -82,24 +100,6 @@ spec:
     namespace: seaweedfs
   secretRef:
     name: vm-images-cdi-reader-s3-credentials
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: vm-images
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: vm-images-publisher
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: vm-images-publisher
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: batch/v1
 kind: CronJob
