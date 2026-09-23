@@ -144,6 +144,7 @@ from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
     namespace as haku_namespace,
+    rbac as haku_rbac,
 )
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
@@ -402,10 +403,8 @@ def generate_manifests(root: Path) -> None:
     gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
-    haku_rbac_artifact = artifact("haku-rbac", "cluster/k8s/haku/rbac")
-    haku_rbac_kustomization = haku_flux_kustomizations.haku_rbac(
-        flux_chart, haku_rbac_artifact, haku_namespace_kustomization
-    )
+    haku_rbac_artifact = artifact(haku_rbac.NAME, haku_rbac.OUTPUT_DIR)
+    haku_rbac_kustomization = haku_rbac.haku_rbac(flux_chart, haku_rbac_artifact, root, haku_namespace_kustomization)
     kubevirt_artifact = artifact("kubevirt", "cluster/k8s/kubevirt/app")
     kubevirt_kustomization = kubevirt_flux_kustomizations.kubevirt(
         flux_chart, kubevirt_artifact, kubevirt_operator_kustomization

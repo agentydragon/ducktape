@@ -69,7 +69,7 @@ Source of truth: `secrets/haku-k8s-jwt.yaml` + kube-apiserver `AuthenticationCon
 
 Full Kubernetes CRUD in `haku-sandbox` only — an explicit resource allowlist with **no**
 `httproutes`/`gateways`; Kubernetes writes nowhere else.
-Source of truth: <../../cluster/k8s/haku/rbac/role.yaml>.
+Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
 
 ### `cluster-diagnostics-reader` + `logs-configmaps-reader`
 
