@@ -62,8 +62,8 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.thread.content import CommandIdConflictError, ThreadScopeResetError
-from agentplane.app.thread.event_log import ThreadNotFoundError
+from agentplane.app.thread.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.app.thread.views import ThreadView
@@ -289,7 +289,23 @@ def _store(request: Request) -> ThreadStore:
     return store
 
 
+def _event_logs(request: Request) -> EventLogStore:
+    event_logs = request.app.state.event_logs
+    if not isinstance(event_logs, EventLogStore):
+        raise TypeError(f"app.state.event_logs is {type(event_logs).__name__}, not EventLogStore")
+    return event_logs
+
+
+def _content(request: Request) -> ContentStore:
+    content = request.app.state.content
+    if not isinstance(content, ContentStore):
+        raise TypeError(f"app.state.content is {type(content).__name__}, not ContentStore")
+    return content
+
+
 Store = Annotated[ThreadStore, Depends(_store)]
+EventLogs = Annotated[EventLogStore, Depends(_event_logs)]
+Content = Annotated[ContentStore, Depends(_content)]
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
@@ -562,10 +578,10 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 
 @threads.post("/{thread_id}/commands/reconcile")
 async def reconcile_commands(
-    store: Store, thread_id: UUID, body: CommandReconciliationRequest
+    content: Content, thread_id: UUID, body: CommandReconciliationRequest
 ) -> CommandReconciliationResponse:
     try:
-        outcomes = await store.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
+        outcomes = await content.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
     except ThreadScopeResetError as error:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
     return CommandReconciliationResponse(
@@ -598,6 +614,7 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
 async def thread_command(
     request: Request,
     store: Store,
+    content: Content,
     catalog: Annotated[ModelCatalog, Depends(_models)],
     thread_id: UUID,
     body: dict[str, object],
@@ -613,7 +630,7 @@ async def thread_command(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="command requires id and operation"
         )
-    if admitted := await store.admitted_command(thread_id, command):
+    if admitted := await content.admitted_command(thread_id, command):
         return MessageToDict(admitted)
     thread = await store.get_thread(thread_id)
     if thread is None:
@@ -652,14 +669,14 @@ DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_withi
 @threads.get("/{thread_id}/evidence")
 async def thread_evidence(
     thread_id: UUID,
-    store: Store,
+    content: Content,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
     after_cursor: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> EvidencePage:
-    return await store.evidence(
+    return await content.evidence(
         thread_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
@@ -673,14 +690,14 @@ async def thread_evidence(
 async def thread_native_frames(
     thread_id: UUID,
     observation_cursor: DecimalCursorPath,
-    store: Store,
+    content: Content,
     projection_epoch: str,
     entity_kind: str,
     entity_id: str,
     after_sequence: DecimalCursor = "0",
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
 ) -> NativeFramePage:
-    return await store.native_frames(
+    return await content.native_frames(
         thread_id,
         projection_epoch=projection_epoch,
         entity_kind=entity_kind,
@@ -692,9 +709,9 @@ async def thread_native_frames(
 
 
 @threads.get("/{thread_id}/observations/{cursor}")
-async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -> ArchivedObservationEntry:
+async def thread_observation_entry(thread_id: UUID, cursor: int, event_logs: EventLogs) -> ArchivedObservationEntry:
     """The raw entry behind one listed observation, read only when a reader expands it."""
-    entry = await store.observation_entry(thread_id, cursor)
+    entry = await event_logs.observation_entry(thread_id, cursor)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no observation at {cursor} in this thread")
     return entry
@@ -704,6 +721,7 @@ async def thread_observation_entry(thread_id: UUID, cursor: int, store: Store) -
 async def thread_observations(
     thread_id: UUID,
     store: Store,
+    event_logs: EventLogs,
     before_cursor: DecimalCursor | None = None,
     after_cursor: DecimalCursor | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 30,
@@ -715,7 +733,7 @@ async def thread_observations(
         )
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return await store.observations(
+    return await event_logs.observations(
         thread_id,
         before_cursor=None if before_cursor is None else int(before_cursor),
         after_cursor=None if after_cursor is None else int(after_cursor),
@@ -726,6 +744,7 @@ async def thread_observations(
 @threads.get("/{thread_id}/events")
 async def thread_events(
     store: Store,
+    event_logs: EventLogs,
     thread_id: UUID,
     after: Annotated[int, Query(ge=0, description="EventEntries with a greater cursor.")] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
@@ -733,7 +752,7 @@ async def thread_events(
     """The stored EventEntries as proto-JSON, in cursor order."""
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(entry) for entry in await store.events(thread_id, after_cursor=after, limit=limit)]
+    return [MessageToDict(entry) for entry in await event_logs.events(thread_id, after_cursor=after, limit=limit)]
 
 
 @threads.get("/{thread_id}/events/stream")
@@ -774,6 +793,8 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     electric: ElectricProxy | None = None,
     *,
+    event_logs: EventLogStore,
+    content: ContentStore,
     thread_updates: ThreadUpdates,
     operator_sessions: OperatorSessionStore,
 ) -> FastAPI:
@@ -789,6 +810,8 @@ def create_app(
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
+    app.state.event_logs = event_logs
+    app.state.content = content
     app.state.thread_updates = thread_updates
     app.state.models = catalog
     app.state.presets = configured_presets

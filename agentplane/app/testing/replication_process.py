@@ -37,12 +37,15 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
@@ -103,10 +106,10 @@ class ReplayGate:
 
 
 class GatedConversationDelivery:
-    def __init__(self, app: ASGIApp, *, gate: ReplayGate, store: ThreadStore) -> None:
+    def __init__(self, app: ASGIApp, *, gate: ReplayGate, event_logs: EventLogStore) -> None:
         self._app = app
         self._gate = gate
-        self._store = store
+        self._event_logs = event_logs
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -125,7 +128,7 @@ class GatedConversationDelivery:
                 return
             # Only these finite, bounded-interest responses are buffered. The real backend
             # continues ingesting and Electric still owns snapshot/offset reconciliation.
-            cursor = await self._store.last_cursor(thread_id)
+            cursor = await self._event_logs.last_cursor(thread_id)
             if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
                 await send({"type": "http.response.start", "status": 503, "headers": []})
                 await send({"type": "http.response.body", "body": b"test transport interruption"})
@@ -167,7 +170,7 @@ class GatedSession(AsyncSession):
         return GatedTransaction(self)
 
 
-class GatedStore(ThreadStore):
+class GatedIngestion(Ingestion):
     def __init__(self, engine: AsyncEngine, gate: Gate, cursor: int) -> None:
         super().__init__(engine)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
@@ -234,7 +237,8 @@ async def _serve(
     electric_url: str | None,
 ) -> None:
     engine = connect(database_url)
-    store = ThreadStore(engine) if boundary is None else GatedStore(engine, Gate(boundary, connection), cursor)
+    store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
+    ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
     thread_updates = ThreadUpdates(engine.url)
 
     async def address_of(name: str) -> str:
@@ -245,7 +249,13 @@ async def _serve(
             raise SandboxNotReachableError(name, sandbox_state)
         return target
 
-    bridge = RunnerBridge(address_of=address_of, store=store, thread_changes=thread_updates.changes)
+    bridge = RunnerBridge(
+        address_of=address_of,
+        event_logs=event_logs,
+        ingestion=ingestion,
+        content=content,
+        thread_changes=thread_updates.changes,
+    )
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -271,7 +281,9 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(electric_http, store) if electric_url is not None else None,
+            electric=ElectricProxy(electric_http, content) if electric_url is not None else None,
+            event_logs=event_logs,
+            content=content,
             thread_updates=thread_updates,
             operator_sessions=OperatorSessionStore(engine),
         )
@@ -279,7 +291,9 @@ async def _serve(
         # PostgreSQL notifications, and SSE generator all run here unchanged.
         app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
         if replay_after is not None:
-            app.add_middleware(GatedConversationDelivery, gate=ReplayGate(replay_after, connection), store=store)
+            app.add_middleware(
+                GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+            )
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await thread_updates.start()

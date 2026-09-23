@@ -31,12 +31,15 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
@@ -260,13 +263,17 @@ async def async_main(settings: Settings) -> None:
         thread_updates = ThreadUpdates(engine.url)
         await thread_updates.start()
         store = ThreadStore(engine)
+        event_logs = EventLogStore(engine)
+        content = ContentStore(engine)
 
         async def running_sandboxes() -> list[str]:
             return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
 
         bridge = RunnerBridge(
             address_of=runner_address(live, settings.runner_port),
-            store=store,
+            event_logs=event_logs,
+            ingestion=Ingestion(engine),
+            content=content,
             thread_changes=thread_updates.changes,
             discover_sandboxes=running_sandboxes,
             sandbox_changes=live.changes,
@@ -290,7 +297,7 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            electric=(ElectricProxy(electric_http, store) if settings.electric_url is not None else None),
+            electric=(ElectricProxy(electric_http, content) if settings.electric_url is not None else None),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
@@ -300,6 +307,8 @@ async def async_main(settings: Settings) -> None:
                     actions_service_url=settings.agent_actions_service_url,
                 ),
             ),
+            event_logs=event_logs,
+            content=content,
             thread_updates=thread_updates,
             operator_sessions=OperatorSessionStore(engine),
         )

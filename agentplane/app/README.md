@@ -42,7 +42,9 @@ bbr test //agentplane/app/...
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
 - `bridge.py`: runner-first commands, leased batched ingestion per sandbox, and retained-event
-  replay; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
+  replay; `ingestion.py` batches a runner's events and `Ingestion` records each batch, committing
+  the event log's and the fold's writes in one transaction under the sandbox's lease. `api.py` is
+  the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
@@ -56,12 +58,12 @@ bbr test //agentplane/app/...
 - `thread/`: the PostgreSQL store of threads, events, feed state, leases, materialized
   thread entities, and immutable content chunks/manifests. Each ingestion transaction
   folds only the batch and its touched entities, then commits all projection writes and checkpoint.
-  Layered bottom-up: `models.py` (the tables) and `views.py` (the rows' client contract);
-  `event_log.py` (the copied runner events and the feed state) and `ingestion_lease.py` (which
-  replica ingests a sandbox); `rows.py` (fold records to and from entity rows) and `payloads.py`
-  (insert-only bodies); `recording.py` (the fold write path) and `content.py` (reads of what the
-  fold assembled); `store.py` (`ThreadStore`, the API over all of it: it owns each transaction,
-  composes the writes that span levels, and holds what is set on a thread itself). `updates.py`
+  Layered bottom-up, one store per level: `models.py` (the tables) and `views.py` (the rows' client
+  contract); `event_log.py` (`EventLogStore`: the copied runner events and the feed state) and
+  `ingestion_lease.py` (which replica ingests a sandbox); `rows.py` (fold records to and from
+  entity rows) and `payloads.py` (insert-only bodies); `recording.py` (the fold write path) and
+  `content.py` (`ContentStore`: reads of what the fold assembled); `store.py` (`ThreadStore`: a
+  thread over its event log, with the name and archive state an operator sets). `updates.py`
   turns committed PostgreSQL notifications into replica-local wakeups.
 - `thread_fold.py`: typed deterministic event fold with independent item revisions.
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.

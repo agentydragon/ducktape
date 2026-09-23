@@ -22,10 +22,12 @@ from agentplane.app.action_federation import DirectFederationSettings, Federated
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.conftest import Replica
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -53,6 +55,8 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.runner import protocol_pb2
@@ -274,19 +278,27 @@ def app(
         raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
-    store = ThreadStore(engine)
+    event_logs, content = EventLogStore(engine), ContentStore(engine)
     thread_updates = ThreadUpdates(engine.url)
-    bridge = RunnerBridge(address_of=unreachable, store=store, thread_changes=thread_updates.changes)
+    bridge = RunnerBridge(
+        address_of=unreachable,
+        event_logs=event_logs,
+        ingestion=Ingestion(engine),
+        content=content,
+        thread_changes=thread_updates.changes,
+    )
     return create_app(
         inventory,
         bridge,
-        store,
+        ThreadStore(engine),
         MODELS,
         egress,
         decisions,
         live_index,
         action_policy,
         reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
         thread_updates=thread_updates,
         operator_sessions=OperatorSessionStore(engine),
     )
@@ -308,10 +320,10 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex, store: ThreadStore, replica: ThreadStore, thread_updates: ThreadUpdates
+    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     try:
         async with asyncio.timeout(10):
@@ -320,7 +332,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             assert initial.threads == []
             assert initial.updates_connected
 
-            thread_id = await store.thread(
+            thread_id = await event_logs.open(
                 "runner-1", "test-global-thread", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
             )
             assert [thread.id for thread in (await _next_threads(stream)).threads] == [thread_id]
@@ -348,10 +360,10 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, store: ThreadStore, replica: ThreadStore, thread_updates: ThreadUpdates, db_url: str
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates, db_url: str
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     engine = create_async_engine(db_url)
     try:
@@ -365,7 +377,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected
-            thread_id = await store.thread(
+            thread_id = await event_logs.open(
                 "runner-1", "test-during-listener-gap", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
             )
             recovered = await _next_threads(stream)

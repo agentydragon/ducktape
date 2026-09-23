@@ -35,6 +35,8 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from util.net import bind_free_port
@@ -66,6 +68,8 @@ def serve(
     authentication: FakeAuthenticationV1Api,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -121,6 +125,8 @@ def serve(
             action_policy,
             oidc,
             reviewer,
+            event_logs=event_logs,
+            content=content,
             thread_updates=thread_updates,
             operator_sessions=operator_sessions,
         )

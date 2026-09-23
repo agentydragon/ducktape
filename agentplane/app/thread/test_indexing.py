@@ -13,6 +13,9 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.conftest import SPEC, event_entry
+from agentplane.app.ingestion import Ingestion
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.models import ThreadEntity
 from agentplane.app.thread.store import ThreadStore
@@ -30,6 +33,9 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
     store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
     engine: AsyncEngine,
     lease: IngestionLease,
     history_size: int,
@@ -39,26 +45,26 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     """A real old-item update only preloads its touched rows after large frame and entity histories."""
     # This test deliberately creates 20,000 materialized entities in bounded record batches.
     # Keep the writer fence valid for that workload; this does not change the test timeout.
-    assert await store.renew_ingestion(lease, timedelta(minutes=10))
-    thread = await store.thread("sb-1", f"history-{history_size}", SPEC)
+    assert await ingestion.renew(lease, timedelta(minutes=10))
+    thread = await event_logs.open("sb-1", f"history-{history_size}", SPEC)
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command))
-    await store.record(
+    await ingestion.record(
         thread,
         [admitted, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old-item", text="before history"))],
         lease=lease,
     )
     for start in range(3, history_size + 3, 100):
         stop = min(start + 100, history_size + 3)
-        await store.record(
+        await ingestion.record(
             thread, [_history_event(cursor, materialized_item_count) for cursor in range(start, stop)], lease=lease
         )
 
-    scope = await store.current_scope(thread)
+    scope = await content.current_scope(thread)
     assert scope is not None
     # Warm the driver, typed codec, and Python caches before taking its allocation profile.
-    assert await store.admitted_command(thread, command) == admitted
-    assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
+    assert await content.admitted_command(thread, command) == admitted
+    assert await content.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
         "admission": "pending",
         "absent": None,
     }
@@ -73,13 +79,13 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     tracemalloc.start()
     try:
         before = tracemalloc.take_snapshot()
-        await store.record(
+        await ingestion.record(
             thread,
             [event_entry(history_size + 3, text_delta=event_pb2.TextDelta(item_id="old-item", text=" after history"))],
             lease=lease,
         )
-        assert await store.admitted_command(thread, command) == admitted
-        assert await store.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
+        assert await content.admitted_command(thread, command) == admitted
+        assert await content.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
             "admission": "pending",
             "absent": None,
         }
@@ -133,12 +139,18 @@ def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.E
 
 
 async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
-    store: ThreadStore, engine: AsyncEngine, lease: IngestionLease, request: pytest.FixtureRequest
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
+    engine: AsyncEngine,
+    lease: IngestionLease,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Tail-window bounds do not walk settled commands that sort after the last segment."""
-    assert await store.renew_ingestion(lease, timedelta(minutes=10))
-    thread = await store.thread("sb-1", "command-dense-tail", SPEC)
-    await store.record(
+    assert await ingestion.renew(lease, timedelta(minutes=10))
+    thread = await event_logs.open("sb-1", "command-dense-tail", SPEC)
+    await ingestion.record(
         thread,
         [
             event_entry(
@@ -165,9 +177,9 @@ async def test_segment_tail_uses_partial_cursor_index_after_many_settled_command
             cursor += 1
             batch.append(event_entry(cursor, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")))
             cursor += 1
-        await store.record(thread, batch, lease=lease)
+        await ingestion.record(thread, batch, lease=lease)
 
-    scope = await store.current_scope(thread)
+    scope = await content.current_scope(thread)
     assert scope is not None
     captured: list[tuple[str, Any]] = []
 

@@ -15,10 +15,11 @@ import httpx
 import pytest_bazel
 
 from agentplane.app.database import connect
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
-from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -37,9 +38,9 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             electric_storage_dir=Path(state_dir),
         ) as service:
             engine = connect(service.database_url)
-            store = ThreadStore(engine)
+            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
             try:
-                thread, source, lease = await _project_initial_item(store)
+                thread, source, lease = await _project_initial_item(event_logs, ingestion)
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
                 # Do not retain this client across service.stop()/start(): Docker can assign a
                 # different host port when it recreates the published listener.
@@ -92,7 +93,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                     source.append(
                         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh"))
                     )
-                    await store.record(thread, source.entries[-2:], lease=lease)
+                    await ingestion.record(thread, source.entries[-2:], lease=lease)
                 finally:
                     await connection.close()
 
@@ -132,7 +133,9 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                 await engine.dispose()
 
 
-async def _project_initial_item(store: ThreadStore) -> tuple[UUID, ReplicationSource, IngestionLease]:
+async def _project_initial_item(
+    event_logs: EventLogStore, ingestion: Ingestion
+) -> tuple[UUID, ReplicationSource, IngestionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -140,11 +143,11 @@ async def _project_initial_item(store: ThreadStore) -> tuple[UUID, ReplicationSo
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=2))
+    thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
     assert lease is not None
-    await store.set_attached(thread, source.attached, lease=lease)
-    await store.record(thread, source.entries, lease=lease)
+    await ingestion.set_attached(thread, source.attached, lease=lease)
+    await ingestion.record(thread, source.entries, lease=lease)
     return thread, source, lease
 
 

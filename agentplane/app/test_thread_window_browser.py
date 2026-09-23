@@ -192,7 +192,7 @@ async def test_long_offline_gap_refreshes_expired_interest_without_losing_draft(
             )
         async with asyncio.timeout(15):
             while True:
-                scope = await store.current_scope(thread.id)
+                scope = await thread_browser.content.current_scope(thread.id)
                 if scope is not None and scope.through_cursor >= latest.cursor:
                     break
                 await asyncio.sleep(0.01)
