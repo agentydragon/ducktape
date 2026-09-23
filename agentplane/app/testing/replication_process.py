@@ -26,22 +26,26 @@ from uuid import UUID
 import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, AsyncSessionTransaction, async_sessionmaker
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -164,8 +168,7 @@ class GatedSession(AsyncSession):
 
 
 class GatedStore(ThreadStore):
-    def __init__(self, database_url: str, gate: Gate, cursor: int) -> None:
-        engine = create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
+    def __init__(self, engine: AsyncEngine, gate: Gate, cursor: int) -> None:
         super().__init__(engine)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
@@ -230,11 +233,9 @@ async def _serve(
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
-    store = (
-        ThreadStore.connect(database_url)
-        if boundary is None
-        else GatedStore(database_url, Gate(boundary, connection), cursor)
-    )
+    engine = connect(database_url)
+    store = ThreadStore(engine) if boundary is None else GatedStore(engine, Gate(boundary, connection), cursor)
+    thread_updates = ThreadUpdates(engine.url)
 
     async def address_of(name: str) -> str:
         assert name == SANDBOX
@@ -244,7 +245,7 @@ async def _serve(
             raise SandboxNotReachableError(name, sandbox_state)
         return target
 
-    bridge = RunnerBridge(address_of=address_of, store=store)
+    bridge = RunnerBridge(address_of=address_of, store=store, thread_changes=thread_updates.changes)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -271,6 +272,8 @@ async def _serve(
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
             electric=ElectricProxy(electric_http, store) if electric_url is not None else None,
+            thread_updates=thread_updates,
+            operator_sessions=OperatorSessionStore(engine),
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
@@ -279,7 +282,7 @@ async def _serve(
             app.add_middleware(GatedConversationDelivery, gate=ReplayGate(replay_after, connection), store=store)
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await store.start_updates()
+        await thread_updates.start()
         await bridge.start([SANDBOX] if sandbox_state is ProvisioningState.RUNNING else [])
         try:
             with socket.socket() as listener:
@@ -288,7 +291,8 @@ async def _serve(
                 await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
         finally:
             await bridge.close()
-            await store.close()
+            await thread_updates.close()
+            await engine.dispose()
 
 
 async def receive(connection: Connection) -> object:

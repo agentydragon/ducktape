@@ -294,7 +294,6 @@ ENV = Environment(
         "Actions, app, runner template, and operator RBAC."
     ),
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
-    include_action_policy_rule=False,
     replicas=ReplicaProfile(
         count=2,
         strategy=DeploymentStrategy.rolling_update(
