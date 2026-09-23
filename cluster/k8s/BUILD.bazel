@@ -298,6 +298,7 @@ exports_files(
         "grafana/clickhouse-grafana.k8s.yaml",
         "github-exporter/github-exporter.k8s.yaml",
         "langfuse/langfuse.k8s.yaml",
+        "langfuse/kustomization.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/app/kustomization.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",

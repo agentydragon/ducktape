@@ -179,7 +179,7 @@ from cluster.cdk8s.kubevirt import (
     flux_kustomizations as kubevirt_flux_kustomizations,
 )
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
-from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
+from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
     database as litellm_database,
@@ -915,8 +915,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         gateway_kustomization,
     )
-    langfuse_artifact = artifact("langfuse", "cluster/k8s/langfuse")
-    langfuse_flux_kustomizations.langfuse(
+    langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
+    langfuse_app.langfuse(
         flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
     )
     vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)

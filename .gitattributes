@@ -87,6 +87,7 @@ cluster/k8s/agents/mitmproxy/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/agentydragon/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/db/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/cache/kustomization.yaml linguist-generated=true
+cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/agentydragon-repos/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/budget-ledger/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/claude/kustomization.yaml linguist-generated=true
