@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
     KubeVirtSpec,
@@ -115,5 +116,24 @@ def write_manifests(root: Path) -> None:
 
 def kubevirt(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kubevirt_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, timeout="10m", depends_on=[flux_kustomization_depends_on(kubevirt_operator)]
+        chart,
+        NAME,
+        artifact,
+        timeout="10m",
+        depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
+        # The KubeVirt CR has no Ready condition, so `wait` alone passes it before virt-operator
+        # rolls out virt-api/-controller/-handler. virt-operator sets phase Deployed and
+        # Available=True only once they are ready (kubevirt v1.8.2
+        # pkg/virt-operator/kubevirt.go isReady, pkg/virt-operator/util/client.go
+        # UpdateConditionsAvailable).
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="kubevirt.io/v1",
+                kind="KubeVirt",
+                current=(
+                    "has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && "
+                    "status.conditions.exists(c, c.type == 'Available' && c.status == 'True')"
+                ),
+            )
+        ],
     )
