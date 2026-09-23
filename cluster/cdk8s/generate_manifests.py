@@ -43,7 +43,11 @@ from cluster.cdk8s.authentik import (
 )
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
 from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
-from cluster.cdk8s.clickhouse import flux_kustomizations as clickhouse_flux_kustomizations, schema as clickhouse_schema
+from cluster.cdk8s.clickhouse import (
+    flux_kustomizations as clickhouse_flux_kustomizations,
+    namespace as clickhouse_namespace,
+    schema as clickhouse_schema,
+)
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
@@ -151,6 +155,7 @@ def generate_manifests(root: Path) -> None:
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     authentik_namespace.write_manifests(root)
+    clickhouse_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
@@ -286,9 +291,7 @@ def generate_manifests(root: Path) -> None:
     cdi_kustomization = kubevirt_flux_kustomizations.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
-    clickhouse_operator_artifact = artifact(
-        "clickhouse-operator", "cluster/k8s/clickhouse/operator", "cluster/k8s/clickhouse/namespace"
-    )
+    clickhouse_operator_artifact = artifact("clickhouse-operator", "cluster/k8s/clickhouse/operator")
     clickhouse_operator_kustomization = clickhouse_flux_kustomizations.clickhouse_operator(
         flux_chart, clickhouse_operator_artifact, monitoring_crds_kustomization
     )
