@@ -75,7 +75,10 @@ from cluster.cdk8s.clickhouse import (
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
-from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
+from cluster.cdk8s.dcgm_exporter import (
+    exporter as dcgm_exporter_exporter,
+    flux_kustomizations as dcgm_exporter_flux_kustomizations,
+)
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
@@ -222,6 +225,7 @@ def generate_manifests(root: Path) -> None:
     vector_talos_logs.write_manifests(root)
     openebs_lvm_storage.write_manifests(root)
     seaweedfs_csi_driver.write_manifests(root)
+    dcgm_exporter_exporter.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)

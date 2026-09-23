@@ -199,6 +199,7 @@ exports_files(
         "vector-talos-logs/kustomization.yaml",
         "openebs-lvm/openebs-lvm.k8s.yaml",
         "seaweedfs-csi/seaweedfs-csi.k8s.yaml",
+        "dcgm-exporter/dcgm-exporter.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
