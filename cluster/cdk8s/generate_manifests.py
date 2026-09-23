@@ -145,7 +145,9 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
-from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
+from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
+from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
+from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
@@ -236,6 +238,8 @@ def generate_manifests(root: Path) -> None:
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     cli_proxy_api.write_manifests(root)
+    matrix.write_manifests(root)
+    matrix_user_provisioner.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     cert_manager_app.write_manifests(root)
     cert_manager_trust.write_manifests(root)
@@ -775,10 +779,14 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
+    headlamp_app_artifact = artifact("headlamp-app", "cluster/k8s/headlamp")
+    headlamp_flux_kustomizations.headlamp(
+        flux_chart, headlamp_app_artifact, gateway_kustomization, sso_providers_tf_kustomization
+    )
+    matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
+    matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, headlamp_app_artifact, gateway_kustomization, sso_providers_tf_kustomization)
-    matrix_app_artifact = artifact("matrix-app", "cluster/k8s/matrix")
-    matrix_kustomization = matrix_flux_kustomizations.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     grafana_instance_artifact = artifact("grafana-instance", "cluster/k8s/monitoring/grafana-instance")
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
         flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
@@ -1062,8 +1070,8 @@ def generate_manifests(root: Path) -> None:
         gateway_kustomization,
         sso_providers_tf_kustomization,
     )
-    matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", "cluster/k8s/matrix/user-provisioner")
-    matrix_flux_kustomizations.matrix_user_provisioner(
+    matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
+    matrix_user_provisioner.matrix_user_provisioner(
         flux_chart,
         matrix_user_provisioner_artifact,
         external_secrets_config_kustomization,
