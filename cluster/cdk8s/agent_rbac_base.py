@@ -224,7 +224,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         # patch is required to set reconcile.fluxcd.io/requestedAt for manual reconciliation
         # triggers. RBAC cannot restrict which fields are patched -- the annotation-only
         # constraint is enforced by the restrict-agent-kustomization-patch Kyverno ClusterPolicy in
-        # cluster/k8s/kyverno-policies/.
+        # kyverno/policies.py.
         k8s.PolicyRule(
             api_groups=["kustomize.toolkit.fluxcd.io"], resources=["kustomizations"], verbs=[*_READ, "patch"]
         ),

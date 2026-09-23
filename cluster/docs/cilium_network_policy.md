@@ -69,7 +69,7 @@ routing/DNS, problem.
 `oci-cache`'s Service is `:80 → targetPort 5000`. Exposing it on `:80` did **not**
 let `haku-ci`'s `toEntities: cluster` rule (ports `80/443/3000`) reach it — the
 policy had to allow **5000**, the pod's container port. See
-<../k8s/haku-ci/ccnp-force-proxy-egress.yaml>.
+<../cdk8s/haku_ci/runner.py>.
 
 ### Debugging
 

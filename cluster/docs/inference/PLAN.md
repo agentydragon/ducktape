@@ -79,7 +79,7 @@ Trust marks used in <results.md>:
 
 **Kubernetes-first.** `wyrm2` is a cluster node with both GPUs exposed
 (`runtimeClassName: nvidia`, `nvidia.com/gpu: 2`; the working pattern is
-<../../k8s/ollama/deployment.yaml>). Serve each candidate as an ad-hoc
+<../../cdk8s/ollama/app.py>). Serve each candidate as an ad-hoc
 Deployment (or bare Pod) plus a bench Job, applied straight with `kubectl apply
 -f runs/<run-id>/` — **not** wired into Flux. Only a configuration we decide to
 keep gets promoted into a Flux-managed directory under `cluster/k8s/` and

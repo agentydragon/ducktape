@@ -72,7 +72,10 @@ def flux_monitoring(
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
-                    api_version="monitoring.coreos.com/v1", kind="PodMonitor", name="ducktape", namespace="flux-system"
+                    api_version="monitoring.coreos.com/v1",
+                    kind="PodMonitor",
+                    name="flux-system",
+                    namespace="flux-system",
                 )
             ],
         ),

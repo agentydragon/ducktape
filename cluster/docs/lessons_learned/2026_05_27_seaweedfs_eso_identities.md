@@ -27,7 +27,7 @@ New layout in `cluster/k8s/seaweedfs/secrets/`:
   their `identity` values into the assembled
   `seaweedfs_s3_config.json` blob the Seaweed CR consumes.
 
-The `Seaweed` CR (`cluster/k8s/seaweedfs/cluster/seaweed.yaml`)
+The `Seaweed` CR (`cluster/cdk8s/seaweedfs/cluster.py`)
 gains `s3.annotations: { reloader.stakater.com/auto: "true" }` so the
 s3 deployment rolls when the assembled Secret changes.
 

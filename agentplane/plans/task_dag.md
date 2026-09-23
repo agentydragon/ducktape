@@ -879,7 +879,7 @@ _Retire, once the production path is proven and rollback is available:_
   `service.yaml`, `iron.yaml` (the substitution rules), `certificate.yaml`
   (`public-coder-agent-proxy-root-ca`), `trust-bundle.yaml`, `cnp-{ingress,egress}.yaml`,
   `forgejo-images-creds-eso.yaml`, `flux-kustomization.yaml`, `kustomization.yaml`.
-- The placeholder contract in `cluster/k8s/agents/public-coder-agent/app/deployment.yaml`: the agent
+- The placeholder contract in `cluster/cdk8s/public_coder_agent_config.py`: the agent
   is handed `proxy-github-placeholder` and `proxy-haku-console-placeholder` and told the contract,
   because only the sibling proxy performs the swap. Whatever replaces the proxy inherits that
   contract or the agent's configuration changes with it.

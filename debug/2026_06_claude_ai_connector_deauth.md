@@ -108,7 +108,7 @@ shared.
    scraped via new metrics ports + ServiceMonitors on
    manifold/postscanmail/plaid-db facades and grocy MCP servers (tana already
    had one); central `McpUpstreamTokenRefreshFailed` alert in
-   `cluster/k8s/monitoring/rules/mcp-auth-prometheus-rule.yaml`.
+   `cluster/cdk8s/monitoring/rules.py`.
 3. **Authentik liveness relaxed** (see cause 1 above): `failureThreshold: 8`,
    `periodSeconds: 15`.
 

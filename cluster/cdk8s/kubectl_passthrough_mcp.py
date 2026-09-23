@@ -160,7 +160,7 @@ def chart(app: App) -> Chart:
     # Grants agentydragon's own identity cluster-admin when authenticated through
     # kubectl-passthrough-mcp (username prefix oidc-ksbx:, distinct from Headlamp's
     # oidc: prefix — see cluster/terraform/main/infrastructure.tf's AuthenticationConfiguration).
-    # Mirrors cluster/k8s/headlamp/clusterrolebinding.yaml's oidc-agentydragon-admin,
+    # Mirrors headlamp.py's oidc-agentydragon-admin,
     # scoped to this issuer instead. Consumed by haku-console's operator_oauth flow for the
     # kubectl-passthrough-mcp MCP server entry: Haku proposes a call, agentydragon approves in
     # haku-console's trusted UI, and the call executes with agentydragon's own passthrough
