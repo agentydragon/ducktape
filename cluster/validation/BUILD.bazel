@@ -194,6 +194,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pyyaml",
     ],
