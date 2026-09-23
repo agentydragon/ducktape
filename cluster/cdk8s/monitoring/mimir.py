@@ -7,16 +7,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
@@ -50,7 +40,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.monitoring import grafana_helmrepository
 
 NAME = "mimir"
 OUTPUT_DIR = "cluster/k8s/monitoring/mimir"
@@ -300,28 +292,18 @@ def _values() -> dict[str, object]:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _storage(chart)
-    HelmRelease(
+    helm_release(
         chart,
-        "helm-release",
-        metadata=metadata(NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            timeout="10m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="mimir-distributed",
-                    version="6.x",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name="grafana",
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values=_values(),
-        ),
+        NAME,
+        _NAMESPACE,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="mimir-distributed",
+        version="6.x",
+        interval="30m",
+        chart_interval="12h",
+        timeout="10m",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(),
     )
     return chart
 

@@ -7,12 +7,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
@@ -25,6 +19,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "keda"
@@ -48,50 +43,40 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kedacore.github.io/charts"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(
-                crds=HelmReleaseSpecInstallCrds.CREATE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="keda",
-                    # 2.20.2 reports an empty Forgejo queue as inactive, allowing haku-ci
-                    # to scale to zero.
-                    version="2.20.2",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values={
-                # KEDA has cluster-scoped CRDs and admission plumbing, but its operator only
-                # watches the one namespace whose runners it is allowed to scale.
-                "watchNamespace": "haku-ci",
-                "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-                "resources": {
-                    "operator": _resources(
-                        cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                    ),
-                    "metricServer": _resources(
-                        cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                    ),
-                    "webhooks": _resources(
-                        cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi"
-                    ),
-                },
-            },
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="keda",
+        # 2.20.2 reports an empty Forgejo queue as inactive, allowing haku-ci
+        # to scale to zero.
+        version="2.20.2",
+        interval="15m",
+        chart_interval="12h",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
+        upgrade=HelmReleaseSpecUpgrade(
+            crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
+        ),
+        values={
+            # KEDA has cluster-scoped CRDs and admission plumbing, but its operator only
+            # watches the one namespace whose runners it is allowed to scale.
+            "watchNamespace": "haku-ci",
+            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "resources": {
+                "operator": _resources(
+                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
+                ),
+                "metricServer": _resources(
+                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
+                ),
+                "webhooks": _resources(
+                    cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi"
+                ),
+            },
+        },
     )
     return chart
 
