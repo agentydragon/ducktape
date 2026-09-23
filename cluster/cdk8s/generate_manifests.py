@@ -130,7 +130,10 @@ from cluster.cdk8s.forgejo import (
     gitops_modules as forgejo_gitops_modules,
     namespace as forgejo_namespace,
 )
-from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
+from cluster.cdk8s.gaffer_private_source import (
+    flux_kustomizations as gaffer_private_source_flux_kustomizations,
+    source as gaffer_private_source,
+)
 from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
@@ -386,6 +389,7 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_ghcr.write_manifests(root)
     flux_monitoring.write_manifests(root)
     flux_sources.write_manifests(root)
+    gaffer_private_source.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
     gateway.write_manifests(root)
