@@ -63,11 +63,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
@@ -258,17 +257,10 @@ def google_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         _NAME,
+        artifact,
         description="Standalone Gmail/Calendar MCP backend for Agentplane staging.",
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
-        ),
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

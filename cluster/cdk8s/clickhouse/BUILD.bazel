@@ -27,7 +27,6 @@ py_library(
     ],
     deps = [
         ":client",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
@@ -45,7 +44,6 @@ py_library(
     srcs = ["installation.py"],
     deps = [
         ":client",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",
@@ -63,7 +61,6 @@ py_library(
     name = "operator",
     srcs = ["operator.py"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",

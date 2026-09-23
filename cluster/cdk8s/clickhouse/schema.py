@@ -14,19 +14,12 @@ from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import ConfigMapArgs, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
@@ -92,19 +85,7 @@ def clickhouse_schema(
     app.synth()
 
     kustomization = flux_kustomization(
-        flux_chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="20m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=health_checks(rendered_chart, ("Job",)),
-            depends_on=[flux_kustomization_depends_on(clickhouse)],
-        ),
+        flux_chart, name, artifact, timeout="20m", depends_on=[flux_kustomization_depends_on(clickhouse)]
     )
     write_yaml(
         out_dir / "kustomization.yaml",

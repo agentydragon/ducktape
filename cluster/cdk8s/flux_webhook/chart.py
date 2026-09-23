@@ -31,7 +31,6 @@ from flux_alert_crds.io.fluxcd.toolkit.notification import (
     AlertSpecEventSourcesKind,
     AlertSpecProviderRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from flux_provider_crds.io.fluxcd.toolkit.notification import (
     Provider,
     ProviderSpec,
@@ -49,7 +48,6 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import ntfy
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -251,13 +249,10 @@ def flux_webhook(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
     )

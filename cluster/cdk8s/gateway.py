@@ -12,8 +12,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -49,7 +47,6 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -205,26 +202,14 @@ def gateway(
     return flux_kustomization(
         chart,
         "gateway",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="gateway.networking.k8s.io/v1", kind="Gateway", name=_NAME, namespace=_NAMESPACE
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
+        post_build=KustomizationSpecPostBuild(
+            substitute_from=[
+                KustomizationSpecPostBuildSubstituteFrom(
+                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
                 )
-            ],
+            ]
         ),
     )

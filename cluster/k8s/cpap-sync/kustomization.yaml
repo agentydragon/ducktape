@@ -4,7 +4,5 @@ resources:
   - namespace.k8s.yaml
   - cpap-ezshare.sops.yaml
   - cpap-sync.k8s.yaml
-  # Hand-written: no KubeVirt VirtualMachine binding exists for cdk8s yet.
-  - cpap-gateway-vm.yaml
 components:
   - ./image-pins

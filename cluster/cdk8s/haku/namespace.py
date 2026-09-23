@@ -11,11 +11,10 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEndpoints,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -87,14 +86,4 @@ def chart(app: App) -> Chart:
 
 def haku_namespace(flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path) -> Kustomization:
     write_charts(root, OUTPUT_DIR, chart)
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-        ),
-    )
+    return flux_kustomization(flux_chart, NAME, artifact, retry_interval=None, wait=None, timeout="2m")

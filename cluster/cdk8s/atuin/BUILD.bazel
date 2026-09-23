@@ -9,7 +9,6 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
@@ -28,10 +27,8 @@ py_library(
     srcs = ["user_provisioner.py"],
     deps = [
         ":server",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

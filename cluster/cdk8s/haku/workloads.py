@@ -15,14 +15,9 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepositorySpecRef,
     GitRepositorySpecSecretRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
@@ -125,6 +120,7 @@ def chart(app: App) -> Chart:
     flux_kustomization(
         chart,
         "haku-state-workloads",
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
         namespace=_FLUX_NAMESPACE,
         description=(
             "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. "
@@ -133,24 +129,19 @@ def chart(app: App) -> Chart:
             "Secrets, no routes). Until Haku seeds k8s/ this is NotReady (path not found); that is "
             "expected pre-first-run."
         ),
-        spec=KustomizationSpec(
-            interval="5m",
-            retry_interval="1m",
-            timeout="5m",
-            path="./k8s",
-            prune=True,
-            # Don't gate on workload health -- these are Haku's own workloads; their readiness is
-            # Haku's concern, not the pipe's.
-            wait=False,
-            source_ref=KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
-            # Force everything into haku-sandbox regardless of what the manifests declare, so Haku
-            # can't target another namespace via this pipe.
-            target_namespace=NAMESPACE,
-            # Apply as the constrained SA (kustomize-controller impersonates
-            # system:serviceaccount:flux-system:haku-state-reconciler). RBAC + Kyverno are the
-            # fence; this just executes a subset of what Haku itself could do.
-            service_account_name=_RECONCILER,
-        ),
+        interval="5m",
+        timeout="5m",
+        path="./k8s",
+        # Don't gate on workload health -- these are Haku's own workloads; their readiness is
+        # Haku's concern, not the pipe's.
+        wait=False,
+        # Force everything into haku-sandbox regardless of what the manifests declare, so Haku
+        # can't target another namespace via this pipe.
+        target_namespace=NAMESPACE,
+        # Apply as the constrained SA (kustomize-controller impersonates
+        # system:serviceaccount:flux-system:haku-state-reconciler). RBAC + Kyverno are the
+        # fence; this just executes a subset of what Haku itself could do.
+        service_account_name=_RECONCILER,
     )
     return chart
 
@@ -163,21 +154,15 @@ def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
-            # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
-            wait=False,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-                # haku-forgejo-git Secret (now also reflected into flux-system for the
-                # GitRepository's basic auth).
-                flux_kustomization_depends_on(haku_state)
-            ],
-        ),
+        artifact,
+        timeout="5m",
+        # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
+        # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
+        wait=False,
+        depends_on=[
+            # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
+            # haku-forgejo-git Secret (now also reflected into flux-system for the
+            # GitRepository's basic auth).
+            flux_kustomization_depends_on(haku_state)
+        ],
     )

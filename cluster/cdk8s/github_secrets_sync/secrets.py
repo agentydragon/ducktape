@@ -23,10 +23,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -127,30 +126,26 @@ def github_secrets_sync_secrets(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            # CLEANUP: restore pruning after ESO owns flux-system/github-secrets-sync-pat
-            # and the old SOPS inventory entry has been retired safely.
-            prune=False,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="github-secrets-sync-pat",
-                    namespace=_NAMESPACE,
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="buildbuddy-api-key",
-                    namespace=_NAMESPACE,
-                ),
-            ],
-            decryption=SOPS_DECRYPTION,
-        ),
+        artifact,
+        wait=None,
+        # CLEANUP: restore pruning after ESO owns flux-system/github-secrets-sync-pat
+        # and the old SOPS inventory entry has been retired safely.
+        prune=False,
+        timeout="2m",
+        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="github-secrets-sync-pat",
+                namespace=_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="buildbuddy-api-key",
+                namespace=_NAMESPACE,
+            ),
+        ],
+        decryption=SOPS_DECRYPTION,
     )

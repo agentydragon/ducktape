@@ -72,7 +72,6 @@ py_library(
         ":backend",
         ":config",
         ":sshpiper",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",

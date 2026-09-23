@@ -46,7 +46,6 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
 )
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -60,7 +59,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -293,22 +291,14 @@ def agent_workspaces_app(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # CRDs + controller
-                agent_sandbox_controller,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-            ),
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            # CRDs + controller
+            agent_sandbox_controller,
+            # CleanupPolicy CRD and cleanup-controller permissions
+            kyverno_policies,
         ),
         description=(
             "Disposable agent workspace template + warm pool in agent-workspaces. "

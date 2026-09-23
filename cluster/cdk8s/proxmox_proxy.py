@@ -8,10 +8,8 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -119,17 +117,5 @@ def write_manifests(root: Path) -> None:
 
 def proxmox_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[flux_kustomization_depends_on(gateway)],
-        ),
+        chart, NAME, artifact, suspend=False, timeout="5m", depends_on=[flux_kustomization_depends_on(gateway)]
     )

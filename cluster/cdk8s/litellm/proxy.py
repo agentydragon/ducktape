@@ -47,7 +47,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -57,7 +57,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -434,18 +433,11 @@ def litellm(
     kustomization = flux_kustomization(
         flux_chart,
         "litellm",
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            retry_interval="1m",
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
-        ),
+        artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

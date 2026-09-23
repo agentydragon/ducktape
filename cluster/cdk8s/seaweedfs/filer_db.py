@@ -32,10 +32,8 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesRequests,
     ClusterSpecStorage,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -147,17 +145,10 @@ def seaweedfs_filer_db(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
-            # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
-        ),
+        artifact,
+        timeout="5m",
+        # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
+        # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
     )

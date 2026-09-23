@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on
 
@@ -17,17 +13,11 @@ def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomizatio
     return flux_kustomization(
         chart,
         name,
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system"),
         namespace="flux-system",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path="./cluster/k8s/gaffer-private-source",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system"
-            ),
-            decryption=SOPS_DECRYPTION,
-            depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
-        ),
+        wait=None,
+        timeout="10m",
+        path="./cluster/k8s/gaffer-private-source",
+        decryption=SOPS_DECRYPTION,
+        depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
     )

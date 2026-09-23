@@ -7,7 +7,6 @@ py_library(
     srcs = ["matrix.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
@@ -31,7 +30,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":matrix",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",

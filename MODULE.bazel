@@ -1284,8 +1284,7 @@ http_file(
 )
 
 # The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
-# BUILD extracts the operator CRs' CRDs. The operators create their other CRDs
-# (VirtualMachine, StorageProfile) at runtime, and upstream publishes no YAML for them.
+# BUILD extracts the operator CRs' CRDs.
 http_file(
     name = "kubevirt_operator_bundle",
     downloaded_file_path = "kubevirt-operator.yaml",
@@ -1298,6 +1297,23 @@ http_file(
     downloaded_file_path = "cdi-operator.yaml",
     sha256 = "e96d59abdf358c5161cb96adcfdcc6107efc3fb608ec93ade11578c94a222015",
     urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
+)
+
+# The operators create their other CRDs (VirtualMachine, StorageProfile) at runtime and upstream
+# publishes no YAML for them: the schemas are raw strings in these generated Go files, at the
+# same tags as the bundles above.
+http_file(
+    name = "kubevirt_crd_validations",
+    downloaded_file_path = "validations_generated.go",
+    sha256 = "96a643d3f39ca676a56717d91d85e6ef248b8a18e2b9d080cd4ff98e520591d6",
+    urls = ["https://raw.githubusercontent.com/kubevirt/kubevirt/v1.8.2/pkg/virt-operator/resource/generate/components/validations_generated.go"],
+)
+
+http_file(
+    name = "cdi_crds_generated",
+    downloaded_file_path = "crds_generated.go",
+    sha256 = "431213f286f0a4939dc0a7cf37b42f2472fdc9bc9c5e839eba50adafdeb677d5",
+    urls = ["https://raw.githubusercontent.com/kubevirt/containerized-data-importer/v1.65.0/pkg/operator/resources/crds_generated.go"],
 )
 
 # Match the keda chart 2.20.2 in cluster/cdk8s/keda.py.

@@ -57,7 +57,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -71,7 +70,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -447,26 +445,19 @@ def haku_workspaces(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                # shared CRDs + controller
-                agent_sandbox_controller,
-                # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-                haku_rbac,
-                # the fence haku-sandbox is opted into
-                haku_egress_proxy,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-                # ESO CRDs and shared ClusterSecretStore
-                external_secrets_config,
-            ),
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # shared CRDs + controller
+            agent_sandbox_controller,
+            # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+            haku_rbac,
+            # the fence haku-sandbox is opted into
+            haku_egress_proxy,
+            # CleanupPolicy CRD and cleanup-controller permissions
+            kyverno_policies,
+            # ESO CRDs and shared ClusterSecretStore
+            external_secrets_config,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )
