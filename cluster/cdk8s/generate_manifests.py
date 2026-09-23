@@ -146,7 +146,10 @@ from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_stat
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
-from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
+from cluster.cdk8s.vm_images_publisher import (
+    flux_kustomizations as vm_images_publisher_flux_kustomizations,
+    publisher as vm_images_publisher_publisher,
+)
 from cluster.cdk8s.volsync import flux_kustomizations as volsync_flux_kustomizations
 from cluster.cdk8s.vpa import flux_kustomizations as vpa_flux_kustomizations
 from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
@@ -215,6 +218,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_s3_config.write_manifests(root)
     seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
+    vm_images_publisher_publisher.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

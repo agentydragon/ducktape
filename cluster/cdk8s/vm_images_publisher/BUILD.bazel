@@ -15,3 +15,22 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "publisher",
+    srcs = ["publisher.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
