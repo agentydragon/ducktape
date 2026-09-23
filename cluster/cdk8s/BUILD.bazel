@@ -628,6 +628,7 @@ py_test(
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
+        "//cluster/k8s:agents/haku-egress-proxy/namespace.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
