@@ -18,7 +18,9 @@ _CHART = "loom-gym-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.bucket(chart, name=NAME, namespace=namespace.NAME, access={"claude-reader": s3.READ_WRITE}, adopt_existing=False)
+    s3.Bucket(chart, "bucket", name=NAME, namespace=namespace.NAME, adopt_existing=False).grant_read_write(
+        "claude-reader"
+    )
     return chart
 
 

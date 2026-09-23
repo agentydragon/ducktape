@@ -29,16 +29,21 @@ _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
 
 
 def _storage(chart: Chart) -> None:
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         chart,
+        "bucket",
         name=NAME,
         namespace=_NAMESPACE,
-        owns_identity=True,
+        adopt_existing=True,
+        description="Tempo's tenant-local SeaweedFS trace bucket.",
+    )
+    identity = s3.Identity(chart, "identity", name=NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         secret=_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=NAME,
-        bucket_description="Tempo's tenant-local SeaweedFS trace bucket.",
-        credentials_description="Tempo's tenant-local SeaweedFS credentials.",
+        description="Tempo's tenant-local SeaweedFS credentials.",
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and

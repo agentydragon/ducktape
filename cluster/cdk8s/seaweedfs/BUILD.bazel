@@ -241,6 +241,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
         "//cluster/cdk8s/seaweedfs:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

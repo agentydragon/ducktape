@@ -1,4 +1,14 @@
 apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   annotations:
@@ -21,14 +31,22 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
+kind: ResourceReferenceGrant
 metadata:
   name: home-assistant-backups
   namespace: seaweedfs
 spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: home-assistant
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: home-assistant
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
@@ -48,24 +66,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: home-assistant-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: home-assistant-backups
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: home-assistant
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: home-assistant
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: v1
 kind: ServiceAccount

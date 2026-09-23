@@ -603,20 +603,25 @@ def _network_policies(scope: Construct) -> None:
 
 def _backup_bucket(scope: Construct) -> None:
     """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
-    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
-    # Restic
-    # retention/pruning is managed by VolSync, not by Bucket deletion.
-    s3.tenant_bucket(
+    # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+    bucket = s3.Bucket(
         scope,
+        "backup-bucket",
         name="haku-openclaw-spike-backups",
         namespace=_NAMESPACE,
-        owns_identity=False,
+        adopt_existing=True,
+        description="Haku OpenClaw spike VolSync backup bucket.",
+        grant_name=_NAME,
+    )
+    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
+    identity = s3.IdentityRef(scope, "backup-identity", name="haku-openclaw-spike-backups")
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         # Generated directly where the VolSync SecretStore reads it.
         secret="haku-openclaw-spike-volsync-s3-credentials",
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=_NAME,
-        bucket_description="Haku OpenClaw spike VolSync backup bucket.",
-        credentials_description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
+        description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
     )
 
 

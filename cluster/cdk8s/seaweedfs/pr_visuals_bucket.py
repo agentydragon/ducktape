@@ -22,17 +22,12 @@ _WRITER = "pr-visuals-writer"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.bucket(
-        chart,
-        name=NAME,
-        namespace=_TENANT,
-        access={_WRITER: s3.READ_WRITE, "anonymous": [BucketSpecAccessActions.READ]},
-        # The existing bucket is being handed to the tenant-local CR.
-        adopt_existing=True,
-    )
-    s3.identity(chart, _WRITER)
-    s3.credentials(chart, identity=_WRITER, namespace=_TENANT, secret="pr-visuals-s3-credentials", key_fields=None)
-    s3.cluster_grant(chart, name=NAME, namespace=_TENANT)
+    # The existing bucket is being handed to the tenant-local CR.
+    bucket = s3.Bucket(chart, "bucket", name=NAME, namespace=_TENANT, adopt_existing=True)
+    writer = s3.Identity(chart, "writer", name=_WRITER)
+    bucket.grant_read_write(writer)
+    bucket.grant("anonymous", BucketSpecAccessActions.READ)
+    writer.credentials(namespace=_TENANT, secret="pr-visuals-s3-credentials", key_fields=None)
     return chart
 
 

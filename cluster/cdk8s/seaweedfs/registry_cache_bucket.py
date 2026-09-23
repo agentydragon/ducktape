@@ -22,15 +22,10 @@ _TENANT = "oci-cache"
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
     # The existing cache bucket was handed to the tenant-local CR.
-    s3.tenant_bucket(
-        chart,
-        name=NAME,
-        namespace=_TENANT,
-        owns_identity=True,
-        secret="registry-cache-s3-credentials",
-        key_fields=None,
-        grant=NAME,
-    )
+    bucket = s3.Bucket(chart, "bucket", name=NAME, namespace=_TENANT, adopt_existing=True)
+    identity = s3.Identity(chart, "identity", name=NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(namespace=_TENANT, secret="registry-cache-s3-credentials", key_fields=None)
     return chart
 
 

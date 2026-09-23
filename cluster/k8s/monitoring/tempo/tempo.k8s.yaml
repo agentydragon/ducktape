@@ -21,6 +21,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: tempo
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: monitoring
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: tempo
@@ -48,24 +66,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: tempo-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: tempo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: monitoring
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: v1
 kind: Secret

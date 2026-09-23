@@ -26,18 +26,6 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecMethod,
     ScheduledBackupSpecPluginConfiguration,
 )
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -48,55 +36,35 @@ from cluster.cdk8s.seaweedfs import s3
 NAME = "authentik-db-backups"
 NAMESPACE = "authentik"
 OUTPUT_DIR = "cluster/k8s/authentik/db-backups"
-_SEAWEED = "seaweedfs"
-_SEAWEED_NAMESPACE = "seaweedfs"
 _CREDENTIALS_SECRET = "authentik-db-backup-s3"
 _OBJECT_STORE = "authentik-db-ovh"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    s3.bucket(
-        chart,
-        name=NAME,
-        namespace=NAMESPACE,
-        access={NAME: s3.READ_WRITE},
-        adopt_existing=True,
-        description="Private CNPG physical backups and WAL archive for Authentik.",
-    )
-    identity = S3Identity(
+    # Tenant-local, so the grant below covers S3Identity too.
+    identity = s3.Identity(
         chart,
         "identity",
-        metadata=metadata(
-            NAME, NAMESPACE, annotations={"description": "Dedicated SeaweedFS identity for Authentik CNPG backups."}
-        ),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEED, namespace=_SEAWEED_NAMESPACE),
-            reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
-        ),
+        name=NAME,
+        namespace=NAMESPACE,
+        description="Dedicated SeaweedFS identity for Authentik CNPG backups.",
     )
-    s3.credentials(
-        chart,
-        identity=identity.name,
+    identity.credentials(
         namespace=NAMESPACE,
         # The operator creates and owns this Secret in the credential's namespace, where the
         # ObjectStore below consumes it.
         secret=_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
-    # Permits only the backup resources above to reference the Seaweed cluster.
-    ResourceReferenceGrant(
+    s3.Bucket(
         chart,
-        "reference-grant",
-        metadata=metadata(NAME, _SEAWEED_NAMESPACE),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=s3.GROUP, kind=kind, namespace=NAMESPACE)
-                for kind in ("S3Identity", "S3Credentials", "Bucket")
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=s3.GROUP, kind="Seaweed", name=_SEAWEED)],
-        ),
-    )
+        "bucket",
+        name=NAME,
+        namespace=NAMESPACE,
+        adopt_existing=True,
+        description="Private CNPG physical backups and WAL archive for Authentik.",
+    ).grant_read_write(identity)
     ObjectStore(
         chart,
         "object-store",

@@ -19,7 +19,7 @@ _CHART = "forgejo-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.identity(chart, NAME)
+    s3.Identity(chart, "identity", name=NAME)
     return chart
 
 

@@ -100,17 +100,22 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    # The IAM identity `forgejo` is declared by the seaweedfs-forgejo-bucket Kustomization.
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         scope,
+        "bucket",
         name=_NAME,
         namespace=_NAMESPACE,
-        owns_identity=False,
+        adopt_existing=True,
+        description="Forgejo packages, LFS, attachments, and artifacts.",
+    )
+    # Declared by the seaweedfs-forgejo-bucket Kustomization.
+    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET,
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
-        grant=_NAME,
-        bucket_description="Forgejo packages, LFS, attachments, and artifacts.",
-        credentials_description="Forgejo's SeaweedFS S3 credentials.",
+        description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 

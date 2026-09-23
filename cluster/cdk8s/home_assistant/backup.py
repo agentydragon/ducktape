@@ -134,16 +134,21 @@ def _repository(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    s3.tenant_bucket(
+    identity = s3.Identity(chart, "identity", name=_NAME)
+    bucket = s3.Bucket(
         chart,
+        "bucket",
         name=_NAME,
         namespace=_NAMESPACE,
-        owns_identity=True,
+        adopt_existing=True,
+        description="Home Assistant's tenant-local SeaweedFS backup bucket.",
+    )
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=_NAME,
-        bucket_description="Home Assistant's tenant-local SeaweedFS backup bucket.",
-        credentials_description="Home Assistant's tenant-local SeaweedFS backup credentials.",
+        description="Home Assistant's tenant-local SeaweedFS backup credentials.",
     )
     _repository(chart)
     return chart

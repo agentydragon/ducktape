@@ -53,7 +53,7 @@ OUTPUT_DIR = "cluster/k8s/nix-cache"
 _PORT = 8080
 _SELECTOR = {"app.kubernetes.io/name": NAME}
 _DB = "attic-db"
-# The operator mints the S3 key pair straight into this namespace (`s3.tenant_bucket` below).
+# The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3_SECRET = "attic-s3-credentials"
 _GITHUB_PAT_SECRET = "github-secrets-sync-pat"
 _ROTATOR = "attic-jwt-rotator"
@@ -111,17 +111,19 @@ def _database(scope: Construct) -> None:
 def _storage(scope: Construct) -> None:
     # attic's NAR chunks. Replication is per-volume (the SeaweedFS cluster's
     # defaultReplication), so the bucket is backed by replicated storage.
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         scope,
+        "bucket",
         name=NAME,
         namespace=NAMESPACE,
-        owns_identity=True,
-        secret=_S3_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=NAMESPACE,
+        adopt_existing=True,
         # Unset: the CRD defaults to Retain.
         reclaim_policy=None,
+        grant_name=NAMESPACE,
     )
+    identity = s3.Identity(scope, "identity", name=NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
 
 
 def _server(scope: Construct) -> None:

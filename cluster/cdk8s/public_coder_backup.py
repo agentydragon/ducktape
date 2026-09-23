@@ -80,18 +80,22 @@ _RESTIC_PASSWORD_SECRET_NAME = "public-coder-agent-volsync-restic-password"
 
 
 def _bucket(scope: Construct) -> None:
-    # The IAM identity is declared by the seaweedfs-public-coder-agent-backups-bucket
-    # Kustomization.
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         scope,
+        "bucket",
         name=_BUCKET_NAME,
         namespace=_NAMESPACE,
-        owns_identity=False,
+        adopt_existing=True,
+        description="Public Coder's tenant-local SeaweedFS backup bucket.",
+    )
+    # Declared by the seaweedfs-public-coder-agent-backups-bucket Kustomization.
+    identity = s3.IdentityRef(scope, "identity", name=_BUCKET_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET_NAME,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=_BUCKET_NAME,
-        bucket_description="Public Coder's tenant-local SeaweedFS backup bucket.",
-        credentials_description="Public Coder's tenant-local SeaweedFS backup credentials.",
+        description="Public Coder's tenant-local SeaweedFS backup credentials.",
     )
 
 

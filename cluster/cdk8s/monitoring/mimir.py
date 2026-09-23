@@ -71,18 +71,18 @@ def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
+    identity = s3.Identity(chart, "identity", name=NAME)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
-        s3.bucket(
+        s3.Bucket(
             chart,
+            bucket,
             name=bucket,
             namespace=_NAMESPACE,
-            access={NAME: s3.READ_WRITE},
             adopt_existing=True,
             description=description,
-        )
-    s3.credentials(
-        chart,
-        identity=NAME,
+            grant_name=NAME,
+        ).grant_read_write(identity)
+    identity.credentials(
         namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
@@ -90,7 +90,6 @@ def _storage(chart: Chart) -> None:
         key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Mimir's tenant-local SeaweedFS credentials.",
     )
-    s3.cluster_grant(chart, name=NAME, namespace=_NAMESPACE)
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and
     # removing this rollback Secret is an explicit follow-up.
@@ -102,7 +101,6 @@ def _storage(chart: Chart) -> None:
         ),
         type="Opaque",
     )
-    s3.identity(chart, NAME)
 
 
 def _values() -> dict[str, object]:

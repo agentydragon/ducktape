@@ -146,18 +146,23 @@ def _storage(scope: Construct) -> None:
         ),
         type="Opaque",
     )
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         scope,
+        "bucket",
         name=_NAME,
         namespace=_NAMESPACE,
-        owns_identity=True,
+        adopt_existing=True,
+        description="Langfuse event, export, and media objects.",
+    )
+    identity = s3.Identity(scope, "identity", name=_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_S3_CREDENTIALS_SECRET,
         key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
-        grant=_NAME,
-        bucket_description="Langfuse event, export, and media objects.",
-        credentials_description="Langfuse's tenant-local SeaweedFS credentials.",
+        description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 
 

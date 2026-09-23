@@ -19,13 +19,9 @@ _CHART = "drivefs-artifacts-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.bucket(
-        chart,
-        name=NAME,
-        namespace=namespace.NAME,
-        access={"drivefs-artifacts-writer": s3.READ_WRITE, "drivefs-artifacts-reader": s3.READ_ONLY},
-        adopt_existing=False,
-    )
+    bucket = s3.Bucket(chart, "bucket", name=NAME, namespace=namespace.NAME, adopt_existing=False)
+    bucket.grant_read_write("drivefs-artifacts-writer")
+    bucket.grant_read("drivefs-artifacts-reader")
     return chart
 
 

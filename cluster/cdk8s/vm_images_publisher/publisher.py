@@ -28,28 +28,26 @@ def _credentials_secret(identity: str) -> str:
     return f"{identity}-s3-credentials"
 
 
-def _identity(scope: Construct, name: str) -> None:
+def _identity(scope: Construct, name: str) -> s3.Identity:
     """A cluster-global S3Identity plus the publisher-local S3Credentials the operator mints
     its key pair into (Secret `<name>-s3-credentials` in this namespace)."""
-    s3.identity(scope, name)
-    s3.credentials(scope, identity=name, namespace=NAME, secret=_credentials_secret(name), key_fields=None)
+    identity = s3.Identity(scope, name, name=name)
+    identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
+    return identity
 
 
 def _storage(scope: Construct) -> None:
-    s3.bucket(
+    bucket = s3.Bucket(
         scope,
+        "bucket",
         name=_BUCKET,
         namespace=NAME,
-        access={_WRITER: s3.READ_WRITE, _READER: s3.READ_ONLY},
         # The physical bucket already exists; this CR is moving to the publisher's
         # namespace without deleting or recreating its data.
         adopt_existing=True,
     )
-    _identity(scope, _WRITER)
-    _identity(scope, _READER)
-    # Permit the publisher-local Bucket and S3Credentials to reference the SeaweedFS cluster
-    # and identities in seaweedfs.
-    s3.cluster_grant(scope, name=_BUCKET, namespace=NAME)
+    bucket.grant_read_write(_identity(scope, _WRITER))
+    bucket.grant_read(_identity(scope, _READER))
 
 
 def _writer_env(name: str, key: str) -> k8s.EnvVar:

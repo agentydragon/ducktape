@@ -123,10 +123,8 @@ def _storage(chart: Chart) -> None:
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
     s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    s3.identity(chart, NAME)
-    s3.credentials(
-        chart,
-        identity=NAME,
+    identity = s3.Identity(chart, "identity", name=NAME)
+    identity.credentials(
         namespace=namespace.NAME,
         secret=_LEGACY_CREDENTIALS_SECRET,
         secret_namespace=NAME,
@@ -135,30 +133,35 @@ def _storage(chart: Chart) -> None:
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    s3.bucket(
+    legacy_bucket = s3.Bucket(
         chart,
+        "legacy-bucket",
         name=NAME,
         namespace=namespace.NAME,
-        access={NAME: s3.READ_WRITE},
         adopt_existing=False,
         # Unset: the CRD defaults to Retain.
         reclaim_policy=None,
     )
+    legacy_bucket.grant_read_write(identity)
     # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    s3.tenant_bucket(
+    bucket = s3.Bucket(
         chart,
+        "bucket",
         name=NAME,
         namespace=NAME,
-        owns_identity=False,
+        adopt_existing=True,
+        description="Loki chunks, ruler, and admin objects.",
+    )
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=NAME,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-        grant=NAME,
-        bucket_description="Loki chunks, ruler, and admin objects.",
-        credentials_description="Loki's tenant-local SeaweedFS credentials.",
+        description="Loki's tenant-local SeaweedFS credentials.",
     )
 
 
