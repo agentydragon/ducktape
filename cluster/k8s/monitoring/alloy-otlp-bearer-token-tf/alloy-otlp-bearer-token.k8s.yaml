@@ -4,27 +4,26 @@ metadata:
   name: alloy-otlp-bearer-token
   namespace: flux-system
 spec:
-  interval: 15m
-  approvePlan: "auto"
-  refreshBeforeApply: true
-  path: ./tf/gitops/alloy-otlp-bearer-token
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  serviceAccountName: tf-runner
+  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "alloy_otlp_bearer_token"
       }
+  interval: 15m
+  path: ./tf/gitops/alloy-otlp-bearer-token
+  refreshBeforeApply: true
   runnerPodTemplate:
     spec:
       env:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
               key: password
-  vars: []
+              name: tofu-state-db-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
