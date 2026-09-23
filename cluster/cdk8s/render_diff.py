@@ -54,7 +54,12 @@ class _Loader(yaml.CSafeLoader):
     """Safe loading, plus YAML 1.1's `=` value key, which kustomize emits unquoted."""
 
 
-_Loader.add_constructor("tag:yaml.org,2002:value", yaml.SafeLoader.construct_yaml_str)
+def _construct_value(loader: _Loader, node: yaml.Node) -> str:
+    assert isinstance(node, yaml.ScalarNode)
+    return str(loader.construct_scalar(node))
+
+
+_Loader.add_constructor("tag:yaml.org,2002:value", _construct_value)
 
 _DUCKTAPE_URL = re.compile(r"github\.com[:/]agentydragon/ducktape(\.git)?/?$")
 _GOTK_SYNC = "cluster/k8s/flux/flux-system/gotk-sync.yaml"
@@ -557,18 +562,18 @@ class Graph:
 
 
 def _is_flux_kustomization(obj: Json) -> bool:
-    return obj["kind"] == "Kustomization" and obj["apiVersion"].startswith(_FLUX_KUSTOMIZATION_GROUP + "/")
+    return bool(obj["kind"] == "Kustomization") and str(obj["apiVersion"]).startswith(_FLUX_KUSTOMIZATION_GROUP + "/")
 
 
 def reconcile(rev: Revision, renderer: Renderer, jobs: int) -> Graph:
     graph = Graph()
     rev.store.fetch([rev.tree[_GOTK_SYNC]])
     for obj in yaml.load_all(rev.store.path(rev.tree[_GOTK_SYNC].sha).read_text(), Loader=_Loader):
-        key = (obj["metadata"]["namespace"], obj["metadata"]["name"])
+        seed = (obj["metadata"]["namespace"], obj["metadata"]["name"])
         if obj["kind"] == "GitRepository":
-            rev.git_repositories[key] = obj
+            rev.git_repositories[seed] = obj
         elif _is_flux_kustomization(obj):
-            graph.kustomizations[key], graph.parents[key] = obj, None
+            graph.kustomizations[seed], graph.parents[seed] = obj, None
     pending = {_ROOT}
     with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
         while pending:
@@ -629,8 +634,10 @@ def _fmt(value: Json, limit: int = 100) -> str:
 
 
 def _named(items: list[Json]) -> dict[str, Json] | None:
-    names = [i.get("name") if isinstance(i, dict) else None for i in items]
-    return None if None in names or len(set(names)) != len(names) else dict(zip(names, items, strict=True))
+    if not all(isinstance(i, dict) and isinstance(i.get("name"), str) for i in items):
+        return None
+    named = {i["name"]: i for i in items}
+    return named if len(named) == len(items) else None
 
 
 def field_diff(old: Json, new: Json, path: str = "") -> Iterator[str]:
