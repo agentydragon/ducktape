@@ -15,12 +15,15 @@ hand-written siblings. The component's generator reads the target roster from
 
 The generated manifest includes the Password and ExternalSecret for the bearer,
 Forgejo image credentials, ConfigMap, Deployment, Service, and CiliumNetworkPolicy.
-`CreatedOnce` preserves the generated bearer across ordinary reconciliations.
-Reflector distributes that Secret to exactly `agentplane-staging`, which invokes no
-generator. Both deployments
-reload when their bearer Secret changes. Deleting the source Secret recreates the
-bearer and triggers an asynchronous mirror/reload rollout, so rotation can briefly
-interrupt calls.
+`CreatedOnce` preserves the generated bearer across ordinary reconciliations. Gotcha: it
+also means an edit to that ExternalSecret's target template, metadata included, never
+reaches the live Secret; only deleting the Secret re-renders it, with a new bearer.
+`agentplane-staging` copies the Secret into its own `ssh-mcp-client-bearer` with an
+ExternalSecret that invokes no generator, through a store whose Role can read only that
+Secret (`cluster/cdk8s/agentplane/staging.py`), not the private keys beside it. Both
+deployments reload when their bearer Secret changes. Deleting the
+source Secret recreates the bearer, and the copy picks it up on its hourly refresh, so
+rotation interrupts calls until then.
 
 The backend Flux Kustomization depends on its namespace, ESO configuration, and
 Forgejo image credentials. The namespace has its own non-pruning Flux owner.

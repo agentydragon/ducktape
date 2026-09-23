@@ -41,7 +41,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import cilium
@@ -73,6 +72,9 @@ _KEY_VOLUMES = (
 
 
 def _bearer_credentials(scope: Construct) -> None:
+    """agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH private
+    key, which no store may reach."""
     Password(
         scope,
         "bearer-password-generator",
@@ -88,18 +90,7 @@ def _bearer_credentials(scope: Construct) -> None:
             target=ExternalSecretSpecTarget(
                 name=BEARER_SECRET_NAME,
                 creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
-                        }
-                    ),
-                    data={BEARER_SECRET_KEY: "{{ .password }}"},
-                ),
+                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
             ),
             data_from=[
                 ExternalSecretSpecDataFrom(
