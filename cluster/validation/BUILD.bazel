@@ -215,11 +215,12 @@ py_test(
     srcs = ["test_github_proxy_rules.py"],
     data = [
         "testdata/github_proxy_rules.yaml",
-        "//cluster/k8s:github-api-proxy/app/prometheus-rule.yaml",
+        "//cluster/k8s:github-api-proxy/app/github-api-proxy.k8s.yaml",
         "@multitool//tools/promtool",
     ],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
