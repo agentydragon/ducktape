@@ -166,6 +166,7 @@ cluster/k8s/kube-system/kustomization.yaml linguist-generated=true
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
