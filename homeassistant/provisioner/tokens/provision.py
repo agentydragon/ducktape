@@ -3,13 +3,16 @@ replacement when it holds none or one Home Assistant refuses."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import secrets
 
+import httpx2
 import kubernetes
-from client import HomeAssistantClient
 from more_itertools import one
-from settings import TokenConfig
+
+from homeassistant.provisioner.client import HomeAssistantClient
+from homeassistant.provisioner.tokens.settings import Settings, TokenConfig
 
 LIFESPAN_DAYS = 3650
 # `type` in an auth/refresh_tokens entry; homeassistant.auth.models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN.
@@ -122,22 +125,43 @@ def write_token_secret(v1: kubernetes.client.CoreV1Api, token: TokenConfig, *, e
 
 
 async def provision_token(
-    owner: HomeAssistantClient, v1: kubernetes.client.CoreV1Api, token: TokenConfig, password: str
+    owner: HomeAssistantClient,
+    v1: kubernetes.client.CoreV1Api,
+    token: TokenConfig,
+    owner_username: str,
+    owner_password: str,
 ) -> bool:
     """Leave a Secret whose token Home Assistant accepts, else mint one into it as the token's
-    user; return whether it changed. `owner` logs in with `password` to mint the owner's token,
-    or to reset the read-only user a token belongs to."""
+    user; return whether it changed. `owner` logs in as the owner to mint the owner's token, or
+    to reset the read-only user a token belongs to."""
     exists, current = read_token_secret(v1, token)
     if current is not None and await owner.token_is_valid(current):
         print(f"{token.secret_name} holds a valid token")
         return False
-    await owner.login(owner.settings.username, password)
+    await owner.login(owner_username, owner_password)
     holder = owner
     if token.read_only_user is not None:
         user_password = secrets.token_urlsafe(32)
         await reset_read_only_user(owner, token.read_only_user, user_password)
-        holder = HomeAssistantClient(owner.http_client, owner.settings)
+        holder = HomeAssistantClient(owner.http_client, owner.endpoint)
         await holder.login(token.read_only_user, user_password)
     write_token_secret(v1, token, exists=exists, value=await replace_long_lived_token(holder, token.client_name))
     print(f"Provisioned a valid token into {token.secret_name}")
     return True
+
+
+async def async_main(settings: Settings) -> None:
+    kubernetes.config.load_incluster_config()
+    v1 = kubernetes.client.CoreV1Api()
+    async with httpx2.AsyncClient() as http_client:
+        owner = HomeAssistantClient(http_client, settings.endpoint)
+        for token in settings.tokens:
+            await provision_token(owner, v1, token, settings.owner_username, settings.owner_password.get_secret_value())
+
+
+def main() -> None:
+    asyncio.run(async_main(Settings()))
+
+
+if __name__ == "__main__":
+    main()

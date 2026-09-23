@@ -7,8 +7,16 @@ from pathlib import Path
 import httpx2
 import pytest
 import pytest_bazel
-from component_installer import initialize_component_config, install_component, install_component_from_url
-from settings import ComponentConfig
+
+from homeassistant.provisioner.component_installer import (
+    initialize_component_config,
+    install_component,
+    install_component_from_url,
+)
+from homeassistant.provisioner.settings import ComponentConfig
+
+# The httpx2_mock fixture comes from the auto-loaded pytest-httpx2 plugin.
+# gazelle:include_dep @pypi//pytest_httpx2
 
 pytestmark = pytest.mark.httpx2(base_url="https://example.test", assert_all_called=False)
 

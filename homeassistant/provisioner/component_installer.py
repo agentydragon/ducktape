@@ -13,7 +13,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import httpx2
-from settings import ComponentConfig
+
+from homeassistant.provisioner.settings import ComponentConfig
 
 
 def _safe_extract(payload: bytes, destination: Path) -> None:

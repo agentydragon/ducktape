@@ -3,24 +3,28 @@ from http import HTTPStatus
 from urllib.parse import parse_qs
 
 import httpx2
-import provision
 import pytest
 import pytest_bazel
 import respx
-from client import HomeAssistantClient
 from httpx2.websockets import ASGIWebSocketTransport
 from pydantic import ValidationError
-from settings import ProvisionerSettings
+
+from homeassistant.provisioner import provision
+from homeassistant.provisioner.client import HomeAssistantClient
+from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
+
+# The httpx2_mock fixture comes from the auto-loaded pytest-httpx2 plugin.
+# gazelle:include_dep @pypi//pytest_httpx2
 
 BASE_URL = "http://home-assistant.test:8123"
 pytestmark = pytest.mark.httpx2(base_url=BASE_URL, assert_all_called=False)
 
 
 def disable_http_configuration(monkeypatch):
-    async def fake_configure_http(self, password: str) -> None:
+    async def fake_configure_http(*args) -> None:
         pass
 
-    monkeypatch.setattr(HomeAssistantClient, "configure_http", fake_configure_http)
+    monkeypatch.setattr(provision, "configure_http", fake_configure_http)
 
 
 def assert_request_paths(router: respx.Router, paths: list[str]) -> None:
@@ -33,7 +37,7 @@ def http_status_error(status: HTTPStatus) -> httpx2.HTTPStatusError:
     return httpx2.HTTPStatusError(f"HTTP {status}", request=request, response=response)
 
 
-async def test_websocket_command_authenticates_and_executes(provisioner_settings: ProvisionerSettings):
+async def test_websocket_command_authenticates_and_executes(endpoint: HomeAssistantEndpoint):
     received_messages: list[object] = []
 
     async def home_assistant(scope, receive, send):
@@ -52,7 +56,7 @@ async def test_websocket_command_authenticates_and_executes(provisioner_settings
         )
 
     async with httpx2.AsyncClient(transport=ASGIWebSocketTransport(home_assistant)) as http_client:
-        client = HomeAssistantClient(http_client, provisioner_settings)
+        client = HomeAssistantClient(http_client, endpoint)
         client._access_token = "access-token"
         result = await client.websocket_command({"id": 1, "type": "http/config"})
 
@@ -72,7 +76,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(
     integration = httpx2_mock.post("/api/onboarding/integration").respond(json={})
     analytics = httpx2_mock.post("/api/onboarding/analytics").respond(json={})
 
-    await provision.provision(home_assistant_client, "secret-password")
+    await provision.provision(home_assistant_client, provisioner_settings, "secret-password")
 
     assert_request_paths(
         httpx2_mock,
@@ -105,7 +109,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(
 
 
 async def test_partial_run_logs_in_and_finishes_remaining_steps(
-    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, provisioner_settings
 ):
     disable_http_configuration(monkeypatch)
     httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
@@ -123,7 +127,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(
     integration = httpx2_mock.post("/api/onboarding/integration").respond(json={})
     analytics = httpx2_mock.post("/api/onboarding/analytics").respond(json={})
 
-    await provision.provision(home_assistant_client, "secret-password")
+    await provision.provision(home_assistant_client, provisioner_settings, "secret-password")
 
     assert_request_paths(
         httpx2_mock,
@@ -153,7 +157,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(
 
 
 async def test_completed_onboarding_converges_http_configuration(
-    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, provisioner_settings
 ):
     disable_http_configuration(monkeypatch)
     httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
@@ -162,7 +166,7 @@ async def test_completed_onboarding_converges_http_configuration(
     httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
     httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
 
-    await provision.provision(home_assistant_client, "secret-password")
+    await provision.provision(home_assistant_client, provisioner_settings, "secret-password")
 
     assert_request_paths(
         httpx2_mock, ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
@@ -170,7 +174,7 @@ async def test_completed_onboarding_converges_http_configuration(
 
 
 async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(
-    monkeypatch, httpx2_mock: respx.Router, home_assistant_client
+    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, provisioner_settings
 ):
     disable_http_configuration(monkeypatch)
     httpx2_mock.get("/api/").mock(
@@ -181,7 +185,7 @@ async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(
     httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
     httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
     home_assistant_client.readiness_retry_interval_secs = 0
-    await provision.provision(home_assistant_client, "secret-password")
+    await provision.provision(home_assistant_client, provisioner_settings, "secret-password")
 
     assert_request_paths(
         httpx2_mock,
@@ -221,7 +225,9 @@ async def test_configure_http_is_idempotent(monkeypatch, home_assistant_client, 
 
     monkeypatch.setattr(home_assistant_client, "websocket_command", fake_websocket_command)
 
-    await home_assistant_client.configure_http("secret-password")
+    await provision.configure_http(
+        home_assistant_client, provisioner_settings.http_config, provisioner_settings.username, "secret-password"
+    )
 
     assert calls == [{"id": 1, "type": "http/config"}]
 
@@ -253,7 +259,9 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     monkeypatch.setattr(home_assistant_client, "wait_until_ready", wait_until_ready)
     monkeypatch.setattr(home_assistant_client, "login", login)
 
-    await home_assistant_client.configure_http("secret-password")
+    await provision.configure_http(
+        home_assistant_client, provisioner_settings.http_config, provisioner_settings.username, "secret-password"
+    )
 
     assert calls == [
         ("bootstrap-token", {"id": 1, "type": "http/config"}),

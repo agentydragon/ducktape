@@ -1,15 +1,24 @@
 import httpx2
 import pytest
-from client import HomeAssistantClient
-from settings import ComponentConfig, HttpConfig, ProvisionerSettings
+
+from homeassistant.provisioner.client import HomeAssistantClient
+from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
+from homeassistant.provisioner.settings import ComponentConfig, HttpConfig, ProvisionerSettings
 
 
 @pytest.fixture
-def provisioner_settings() -> ProvisionerSettings:
+def endpoint() -> HomeAssistantEndpoint:
+    return HomeAssistantEndpoint(
+        url="http://home-assistant.test:8123", client_id="https://home.test/", redirect_uri="https://home.test/"
+    )
+
+
+@pytest.fixture
+def provisioner_settings(endpoint: HomeAssistantEndpoint) -> ProvisionerSettings:
     return ProvisionerSettings(
-        home_assistant_url="http://home-assistant.test:8123",
-        client_id="https://home.test/",
-        redirect_uri="https://home.test/",
+        home_assistant_url=endpoint.url,
+        client_id=endpoint.client_id,
+        redirect_uri=endpoint.redirect_uri,
         username="test-admin",
         display_name="Test Administrator",
         local_admin_password="secret-password",
@@ -48,6 +57,6 @@ def provisioner_settings() -> ProvisionerSettings:
 
 
 @pytest.fixture
-async def home_assistant_client(provisioner_settings: ProvisionerSettings):
+async def home_assistant_client(endpoint: HomeAssistantEndpoint):
     async with httpx2.AsyncClient() as http_client:
-        yield HomeAssistantClient(http_client, provisioner_settings)
+        yield HomeAssistantClient(http_client, endpoint)
