@@ -241,6 +241,8 @@ exports_files(
         "forgejo/namespace.k8s.yaml",
         "forgejo/db/forgejo-db-ssd.k8s.yaml",
         "forgejo/db/kustomization.yaml",
+        "forgejo/cache/forgejo-valkey-ovh.k8s.yaml",
+        "forgejo/cache/kustomization.yaml",
         "agents/haku-openclaw-spike/app/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",

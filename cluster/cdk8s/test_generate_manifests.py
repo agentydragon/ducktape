@@ -178,6 +178,8 @@ _GENERATED_FILES = (
     "cluster/k8s/forgejo/namespace.k8s.yaml",
     "cluster/k8s/forgejo/db/forgejo-db-ssd.k8s.yaml",
     "cluster/k8s/forgejo/db/kustomization.yaml",
+    "cluster/k8s/forgejo/cache/forgejo-valkey-ovh.k8s.yaml",
+    "cluster/k8s/forgejo/cache/kustomization.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/app/namespace.k8s.yaml",
     "cluster/k8s/home-assistant/namespace.k8s.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",

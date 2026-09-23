@@ -124,6 +124,7 @@ from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
+    cache as forgejo_cache,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -304,6 +305,7 @@ def generate_manifests(root: Path) -> None:
     authentik_db_backups.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
+    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
@@ -566,8 +568,8 @@ def generate_manifests(root: Path) -> None:
     snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(
         flux_chart, snapshot_controller_crds_kustomization
     )
-    forgejo_cache_artifact = artifact("forgejo-cache", "cluster/k8s/forgejo/cache")
-    forgejo_flux_kustomizations.forgejo_cache(
+    forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
+    forgejo_cache.forgejo_cache(
         flux_chart, forgejo_cache_artifact, valkey_kustomization, local_path_provisioner_kustomization
     )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
