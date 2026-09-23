@@ -30,7 +30,8 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

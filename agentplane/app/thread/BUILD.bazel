@@ -26,6 +26,7 @@ py_library(
     name = "recording",
     srcs = ["recording.py"],
     deps = [
+        ":event_log",
         ":models",
         ":payloads",
         ":rows",
@@ -51,13 +52,15 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
+        ":content",
+        ":event_log",
+        ":ingestion_lease",
         ":models",
         ":recording",
         ":updates",
         ":views",
         "//agentplane/app:changes",
         "//agentplane/app:operator_sessions",
-        "//agentplane/app:presets",
         "//agentplane/app:thread_debug",
         "//agentplane/app:thread_fold",
         "//agentplane/protocol:command_pb2",
@@ -96,6 +99,7 @@ py_test(
     size = "large",
     srcs = ["test_indexing.py"],
     deps = [
+        ":ingestion_lease",
         ":models",
         ":store",
         "//:conftest",
@@ -116,6 +120,7 @@ py_test(
     size = "medium",
     srcs = ["test_recording.py"],
     deps = [
+        ":ingestion_lease",
         ":models",
         ":recording",
         ":store",
@@ -137,8 +142,10 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
+        ":content",
+        ":event_log",
+        ":ingestion_lease",
         ":models",
-        ":recording",
         ":store",
         ":updates",
         "//:conftest",
@@ -150,6 +157,45 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "content",
+    srcs = ["content.py"],
+    deps = [
+        ":event_log",
+        ":models",
+        ":views",
+        "//agentplane/app:thread_debug",
+        "//agentplane/app:thread_fold",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "event_log",
+    srcs = ["event_log.py"],
+    deps = [
+        ":models",
+        "//agentplane/app:presets",
+        "//agentplane/app:thread_debug",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "ingestion_lease",
+    srcs = ["ingestion_lease.py"],
+    deps = [
+        ":models",
         "@pypi//sqlalchemy",
     ],
 )

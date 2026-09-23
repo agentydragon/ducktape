@@ -11,7 +11,8 @@ import pytest_bazel
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.store import IngestionLease, ThreadStore
+from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf

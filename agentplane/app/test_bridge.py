@@ -33,8 +33,9 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import Harness
+from agentplane.app.thread.event_log import FeedError
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity
-from agentplane.app.thread.store import FeedError, ThreadStore
+from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
