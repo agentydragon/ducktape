@@ -106,7 +106,7 @@ from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_pa
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
-from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
+from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
 from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
@@ -214,6 +214,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_filer_db.write_manifests(root)
     seaweedfs_s3_config.write_manifests(root)
     seaweedfs_public_s3.write_manifests(root)
+    nix_cache_attic.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
