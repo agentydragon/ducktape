@@ -61,6 +61,7 @@ from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring
 from cluster.cdk8s.flux_webhook import flux_kustomizations as flux_webhook_flux_kustomizations
 from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook_token_flux_kustomizations
 from cluster.cdk8s.forgejo import (
+    db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
     namespace as forgejo_namespace,
@@ -167,6 +168,7 @@ def generate_manifests(root: Path) -> None:
     authentik_namespace.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     forgejo_namespace.write_manifests(root)
+    forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
