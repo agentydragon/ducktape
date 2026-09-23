@@ -116,6 +116,7 @@ from cluster.cdk8s.monitoring import (
     mimir,
     namespace as monitoring_namespace,
     stack as monitoring_stack,
+    tempo,
 )
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
@@ -206,6 +207,7 @@ def generate_manifests(root: Path) -> None:
     alloy.write_manifests(root)
     loki.write_manifests(root)
     mimir.write_manifests(root)
+    tempo.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -639,8 +641,8 @@ def generate_manifests(root: Path) -> None:
         grafana_helmrepository_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    monitoring_tempo_artifact = artifact("monitoring-tempo", "cluster/k8s/monitoring/tempo")
-    monitoring_flux_kustomizations.tempo(
+    monitoring_tempo_artifact = artifact("monitoring-tempo", tempo.OUTPUT_DIR)
+    tempo.tempo(
         flux_chart,
         monitoring_tempo_artifact,
         monitoring_crds_kustomization,
