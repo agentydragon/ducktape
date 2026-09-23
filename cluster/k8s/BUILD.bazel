@@ -211,7 +211,6 @@ filegroup(
         "clickhouse/cluster/agent-diagnostics-rbac.yaml",
         "flux/ducktape-flux/ducktape-flux-reader.yaml",
         "haku-ci/scaledjob.yaml",
-        "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
