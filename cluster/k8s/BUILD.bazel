@@ -97,6 +97,8 @@ exports_files(
         "flux-image-automation-ghcr/openclaw-image.k8s.yaml",
         "tofu-controller/tofu-controller.k8s.yaml",
         "tofu-controller/kustomization.yaml",
+        "cnpg/cnpg.k8s.yaml",
+        "cnpg/kustomization.yaml",
         "dns-automation/dns-records.k8s.yaml",
         "external-creds/external-creds.k8s.yaml",
         "external-creds/kustomization.yaml",

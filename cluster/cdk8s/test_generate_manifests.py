@@ -122,6 +122,8 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-image-automation-ghcr/openclaw-image.k8s.yaml",
     "cluster/k8s/tofu-controller/tofu-controller.k8s.yaml",
     "cluster/k8s/tofu-controller/kustomization.yaml",
+    "cluster/k8s/cnpg/cnpg.k8s.yaml",
+    "cluster/k8s/cnpg/kustomization.yaml",
 )
 
 

@@ -7,7 +7,7 @@ from cdk8s import App, Chart
 from cluster.cdk8s import (
     agent_machine_access,
     aiquota,
-    cnpg_flux_kustomizations,
+    cnpg_operator,
     descheduler,
     dns_automation,
     dns_automation_flux_kustomizations,
@@ -214,6 +214,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr_openclaw.write_manifests(root)
     tofu_controller_release.write_manifests(root)
+    cnpg_operator.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -412,8 +413,8 @@ def generate_manifests(root: Path) -> None:
     cert_manager_trust_kustomization = cert_manager_trust.cert_manager_trust(
         flux_chart, cert_manager_trust_artifact, cert_manager_kustomization, kyverno_kustomization
     )
-    cnpg_artifact = artifact("cnpg", "cluster/k8s/cnpg")
-    cnpg_kustomization = cnpg_flux_kustomizations.cnpg(flux_chart, cnpg_artifact, cert_manager_kustomization)
+    cnpg_artifact = artifact("cnpg", cnpg_operator.OUTPUT_DIR)
+    cnpg_kustomization = cnpg_operator.cnpg(flux_chart, cnpg_artifact, cert_manager_kustomization)
     external_secrets_operator_artifact = artifact("external-secrets-operator", "cluster/k8s/external-secrets/operator")
     external_secrets_operator_kustomization = external_secrets_flux_kustomizations.external_secrets_operator(
         flux_chart, external_secrets_operator_artifact, external_secrets_crds_kustomization, cert_manager_kustomization
