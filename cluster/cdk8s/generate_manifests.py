@@ -63,6 +63,7 @@ from cluster.cdk8s.flux_webhook_token import flux_kustomizations as flux_webhook
 from cluster.cdk8s.forgejo import (
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
+    namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
 from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
@@ -162,6 +163,7 @@ def generate_manifests(root: Path) -> None:
     tofu_state_namespace.write_manifests(root)
     authentik_namespace.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
+    forgejo_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)

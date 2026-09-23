@@ -65,6 +65,7 @@ _GENERATED_FILES = (
     "cluster/k8s/clickhouse/operator/namespace.k8s.yaml",
     "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
     "cluster/k8s/litellm/namespace.k8s.yaml",
+    "cluster/k8s/forgejo/namespace.k8s.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
     "cluster/k8s/github-branch-protection/kustomization.yaml",
     "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",

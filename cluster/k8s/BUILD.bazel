@@ -103,6 +103,7 @@ exports_files(
         "agents/haku-egress-proxy/namespace.k8s.yaml",
         "authentik/namespace.k8s.yaml",
         "agents/mitmproxy/namespace.k8s.yaml",
+        "forgejo/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",
         "forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",
