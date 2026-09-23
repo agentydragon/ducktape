@@ -21,42 +21,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def alloy_otlp_bearer_token_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    authentik_jwt_rotation: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "alloy-otlp-bearer-token-tf",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="alloy-otlp-bearer-token",
-                    namespace="flux-system",
-                )
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(
-                tofu_controller,
-                tofu_state_db,
-                # authentik-jwt-rotation owns the agents-infra namespace this secret's
-                # rotator runs in, and rotates the alloy-otlp bearer token committed here.
-                authentik_jwt_rotation,
-            ),
-        ),
-    )
-
-
 def alloy(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, mimir: Kustomization, grafana_helmrepository: Kustomization
 ) -> Kustomization:
