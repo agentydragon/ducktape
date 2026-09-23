@@ -21,6 +21,34 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: tempo
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: monitoring
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: tempo
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -39,24 +67,6 @@ spec:
     name: tempo-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: tempo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: monitoring
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: v1
 kind: Secret
 metadata:
@@ -65,16 +75,6 @@ metadata:
   name: tempo-s3-credentials
   namespace: monitoring
 type: Opaque
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: tempo
-  namespace: seaweedfs
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

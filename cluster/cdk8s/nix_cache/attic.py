@@ -20,40 +20,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster as seaweedfs_cluster, namespace as seaweedfs_namespace
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
@@ -61,7 +34,7 @@ OUTPUT_DIR = "cluster/k8s/nix-cache"
 _PORT = 8080
 _SELECTOR = {"app.kubernetes.io/name": NAME}
 _DB = "attic-db"
-# The operator mints the S3 key pair straight into this namespace (S3Credentials below).
+# The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3_SECRET = "attic-s3-credentials"
 _GITHUB_PAT_SECRET = "github-secrets-sync-pat"
 _ROTATOR = "attic-jwt-rotator"
@@ -100,72 +73,19 @@ def _database(scope: Construct) -> None:
 def _storage(scope: Construct) -> None:
     # attic's NAR chunks. Replication is per-volume (the SeaweedFS cluster's
     # defaultReplication), so the bucket is backed by replicated storage.
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=BucketSpec(
-            name=NAME,
-            # Handing the existing (freshly emptied) bucket to this tenant-local CR -- same
-            # precedent as seaweedfs/registry_cache_bucket.py.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=seaweedfs_cluster.NAME, namespace=seaweedfs_namespace.NAME),
-            access=[
-                BucketSpecAccess(
-                    user=NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=NAME,
+        namespace=NAMESPACE,
+        adopt_existing=True,
+        # Unset: the CRD defaults to Retain.
+        reclaim_policy=None,
+        grant_name=NAMESPACE,
     )
-    S3Identity(
-        scope,
-        "identity",
-        metadata=metadata(NAME, seaweedfs_namespace.NAME),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=seaweedfs_cluster.NAME),
-            reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Tenant-local S3Credentials (upstream's default topology): the identity stays
-    # centralized in seaweedfs, but credentials mint straight into this namespace, so the
-    # resulting Secret needs no cross-namespace write/grant.
-    S3Credentials(
-        scope,
-        "credentials",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=seaweedfs_cluster.NAME, namespace=seaweedfs_namespace.NAME),
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit the tenant-local Bucket and S3Credentials to reference the SeaweedFS cluster in
-    # its namespace.
-    ResourceReferenceGrant(
-        scope,
-        "grant",
-        metadata=metadata(NAMESPACE, seaweedfs_namespace.NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group="seaweed.seaweedfs.com", kind="Bucket", namespace=NAMESPACE),
-                ResourceReferenceGrantSpecFrom(
-                    group="seaweed.seaweedfs.com", kind="S3Credentials", namespace=NAMESPACE
-                ),
-            ],
-            to=[
-                ResourceReferenceGrantSpecTo(group="seaweed.seaweedfs.com", kind="Seaweed", name=seaweedfs_cluster.NAME)
-            ],
-        ),
-    )
+    identity = s3.Identity(scope, "identity", name=NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
 
 
 def _server(scope: Construct) -> None:

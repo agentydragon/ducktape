@@ -6,20 +6,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster, namespace
+from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "drivefs-artifacts"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/drivefs-artifacts-bucket"
@@ -28,31 +19,9 @@ _CHART = "drivefs-artifacts-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    Bucket(
-        chart,
-        "bucket",
-        metadata=metadata(NAME, namespace.NAME),
-        spec=BucketSpec(
-            name=NAME,
-            cluster_ref=BucketSpecClusterRef(name=cluster.NAME, namespace=namespace.NAME),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user="drivefs-artifacts-writer",
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                ),
-                BucketSpecAccess(
-                    user="drivefs-artifacts-reader",
-                    actions=[BucketSpecAccessActions.READ, BucketSpecAccessActions.LIST],
-                ),
-            ],
-        ),
-    )
+    bucket = s3.Bucket(chart, "bucket", name=NAME, namespace=namespace.NAME, adopt_existing=False)
+    bucket.grant_read_write("drivefs-artifacts-writer")
+    bucket.grant_read("drivefs-artifacts-reader")
     return chart
 
 
