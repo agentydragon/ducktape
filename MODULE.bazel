@@ -999,6 +999,20 @@ http_file(
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
 )
 
+http_file(
+    name = "prometheus_operator_prometheusrule_crd",
+    downloaded_file_path = "monitoring.coreos.com_prometheusrules.yaml",
+    sha256 = "2f2015458b5f70695efc918e2c5ca063563e1dd4c9b1324a28f7a0367de26e88",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml"],
+)
+
+http_file(
+    name = "prometheus_operator_podmonitor_crd",
+    downloaded_file_path = "monitoring.coreos.com_podmonitors.yaml",
+    sha256 = "96fcdcd7f9b4e3f37d8fd1e0848d3cfd25de6691ca8412c4f5db294027574242",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml"],
+)
+
 # Match gateway_api_version in cluster/terraform/main/cilium.tf. Cilium 1.19 requires
 # the experimental channel for TLSRoute v1alpha2.
 http_file(
