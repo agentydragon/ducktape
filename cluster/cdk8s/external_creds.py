@@ -192,7 +192,6 @@ CREDENTIALS = (
         secret_name="tana-agentydragon-gmail-com-account-pat",
         consumers=(
             ApprovedConsumer("agentplane-staging", "tana-agentydragon-gmail-com-account-pat-agentplane-staging-reader"),
-            ApprovedConsumer("haku-console", "tana-agentydragon-gmail-com-account-pat-haku-console-reader"),
             ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),
         ),
     ),

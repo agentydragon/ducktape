@@ -3,8 +3,6 @@ kind: Kustomization
 namespace: haku-console
 resources:
   - haku-console.k8s.yaml
-  - haku-console-google-calendar-client-credentials.sops.yaml
-  - haku-console-google-client-credentials.sops.yaml
   - haku-console-github-mcp-client-credentials.sops.yaml
   - routine-launch-token.sops.yaml
   - web-push-vapid.sops.yaml

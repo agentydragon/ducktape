@@ -459,21 +459,10 @@ replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`
 remains, each with what it needs; an entry leaves when its set is written or another route
 replaces it.
 
-- **`exact_tools` over an existing ActionGroup**: `tana_safe_tools` (`tana`), a plain
-  `exact_actions` set over its group.
 - **`exact_tools` for servers with no ActionGroup**: the console's own in-process `sandbox`
   (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`, `grants_whoami`,
   `grants_own_revoke`) have no Action Service counterpart at all; they need an equivalent surface
   before a set can name them.
-- **`home_assistant_entity_control`** (`home_assistant_desk_light_control`): every Home Assistant
-  write is one generic `ha_call_service`, so the console's evaluator allow-lists the argument keys
-  it has reviewed and admits one entity with its listed services. Argument-only, so this is either
-  an `argument_schema` set over the `home_assistant` ActionGroup (`const` entity, `enum` services,
-  `additionalProperties: false` over the reviewed keys) or a kind if the configured entity map
-  stays the operator's vocabulary.
-- **`gmail_label_namespace`** (`managed_gmail_labels`): `labels_patch`/`labels_delete` name a
-  label by id, so the evaluator resolves the id to a name through the Gmail API before checking
-  the prefix. A kind with an injected Gmail client.
 - **`grant_self_list` and grants self-introspection** (`grants_own_list`,
   `grants_self_introspection`): `list_grants(principal=self)` is argument-only, an
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
@@ -501,10 +490,10 @@ replaces it.
   cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
   here.
 
-**The composition layer, which the list above omits.** Four of the console's twenty-four entries are
+**The composition layer, which the list above omits.** Four of the console's seventeen entries are
 `any_of` bundles rather than leaves, and they are what is actually bound to an agent:
 `public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
-(thirteen leaves), and `manual_review`, which is `type: never`.
+(seven leaves), and `manual_review`, which is `type: never`.
 
 These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
 set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
@@ -518,10 +507,9 @@ per-agent progress:
   above puts behind the Action Service having its own grant surface. That trio is the whole
   remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
   side.
-- **`haku_v1`** = thirteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, Home
-  Assistant, the console's `sandbox` server and the `grants` trio. What is left is
-  `tana_safe_tools`, `home_assistant_desk_light_control`, `managed_gmail_labels`,
-  `haku_sandbox_control` and the `grants` trio, which makes it the long pole.
+- **`haku_v1`** = seven leaves spanning Grocy, GitHub, the console's `sandbox` server and the
+  `grants` trio. What is left is `haku_sandbox_control` and the `grants` trio, which makes it the
+  long pole.
 
 Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
 affordances it retires.

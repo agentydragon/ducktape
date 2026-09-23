@@ -86,13 +86,10 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
-    `haku-console-public-coder-agent`, `haku-console-agent-api`,
-    `tana-agentydragon-gmail-com-account-pat`, `ha-mcp-bearer`, `ssh-mcp-bearer`,
+    `haku-console-public-coder-agent`, `haku-console-agent-api`, `ssh-mcp-bearer`,
     `aiquota-api-bearer-haku-console`, `haku-routine-launch-token`,
-    `haku-console-web-push-vapid`, `haku-console-google-client-credentials`,
-    `haku-console-google-calendar-client-credentials`, and
-    `haku-console-github-mcp-client-credentials`; ConfigMaps from `static-metadata.yaml`,
-    `image-metadata.yaml`, and `indexer-role.sql`.
+    `haku-console-web-push-vapid`, and `haku-console-github-mcp-client-credentials`;
+    ConfigMaps from `static-metadata.yaml`, `image-metadata.yaml`, and `indexer-role.sql`.
   - ha-mcp: `home-assistant-break-glass`, the SOPS `ha-mcp-bearer`, and the
     Job-created `ha-mcp-home-assistant-token`.
   - ssh-mcp: `ssh-mcp-keys`, `ssh-mcp-keys-public-coder-devbox`, and `ssh-mcp-keys-atlas`.

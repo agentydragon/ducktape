@@ -86,22 +86,6 @@ def _static_bearer_server(server_id: str, url: str) -> dict[str, Any]:
 def _auto_approval_policies() -> list[dict[str, Any]]:
     return [
         _exact_tools(
-            "gmail_reads",
-            "gmail",
-            [
-                "threads_list",
-                "threads_get",
-                "messages_get",
-                "labels_list",
-                "labels_get",
-                "filters_list",
-                "filters_get",
-                "drafts_list",
-                "drafts_get",
-            ],
-        ),
-        _exact_tools("google_calendar_reads", "google_calendar", ["get_event", "list_events", "list_event_instances"]),
-        _exact_tools(
             "grocy_reads",
             "grocy-sf",
             [
@@ -248,91 +232,16 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
             "grants_own_revoke",
         ),
         _exact_tools(
-            "tana_safe_tools",
-            "tana",
-            [
-                "get_or_create_calendar_node",
-                "search_nodes",
-                "read_node",
-                "get_children",
-                "open_node",
-                "list_tags",
-                "list_workspaces",
-                "get_tag_schema",
-            ],
-        ),
-        _exact_tools(
-            "home_assistant_reads",
-            "home-assistant",
-            [
-                "ha_config_get_automation",
-                "ha_config_get_calendar_events",
-                "ha_config_get_category",
-                "ha_config_get_label",
-                "ha_config_get_scene",
-                "ha_config_get_script",
-                "ha_config_list_dashboard_resources",
-                "ha_config_list_groups",
-                "ha_config_list_helpers",
-                # ha_eval_template is deliberately absent: evaluating arbitrary Jinja inside
-                # Home Assistant is execution, not a read, so it does not belong in standing
-                # authority. It stays available under operator approval.
-                "ha_get_addon",
-                "ha_get_automation_traces",
-                "ha_get_blueprint",
-                "ha_get_camera_image",
-                "ha_get_device",
-                "ha_get_entity",
-                "ha_get_entity_exposure",
-                "ha_get_hacs_info",
-                "ha_get_history",
-                "ha_get_integration",
-                "ha_get_logs",
-                "ha_get_operation_status",
-                "ha_get_overview",
-                "ha_get_skill_guide",
-                "ha_get_state",
-                "ha_get_system_health",
-                "ha_get_todo",
-                "ha_get_zone",
-                "ha_list_floors_areas",
-                "ha_list_services",
-                "ha_search",
-            ],
-        ),
-        # Standing authority for exactly one write: the desk light (a Govee H6006 -- color
-        # modes color_temp + rgb, with an effect list) on, off, or recoloured/dimmed. Service
-        # data such as rgb_color, brightness and effect rides the same call and cannot
-        # redirect it, so it needs no separate listing; only keys that would retarget the
-        # call are rejected. Every other Home Assistant service, every other entity, and any
-        # `data` key that could retarget the call stay operator-gated. Its own policy kind,
-        # because every HA write goes through the single generic `ha_call_service` tool, so
-        # an exact_tools entry would hand over locks, the alarm panel and
-        # `homeassistant.restart` along with the lamp.
-        {
-            "id": "home_assistant_desk_light_control",
-            "type": "home_assistant_entity_control",
-            "server": "home-assistant",
-            "entities": {"light.h6006_pegboard": ["turn_on", "turn_off", "toggle"]},
-        },
-        _exact_tools(
             "haku_sandbox_control",
             "sandbox",
             ["provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"],
         ),
-        {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
         _any_of(
             "haku_v1",
-            "gmail_reads",
-            "google_calendar_reads",
             "grocy_reads",
             "github_reads",
             "github_identity_reads",
-            "tana_safe_tools",
-            "home_assistant_reads",
-            "home_assistant_desk_light_control",
             "haku_sandbox_control",
-            "managed_gmail_labels",
             "kubernetes_reads",
             "grants_self_introspection",
             "grants_own_revoke",
@@ -388,9 +297,6 @@ def _mcp_servers() -> dict[str, Any]:
         "grocy_sf": _remote_oauth_server(
             "grocy-sf", "https://grocy-mcp-sf.allegedly.works/mcp", {"kind": "dynamic", "client_name": "Haku Console"}
         ),
-        # Haku Console authenticates directly with the account PAT. The credential lives only
-        # in haku-console; inner Haku agents receive proxied tool schemas/results, never the PAT.
-        "tana": _static_bearer_server("tana", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"),
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
         # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
@@ -410,13 +316,6 @@ def _mcp_servers() -> dict[str, Any]:
         # (an auto-approved call cannot mint a grant).
         "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
         "ssh": _static_bearer_server("ssh", MCP_URL),
-        # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream
-        # Home Assistant token remains in the ha-mcp pod; haku-console authenticates with a
-        # static bearer reflected from ha-mcp/ha-mcp-bearer, exactly like tana. Read tools
-        # auto-approve (`home_assistant_reads`); every state-changing tool stays operator-gated.
-        # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is
-        # our own in-cluster service, so there is no consent boundary OAuth would buy.
-        "home_assistant": _static_bearer_server("home-assistant", "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"),
         # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight to
         # kube-apiserver (cluster_auth_mode=passthrough) -- no group override, no scoped
         # credential of its own. RBAC is agentydragon's real cluster-admin binding
@@ -435,25 +334,6 @@ def _mcp_servers() -> dict[str, Any]:
             # redirect_uri validation secure each caller independently.
             {"kind": "preregistered", "client_id": "kubectl-passthrough-mcp"},
         ),
-        # In-process FastMCP servers (haku/console/tools/*.py) attached via an in-memory
-        # transport. `gmail` and `google_calendar` execute as the acting Operator's own Google
-        # account: each resolves its own logical connection, Google OAuth application, and
-        # least-privilege grant from the console's connection store, self-refreshed in-process,
-        # and is connected, stored, and disconnected separately in the console's Access tab.
-        "gmail": {
-            "id": "gmail",
-            "backend": {
-                "kind": "in_process",
-                "credential": {"kind": "operator_connection", "connection": "google_mail"},
-            },
-        },
-        "google_calendar": {
-            "id": "google_calendar",
-            "backend": {
-                "kind": "in_process",
-                "credential": {"kind": "operator_connection", "connection": "google_calendar"},
-            },
-        },
     }
 
 
@@ -543,28 +423,6 @@ def config() -> dict[str, Any]:
                 "agent_id": "43a833f3-2b1c-4a04-9b8c-1df0cedfb79e",
                 "display_name": "public-coder-agent",
                 "access_profile_id": "public-coder",
-            },
-        },
-        # Each Google integration has its own OAuth application/client so Calendar can complete
-        # sensitive-scope verification independently of restricted Gmail; the client ids and
-        # secrets arrive from their Secrets. Scopes are explicit per connection: add a new
-        # logical connection when another Google surface is actually exposed rather than
-        # broadening either existing grant.
-        "operator_connection_providers": {"google_mail": {"kind": "google"}, "google_calendar": {"kind": "google"}},
-        "operator_connections": {
-            "google_mail": {
-                "display_name": "Google Mail",
-                "provider": "google_mail",
-                "scopes": [
-                    "https://www.googleapis.com/auth/gmail.modify",
-                    "https://www.googleapis.com/auth/gmail.compose",
-                    "https://www.googleapis.com/auth/gmail.settings.basic",
-                ],
-            },
-            "google_calendar": {
-                "display_name": "Google Calendar",
-                "provider": "google_calendar",
-                "scopes": ["https://www.googleapis.com/auth/calendar.events"],
             },
         },
         "mcp": {"servers": _mcp_servers()},

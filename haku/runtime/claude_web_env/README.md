@@ -73,7 +73,7 @@ extra tools)
 and once as the **Setup hook** (`web_setup_hook.sh` → `web_setup.sh`), which does
 **not** carry that env var. The Setup-hook run was defaulting to `.#devtools` and
 running `nix profile remove agent-haku`, **wiping fastmcp** and leaving a dangling
-`/usr/local/bin/fastmcp` — so Haku lost Tana access (it fell back to "skip Tana").
+`/usr/local/bin/fastmcp` — so Haku lost its console MCP tools.
 On `resume-cached` sessions only the Setup hook runs, so agent-haku never installed
 at all.
 
@@ -82,5 +82,4 @@ but `DUCKTAPE_CLAUDE_HOOKS_PROFILE` points at a Haku profile, it now defaults to
 `agent-haku` — so **both** paths install the Haku-only tools consistently — and it prunes
 dangling `/usr/local/bin` symlinks before re-bridging. Setting
 `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` as a web-UI env var is an equally valid
-explicit override. (Tana also has a `curl` fallback in the base instructions, so a
-missing fastmcp degrades rather than blinds — but the closure should be present.)
+explicit override.

@@ -1,11 +1,10 @@
-"""Bearer-protected server exposing haku-console's Gmail/Calendar tools for agentplane.
+"""Bearer-protected server exposing the Gmail/Calendar tools in `haku.console.tools` for agentplane.
 
-Reuses haku-console's tool definitions (`haku.console.tools.gmail`, `.google_calendar`) as-is,
-against a separate, agentplane-owned Google credential -- an Airlock-minted access token read
-once at startup, not haku-console's per-Operator OAuth connection. Reloader restarts this pod
-whenever the mounted token Secret rotates (the same mechanism ssh-mcp/ha-mcp already rely on for
-their own caller-facing bearer rotation), which keeps the held token within Airlock's refresh
-margin without any custom per-call refresh logic here.
+Reuses those tool definitions (`haku.console.tools.gmail`, `.google_calendar`) as-is, against an
+agentplane-owned Google credential -- an Airlock-minted access token read once at startup.
+Reloader restarts this pod whenever the mounted token Secret rotates (the same mechanism
+ssh-mcp/ha-mcp already rely on for their own caller-facing bearer rotation), which keeps the held
+token within Airlock's refresh margin without any custom per-call refresh logic here.
 """
 
 from __future__ import annotations

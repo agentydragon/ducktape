@@ -124,14 +124,6 @@ read tools; every write tool stays approval-gated). Haku's dedicated read-only `
 and unlike the direct read-only path it also lets every runtime reach approval-gated
 Grocy writes.
 
-**Tana is wired** — routed through haku-console's `tana`
-MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
-`get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
-idempotent `get_or_create_calendar_node` auto-approve under the `tana_safe_tools` policy in
-`cluster/cdk8s/haku/console_config.py`; every write tool stays approval-gated. The
-standalone `tana-mcp-ro` facade (`cluster/k8s/agents/tana-mcp-ro/`) was retired —
-console-side allowlisting needed no separate Deployment/secret/route.
-
 ## Autonomous write capabilities
 
 Haku's current contract has free tools plus approval-gated tool-call requests. This section is for

@@ -17,8 +17,6 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
@@ -63,7 +61,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -150,14 +147,6 @@ class Console(Construct):
             self, "serviceaccount", metadata=metadata(NAME, NAMESPACE), automount_token=True
         )
         self._add_rbac(service_account)
-        external_creds.add_external_secret(
-            self,
-            "tana-pat-external-secret",
-            namespace=NAMESPACE,
-            source_name="tana-agentydragon-gmail-com-account-pat",
-            properties=("token",),
-            description="ESO copy of the canonical Tana PAT from external-creds.",
-        )
         env = self._container_env()
         config_map = self._add_config()
         self._add_deployment(service_account, env, config_map)
@@ -291,22 +280,9 @@ class Console(Construct):
                     env_name(Settings, "mcp_operator_oauth_token_timeout_seconds"),
                     EnvValue.from_value(str(checked_value(Settings, "mcp_operator_oauth_token_timeout_seconds", 30))),
                 ),
-                # Static bearers for the cluster-internal MCP backends, each delivered into this
-                # namespace by its credential owner (tana-mcp, ha-mcp, ssh-mcp). Resolved only
-                # while the console calls the backend; never mounted into the inner workload.
-                self._from_secret(
-                    "tana-agentydragon-gmail-com-account-pat",
-                    "token",
-                    "mcp",
-                    "servers",
-                    "tana",
-                    "backend",
-                    "auth",
-                    "token",
-                ),
-                self._from_secret(
-                    "ha-mcp-bearer", "bearer-token", "mcp", "servers", "home_assistant", "backend", "auth", "token"
-                ),
+                # The static bearer for the cluster-internal ssh-mcp backend, delivered into this
+                # namespace by ssh-mcp. Resolved only while the console calls the backend; never
+                # mounted into the inner workload.
                 self._from_secret(
                     BEARER_SECRET_NAME, BEARER_SECRET_KEY, "mcp", "servers", "ssh", "backend", "auth", "token"
                 ),
@@ -317,11 +293,6 @@ class Console(Construct):
                 # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
                 # container sees a non-secret placeholder.
                 self._from_secret("haku-console-public-coder-agent", "token", "static_agents", "public_coder", "token"),
-                # The Google OAuth clients behind the in-process gmail/google_calendar servers,
-                # one restricted-scope project each. Optional so a missing Secret degrades only
-                # that integration.
-                *self._google_client("haku-console-google-client-credentials", "google_mail"),
-                *self._google_client("haku-console-google-calendar-client-credentials", "google_calendar"),
                 # GitHub's hosted MCP has no Dynamic Client Registration; its organization-owned
                 # GitHub App is this pre-registered confidential client. Optional so the console
                 # deploys while the App is being registered.
@@ -389,12 +360,6 @@ class Console(Construct):
                 ),
             ]
         )
-
-    def _google_client(self, secret: str, provider: str) -> Sequence[tuple[str, EnvValue]]:
-        return [
-            self._from_secret(secret, key, "operator_connection_providers", provider, key, optional=True)
-            for key in ("client_id", "client_secret")
-        ]
 
     def _add_config(self) -> ConfigMap:
         supplied = [path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields]

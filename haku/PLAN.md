@@ -13,12 +13,11 @@ history holds the original full design rationale. The **actionable build checkli
   server safe for Haku, cheapest first: (1) **console-side auto-approval** — when
   haku-console already reaches the upstream's full-tool server (`remote_server_oauth`/
   `static_bearer`), allowlist the specific safe tools in `console/auto_approval.py`
-  instead of standing up a second Deployment or a dedicated credential. Both Tana and
-  Grocy went this way: Tana's standalone `tana-mcp-ro` facade was retired in favor of
-  allowlisting `tana`'s read tools in the console, and Grocy's dedicated read-only
-  `haku` Authentik identity (`grocy-mcp-haku-sf`) was retired in favor of the console's
-  existing `grocy-sf` entry — which also newly lets every runtime reach approval-gated
-  Grocy _writes_, something the read-only credential structurally could never do; (2)
+  instead of standing up a second Deployment or a dedicated credential. Grocy went this
+  way: its dedicated read-only `haku` Authentik identity (`grocy-mcp-haku-sf`) was
+  retired in favor of the console's existing `grocy-sf` entry — which also newly lets
+  every runtime reach approval-gated Grocy _writes_, something the read-only credential
+  structurally could never do; (2)
   **credential-scoping** — no facade at all, when the upstream itself enforces per-user
   permissions and Haku only ever needs read access with no path to writes-with-approval:
   cheaper than (1), but a dead end if write access is ever wanted, since the credential's
@@ -66,10 +65,7 @@ Today's contract is read-only + hand-off (`SPEC.md`). A future direction
 (operator, 2026-06-26) is to let Haku take **some** actions autonomously that aren't
 allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-restricted
 websites_ for research, and similar low-blast-radius moves — without giving up the
-transparency and containment that make the read-only posture safe. (The `gmail-labeling`
-closure server was the first realized instance of the pattern: a narrow write surface
-made safe by construction — see the in-process `gmail` + `google_calendar` entry in
-`docs/security.md`'s enforcement inventory.)
+transparency and containment that make the read-only posture safe.
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
