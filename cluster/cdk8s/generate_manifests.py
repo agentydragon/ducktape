@@ -95,7 +95,7 @@ from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_f
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
-from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
+from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
     keys as litellm_keys,
@@ -186,6 +186,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    langfuse_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
