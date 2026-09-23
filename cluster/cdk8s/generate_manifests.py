@@ -106,7 +106,7 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
-from cluster.cdk8s.cpap_sync import app as cpap_sync_app, flux_kustomizations as cpap_sync_flux_kustomizations
+from cluster.cdk8s.cpap_sync import app as cpap_sync_app
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
     flux_kustomizations as dcgm_exporter_flux_kustomizations,
@@ -1089,7 +1089,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_kustomization = cpap_sync_flux_kustomizations.cpap_sync(
+    cpap_sync_kustomization = cpap_sync_app.cpap_sync(
         flux_chart,
         cpap_sync_artifact,
         external_secrets_config_kustomization,

@@ -145,6 +145,7 @@ _GENERATED_FILES = (
     "cluster/k8s/kubevirt/app/kubevirt.k8s.yaml",
     "cluster/k8s/kubevirt/cdi/cdi.k8s.yaml",
     "cluster/k8s/cpap-sync/cpap-sync.k8s.yaml",
+    "cluster/k8s/cpap-sync/kustomization.yaml",
     "cluster/k8s/cpap-sync/namespace.k8s.yaml",
     "cluster/k8s/clickhouse/operator/kustomization.yaml",
     "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
