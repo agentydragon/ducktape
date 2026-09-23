@@ -71,6 +71,7 @@ from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
 from cluster.cdk8s.flux_image_automation_ghcr import (
     flux_kustomizations as flux_image_automation_ghcr_flux_kustomizations,
+    openclaw as flux_image_automation_ghcr_openclaw,
 )
 from cluster.cdk8s.flux_monitoring import flux_kustomizations as flux_monitoring_flux_kustomizations
 from cluster.cdk8s.flux_webhook import (
@@ -211,6 +212,7 @@ def generate_manifests(root: Path) -> None:
     external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
+    flux_image_automation_ghcr_openclaw.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
