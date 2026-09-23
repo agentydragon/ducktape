@@ -128,8 +128,8 @@ node taking values, then dependents).
   `monitoring/alloy-otlp-bearer-token-tf`), one exemplar then the rest.
 - **Namespaces.** A namespace subdirectory already applied by its app's Kustomization
   folds into that directory as `namespace.k8s.yaml` (`generation.write_namespace`), one
-  PR each: `agents/{mitmproxy,haku-egress-proxy,haku-openclaw-spike}`, `tofu-state`,
-  `authentik`, `litellm`, `clickhouse/operator`, `home-assistant`; `ssh-mcp`
+  PR each: `agents/{mitmproxy,haku-egress-proxy,haku-openclaw-spike}`,
+  `forgejo`, `authentik`, `litellm`, `clickhouse/operator`, `home-assistant`; `ssh-mcp`
   and `haku/console` into their app charts. A namespace several Kustomizations deploy
   into (`seaweedfs`, `monitoring`, `haku-sandbox`, `kube-system`) or whose contents are
   written at runtime (`budget`, `agentydragon`) keeps its own Kustomization and converts
