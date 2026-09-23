@@ -165,6 +165,8 @@ exports_files(
         "user-agentydragon/kustomization.yaml",
         "nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
         "nvidia-runtimeclass/kustomization.yaml",
+        "hubble-ui/hubble-ui.k8s.yaml",
+        "hubble-ui/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

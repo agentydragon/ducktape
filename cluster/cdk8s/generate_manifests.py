@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
+    hubble_ui,
     kube_system,
     mitmproxy,
     ntfy,
@@ -92,7 +93,6 @@ from cluster.cdk8s.home_assistant import (
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
 )
-from cluster.cdk8s.hubble_ui import flux_kustomizations as hubble_ui_flux_kustomizations
 from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
@@ -199,6 +199,7 @@ def generate_manifests(root: Path) -> None:
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
+    hubble_ui.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -236,8 +237,8 @@ def generate_manifests(root: Path) -> None:
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart, budget_namespace_artifact)
     haku_namespace_artifact = artifact("haku-namespace", "cluster/k8s/haku/namespace")
     haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart, haku_namespace_artifact)
-    hubble_ui_artifact = artifact("hubble-ui", "cluster/k8s/hubble-ui")
-    hubble_ui_flux_kustomizations.hubble_ui(flux_chart, hubble_ui_artifact)
+    hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
+    hubble_ui.hubble_ui(flux_chart, hubble_ui_artifact)
     kube_api_proxy_artifact = artifact("kube-api-proxy", "cluster/k8s/kube-api-proxy")
     kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", "cluster/k8s/kubevirt/cdi-operator")
