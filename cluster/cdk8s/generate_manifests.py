@@ -170,7 +170,7 @@ from cluster.cdk8s.home_assistant import (
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
 )
-from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_drift_flux_kustomizations
+from cluster.cdk8s.infra_drift import drift_watch
 from cluster.cdk8s.kubevirt import (
     app as kubevirt_app,
     cdi as kubevirt_cdi,
@@ -694,7 +694,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
-    infra_drift_flux_kustomizations.infra_drift(
+    drift_watch.infra_drift(
         flux_chart, infra_drift_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", "cluster/k8s/agents/alloy-otlp-bearer")
