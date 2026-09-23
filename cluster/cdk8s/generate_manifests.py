@@ -205,10 +205,7 @@ from cluster.cdk8s.monitoring import (
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
-from cluster.cdk8s.openebs_lvm import (
-    flux_kustomizations as openebs_lvm_flux_kustomizations,
-    storage as openebs_lvm_storage,
-)
+from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs import (
@@ -478,8 +475,8 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass_kustomization = nvidia_runtimeclass.nvidia_runtimeclass(
         flux_chart, nvidia_runtimeclass_artifact
     )
-    openebs_lvm_artifact = artifact("openebs-lvm", "cluster/k8s/openebs-lvm")
-    openebs_lvm_flux_kustomizations.openebs_lvm(flux_chart, openebs_lvm_artifact)
+    openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
+    openebs_lvm_storage.openebs_lvm(flux_chart, openebs_lvm_artifact)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", "cluster/k8s/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
