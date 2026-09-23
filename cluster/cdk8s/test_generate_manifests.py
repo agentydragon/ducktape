@@ -114,6 +114,7 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/loki-read-proxy/kustomization.yaml",
     "cluster/k8s/agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
     "cluster/k8s/agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
+    "cluster/k8s/agents/airlock/airlock.k8s.yaml",
 )
 
 

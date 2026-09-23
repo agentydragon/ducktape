@@ -8,6 +8,7 @@ from cluster.cdk8s import (
     agent_machine_access,
     agent_shared_rbac,
     aiquota,
+    airlock,
     authentik_jwt_rotation,
     claude_sandbox_secrets,
     cnpg_flux_kustomizations,
@@ -191,6 +192,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
     loki_read_proxy.write_manifests(root)
@@ -861,7 +863,7 @@ def generate_manifests(root: Path) -> None:
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
-    airlock_artifact = artifact("airlock", "cluster/k8s/agents/airlock")
+    airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR)
     agents_flux_kustomizations.airlock(flux_chart, airlock_artifact, external_secrets_operator_kustomization)
     authentik_jwt_rotation_artifact = artifact("authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR)
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(

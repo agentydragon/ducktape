@@ -323,6 +323,23 @@ py_library(
 )
 
 py_library(
+    name = "airlock",
+    srcs = ["airlock.py"],
+    deps = [
+        ":cilium",
+        ":forgejo_images",
+        ":gateway",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -567,6 +584,7 @@ py_library(
         ":agent_machine_access",
         ":agent_shared_rbac",
         ":aiquota",
+        ":airlock",
         ":artifact_generators",
         ":authentik_jwt_rotation",
         ":claude_sandbox_secrets",
@@ -738,6 +756,7 @@ py_test(
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
+        "//cluster/k8s:agents/airlock/airlock.k8s.yaml",
         "//cluster/k8s:agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/kustomization.yaml",
