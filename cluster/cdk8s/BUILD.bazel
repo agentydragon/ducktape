@@ -636,6 +636,22 @@ py_library(
 )
 
 py_library(
+    name = "goldilocks",
+    srcs = ["goldilocks.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -660,6 +676,7 @@ py_library(
         ":forgejo_image_automation",
         ":forgejo_images",
         ":github_branch_protection",
+        ":goldilocks",
         ":google_mcp",
         ":ha_mcp",
         ":haku_openclaw_spike_config",
@@ -719,7 +736,6 @@ py_library(
         "//cluster/cdk8s/github_exporter:flux_kustomizations",
         "//cluster/cdk8s/github_secrets_sync:gitops_module",
         "//cluster/cdk8s/github_secrets_sync:secrets",
-        "//cluster/cdk8s/goldilocks:flux_kustomizations",
         "//cluster/cdk8s/grafana:flux_kustomizations",
         "//cluster/cdk8s/grocy:flux_kustomizations",
         "//cluster/cdk8s/haku:charts",
@@ -915,6 +931,8 @@ py_test(
         "//cluster/k8s:github-branch-protection/kustomization.yaml",
         "//cluster/k8s:github-secrets-sync/github-secrets-sync.k8s.yaml",
         "//cluster/k8s:github-secrets-sync/kustomization.yaml",
+        "//cluster/k8s:goldilocks/goldilocks.k8s.yaml",
+        "//cluster/k8s:goldilocks/kustomization.yaml",
         "//cluster/k8s:github-secrets-sync/secrets/github-secrets-sync-secrets.k8s.yaml",
         "//cluster/k8s:github-secrets-sync/secrets/kustomization.yaml",
         "//cluster/k8s:haku/console/haku-console.k8s.yaml",
