@@ -85,6 +85,7 @@ cluster/k8s/atuin/kustomization.yaml linguist-generated=true
 cluster/k8s/atuin/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/nvidia-runtimeclass/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 cluster/k8s/kube-system/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`

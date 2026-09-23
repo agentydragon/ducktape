@@ -23,6 +23,7 @@ from cluster.cdk8s import (
     kube_system,
     mitmproxy,
     ntfy,
+    nvidia_runtimeclass,
     public_coder_agent_config,
     public_coder_devbox,
     stateful_infra,
@@ -113,7 +114,6 @@ from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomization
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
-from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
@@ -198,6 +198,7 @@ def generate_manifests(root: Path) -> None:
     litellm_credentials.write_agentplane_testing_manifests(root)
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
+    nvidia_runtimeclass.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -266,8 +267,8 @@ def generate_manifests(root: Path) -> None:
     node_feature_discovery_kustomization = node_feature_discovery_flux_kustomizations.node_feature_discovery(
         flux_chart, node_feature_discovery_artifact
     )
-    nvidia_runtimeclass_artifact = artifact("nvidia-runtimeclass", "cluster/k8s/nvidia-runtimeclass")
-    nvidia_runtimeclass_kustomization = nvidia_runtimeclass_flux_kustomizations.nvidia_runtimeclass(
+    nvidia_runtimeclass_artifact = artifact("nvidia-runtimeclass", nvidia_runtimeclass.OUTPUT_DIR)
+    nvidia_runtimeclass_kustomization = nvidia_runtimeclass.nvidia_runtimeclass(
         flux_chart, nvidia_runtimeclass_artifact
     )
     openebs_lvm_artifact = artifact("openebs-lvm", "cluster/k8s/openebs-lvm")
