@@ -96,6 +96,8 @@ exports_files(
         "seaweedfs/cluster/priorityclass.k8s.yaml",
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/kustomization.yaml",
+        "agents/plaid-mcp/namespace.k8s.yaml",
+        "tofu-state/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",
         "forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",

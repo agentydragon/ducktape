@@ -30,7 +30,7 @@ from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flu
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
 from cluster.cdk8s.agentplane_index import flux_kustomizations as agentplane_index_flux_kustomizations
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
+from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -103,7 +103,10 @@ from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
-from cluster.cdk8s.tofu_state import flux_kustomizations as tofu_state_flux_kustomizations
+from cluster.cdk8s.tofu_state import (
+    flux_kustomizations as tofu_state_flux_kustomizations,
+    namespace as tofu_state_namespace,
+)
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
@@ -142,6 +145,8 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
+    agents_namespaces.write_manifests(root)
+    tofu_state_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)

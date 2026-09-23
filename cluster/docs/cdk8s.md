@@ -34,7 +34,9 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
    name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
    `terraform.gitops_terraform` and `//cluster/cdk8s/crd_bindings/tofu_controller`'s bindings);
    `agents/public-coder-agent/devbox`'s SSH Service, whose cdk8s object also supplies the
-   endpoint consumed by the SSH MCP generator.
+   endpoint consumed by the SSH MCP generator; or a Namespace written as
+   `namespace.k8s.yaml` into the directory of the Kustomization that owns it
+   (`generation.write_namespace`, e.g. `agents/plaid-mcp`).
 3. **Hand-written.**
 
 The `.k8s.yaml` suffix is cdk8s-only and Prettier ignores it so synthesis retains

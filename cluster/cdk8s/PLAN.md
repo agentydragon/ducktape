@@ -127,9 +127,14 @@ node taking values, then dependents).
   `infra-drift`, `github-secrets-sync`, `gatus/sso-tf`, `flux-webhook-token`. Most share
   their directory with other hand-written files, so the CR converts alone and the
   directory stays mixed until its neighbours do.
-- **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
-  at most an ExternalSecret) need either conversion or consolidation into their
-  application's owner. SSH-MCP includes its namespace in the application owner.
+- **Namespaces.** A namespace subdirectory already applied by its app's Kustomization
+  folds into that directory as `namespace.k8s.yaml` (`generation.write_namespace`), one
+  PR each: `agents/{mitmproxy,haku-egress-proxy,haku-openclaw-spike}`,
+  `forgejo`, `authentik`, `litellm`, `clickhouse/operator`, `home-assistant`; `ssh-mcp`
+  and `haku/console` into their app charts. A namespace several Kustomizations deploy
+  into (`seaweedfs`, `monitoring`, `haku-sandbox`, `kube-system`) or whose contents are
+  written at runtime (`budget`, `agentydragon`) keeps its own Kustomization and converts
+  standalone.
 - **Single-CNPG-`Cluster` directories** (`forgejo/db`, `tofu-state/db`, `authentik/db`):
   identical rendered objects, no rename or ownership change.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,

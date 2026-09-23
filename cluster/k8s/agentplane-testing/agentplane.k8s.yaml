@@ -3379,6 +3379,13 @@ subjects:
     name: agentplane-egress
     namespace: agentplane-testing
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-testing-egress-credentials
+automountServiceAccountToken: false
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
