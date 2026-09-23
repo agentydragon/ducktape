@@ -16,15 +16,9 @@ metadata:
   namespace: study-casino
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/region: hil
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
@@ -51,7 +45,7 @@ spec:
         enabled: false
   storage:
     size: 1Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: batch/v1
 kind: Job

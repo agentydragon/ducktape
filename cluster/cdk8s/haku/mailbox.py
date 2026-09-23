@@ -100,7 +100,7 @@ def _add_store(chart: Chart) -> None:
         "db",
         name="haku-mailbox-db",
         namespace=NAMESPACE,
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": "hil-ovh"}, tolerate_control_plane=False),
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.

@@ -26,8 +26,8 @@ def chart(app: App) -> Chart:
         "cluster",
         name=NAME,
         namespace="authentik",
-        affinity=cnpg.affinity(node_selector=NODE_SELECTOR, tolerate_control_plane=True),
-        storage_class="local-path-ovh",
+        node_selector=NODE_SELECTOR,
+        storage_class="local-path-ovh-ssd",
         size="8Gi",
         # The plugin sidecar archives WAL continuously and provides physical base
         # backups to the Authentik-specific SeaweedFS ObjectStore (authentik/db-backups).

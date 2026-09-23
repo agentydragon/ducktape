@@ -117,7 +117,7 @@ def _database(scope: Construct) -> None:
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": _ZONE}, tolerate_control_plane=False),
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
