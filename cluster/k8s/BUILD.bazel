@@ -156,6 +156,13 @@ exports_files(
         "grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
         "grocy/user-perms-base/grocy-user-perms.k8s.yaml",
         "oci-cache/oci-cache.k8s.yaml",
+        "agents/plaid-mcp/app/plaid-mcp.k8s.yaml",
+        "agents/plaid-mcp/app/kustomization.yaml",
+        "agents/plaid-mcp/db/plaid-mcp-db.k8s.yaml",
+        "agents/plaid-mcp/db/kustomization.yaml",
+        "agents/plaid-mcp/reader/plaid-db-mcp.k8s.yaml",
+        "agents/plaid-mcp/servicemonitor/plaid-db-mcp.k8s.yaml",
+        "agents/plaid-mcp/servicemonitor/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

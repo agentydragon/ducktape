@@ -119,6 +119,7 @@ from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustom
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
+from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
 from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
@@ -195,6 +196,9 @@ def generate_manifests(root: Path) -> None:
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
+    plaid_mcp_app.write_manifests(root)
+    plaid_mcp_db.write_manifests(root)
+    plaid_mcp_reader.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
