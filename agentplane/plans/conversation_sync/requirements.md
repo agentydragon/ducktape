@@ -125,13 +125,18 @@ option that does not need it is not worse for that.
 
 ## Efficiency
 
-| ID  | Requirement                                                                                                   | Source                          |
-| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| E1  | Requests on open are **O(1)** in conversation size. Today they are `O(bodies)`, which is the reported defect. | Measured 2026-09-22 (§ README)  |
-| E2  | Bytes on open are bounded by **what is rendered**, not by conversation length.                                | P1                              |
-| E3  | Streaming adds **≈0 requests** per arriving item.                                                             | Measured: ~0.4 s per round trip |
-| E4  | Scrolling back loads **only the new page** — not the window a reader already holds.                           | Owner, 2026-09-22               |
-| E5  | Nothing already held is **re-transferred**; revalidation over retransfer.                                     | E2/E4                           |
+| ID  | Requirement                                                                                                                           | Source                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| E1  | Requests on open are **O(1)** in conversation size. Today they are `O(bodies)`, which is the reported defect.                         | Measured 2026-09-22 (§ README)  |
+| E2  | Bytes on open are bounded by **what is rendered**, not by conversation length.                                                        | P1                              |
+| E3  | Streaming adds **≈0 requests** per arriving item.                                                                                     | Measured: ~0.4 s per round trip |
+| E4  | Scrolling back loads **only the new page** — not the window a reader already holds.                                                   | Owner, 2026-09-22               |
+| E5  | Nothing already held is **re-transferred**; revalidation over retransfer.                                                             | E2/E4                           |
+| E6  | **No timer polling.** Updates arrive over a held connection — WebSocket, SSE or long poll — never a request re-issued on an interval. | Owner, 2026-09-23               |
+
+**E6 allows a long poll.** A request the server holds until something changes, and the client
+re-issues when it returns, is waiting on a change rather than on a clock. What it rules out is a
+request sent every _n_ seconds whether or not anything changed: an idle reader makes no requests.
 
 ## Operability
 

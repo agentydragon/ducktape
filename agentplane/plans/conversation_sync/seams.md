@@ -136,4 +136,5 @@ Each step ships alone, and the first two change no behaviour.
    its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
    change.
 3. The deployment setting that picks an implementation, which the frontend reads at start.
-4. A second implementation, with the shared range and delta read. The window poll is the cheapest.
+4. A second implementation, with the shared range and delta read. The cheapest is the window poll,
+   long-polled rather than on a timer (**E6**).

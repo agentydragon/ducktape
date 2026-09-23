@@ -20,6 +20,10 @@ second is `O(1)`, and streaming costs nothing extra because it is the same reque
 
 A conditional `If-None-Match` makes the idle case free and changes none of that.
 
+**It fails E6 by definition**: a request on a timer is what A0 is. Holding each request until the
+thread changes would pass E6 but re-send the whole conversation on every change, which is A0's cost
+without its simplicity.
+
 A rung sits between A0 and A1 that neither describes: polling a fixed range of **positions**
 wholesale, with bodies fetched by immutable reference. It keeps everything A0 gets for free while
 bounding bytes, and it needs no `since`. See <option_window_poll.md>.

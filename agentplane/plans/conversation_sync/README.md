@@ -70,6 +70,7 @@ Cells are judgements from the option files, not measurements.
 | E3 streaming ≈0 requests     | +           | +           | +             | +             | +        | +              | +               |
 | **E4 scroll loads only new** | n/a         | −           | −             | **+**         | +        | −              | +               |
 | E5 no re-transfer            | −           | −           | ~             | +             | +        | −              | +               |
+| **E6 no timer polling**      | **−**       | ~ (rung 2)  | +             | +             | +        | +              | +               |
 | O1 bounded/shared state      | +           | **+**       | +             | +             | −        | −              | ~               |
 | O2 horizontal scale          | +           | +           | +             | +             | ~        | +              | +               |
 | O3 debuggable                | +           | +           | +             | +             | +        | ~              | ~               |
@@ -113,10 +114,11 @@ Cells are judgements from the option files, not measurements.
   round trip per change batch.
 - **The deployed design is the worst column**, and its failures are not a tuning problem: P5, E4,
   E5 and O1 all follow from a bound that moves with every appended segment.
-- **A0's only real failures are E2 and E5.** A smaller list than "poll everything every second"
-  sounds like, which makes it a serious fallback rather than a joke — particularly under D2, and
-  particularly as the thing to ship if the deployed design has to go before its replacement is
-  ready.
+- **A0 fails E2, E5 and E6.** Without E6 it would have been a serious fallback; polling on a timer
+  is what defines it, so E6 takes it off the table rather than costing it a rung.
+- **E6 moves the window poll's entry point, not its column.** Its first rung polls on a timer; the
+  second holds the same request until the thread changes. That rung is where it starts now, and it
+  still does not need `revision_cursor` to be correct (<option_window_poll.md> § The increments).
 - **A1 is strictly worse than the moving window** and differs by one idea: `have`. Without it a
   reader that scrolls up re-downloads its whole new window. Keep A1 on the matrix only as the step
   before, not as a destination.

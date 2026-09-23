@@ -62,8 +62,9 @@ conflate.
 - **P1/E2**: the range is a fixed count of positions. This is what `entity_index` is for, and why a
   cursor cannot substitute — how many rows a cursor range spans depends on how densely a turn packs
   them.
-- **P2**: `~`. Updates land at the poll interval. Deltas appear as a changed `text_ref` plus its new
-  chunks, which is chunky streaming at 1 Hz rather than none.
+- **P2**: `~` on a timer, `+` long-polled. On a timer, updates land at the poll interval —
+  chunky streaming at 1 Hz. Long-polled (rung 2, the entry point under **E6**), a change is
+  answered as soon as the thread's wake-up fires.
 - **P5/P6**: nothing is ever redefined or withdrawn — rows only merge into a map by key. A
   disconnect is a failed request, and the next one succeeds with what is on screen untouched.
 - **P7**: a stale-epoch window read answers `410` and the client reloads. Nothing rebuilds a
@@ -103,12 +104,14 @@ Nothing here is a new engine, so **O4** costs nothing to argue.
 
 ## The increments
 
-1. **The window poll**, as above. It does not depend on `revision_cursor` being correct, because it
-   re-reads wholesale — so it can ship before that is proved.
-2. **Long-poll the same URL.** The server holds the request until the range changes, on the Postgres
-   wake-up `changes.py` already provides. Same endpoint, same client path, and the request floor
-   goes away. **This is the step that needs every mutation to advance `revision_cursor`**, so that is
-   where to prove it.
+1. **The window poll**, as above. **Excluded by E6**, since it re-issues on a timer; kept here
+   because the rung above is defined against it.
+2. **Long-poll the same URL** — now the entry point. The server holds the request until the thread's
+   Postgres wake-up (`ThreadUpdates.changes`) fires, re-reads the window and answers only if its
+   `ETag` differs from the client's `If-None-Match`; otherwise it keeps waiting. Same endpoint, same
+   client path, no request floor. Comparing whole-window ETags still re-reads wholesale, so this
+   rung does not need `revision_cursor` to be correct either. Filtering by revision instead of
+   re-reading is where that proof becomes necessary.
 3. **`since` and `have` parameters**, reaching **E5** and **D1** — <option_moving_window.md> — only
    if measurement says the metadata re-send matters.
 
