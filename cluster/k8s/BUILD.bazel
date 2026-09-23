@@ -100,6 +100,8 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/pr-visuals-bucket/pr-visuals-bucket.k8s.yaml",
+        "seaweedfs/pr-visuals-bucket/kustomization.yaml",
         "seaweedfs/registry-cache-bucket/registry-cache-bucket.k8s.yaml",
         "seaweedfs/registry-cache-bucket/kustomization.yaml",
         "seaweedfs/public-coder-agent-backups-bucket/public-coder-agent-backups-bucket.k8s.yaml",
