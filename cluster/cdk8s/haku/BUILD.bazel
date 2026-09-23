@@ -258,6 +258,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clusterexternalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
