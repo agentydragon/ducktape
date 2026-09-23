@@ -59,6 +59,7 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
     "cluster/k8s/agents/plaid-mcp/namespace.k8s.yaml",
+    "cluster/k8s/tofu-state/namespace.k8s.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
     "cluster/k8s/github-branch-protection/kustomization.yaml",
     "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",
@@ -75,6 +76,8 @@ _GENERATED_FILES = (
     "cluster/k8s/forgejo/cpap-data/kustomization.yaml",
     "cluster/k8s/forgejo/haku-state/haku-state.k8s.yaml",
     "cluster/k8s/forgejo/haku-state/kustomization.yaml",
+    "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
+    "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
 )
 
 
