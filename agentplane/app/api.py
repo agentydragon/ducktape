@@ -23,7 +23,7 @@ from agentplane.action_service.connections import Connection, ConnectionRename, 
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
-from agentplane.app import auth_routes, bridge as runner_bridge
+from agentplane.app import auth_routes, bridge as runner_bridge, event_stream
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
@@ -57,7 +57,7 @@ from agentplane.app.inventory import (
     SandboxRunningError,
     SandboxView,
 )
-from agentplane.app.live import LiveIndex, router as live_router
+from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
@@ -758,7 +758,8 @@ async def thread_events(
 @threads.get("/{thread_id}/events/stream")
 async def thread_event_stream(
     store: Store,
-    bridge: runner_bridge.Bridge,
+    event_logs: EventLogs,
+    updates: Updates,
     shutdown: Shutdown,
     thread_id: UUID,
     after: Annotated[int, Query(ge=0, description="Replay EventEntries with a greater cursor.")] = 0,
@@ -772,7 +773,7 @@ async def thread_event_stream(
     if cursor > thread.last_cursor:
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return StreamingResponse(
-        shutdown.until(bridge.events(thread_id, after_cursor=cursor)),
+        shutdown.until(event_stream.follow(event_logs, updates.changes, thread_id, after_cursor=cursor)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

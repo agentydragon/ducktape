@@ -41,9 +41,10 @@ bbr test //agentplane/app/...
   `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
-- `bridge.py`: runner-first commands, leased batched ingestion per sandbox, and retained-event
-  replay; `ingestion.py` batches a runner's events and `Ingestion` records each batch, committing
-  the event log's and the fold's writes in one transaction under the sandbox's lease. `api.py` is
+- `bridge.py`: runner-first commands and leased batched ingestion per sandbox; `ingestion.py`
+  batches a runner's events and `Ingestion` records each batch, committing the event log's and the
+  fold's writes in one transaction under the sandbox's lease. `event_stream.py` streams a thread's
+  stored event log as SSE from the database, so any replica serves it without a runner. `api.py` is
   the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and

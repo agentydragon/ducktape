@@ -1,12 +1,11 @@
-"""Runner-first commands and database-backed thread delivery across app replicas."""
+"""Runner-first sessions and commands, and ingestion of each sandbox's runner sessions across app replicas."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
@@ -23,13 +22,7 @@ from agentplane.app.inventory import ProvisioningState, SandboxInventory, Sandbo
 from agentplane.app.live import LiveIndex
 from agentplane.app.presets import PresetCatalog
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import (
-    EventLogStore,
-    EventReplicationError,
-    FeedEnd,
-    FeedError,
-    ThreadNotFoundError,
-)
+from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedError, ThreadNotFoundError
 from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -39,8 +32,6 @@ from agentplane.runner.client import Attachment, RunnerClient, RunnerError
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
-REPLAY_PAGE = 1000
-KEEPALIVE_S = 15
 RECONCILE_S = 2
 COMMAND_ADMISSION_S = 15
 LEASE_DURATION = timedelta(seconds=30)
@@ -392,39 +383,6 @@ class RunnerBridge:
                         async with asyncio.timeout(RECONCILE_S):
                             await waiter.wait()
 
-    async def events(self, thread_id: UUID, *, after_cursor: int) -> AsyncGenerator[bytes]:
-        """Follow the committed archive without requiring or starting a runner attachment."""
-        if await self._event_logs.runner_session(thread_id) is None:
-            raise ThreadNotFoundError(thread_id)
-        waiter = asyncio.Event()
-        cursor = after_cursor
-        with self._thread_changes.subscribe(waiter):
-            attached_sent = False
-            while True:
-                waiter.clear()
-                snapshot = await self._event_logs.feed_state(thread_id)
-                if not attached_sent and snapshot is not None:
-                    yield _frame("attached", MessageToDict(snapshot.attached))
-                    attached_sent = True
-                while page := await self._event_logs.events(thread_id, after_cursor=cursor, limit=REPLAY_PAGE):
-                    for entry in page:
-                        yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
-                        cursor = entry.cursor
-                snapshot = await self._event_logs.feed_state(thread_id)
-                if snapshot is not None and snapshot.end is not None:
-                    if await self._event_logs.last_cursor(thread_id) > cursor:
-                        continue
-                    match snapshot.end:
-                        case FeedEnd():
-                            yield _frame("end", {})
-                        case FeedError(message=message):
-                            yield _frame("error", {"message": message})
-                    return
-                try:
-                    await asyncio.wait_for(waiter.wait(), timeout=KEEPALIVE_S)
-                except TimeoutError:
-                    yield b": keepalive\n\n"
-
     async def close(self) -> None:
         if self._coordinator is not None:
             self._coordinator.cancel()
@@ -434,14 +392,6 @@ class RunnerBridge:
         for sandbox in list(self._leases):
             await self._release(sandbox)
         await asyncio.gather(*(client.close() for client in self._clients.values()))
-
-
-def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) -> bytes:
-    lines = [f"event: {event}"]
-    if event_id is not None:
-        lines.append(f"id: {event_id}")
-    lines.append(f"data: {json.dumps(data)}")
-    return ("\n".join(lines) + "\n\n").encode()
 
 
 def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
