@@ -88,6 +88,44 @@ Features, after the steps above:
     no longer matches in its chunk but matches in another; a cross-chunk
     `same_as` relation for mirrored module trees.
 
+## Cleanup
+
+Each item is deleted in the PR that lands the step making it removable, not in
+a later sweep.
+
+- **Step 5 (one engine):**
+  - the AST-atom lowering in `selector_ir_lowering.rs` and its encoding in
+    `selector_constraint_model_builder.rs`, keeping only what candidate,
+    reference and relation tables need;
+  - `SelectorSourceMatchProjectionOutcome::{NativeFallback, NativeUnsupported}`
+    and their projection events;
+  - `solver_backends/ortools_spike`;
+  - the internal tests of deleted code, once their rules have command-level
+    equivalents;
+  - `debug/perf/2026_06_27_large_bundle_selector_csp_profile.md` and
+    `debug/perf/2026_07_13_match_selector_full_domain_profile.md`;
+  - `docs/selector_resolution.md`, rewritten for the new engine. Its measured
+    rejection of encoding tree matching as solver constraints stays as a short
+    decision record citing
+    `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
+- **Step 6 (truthful outcomes):**
+  - the sidecar's enumerate-every-solution loop;
+  - the decoder mapping an unsatisfiable or unknown solve to an outcome for
+    every target;
+  - the deprecated no-op `--keep-going` flag.
+- **Step 7 (one program across chunks):**
+  - per-chunk CP-SAT request and summary files, the `selector_problem` output
+    group in `pipeline.bzl`, and the
+    `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_{REQUEST_PROTO,SUMMARY_JSON,DUMP_ONLY}`
+    wiring, replaced by one request per interacting group;
+  - the README's Bazel section describing them;
+  - downstream: chunks aliased twice so two module trees can share them.
+- **As fixes land:** the matching `SELECTOR_BUGS.md` entries.
+- **The `selector_solve` question:** if it is not the relation evaluator, the
+  prototype, its tests, and step 1 of "Landing a new relation" in
+  `relational_selectors.md` go with step 5.
+- **This plan**, when its last step lands.
+
 ## Open questions
 
 - Whether the `selector_solve` Datalog prototype becomes the relation evaluator
