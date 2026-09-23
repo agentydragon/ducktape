@@ -441,6 +441,7 @@ py_test(
         ":postbuild_substitutions",
         ":terraform_backends",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

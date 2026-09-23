@@ -333,36 +333,6 @@ def haku_openclaw_spike_backup(
     )
 
 
-def loki_read_proxy(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
-    name = "loki-read-proxy"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="loki-read-proxy", namespace="loki-read-proxy"
-                )
-            ],
-        ),
-        description=(
-            "Read-only namespace-filtering Loki query proxy so Haku can read logs "
-            "for allowlisted namespaces without touching Loki "
-            "(auth_enabled:false) directly."
-        ),
-    )
-
-
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
