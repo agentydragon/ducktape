@@ -87,6 +87,7 @@ from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as hak
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
+    app as home_assistant_app,
     backup as home_assistant_backup,
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
@@ -192,6 +193,7 @@ def generate_manifests(root: Path) -> None:
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
+    home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
