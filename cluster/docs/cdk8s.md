@@ -123,7 +123,7 @@ an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster dep
 Python bindings are build-time output, never committed. Put each import declaration and
 its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
 upstream CRD source pins in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,grafana_operator,kyverno,volsync,kubevirt}`.
+`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,grafana_operator,kyverno,volsync,kubevirt,redis_operator}`.
 `//agentplane/crds` owns its CRD constructs directly and is a separate case.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in

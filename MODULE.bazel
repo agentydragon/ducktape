@@ -1174,6 +1174,14 @@ http_file(
     urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
 )
 
+# Match the redis-operator chart 0.26.1 (appVersion 0.26.0) in cluster/k8s/valkey/helmrelease.yaml.
+http_file(
+    name = "redis_operator_redisreplication_crd",
+    downloaded_file_path = "redis.redis.opstreelabs.in_redisreplications.yaml",
+    sha256 = "1d62dfc5638de69a71b3610752c455ee3aa16a1db853d5e3f2c9e4e2d8bdbbcd",
+    urls = ["https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/crd/bases/redis.redis.opstreelabs.in_redisreplications.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
