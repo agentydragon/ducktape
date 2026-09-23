@@ -1,11 +1,9 @@
-"""Runner-first sessions and commands, and ingestion of each sandbox's runner sessions across app replicas."""
+"""Runner-first sessions and commands, each answered once the ingester has archived what it caused."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
-from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -13,27 +11,23 @@ import grpc
 from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.changes import Changes
-from agentplane.app.ingestion import Ingestion, event_batches
+from agentplane.app.ingestion import Ingester
 from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.runners import Runners, SandboxNotReachableError
+from agentplane.app.runners import Runners
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedError, ThreadNotFoundError
-from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.thread.event_log import EventLogStore, FeedError, ThreadNotFoundError
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import Attachment, RunnerClient, RunnerError
+from agentplane.runner.client import RunnerError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-logger = logging.getLogger(__name__)
-RECONCILE_S = 2
 COMMAND_ADMISSION_S = 15
-LEASE_DURATION = timedelta(seconds=30)
+ADMISSION_REREAD_S = 2
 
 
 class MalformedMessageError(Exception):
@@ -55,189 +49,21 @@ class NewSession(BaseModel):
     )
 
 
-class Feed:
-    """One lease owner's ingestion connection. Browsers never subscribe to this object."""
-
-    def __init__(
-        self,
-        *,
-        session_id: str,
-        client: RunnerClient,
-        event_logs: EventLogStore,
-        ingestion: Ingestion,
-        lease: IngestionLease,
-    ):
-        self.session_id = session_id
-        self.client = client
-        self.event_logs = event_logs
-        self.ingestion = ingestion
-        self.lease = lease
-        self.task: asyncio.Task[None] | None = None
-
-    async def run(self) -> None:
-        attachment: Attachment | None = None
-        try:
-            async with asyncio.timeout(10):
-                attachment = await self.client.attach(self.session_id)
-            attached = attachment.attached
-            thread_id = await self.event_logs.open(self.lease.sandbox, self.session_id, attached.spec)
-            stored = await self.event_logs.last_cursor(thread_id)
-            if stored > attached.last_cursor:
-                if await self.event_logs.feed_state(thread_id) is None:
-                    await self.ingestion.set_attached(thread_id, attached, lease=self.lease)
-                await self.ingestion.end_feed(
-                    thread_id,
-                    lease=self.lease,
-                    error="runner log cursor regressed; refusing to merge a different session history",
-                )
-                return
-            if stored:
-                attachment.cancel()
-                async with asyncio.timeout(10):
-                    # Replay the boundary entry too: the same cursor must still identify the
-                    # exact archived Event and source even if the runner has no new entries.
-                    attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
-            await self.ingestion.set_attached(thread_id, attachment.attached, lease=self.lease)
-            try:
-                async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:
-                    async for batch in batches:
-                        await self.ingestion.record(thread_id, batch, lease=self.lease)
-                copied = await self.event_logs.last_cursor(thread_id)
-                await self.ingestion.end_feed(
-                    thread_id,
-                    lease=self.lease,
-                    error=(
-                        f"runner replay ended at cursor {copied} before promised cursor {attachment.attached.last_cursor}"
-                        if copied < attachment.attached.last_cursor
-                        else None
-                    ),
-                )
-            except EventReplicationError as error:
-                logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-                await self.ingestion.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
-        except IngestionLeaseLostError:
-            logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
-        except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
-            # Reconcile retries from the committed cursor. A transport loss is not session end.
-            logger.warning("ingestion interrupted for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
-        finally:
-            if attachment is not None:
-                attachment.cancel()
-
-    async def close(self) -> None:
-        if self.task is not None:
-            self.task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self.task
-
-
 class RunnerBridge:
     def __init__(
         self,
         *,
         runners: Runners,
         event_logs: EventLogStore,
-        ingestion: Ingestion,
         content: ContentStore,
+        ingester: Ingester,
         thread_changes: Changes,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs
-        self._ingestion = ingestion
         self._content = content
+        self._ingester = ingester
         self._thread_changes = thread_changes
-        self._feeds: dict[tuple[str, str], Feed] = {}
-        self._leases: dict[str, IngestionLease] = {}
-        self._changed = asyncio.Event()
-        self._reconcile_lock = asyncio.Lock()
-        self._coordinator: asyncio.Task[None] | None = None
-
-    async def start(self) -> None:
-        """Start the ingestion coordinator, or wake it to reconcile now."""
-        if self._coordinator is None:
-            self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
-        self._changed.set()
-
-    async def _coordinate(self) -> None:
-        with self._runners.changes.subscribe(self._changed):
-            await self._coordinate_subscribed()
-
-    async def _coordinate_subscribed(self) -> None:
-        while True:
-            self._changed.clear()
-            try:
-                await self.reconcile()
-            except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
-                logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
-
-    async def reconcile(self) -> None:
-        """Renew ownership of the running sandboxes and discover sessions opened through any replica."""
-        async with self._reconcile_lock:
-            running = self._runners.running()
-            for sandbox in set(self._leases) - running:
-                await self._release(sandbox)
-            async with asyncio.TaskGroup() as tasks:
-                for sandbox in sorted(running):
-                    tasks.create_task(self._reconcile_sandbox(sandbox))
-
-    async def _reconcile_sandbox(self, sandbox: str) -> None:
-        try:
-            async with asyncio.timeout(10):
-                lease = self._leases.get(sandbox)
-                if lease is not None and not await self._ingestion.renew(lease, LEASE_DURATION):
-                    await self._release(sandbox)
-                    lease = None
-                if lease is None:
-                    lease = await self._ingestion.acquire(sandbox, LEASE_DURATION)
-                    if lease is None:
-                        return
-                    self._leases[sandbox] = lease
-                try:
-                    async with asyncio.timeout(5):
-                        client = self._runners.client(sandbox)
-                        summaries = await client.list_sessions()
-                    for summary in summaries:
-                        key = (sandbox, summary.session_id)
-                        feed = self._feeds.get(key)
-                        if feed is not None and feed.task is not None and not feed.task.done():
-                            if feed.client is client:
-                                continue
-                            await feed.close()
-                        thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
-                        snapshot = await self._event_logs.feed_state(thread_id)
-                        # A semantic replay failure is durable evidence that this runner's prefix is
-                        # unsafe. A new coordinator or app replica must not call set_attached() and
-                        # make its failed thread view appear healthy before replaying the same
-                        # rejected suffix again. A distinct session is the explicit recovery path.
-                        if snapshot is not None and isinstance(snapshot.end, FeedError):
-                            continue
-                        if (
-                            summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
-                            and snapshot is not None
-                            and snapshot.end is not None
-                            and await self._event_logs.last_cursor(thread_id) == summary.last_cursor
-                        ):
-                            continue
-                        feed = Feed(
-                            session_id=summary.session_id,
-                            client=client,
-                            event_logs=self._event_logs,
-                            ingestion=self._ingestion,
-                            lease=lease,
-                        )
-                        feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
-                        self._feeds[key] = feed
-                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
-                    logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
-        except SQLAlchemyError, OSError, TimeoutError:
-            logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
-
-    async def _release(self, sandbox: str) -> None:
-        for key in [key for key in self._feeds if key[0] == sandbox]:
-            await self._feeds.pop(key).close()
-        await self._ingestion.release(self._leases.pop(sandbox))
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -271,7 +97,7 @@ class RunnerBridge:
             # Open has completed when Attached arrives. This caller needs no history replay.
             attachment.cancel()
         thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
-        await self.start()
+        await self._ingester.start()
         # In particular, do not return a resumed session while the database still says its
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
         waiter = asyncio.Event()
@@ -296,7 +122,7 @@ class RunnerBridge:
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # A runner rejection can still have followed earlier events the archive has not copied.
         # Start its feed before relaying so the rejection path cannot strand that prefix.
-        await self.start()
+        await self._ingester.start()
         try:
             await self._command(
                 runner_session.sandbox,
@@ -344,17 +170,8 @@ class RunnerBridge:
                     # while this app is attached, a bounded durable reread still finds the
                     # committed runner admission without asking the runner to repeat it.
                     with contextlib.suppress(TimeoutError):
-                        async with asyncio.timeout(RECONCILE_S):
+                        async with asyncio.timeout(ADMISSION_REREAD_S):
                             await waiter.wait()
-
-    async def close(self) -> None:
-        if self._coordinator is not None:
-            self._coordinator.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._coordinator
-            self._coordinator = None
-        for sandbox in list(self._leases):
-            await self._release(sandbox)
 
 
 def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:

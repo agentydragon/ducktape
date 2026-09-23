@@ -37,7 +37,7 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -255,11 +255,12 @@ async def _serve(
             core.pods[SANDBOX] = running
             index.pods[SANDBOX] = running
     runners = Runners(index, runner_port)
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
-        ingestion=ingestion,
         content=content,
+        ingester=ingester,
         thread_changes=thread_updates.changes,
     )
     async with (
@@ -291,14 +292,14 @@ async def _serve(
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await thread_updates.start()
-        await bridge.start()
+        await ingester.start()
         try:
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 url = f"http://127.0.0.1:{listener.getsockname()[1]}"
                 await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
         finally:
-            await bridge.close()
+            await ingester.close()
             await runners.close()
             await thread_updates.close()
             await engine.dispose()

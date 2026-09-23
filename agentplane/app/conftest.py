@@ -23,7 +23,7 @@ from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -204,18 +204,25 @@ async def runners(live_index: LiveIndex) -> AsyncIterator[Runners]:
 
 
 @pytest.fixture
+async def ingester(runners: Runners, event_logs: EventLogStore, ingestion: Ingestion) -> AsyncIterator[Ingester]:
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+    yield ingester
+    await ingester.close()
+
+
+@pytest.fixture
 def bridge(
     runners: Runners,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
     content: ContentStore,
+    ingester: Ingester,
     thread_updates: ThreadUpdates,
 ) -> RunnerBridge:
     return RunnerBridge(
         runners=runners,
         event_logs=event_logs,
-        ingestion=ingestion,
         content=content,
+        ingester=ingester,
         thread_changes=thread_updates.changes,
     )
 

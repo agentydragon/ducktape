@@ -25,6 +25,7 @@ from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
+from agentplane.app.ingestion import Ingester
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
@@ -167,7 +168,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_and_database(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
@@ -183,6 +184,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     event_logs: EventLogStore,
     content: ContentStore,
     runners: Runners,
+    ingester: Ingester,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -212,9 +214,9 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
         drain_of(app),
     )
     serving = asyncio.create_task(
-        serve_then_close(server, bridge=bridge, runners=runners, thread_updates=thread_updates, engine=engine)
+        serve_then_close(server, ingester=ingester, runners=runners, thread_updates=thread_updates, engine=engine)
     )
-    # The bridge leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
+    # The ingester leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
     while not server.started or await _leases(database) == 0:
         if serving.done():
             serving.result()

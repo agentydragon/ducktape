@@ -20,7 +20,7 @@ from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -41,13 +41,14 @@ def openapi_document() -> dict[str, Any]:
     thread_updates = ThreadUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     live = LiveIndex(stale_after_seconds=900)
+    runners = Runners(live, port=1)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
-            runners=Runners(live, port=1),
+            runners=runners,
             event_logs=event_logs,
-            ingestion=Ingestion(engine),
             content=content,
+            ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
             thread_changes=thread_updates.changes,
         ),
         ThreadStore(engine),

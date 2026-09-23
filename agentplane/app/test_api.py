@@ -19,7 +19,7 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -513,13 +513,14 @@ def test_a_runner_that_does_not_answer_is_a_503(
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
+        runners = Runners(live_index, closed_port.getsockname()[1])
         app = create_app(
             inventory,
             RunnerBridge(
-                runners=Runners(live_index, closed_port.getsockname()[1]),
+                runners=runners,
                 event_logs=event_logs,
-                ingestion=ingestion,
                 content=content,
+                ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
                 thread_changes=thread_updates.changes,
             ),
             store,

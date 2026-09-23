@@ -31,7 +31,7 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
     shutdown_timeout: int = Field(
         default=5,
         description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
-        "them; the rest of the Deployment's grace period is the bridge's lease release and closing the database.",
+        "them; the rest of the Deployment's grace period is the ingester's lease release and closing the database.",
     )
     resync_seconds: int = Field(
         default=300,
@@ -267,11 +267,12 @@ async def async_main(settings: Settings) -> None:
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
         runners = Runners(live, settings.runner_port)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
         bridge = RunnerBridge(
             runners=runners,
             event_logs=event_logs,
-            ingestion=Ingestion(engine),
             content=content,
+            ingester=ingester,
             thread_changes=thread_updates.changes,
         )
 
@@ -329,7 +330,7 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                bridge=bridge,
+                ingester=ingester,
                 runners=runners,
                 thread_updates=thread_updates,
                 engine=engine,
@@ -340,21 +341,16 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server,
-    *,
-    bridge: RunnerBridge,
-    runners: Runners,
-    thread_updates: ThreadUpdates,
-    engine: AsyncEngine,
+    server: uvicorn.Server, *, ingester: Ingester, runners: Runners, thread_updates: ThreadUpdates, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
-    timeout bounds the requests and streams still open, and the bridge's lease release and closing the
+    timeout bounds the requests and streams still open, and the ingester's lease release and closing the
     runner connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        await bridge.start()
+        await ingester.start()
         await server.serve()
     finally:
-        await bridge.close()
+        await ingester.close()
         await runners.close()
         await thread_updates.close()
         await engine.dispose()

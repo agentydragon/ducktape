@@ -27,7 +27,7 @@ from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from agentplane.app.ingestion import Ingestion
+from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -277,11 +277,12 @@ def app(
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     thread_updates = ThreadUpdates(engine.url)
+    runners = Runners(live_index, port=1)
     bridge = RunnerBridge(
-        runners=Runners(live_index, port=1),
+        runners=runners,
         event_logs=event_logs,
-        ingestion=Ingestion(engine),
         content=content,
+        ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
         thread_changes=thread_updates.changes,
     )
     return create_app(
