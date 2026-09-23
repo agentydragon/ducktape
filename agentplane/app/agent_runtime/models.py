@@ -136,7 +136,7 @@ class ThreadEntity(Base):
             "cursor",
             postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
         ),
-        Index("ix_thread_entity_scope_entity_index", "thread_id", "projection_epoch", "entity_index"),
+        Index("ix_thread_entity_scope_entity_index", "thread_id", "projection_epoch", "entity_index", unique=True),
     )
 
     thread_id: Mapped[UUID] = mapped_column(
