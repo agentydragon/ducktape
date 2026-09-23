@@ -38,7 +38,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplication,
@@ -604,10 +604,5 @@ def langfuse(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="20m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_NAME, namespace=_NAMESPACE
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )

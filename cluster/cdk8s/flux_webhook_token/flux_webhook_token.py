@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -38,13 +37,5 @@ def flux_webhook_token(
         NAME,
         artifact,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=NAME,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, github_secrets_sync_secrets),
     )

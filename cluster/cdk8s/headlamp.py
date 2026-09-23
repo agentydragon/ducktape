@@ -19,7 +19,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -138,15 +137,5 @@ def headlamp(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization, sso_providers_tf: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE),
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-            ),
-        ],
-        depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf),
+        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf)
     )

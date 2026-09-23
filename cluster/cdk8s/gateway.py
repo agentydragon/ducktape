@@ -12,7 +12,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -213,9 +212,4 @@ def gateway(
                 )
             ]
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="Gateway", name=_NAME, namespace=_NAMESPACE
-            )
-        ],
     )

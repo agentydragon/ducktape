@@ -22,7 +22,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -99,15 +98,4 @@ def tofu_controller(
         interval="10m0s",
         timeout="10m0s",
         depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apiextensions.k8s.io/v1",
-                kind="CustomResourceDefinition",
-                name="terraforms.infra.contrib.fluxcd.io",
-                namespace="",
-            ),
-        ],
     )

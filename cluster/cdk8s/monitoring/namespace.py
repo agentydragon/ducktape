@@ -6,7 +6,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
@@ -41,11 +40,4 @@ def write_manifests(root: Path) -> None:
 
 
 def monitoring_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "monitoring-namespace",
-        artifact,
-        # Health check ensures monitoring namespace exists before dependents deploy
-        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
-        depends_on=[],
-    )
+    return flux_kustomization(chart, "monitoring-namespace", artifact, depends_on=[])

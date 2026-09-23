@@ -33,7 +33,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -402,26 +401,6 @@ def public_coder_agent_backup(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="Bucket",
-                name="public-coder-agent-backups",
-                namespace="public-coder-agent",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="public-coder-agent-backups",
-                namespace="public-coder-agent",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="public-coder-agent-state-v2-restic",
-                namespace="public-coder-agent",
-            ),
-        ],
         depends_on=flux_kustomization_depends_on_many(
             seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
         ),

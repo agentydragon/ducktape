@@ -18,7 +18,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -89,14 +88,4 @@ def write_manifests(root: Path) -> None:
 
 
 def node_feature_discovery(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-            )
-        ],
-    )
+    return flux_kustomization(chart, NAME, artifact, timeout="5m")

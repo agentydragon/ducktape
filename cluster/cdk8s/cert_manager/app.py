@@ -21,7 +21,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstallRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -181,18 +180,6 @@ def cert_manager(
         NAME,
         artifact,
         timeout="5m",
-        # Health check ensures cert-manager pods are ready before dependents try to create Certificates
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="cert-manager", namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="cert-manager-webhook", namespace=NAMESPACE
-            ),
-        ],
         post_build=KustomizationSpecPostBuild(
             substitute_from=[
                 KustomizationSpecPostBuildSubstituteFrom(

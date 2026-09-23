@@ -39,8 +39,8 @@ Crib from <../k8s/parked/gecko/>:
 - `app/service.yaml` — ClusterIP exposing SSH at :22.
 
 Both `namespace` and `app` are wired as separate Flux Kustomizations with
-`wait: true` health checks on the DataVolume + VirtualMachine, so the chain
-won't report Ready until CDI finishes the import and the VM is up.
+`wait: true`, so the chain won't report Ready until CDI finishes the import and
+the VM is up.
 
 ## Verification
 

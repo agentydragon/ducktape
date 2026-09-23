@@ -6,7 +6,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -127,12 +126,4 @@ def seaweedfs_pr_visuals_bucket(
         interval="1h",
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name=NAME, namespace=_TENANT
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name=_WRITER, namespace=_TENANT
-            ),
-        ],
     )

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -38,14 +37,6 @@ def github_branch_protection(
         NAME,
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=NAME,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # tofu-controller runs the Terraform CR.
             tofu_controller,

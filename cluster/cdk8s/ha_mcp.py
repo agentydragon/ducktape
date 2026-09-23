@@ -69,7 +69,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -515,12 +515,6 @@ def ha_mcp(
         name,
         artifact,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-            ),
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             forgejo_images,

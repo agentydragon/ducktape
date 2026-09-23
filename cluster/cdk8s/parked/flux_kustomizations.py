@@ -5,7 +5,6 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -37,21 +36,6 @@ def agent_box(
         depends_on=flux_kustomization_depends_on_many(
             kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-box"),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="agent-box-vm-images-s3-reader",
-                namespace="agent-box",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="cdi.kubevirt.io/v1beta1", kind="DataVolume", name="agent-box-root", namespace="agent-box"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="kubevirt.io/v1", kind="VirtualMachine", name="agent-box", namespace="agent-box"
-            ),
-        ],
     )
 
 
@@ -67,14 +51,6 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
         suspend=True,
         timeout="5m",
         path="./cluster/k8s/parked/buildbuddy-executor",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name="buildbuddy-executor",
-                namespace="buildbuddy-executor",
-            )
-        ],
         decryption=SOPS_DECRYPTION,
     )
 
@@ -99,14 +75,6 @@ def haku_cloud_agent(
         suspend=True,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name="haku-cloud-agent",
-                namespace="flux-system",
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_creds, external_secrets_config, tofu_controller, tofu_state_db
         ),
@@ -127,11 +95,6 @@ def docker_ci(
         annotations={"ducktape.org/parked": "true"},
         suspend=True,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="docker-ci", namespace="docker-ci"
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
             # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
@@ -166,20 +129,6 @@ def gecko(
         depends_on=flux_kustomization_depends_on_many(
             gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="gecko-vm-images-s3-reader",
-                namespace="gecko",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="cdi.kubevirt.io/v1beta1", kind="DataVolume", name="gecko-root", namespace="gecko"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="kubevirt.io/v1", kind="VirtualMachine", name="gecko", namespace="gecko"
-            ),
-        ],
     )
 
 
@@ -194,7 +143,6 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
         # Keep this controller paused so Flux does not recreate the empty namespace.
         suspend=True,
         timeout="2m",
-        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gecko")],
     )
 
 
@@ -224,14 +172,6 @@ def haku_dispatch(
         depends_on=flux_kustomization_depends_on_many(
             cnpg, local_path_provisioner, external_secrets_config, external_secrets_operator, litellm, litellm_keys_tf
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="workers-litellm", namespace="haku-dispatch"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="dispatcher", namespace="haku-dispatch"
-            ),
-        ],
     )
 
 
@@ -255,11 +195,6 @@ def haku_managed_agent(
         suspend=True,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="haku-managed-agent", namespace="haku-sandbox"
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             forgejo_images,
             # provides the canonical AnkiWeb credential and source-side grant

@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, health_checks, kustomize_kustomization
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
@@ -120,7 +120,6 @@ def etcd_monitoring(
         timeout="2m",
         # the ServiceMonitor CRD
         depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        health_checks=health_checks(chart, ("ServiceMonitor",)),
     )
     write_yaml(
         out_dir / "kustomization.yaml", kustomize_kustomization(namespace=NAMESPACE, resources=[f"{name}.k8s.yaml"])

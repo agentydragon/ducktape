@@ -46,7 +46,6 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
 )
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -294,7 +293,6 @@ def agent_workspaces_app(
         name,
         artifact,
         timeout="5m",
-        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-workspaces")],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             # CRDs + controller

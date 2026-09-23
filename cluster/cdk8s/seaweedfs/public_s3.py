@@ -19,7 +19,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3Credentials,
     S3CredentialsSpec,
@@ -335,54 +334,4 @@ def seaweedfs_public_s3(
         ),
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name=NAME, namespace=namespace.NAME
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Identity", name="claude-reader", namespace="seaweedfs"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Identity",
-                name="drivefs-artifacts-writer",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Identity",
-                name="drivefs-artifacts-reader",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="claude-reader",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="drivefs-artifacts-writer",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="drivefs-artifacts-reader",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Policy",
-                name="claude-reader-buckets",
-                namespace="seaweedfs",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3PolicyBinding",
-                name="claude-reader-buckets",
-                namespace="seaweedfs",
-            ),
-        ],
     )

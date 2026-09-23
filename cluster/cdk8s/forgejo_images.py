@@ -22,7 +22,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -84,11 +83,6 @@ def forgejo_images(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2", kind="Terraform", name=NAME, namespace="flux-system"
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             # Forgejo API must be up (provider target)

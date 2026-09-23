@@ -9,7 +9,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
@@ -179,13 +178,4 @@ def write_manifests(root: Path) -> None:
 
 
 def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        suspend=False,
-        timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=NAME, namespace=NAME)
-        ],
-    )
+    return flux_kustomization(chart, NAME, artifact, suspend=False, timeout="5m")

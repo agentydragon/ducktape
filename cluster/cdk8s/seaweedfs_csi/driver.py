@@ -22,7 +22,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
@@ -289,14 +288,5 @@ def seaweedfs_csi(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=RELEASE, namespace=NAMESPACE
-            )
-        ],
-        depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        chart, NAME, artifact, timeout="10m", depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)]
     )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on
@@ -22,24 +21,4 @@ def vm_images_publisher(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="vm-images", namespace="vm-images-publisher"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="vm-images-ci-writer",
-                namespace="vm-images-publisher",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="vm-images-cdi-reader",
-                namespace="vm-images-publisher",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="batch/v1", kind="CronJob", name="vm-images-publisher", namespace="vm-images-publisher"
-            ),
-        ],
     )

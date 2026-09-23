@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -27,26 +26,6 @@ def home_assistant(
         name,
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="Bucket",
-                name="home-assistant-backups",
-                namespace="home-assistant",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="home-assistant-backups",
-                namespace="home-assistant",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="home-assistant-config-restic-tenant",
-                namespace="home-assistant",
-            ),
-        ],
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             local_path_provisioner,

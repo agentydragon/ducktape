@@ -94,10 +94,13 @@ def flux_kustomization(
     same names and types. Our policy, which a node overrides only where it differs:
     `interval="10m"`, `retry_interval="1m"`, `prune=True`, `wait=True`. `None` leaves a
     field unset, so Flux's own default applies (which for `retry_interval` is `interval`
-    and for `wait` is false). A `KustomizationSpec` field no node sets yet becomes a
-    keyword here when one first needs it.
+    and for `wait` is false). `health_checks` needs `wait` off: with `wait=True` Flux ignores
+    them. A `KustomizationSpec` field no node sets yet becomes a keyword here when one first
+    needs it.
     `description` becomes the `description` annotation (cluster/AGENTS.md).
     """
+    if wait and health_checks:
+        raise ValueError(f"{name=}: wait=True health-checks every applied object and Flux ignores health_checks")
     match source:
         case ArtifactGeneratorSpecArtifacts():
             if path is not None:
