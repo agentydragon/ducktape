@@ -90,6 +90,10 @@ _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = "cluster/k8s/agents/ha-mcp/app"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
+# The token-provisioner's other Secret: a long-lived token of Home Assistant's read-only
+# `agentplane-reader` user, which agentplane-staging's egress proxy presents. Must match the
+# provisioner's AGENTPLANE_READER.secret_name.
+AGENTPLANE_READER_TOKEN_SECRET_NAME = "agentplane-home-assistant-token"
 _BEARER_SECRET_NAME = "ha-mcp-bearer"
 _BEARER_SECRET_KEY = "bearer-token"
 _PLACEHOLDER_TAG = "unset"
@@ -150,7 +154,7 @@ def _bearer_credentials(scope: Construct) -> None:
 
 
 class HaMcpCredentialsProvisioner(Construct):
-    """Validates and repairs the token after expiry, revocation, or a Home Assistant restore."""
+    """Validates and repairs the tokens after expiry, revocation, or a Home Assistant restore."""
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
@@ -185,6 +189,26 @@ class HaMcpCredentialsProvisioner(Construct):
             "rolebinding",
             metadata=metadata(_PROVISIONER_NAME, _NAMESPACE),
             role=Role.from_role_name(self, "role-ref", _PROVISIONER_NAME),
+        ).add_subjects(service_account)
+        reader_role = Role(
+            self,
+            "reader-token-role",
+            metadata=metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE),
+            rules=[
+                RolePolicyRule(
+                    resources=[
+                        Secret.from_secret_name(self, "reader-token-secret-ref", AGENTPLANE_READER_TOKEN_SECRET_NAME)
+                    ],
+                    verbs=["get", "update", "patch"],
+                ),
+                RolePolicyRule(resources=[ApiResource.SECRETS], verbs=["create"]),
+            ],
+        )
+        RoleBinding(
+            self,
+            "reader-token-rolebinding",
+            metadata=metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE),
+            role=reader_role,
         ).add_subjects(service_account)
 
     def _add_container(self, workload: Job | CronJob, break_glass_secret: ISecret) -> None:
@@ -222,7 +246,10 @@ class HaMcpCredentialsProvisioner(Construct):
                 _PROVISIONER_NAME,
                 _HOME_ASSISTANT_NAMESPACE,
                 annotations={
-                    "description": "Validates and repairs the dedicated Home Assistant long-lived token consumed by HA-MCP.",
+                    "description": (
+                        "Validates and repairs the Home Assistant long-lived tokens HA-MCP and "
+                        "agentplane-staging's egress proxy hold."
+                    ),
                     # Idempotent repair loop -- it validates the token and only rewrites it
                     # when broken -- so re-running on a cadence is the intended behaviour,
                     # not a side effect. That makes the TTL safe here, and the TTL is what

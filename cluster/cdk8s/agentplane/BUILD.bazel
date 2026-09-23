@@ -454,6 +454,7 @@ py_library(
         ":egress_credentials",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
+        "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:metadata",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

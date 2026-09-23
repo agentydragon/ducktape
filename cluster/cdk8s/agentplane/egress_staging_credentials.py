@@ -23,8 +23,13 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
-from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
+from cluster.cdk8s.agentplane.app_settings import (
+    FORGEJO_HAKU_POLICY,
+    GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
+    HOME_ASSISTANT_READONLY_POLICY,
+)
+from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
     EXTERNAL_CREDS_STORE,
@@ -32,6 +37,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     credential_external_secret,
     single_secret_store,
 )
+from cluster.cdk8s.ha_mcp import AGENTPLANE_READER_TOKEN_SECRET_NAME
 from cluster.cdk8s.metadata import metadata
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
@@ -53,6 +59,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -254,6 +261,67 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                         "/api/files/**",
                     ],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
+                )
+            ]
+        ),
+    )
+
+
+def _home_assistant_readonly(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="home-assistant-readonly",
+        source=AGENTPLANE_READER_TOKEN_SECRET_NAME,
+        key="token",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-home-assistant",
+            reader=reader,
+            source_namespace="home-assistant",
+            source_secret=AGENTPLANE_READER_TOKEN_SECRET_NAME,
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-home-assistant-readonly",
+        metadata=ApiObjectMetadata(name="home-assistant-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only "
+                "group, which cluster/provisioners/ha_mcp_token_provisioner creates and keeps valid; "
+                "ESO copies it into this namespace. Home Assistant refuses that user every service "
+                "call, and `home-assistant-readonly`'s rule presents the token only on GETs of "
+                "entity states and their history."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="home-assistant-readonly", key="token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-home-assistant-readonly",
+        metadata=ApiObjectMetadata(name=HOME_ASSISTANT_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # A path rule sees no query string, so `/api/history/period/*` admits every entity's
+                # history, not only the one a `filter_entity_id` names: the same reach as the
+                # read-only group's, which covers every entity.
+                EgressPolicySpecRules(
+                    hosts=[HOME_ASSISTANT_HOST],
+                    cluster_internal=True,
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/api/states", "/api/states/*", "/api/history/period/*"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="home-assistant-readonly"),
                 )
             ]
         ),

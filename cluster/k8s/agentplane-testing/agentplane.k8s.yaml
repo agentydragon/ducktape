@@ -1145,6 +1145,13 @@ spec:
             - port: "3000"
               protocol: TCP
     - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+    - toEntities:
         - world
         - remote-node
         - host

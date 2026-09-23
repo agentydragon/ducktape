@@ -52,11 +52,49 @@ subjects:
     name: ha-mcp-token-provisioner
     namespace: home-assistant
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: home-assistant
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-home-assistant-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: home-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ha-mcp-token-provisioner
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: ha-mcp-token-provisioner
+    namespace: home-assistant
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    description: Validates and repairs the dedicated Home Assistant long-lived token consumed by HA-MCP.
+    description: Validates and repairs the Home Assistant long-lived tokens HA-MCP and agentplane-staging's egress proxy hold.
     kustomize.toolkit.fluxcd.io/force: enabled
   name: ha-mcp-token-provisioner
   namespace: home-assistant

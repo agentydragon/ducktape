@@ -10,10 +10,9 @@ lists either. The `<tool-call>` buttons can only submit console-fronted tools.
 `haku-sandbox/haku-ui`, and holds no credential. Its pod gets the egress sidecar that sandboxes
 have, so a placeholder stands in for every credential:
 
-- location is `home_assistant/ha_get_state` on `person.rai` and zones are `ha_get_overview`, both
-  auto-approved by a `haku-ui-reads` policy set;
-- the shopping list is a GET on Grocy's REST API through the existing `grocy-sf-readonly`
-  egress route;
+- location and zones are GETs on Home Assistant's REST API (`/api/states/person.rai`,
+  `/api/states`) through the `home-assistant-readonly` egress route;
+- the shopping list is a GET on Grocy's REST API through the `grocy-sf-readonly` egress route;
 - `<tool-call>` buttons become Action requests, which wait for the operator like any other write.
 
 **Why not `claude-ai`:** that binding auto-approves sandbox create and exec, so anything acting as
@@ -49,10 +48,9 @@ would then have to own the Deployment: Haku-authored manifests applied there cou
 1. **Action Service:** split caller namespaces from the policy namespace, as above.
 2. **ducktape** (`cluster/cdk8s/agentplane/`):
    - the `haku-sandbox/haku-ui` ServiceAccount, carrying `agentplane.allegedly.works/use-action-service`;
-   - a `haku-ui-reads` ActionPolicySet (`home_assistant`: `ha_get_state`, `ha_get_overview`) and a
-     binding naming that account;
-   - an egress binding for it: `grocy-sf-readonly`, and the Action Service rule on its own —
-     `basic` carries it but also LLM access, which haku-ui does not need;
+   - an egress binding for it: `home-assistant-readonly`, `grocy-sf-readonly`, and the Action
+     Service rule on its own — `basic` carries it but also LLM access, which haku-ui does not
+     need;
    - `haku-sandbox` in both services' allowed namespaces;
    - network policy: haku-ui to `agentplane-egress:8888`, and the proxy admitting it, past
      `haku-sandbox-force-proxy-egress`;
@@ -60,8 +58,7 @@ would then have to own the Deployment: Haku-authored manifests applied there cou
 3. **haku-state** (a Forgejo PR, since `ui/` and `k8s/` are code trees):
    - the StatefulSet runs as `haku-ui` and gets the egress sidecar, the projected token volume,
      the proxy env and the CA mount; the sidecar image gets an image policy next to haku-ui's own;
-   - `ui/backend/console_mcp.py`'s location and shopping-list readers move to the Action
-     Service and the Grocy REST route; tool-call submission moves to Action requests;
-   - the location cache keeps a generous refresh interval, since every read is a stored request.
-4. **Verify live:** a location refresh returns a fix with `decision.provider = action_policy_set`
-   and caller `haku-sandbox/haku-ui`, and the Kitchen tab's shopping list renders.
+   - `ui/backend/console_mcp.py`'s location and shopping-list readers move to the Home Assistant
+     and Grocy REST routes; tool-call submission moves to Action requests.
+4. **Verify live:** a location refresh returns a fix through the egress proxy as
+   `haku-sandbox/haku-ui`, and the Kitchen tab's shopping list renders.
