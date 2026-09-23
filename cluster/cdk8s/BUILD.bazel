@@ -1436,6 +1436,7 @@ py_test(
         "//cluster/k8s:cert-manager/app/cert-manager.k8s.yaml",
         "//cluster/k8s:cert-manager/app/kustomization.yaml",
         "//cluster/k8s:cert-manager/cluster-ca/base/cluster-ca.k8s.yaml",
+        "//cluster/k8s:cert-manager/config/base/letsencrypt-issuers.k8s.yaml",
         "//cluster/k8s:cert-manager/config/base/letsencrypt-root-cas.k8s.yaml",
         "//cluster/k8s:cert-manager/environment/environment.k8s.yaml",
         "//cluster/k8s:cert-manager/environment/kustomization.yaml",
