@@ -29,20 +29,17 @@ would be for.
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
    tables.
-4. **Completing a message re-sends its text.** `item_completed` always writes the final text as a
-   new generation (`fold.py`), so its reference moves and a reader who followed the stream
-   downloads the whole text once more. Keeping the generation when the completed text is what was
-   streamed removes that, for every implementation. It also leaves the streamed generation's
-   chunks and manifests unreferenced, which is most of what **D5** would compact.
-5. **Compacting completed bodies (D5).** Electric's behaviour is pinned
-   (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the whole text and deleting the
-   rest in one transaction needs no client change, since the store applies only inserts. Every
-   follower of the field still receives the compacted text once, twice under `replica=full`; that
-   cost is Electric's (<../../docs/thread_sync_electric_limits.md>). Dropping `replica=full` from
-   the chunk shapes halves it, since nothing reads a chunk update's or delete's values. **S1** for
-   intermediate references needs the replaced chunks' lengths, which `thread_payload_chunk` has
-   no column for; without them a compacted body answers only its final reference.
-6. **Measure it on `agentplane-testing`.**
+4. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
+   generation it streamed in: one chunk per appending batch and one manifest per revision.
+   Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the
+   whole text and deleting the rest in one transaction needs no client change, since the store
+   applies only inserts. Every follower of the field still receives the compacted text once, twice
+   under `replica=full`; that cost is Electric's (<../../docs/thread_sync_electric_limits.md>).
+   Dropping `replica=full` from the chunk shapes halves it, since nothing reads a chunk update's or
+   delete's values. **S1** for intermediate references needs the replaced chunks' lengths, which
+   `thread_payload_chunk` has no column for; without them a compacted body answers only its final
+   reference.
+5. **Measure it on `agentplane-testing`.**
    - Open to first text for a 30-row tail, cold and warm, timed per stage.
    - A PING turn under 3 s.
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).

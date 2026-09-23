@@ -94,6 +94,7 @@ py_test(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

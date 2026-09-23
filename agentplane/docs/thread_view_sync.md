@@ -63,7 +63,7 @@ it does not require an entire turn or an ever-growing group object.
 | Confirmed user input                    | Preserve confirmed text and all origin command IDs at confirmation position.                      |
 | Item start or first mention             | Establish identity, order and available turn context.                                             |
 | Text / argument / output delta          | Append content to that item's named field; preserve other fields' references.                     |
-| Complete arguments or item completion   | Replace the corresponding field with its authoritative value; preserve the invocation's position. |
+| Complete arguments or item completion   | Replace the field with its authoritative value unless it is the streamed text; keep its position. |
 | Command admitted                        | Record pending summary and exact admission provenance.                                            |
 | Command effect, failure or noop         | Settle that same command, including one outside loaded history.                                   |
 | Turn interrupted / failed, harness lost | Preserve explicit outcome; unfinished items do not become successful completions.                 |

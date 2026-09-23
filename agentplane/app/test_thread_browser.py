@@ -623,9 +623,28 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix")))
     complete_text = "Test retained prefix and live suffix"
     await expect(page.get_by_text(complete_text, exact=True)).to_be_visible()
+    body_reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        if request.method == "POST" and "/sync/chunks/" in request.url:
+            body_reads.append(request.post_data or "")
+
+    page.on("request", observe)
     source.append(
         event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-browser-item", text=complete_text))
     )
+    # The later item's row follows the completion's on the same log, so its body is read after any
+    # read the completion caused.
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="test-browser-later", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-later", text="Test later item")))
+    await expect(page.get_by_text("Test later item", exact=True)).to_be_visible()
+    assert any('"test-browser-later"' in read for read in body_reads)
+    # Completed with the text that streamed, the body the reader holds is not read again.
+    assert not any('"test-browser-item"' in read for read in body_reads)
     source.attached.active_turn_id = ""
     source.append(
         event_pb2.Event(

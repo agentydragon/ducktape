@@ -16,6 +16,7 @@ from agentplane.app.agent_runtime.models import (
     ThreadEntity,
     ThreadEvidence,
     ThreadNativeLink,
+    ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
 from agentplane.app.agent_runtime.view import fold
@@ -168,7 +169,7 @@ async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.Ev
     required = fold.touched_keys(batch)
     checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
     if checkpoint is None:
-        return fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
+        return fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids), {})
     rows = await session.scalars(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == thread_id,
@@ -186,7 +187,38 @@ async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.Ev
             items[row.entity_id] = fold_item(ThreadItemEntityView.model_validate(row, from_attributes=True))
         elif row.entity_kind == EntityKind.COMMAND:
             commands[row.entity_id] = command_summary(ThreadCommandEntityView.model_validate(row, from_attributes=True))
-    return fold.PriorEntities(items, commands)
+    completed = {
+        reference
+        for item_id, field in required.completed
+        if (item := items[item_id]) is not None and (reference := item.payload(field)) is not None
+    }
+    return fold.PriorEntities(items, commands, await _bodies(session, thread_id, completed))
+
+
+async def _bodies(
+    session: AsyncSession, thread_id: UUID, references: set[fold.PayloadRef]
+) -> dict[fold.PayloadRef, str]:
+    """Each reference's whole text: its generation's chunks, as far as the reference spans them."""
+    extents = await _extents(session, thread_id, references)
+    chunk = ThreadPayloadChunk
+    return {
+        reference: "".join(
+            await session.scalars(
+                select(chunk.text)
+                .where(
+                    chunk.thread_id == thread_id,
+                    chunk.projection_epoch == reference.projection_epoch,
+                    chunk.owner_cursor == reference.owner_cursor,
+                    chunk.owner_id == reference.owner_id,
+                    chunk.field == reference.field,
+                    chunk.generation == reference.generation,
+                    chunk.chunk_index < extents[reference],
+                )
+                .order_by(chunk.chunk_index)
+            )
+        )
+        for reference in references
+    }
 
 
 async def _extents(

@@ -97,6 +97,16 @@ class Item:
     output: PayloadRef | None = None
     completion: Completion | None = None
 
+    def payload(self, field: PayloadField) -> PayloadRef | None:
+        match field:
+            case PayloadField.TEXT:
+                return self.text
+            case PayloadField.ARGUMENTS:
+                return self.arguments
+            case PayloadField.OUTPUT:
+                return self.output
+        raise ValueError(f"field {field} does not belong to a thread item")
+
 
 @dataclass(frozen=True)
 class ConfirmedInput:
@@ -173,6 +183,8 @@ class PriorEntities:
 
     items: dict[str, Item | None]
     commands: dict[str, CommandSummary | None]
+    # The whole text each preloaded item holds in a field of `TouchedKeys.completed`.
+    bodies: dict[PayloadRef, str]
 
 
 @dataclass(frozen=True)
@@ -186,6 +198,8 @@ class EventBatch:
 class TouchedKeys:
     item_ids: frozenset[str]
     command_ids: frozenset[str]
+    # Item fields an authoritative value completes, which the fold compares with the stored body.
+    completed: frozenset[tuple[str, PayloadField]]
 
 
 @dataclass(frozen=True)
@@ -216,6 +230,7 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
 
     items: set[str] = set()
     commands: set[str] = set()
+    completed: set[tuple[str, PayloadField]] = set()
     for entry in batch.entries:
         event = entry.event
         match event.WhichOneof("observation"):
@@ -227,10 +242,16 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
                 items.add(event.tool_arguments_delta.item_id)
             case "tool_arguments":
                 items.add(event.tool_arguments.item_id)
+                completed.add((event.tool_arguments.item_id, PayloadField.ARGUMENTS))
             case "tool_output_delta":
                 items.add(event.tool_output_delta.item_id)
             case "item_completed":
                 items.add(event.item_completed.item_id)
+                match event.item_completed.WhichOneof("outcome"):
+                    case "text":
+                        completed.add((event.item_completed.item_id, PayloadField.TEXT))
+                    case "tool":
+                        completed.add((event.item_completed.item_id, PayloadField.OUTPUT))
             case "command_admitted":
                 commands.add(event.command_admitted.command.command_id)
             case "command_failed":
@@ -245,7 +266,9 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
                 commands.add(event.model_changed.command_id)
             case "harness_exited":
                 commands.add(event.harness_exited.stopped_by_command_id)
-    return TouchedKeys(frozenset(items - {""}), frozenset(commands - {""}))
+    return TouchedKeys(
+        frozenset(items - {""}), frozenset(commands - {""}), frozenset(key for key in completed if key[0])
+    )
 
 
 class _Fold:
@@ -258,7 +281,7 @@ class _Fold:
         self.confirmed: dict[int, ConfirmedInput] = {}
         self.lifecycle: dict[int, LifecycleSegment] = {}
         self.evidence: list[EvidenceAssociation] = []
-        self.payload_writes: list[PayloadWrite] = []
+        self.payload_writes: dict[PayloadRef, PayloadWrite] = {}
 
     @staticmethod
     def _item_owner(item: Item) -> PayloadOwner:
@@ -326,24 +349,45 @@ class _Fold:
             cursor,
             base.generation if append and base else cursor,
         )
-        self.payload_writes.append(AppendPayload(base, reference, text) if append else ReplacePayload(reference, text))
+        self.payload_writes[reference] = (
+            AppendPayload(base, reference, text) if append else ReplacePayload(reference, text)
+        )
         return reference
+
+    def _body(self, reference: PayloadRef) -> str:
+        """A reference's whole text: this batch's appends back to its generation's first write, or
+        to the body preloaded for an earlier batch's revision."""
+        fragments: list[str] = []
+        while isinstance(write := self.payload_writes.get(reference), AppendPayload) and write.base is not None:
+            fragments.append(write.text)
+            reference = write.base
+        if write is not None:
+            fragments.append(write.text)
+        elif reference in self.prior.bodies:
+            fragments.append(self.prior.bodies[reference])
+        else:
+            raise ValueError(f"missing prior body lookup: {reference.owner_id} {reference.field}")
+        return "".join(reversed(fragments))
 
     def _item_write(self, cursor: int, item_id: str, field: PayloadField, text: str, *, append: bool) -> Item:
         item = self._item(cursor, item_id)
+        value = self._write(self._item_owner(item), item.payload(field), cursor, field, text, append=append)
         match field:
             case PayloadField.TEXT:
-                value = self._write(self._item_owner(item), item.text, cursor, field, text, append=append)
                 item = replace(item, text=value)
             case PayloadField.ARGUMENTS:
-                value = self._write(self._item_owner(item), item.arguments, cursor, field, text, append=append)
                 item = replace(item, arguments=value)
             case PayloadField.OUTPUT:
-                value = self._write(self._item_owner(item), item.output, cursor, field, text, append=append)
                 item = replace(item, output=value)
-            case _:
-                raise ValueError(f"field {field} does not belong to a thread item")
         return self._save_item(item, cursor)
+
+    def _complete(self, cursor: int, item_id: str, field: PayloadField, text: str) -> Item:
+        """An authoritative value replaces the field's body, unless it is the text the body holds:
+        then only the revision moves, so a reader holding the body has nothing to fetch."""
+        base = self._item(cursor, item_id).payload(field)
+        if base is not None and self._body(base) == text:
+            return self._item_write(cursor, item_id, field, "", append=True)
+        return self._item_write(cursor, item_id, field, text, append=False)
 
     def _evidence(self, item: Item | int, entry: event_log_pb2.EventEntry) -> None:
         self.evidence.append(
@@ -485,12 +529,11 @@ class _Fold:
                 )
             case "tool_arguments":
                 self._evidence(
-                    self._item_write(
+                    self._complete(
                         cursor,
                         event.tool_arguments.item_id,
                         PayloadField.ARGUMENTS,
                         event.tool_arguments.arguments_json,
-                        append=False,
                     ),
                     entry,
                 )
@@ -509,14 +552,10 @@ class _Fold:
                 completed = event.item_completed
                 match completed.WhichOneof("outcome"):
                     case "text":
-                        item = self._item_write(
-                            cursor, completed.item_id, PayloadField.TEXT, completed.text, append=False
-                        )
+                        item = self._complete(cursor, completed.item_id, PayloadField.TEXT, completed.text)
                         item = self._save_item(replace(item, completion=TextCompletion()), cursor)
                     case "tool":
-                        item = self._item_write(
-                            cursor, completed.item_id, PayloadField.OUTPUT, completed.tool.output, append=False
-                        )
+                        item = self._complete(cursor, completed.item_id, PayloadField.OUTPUT, completed.tool.output)
                         item = self._save_item(
                             replace(item, completion=ToolCompletion(completed.tool.succeeded)), cursor
                         )
@@ -570,7 +609,7 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
         raise ValueError("batch source does not match projection")
     if batch.after_cursor != position.through_cursor:
         raise ValueError("batch checkpoint does not match projection")
-    fold = _Fold(state, PriorEntities(dict(prior.items), dict(prior.commands)))
+    fold = _Fold(state, PriorEntities(dict(prior.items), dict(prior.commands), dict(prior.bodies)))
     for supplied in batch.entries:
         entry = event_log_pb2.EventEntry.FromString(supplied.SerializeToString())
         try:
@@ -591,5 +630,5 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
         tuple(fold.lifecycle.values()),
         tuple(fold.commands.values()),
         tuple(fold.evidence),
-        tuple(fold.payload_writes),
+        tuple(fold.payload_writes.values()),
     )

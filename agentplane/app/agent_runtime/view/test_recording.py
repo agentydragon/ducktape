@@ -169,6 +169,62 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert await event_logs.last_cursor(thread) == 4
 
 
+async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_nothing(
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    await ingestion.record(
+        thread,
+        [
+            event_entry(1, text_delta=event_pb2.TextDelta(item_id="answer", text="hello")),
+            event_entry(2, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="out")),
+        ],
+        lease=lease,
+    )
+    # The answer's completion compares with a stored chunk and an append in its own batch; the
+    # tool's with stored chunks alone.
+    await ingestion.record(
+        thread,
+        [
+            event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text=" world")),
+            event_entry(4, item_completed=event_pb2.ItemCompleted(item_id="answer", text="hello world")),
+            event_entry(
+                5,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool", tool=event_pb2.ToolResult(output="out", succeeded=True)
+                ),
+            ),
+        ],
+        lease=lease,
+    )
+    async with store._sessions() as session:
+        items = {
+            row.entity_id: row
+            for row in await session.scalars(
+                select(ThreadEntity).where(
+                    ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM
+                )
+            )
+        }
+        chunks = (
+            await session.scalars(
+                select(ThreadPayloadChunk)
+                .where(ThreadPayloadChunk.thread_id == thread)
+                .order_by(ThreadPayloadChunk.owner_id, ThreadPayloadChunk.chunk_index)
+            )
+        ).all()
+    answer, tool = items["answer"].text_ref, items["tool"].output_ref
+    assert answer is not None
+    assert tool is not None
+    assert (answer["generation"], answer["revision_cursor"], answer["chunk_count"]) == ("1", "4", "2")
+    assert (tool["generation"], tool["revision_cursor"], tool["chunk_count"]) == ("2", "5", "1")
+    assert [(chunk.owner_id, chunk.generation, chunk.text) for chunk in chunks] == [
+        ("answer", 1, "hello"),
+        ("answer", 1, " world"),
+        ("tool", 2, "out"),
+    ]
+
+
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
     store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
