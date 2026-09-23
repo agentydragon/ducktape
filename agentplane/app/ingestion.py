@@ -14,8 +14,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app import thread_fold
+from agentplane.app.agent_runtime.runner.runners import Runners, SandboxNotReachableError
 from agentplane.app.inventory import SandboxNotFoundError
-from agentplane.app.runners import Runners, SandboxNotReachableError
 from agentplane.app.thread import event_log, ingestion_lease
 from agentplane.app.thread.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.thread.ingestion_lease import IngestionLease, IngestionLeaseLostError

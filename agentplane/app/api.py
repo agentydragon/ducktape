@@ -23,7 +23,7 @@ from agentplane.action_service.connections import Connection, ConnectionRename, 
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
-from agentplane.app import auth_routes, bridge as runner_bridge, event_stream
+from agentplane.app import auth_routes, event_stream
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
@@ -31,6 +31,8 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
+from agentplane.app.agent_runtime.runner import bridge as runner_bridge
+from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -61,7 +63,6 @@ from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
-from agentplane.app.runners import SandboxNotReachableError
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.thread.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
