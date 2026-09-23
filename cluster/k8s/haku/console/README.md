@@ -146,13 +146,13 @@ no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blo
 
 The `kubectl-passthrough-mcp` MCP server entry (console_config.py — `pods_*`, `resources_*`,
 `nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
-per-operator browser-linked mechanism as `grocy-sf`: the operator connects once
+per-operator browser-linked mechanism as `github`: the operator connects once
 from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
 which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
 application and stores the association in the console's Postgres database — no static
 token, no secret to mount.
 
-Unlike `grocy-sf`, this server forwards the connecting operator's own token
+This server forwards the connecting operator's own token
 straight to kube-apiserver (`cluster_auth_mode = passthrough` in
 `agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
 of its own — the operator's real permissions apply, via the

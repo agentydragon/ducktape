@@ -490,10 +490,10 @@ replaces it.
   cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
   here.
 
-**The composition layer, which the list above omits.** Four of the console's seventeen entries are
+**The composition layer, which the list above omits.** Four of the console's sixteen entries are
 `any_of` bundles rather than leaves, and they are what is actually bound to an agent:
 `public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
-(seven leaves), and `manual_review`, which is `type: never`.
+(six leaves), and `manual_review`, which is `type: never`.
 
 These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
 set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
@@ -507,8 +507,8 @@ per-agent progress:
   above puts behind the Action Service having its own grant surface. That trio is the whole
   remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
   side.
-- **`haku_v1`** = seven leaves spanning Grocy, GitHub, the console's `sandbox` server and the
-  `grants` trio. What is left is `haku_sandbox_control` and the `grants` trio, which makes it the
+- **`haku_v1`** = six leaves spanning GitHub, the console's `sandbox` server and the `grants`
+  trio. What is left is `haku_sandbox_control` and the `grants` trio, which makes it the
   long pole.
 
 Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the

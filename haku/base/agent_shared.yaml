@@ -25,10 +25,6 @@ toolset_policies:
 # MCP server name -> URL.
 mcp_urls:
   kubectl-machine: https://kubectl-machine-mcp.allegedly.works/mcp
-  # haku-console's aggregated MCP catalog — Grocy reads to start (grocy_sf__*); also
-  # grants reach to whatever else console exposes (osm, and every approval-gated tool,
-  # including grocy-sf writes), gated by the console's own auto-approval/approval queue,
-  # not by this always_allow. Supersedes Haku's dedicated read-only grocy-sf credential
-  # (grocy-mcp-haku-sf) — console's existing grocy-sf catalog entry already exposed the
-  # same read tools plus approval-gated writes.
+  # haku-console's aggregated MCP catalog: grants reach to whatever the console exposes,
+  # gated by the console's own auto-approval/approval queue, not by this always_allow.
   haku-console: https://haku.allegedly.works/mcp

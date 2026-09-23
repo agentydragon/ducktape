@@ -302,10 +302,9 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                 # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
                 # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
                 # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
-                # that distinction directly, so GET-only admits exactly the routes
-                # haku-console's `grocy_reads` ActionPolicySet names as tools (entities/stock/
-                # user/system/file reads); PUT, POST and DELETE -- every write -- are refused by
-                # the proxy regardless of path.
+                # that distinction directly, so GET-only admits exactly the read routes
+                # (entities/stock/user/system/file); PUT, POST and DELETE -- every write -- are
+                # refused by the proxy regardless of path.
                 EgressPolicySpecRules(
                     hosts=["grocy-sf.allegedly.works"],
                     methods=[EgressPolicySpecRulesMethods.GET],

@@ -116,14 +116,6 @@ call queues for operator approval (`haku/console/auto_approval.py`). Authentik O
 handle authentication separately from tool filtering; the console approval gate applies the
 tool policy.
 
-**Grocy is wired** — routed through haku-console's `grocy-sf`
-MCP entry (the `grocy_reads` policy in `cluster/cdk8s/haku/console_config.py` auto-approves the
-read tools; every write tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
-(`grocy-mcp-haku-sf` Authentik provider, its JWT rotation, and the ESO reflection into
-`haku-sandbox`) was retired — console-side allowlisting needed no separate credential,
-and unlike the direct read-only path it also lets every runtime reach approval-gated
-Grocy writes.
-
 ## Autonomous write capabilities
 
 Haku's current contract has free tools plus approval-gated tool-call requests. This section is for

@@ -59,13 +59,10 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     do in-cluster work (Plaid, in-cluster MCPs, git), then clean them up.
 
     You also have access to haku-console's MCP catalog via the `haku-console`
-    MCP server — most relevantly READ-ONLY Tana and Grocy tools
-    (`tana_search_nodes`, `tana_read_node`, `grocy_sf_stock_get`,
-    `grocy_sf_products_list`, …), which auto-approve under the console's reviewed
-    policy. Write tools on those servers (grocy_sf stock mutations, tana node
-    edits, and any other non-auto-approved console tool) route through the
-    console's operator-approval queue instead of executing directly — never
-    expect them to complete without a human clicking approve.
+    MCP server. Tools the console's reviewed policy auto-approves execute
+    directly; every other console tool routes through the console's
+    operator-approval queue instead — never expect those to complete without a
+    human clicking approve.
 
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
@@ -77,12 +74,8 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       name = "kubectl-machine"
       url  = "https://kubectl-machine-mcp.allegedly.works/mcp"
     },
-    # haku-console's aggregated MCP catalog (Grocy read tools to start; also grants reach
-    # to whatever else console exposes — osm, and every approval-gated tool — gated by the
-    # console's own auto-approval/approval-queue policy, not by anything here). Supersedes
-    # Haku's dedicated read-only grocy-sf credential (`grocy-mcp-haku-sf`): console's
-    # existing grocy-sf catalog entry already exposed the same read tools, plus
-    # approval-gated writes the direct credential could never reach.
+    # haku-console's aggregated MCP catalog: grants reach to whatever the console exposes,
+    # gated by the console's own auto-approval/approval-queue policy, not by anything here.
     {
       type = "url"
       name = "haku-console"

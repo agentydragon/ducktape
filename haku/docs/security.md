@@ -110,18 +110,6 @@ that path treats trusted console code as the Operator and creates no approval/au
 There is no narrower RBAC backstop underneath either path.
 Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
 
-### `grocy-sf` server entry
-
-`auth: remote_server_oauth`. Grocy reads (`stock_get`, `products_list`, …) auto-approve
-for authenticated Agents under the console's reviewed `grocy_reads` policy; every
-stock/shopping-list mutation stays approval-gated, executing under the approving
-Operator's own linked Grocy account. Supersedes Haku's dedicated read-only `haku` Grocy
-identity (`grocy-mcp-haku-sf` Authentik provider + JWT rotation) — that credential could
-never reach writes at all; console routing trades a server-side permission scope for an
-allowlist gate, in exchange for approval-gated write access every runtime can now reach.
-Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
-<../console/mcp_config.py>.
-
 ### `sandbox` in-process server
 
 The whole surface (`provision_sandbox`, `exec_sandbox`, `dispose_sandbox`, and the reads
@@ -297,10 +285,9 @@ bulk channels.
 2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
    A Haku-owned write credential must be scoped to its surface and named in the canonical base
    hard-rule inventory; any other write capability requires its own closure-style server (the
-   credential stays behind a console server entry, as with `grocy-sf` above) and an inventory
-   update. In
-   particular, `haku-mail-token` may mutate only the contents of
-   Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
+   credential stays behind a console server entry, as with `kubectl-passthrough-mcp` above) and
+   an inventory update. In particular, `haku-mail-token` may mutate only the contents of Haku's
+   `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
 3. The console renders **no** Haku-authored content. No haku-state credential is reflected into
    the haku-console namespace while Recall indexing is disabled; the
    litmus test for console code: _does it hold a secret, perform a privileged action, or
