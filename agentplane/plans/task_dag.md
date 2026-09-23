@@ -457,8 +457,8 @@ remains, each with what it needs; an entry leaves when its set is written.
 
 - **`exact_tools` over an existing ActionGroup**: `grocy_reads` (`grocy_sf`) and
   `tana_safe_tools` (`tana`), each a plain `exact_actions` set over its group. For `grocy_reads`,
-  open PR [#7572](https://github.com/agentydragon/ducktape/pull/7572) takes the egress path
-  instead: a read-only route to Grocy's REST API.
+  claude-ai's sandboxes take the egress path instead: the `grocy-sf-readonly` route, GET-only on
+  Grocy's REST API.
 - **`exact_tools` for servers with no ActionGroup**: the console's own in-process `sandbox`
   (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`, `grants_whoami`,
   `grants_own_revoke`) have no Action Service counterpart at all; they need an equivalent surface

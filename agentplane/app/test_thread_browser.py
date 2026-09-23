@@ -27,6 +27,7 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.database import connect
 from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.electric_service import ElectricService, electric_service
@@ -34,7 +35,6 @@ from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certi
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.app.thread.content import ContentStore
-from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.models import (
     FeedState,
     ThreadCheckpoint,

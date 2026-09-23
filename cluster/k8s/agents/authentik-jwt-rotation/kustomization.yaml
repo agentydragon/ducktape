@@ -4,12 +4,10 @@ resources:
   - forgejo-images-creds-eso.yaml
   - namespace.yaml
   - github-pat.yaml
-  - grocy-mcp-oidc-sf-eso.yaml
   - serviceaccount.yaml
   - role-published-secrets-reader.yaml
   - rolebinding-published-secrets-reader.yaml
   - cronjob.yaml
-  - grocy-sf-readonly-token.sops.yaml
 configMapGenerator:
   - name: authentik-jwt-rotations-config
     namespace: agents-infra

@@ -3774,10 +3774,6 @@ metadata:
   name: authentik-jwt-rotation
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux

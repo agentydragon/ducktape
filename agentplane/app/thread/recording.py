@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app import thread_fold
-from agentplane.app.thread.event_log import EventReplicationError
+from agentplane.app.agent_runtime.events.event_log import EventReplicationError
 from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.app.thread.payloads import write_payloads
 from agentplane.app.thread.rows import command_summary, fold_item, ordered_entity_rows

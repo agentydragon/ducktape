@@ -1,0 +1,59 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+py_library(
+    name = "event_log",
+    srcs = ["event_log.py"],
+    deps = [
+        ":debug",
+        "//agentplane/app:presets",
+        "//agentplane/app/thread:models",
+        "//agentplane/app/thread:updates",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "ingestion_lease",
+    srcs = ["ingestion_lease.py"],
+    deps = [
+        "//agentplane/app/thread:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "stream",
+    srcs = ["stream.py"],
+    deps = [
+        ":event_log",
+        "//agentplane/app:changes",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_event_log",
+    size = "medium",
+    srcs = ["test_event_log.py"],
+    deps = [
+        ":event_log",
+        ":ingestion_lease",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
