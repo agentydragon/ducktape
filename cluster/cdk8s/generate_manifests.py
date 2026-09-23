@@ -190,6 +190,7 @@ from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_pa
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
 from cluster.cdk8s.monitoring import (
+    alloy,
     alloy_otlp_bearer_token,
     cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
@@ -302,6 +303,7 @@ def generate_manifests(root: Path) -> None:
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)
+    alloy.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)

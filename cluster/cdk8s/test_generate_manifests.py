@@ -185,6 +185,7 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/cilium/kustomization.yaml",
     "cluster/k8s/monitoring/stack/monitoring-stack.k8s.yaml",
     "cluster/k8s/monitoring/stack/kustomization.yaml",
+    "cluster/k8s/monitoring/alloy/alloy.k8s.yaml",
     "cluster/k8s/langfuse/langfuse.k8s.yaml",
     "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
     "cluster/k8s/forgejo/budget-namespace/namespace.k8s.yaml",
