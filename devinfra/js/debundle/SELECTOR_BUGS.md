@@ -9,6 +9,75 @@ covered by a test named here. Entries marked `unverified` were recorded during
 the porting pass and have not been re-reproduced since — treat them as reports,
 not as current behavior.
 
+## Commands Disagree On Alpha Scoping
+
+Status: open (reproduced 2026-09-23). The shape matcher opens an identifier
+scope only for functions, arrows, constructors, setters and `catch`
+(`selector_match.rs` `introduces_alpha_scope`). Native lowering also scopes
+blocks, `switch` bodies and named function expressions. For the fixtures of
+`e2e/syntactic_holes_test.rs`'s sibling-block, `switch` and named
+function-expression tests, `debundle run` resolves the selector (the matcher
+finds nothing and `run` falls back to native lowering) while
+`spec validate --source-file` reports `unresolved_selector` with
+`first_mismatch: null`:
+
+```js
+// selector
+function readable(input) {
+  {
+    const { value } = input.left;
+    use(value);
+  }
+  {
+    const { value } = input.right;
+    use(value);
+  }
+}
+// chunk
+function a(n) {
+  {
+    const { value: e } = n.left;
+    use(e);
+  }
+  {
+    const { value: t } = n.right;
+    use(t);
+  }
+}
+```
+
+Burn-down: <plans/selector_engine.md>.
+
+## `const ANYTHING = <expr>` Ignores The Initializer
+
+Status: open (reproduced 2026-09-23). An `ANYTHING` hole as a declarator name
+turns the whole declarator, initializer included, into a wildcard:
+
+```js
+// selector
+function f(ANYTHING) {
+  STMT_LIST;
+  const ANYTHING = ANYTHING.distinctive.leaf?.name;
+  STMT_LIST;
+}
+// matches both
+function a(n) {
+  if (!n) return;
+  const e = n.distinctive.leaf?.name;
+  return e;
+}
+function c(n) {
+  const t = n * 2;
+  return t;
+}
+```
+
+A named declarator (`const x = ANYTHING.distinctive.leaf?.name;`) resolves
+uniquely. In the largest downstream spec, four selectors of this shape match
+248–638 places each although their distinctive content occurs once; `run`
+resolves them only because every other candidate is claimed by another
+selector. Burn-down: <plans/selector_engine.md>.
+
 ## Global Matching Needs Injective Target Assignment
 
 Status: fixed (2026-09-17). `all_different` over claimed targets is compiled
@@ -49,9 +118,12 @@ Desired behavior:
 
 ## Stable Identifiers Are Only Local To One Match
 
-Status: unverified — reported during the porting pass, not re-reproduced.
-This is a selector-language gap; the burn-down is in
-<plans/relational_selectors.md>.
+Status: open (reproduced 2026-09-23 through `debundle run`). A free identifier
+naming another spec entity is an alpha wildcard, not a failed match. With a
+`Widget` class selector plus `const defaultWidget = new Widget(ANYTHING);`, a
+chunk constructing two classes is rejected as ambiguous, and a chunk
+constructing only the other class resolves `defaultWidget` to that instance. The
+burn-down is <plans/selector_engine.md> (template references).
 
 `source_match` with `identifiers: alpha_all` makes readable names usable for
 bindings that are local to the selected AST. It does not make those names a

@@ -33,6 +33,10 @@ from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
@@ -52,6 +56,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.metadata import metadata
 
 _NAMESPACE = "agentplane-staging"
@@ -358,13 +363,19 @@ def add_staging_action_policies(scope: Construct) -> None:
     # holds the key and signs for itself: it may read this one Secret through the API server, and
     # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
     # sandbox the key acceptable is that the key can only view.
-    external_creds.add_external_secret(
+    add_external_secret(
         scope,
         "coinbase-external-secret",
+        name=_COINBASE_SECRET,
         namespace=_NAMESPACE,
-        source_name=_COINBASE_SECRET,
-        properties=("api_key", "api_secret"),
-        description="ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.",
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(_COINBASE_SECRET, key) for key in ("api_key", "api_secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        annotations={
+            "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
+        },
     )
     coinbase_reader = Role(
         scope,

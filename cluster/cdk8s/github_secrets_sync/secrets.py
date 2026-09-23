@@ -12,21 +12,16 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -35,7 +30,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 NAME = "github-secrets-sync-secrets"
 OUTPUT_DIR = "cluster/k8s/github-secrets-sync/secrets"
@@ -52,28 +46,17 @@ def _external_secret(
     source: str,
     template: ExternalSecretSpecTargetTemplate | None = None,
 ) -> ExternalSecret:
-    return ExternalSecret(
+    return add_external_secret(
         chart,
         id,
-        metadata=metadata(name, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=name,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=template,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=secret_key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=secret_key)
-                )
-            ],
-        ),
+        name=name,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(source, secret_key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=template,
     )
 
 
@@ -127,30 +110,26 @@ def github_secrets_sync_secrets(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            # CLEANUP: restore pruning after ESO owns flux-system/github-secrets-sync-pat
-            # and the old SOPS inventory entry has been retired safely.
-            prune=False,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="github-secrets-sync-pat",
-                    namespace=_NAMESPACE,
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="buildbuddy-api-key",
-                    namespace=_NAMESPACE,
-                ),
-            ],
-            decryption=SOPS_DECRYPTION,
-        ),
+        artifact,
+        wait=None,
+        # CLEANUP: restore pruning after ESO owns flux-system/github-secrets-sync-pat
+        # and the old SOPS inventory entry has been retired safely.
+        prune=False,
+        timeout="2m",
+        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="github-secrets-sync-pat",
+                namespace=_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="buildbuddy-api-key",
+                namespace=_NAMESPACE,
+            ),
+        ],
+        decryption=SOPS_DECRYPTION,
     )

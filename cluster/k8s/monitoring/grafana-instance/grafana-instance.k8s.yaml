@@ -5,15 +5,9 @@ metadata:
   namespace: monitoring
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2

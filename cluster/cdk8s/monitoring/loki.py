@@ -30,67 +30,24 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
 OUTPUT_DIR = "cluster/k8s/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 # Written by the old cross-namespace S3Credentials in seaweedfs.
 _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
-_BUCKET_ACTIONS = [
-    BucketSpecAccessActions.READ,
-    BucketSpecAccessActions.WRITE,
-    BucketSpecAccessActions.LIST,
-    BucketSpecAccessActions.TAGGING,
-]
 _PUSH_URL = "http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 # Prefer ordinary workers when this workload tolerates control planes.
@@ -115,19 +72,6 @@ _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 # derives the count from nebula-mesh.json); incident write-up in
 # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
-
-
-def _grafana_chart(chart: str, version: str) -> HelmReleaseSpecChart:
-    return HelmReleaseSpecChart(
-        spec=HelmReleaseSpecChartSpec(
-            chart=chart,
-            version=version,
-            source_ref=HelmReleaseSpecChartSpecSourceRef(
-                kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY, name="grafana", namespace="flux-system"
-            ),
-            interval="12h",
-        )
-    )
 
 
 def _storage(chart: Chart) -> None:
@@ -157,98 +101,46 @@ def _storage(chart: Chart) -> None:
     )
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
-    ResourceReferenceGrant(
-        chart,
-        "legacy-credentials-grant",
-        metadata=metadata(_LEGACY_CREDENTIALS_SECRET, NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_SEAWEEDFS)],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=_LEGACY_CREDENTIALS_SECRET)],
-        ),
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    S3Credentials(
-        chart,
-        "legacy-credentials-source",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_LEGACY_CREDENTIALS_SECRET,
-                namespace=NAME,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
+    s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME)
+    identity.credentials(
+        namespace=namespace.NAME,
+        secret=_LEGACY_CREDENTIALS_SECRET,
+        secret_namespace=NAME,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    Bucket(
+    legacy_bucket = s3.Bucket(
         chart,
         "legacy-bucket",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=BucketSpec(
-            name=NAME,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=namespace.NAME,
+        adopt_existing=False,
+        # Unset: the CRD defaults to Retain.
+        reclaim_policy=None,
     )
+    legacy_bucket.grant_read_write(identity)
     # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    Bucket(
+    bucket = s3.Bucket(
         chart,
         "bucket",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki chunks, ruler, and admin objects."}),
-        spec=BucketSpec(
-            name=NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=NAME,
+        adopt_existing=True,
+        description="Loki chunks, ruler, and admin objects.",
     )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki's tenant-local SeaweedFS credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named loki.
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Loki's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "seaweed-grant",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=NAME),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=NAME),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=NAME,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Loki's tenant-local SeaweedFS credentials.",
     )
 
 
@@ -506,33 +398,35 @@ def _promtail_journal_values() -> dict[str, object]:
 
 
 def _helm_releases(chart: Chart) -> None:
-    HelmRelease(
+    helm_release(
         chart,
-        "loki",
-        metadata=metadata(NAME, NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=_grafana_chart("loki", "7.x"),
-            values=_loki_values(),
-        ),
+        NAME,
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="loki",
+        version="7.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_loki_values(),
     )
-    HelmRelease(
+    helm_release(
         chart,
         "promtail",
-        metadata=metadata("promtail", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
-                # Without this, Helm waits for all pods including those stuck Pending/Terminating
-                # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", "6.x"),
-            values=_promtail_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version="6.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
+            # Without this, Helm waits for all pods including those stuck Pending/Terminating
+            # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
+            disable_wait=True
         ),
+        values=_promtail_values(),
     )
     # Deviation from the stock promtail chart (whose default is pod-log tailing): this
     # release is journal-only. It scrapes the systemd journal on the NixOS nodes
@@ -541,21 +435,22 @@ def _helm_releases(chart: Chart) -> None:
     # retention instead of dying with the node's ~5-day local journal. Talos nodes
     # have no journald and are handled separately (cluster/k8s/vector-talos-logs/);
     # the main pod-log promtail above is untouched and still runs on every node.
-    HelmRelease(
+    helm_release(
         chart,
         "promtail-journal",
-        metadata=metadata("promtail-journal", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
-                # be offline, so don't block the release on their Pending/Terminating pods.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", "6.x"),
-            values=_promtail_journal_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version="6.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
+            # be offline, so don't block the release on their Pending/Terminating pods.
+            disable_wait=True
         ),
+        values=_promtail_journal_values(),
     )
 
 
@@ -744,25 +639,20 @@ def loki(
     return flux_kustomization(
         chart,
         "loki",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
-                ),
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
-        ),
+        artifact,
+        wait=None,
+        decryption=SOPS_DECRYPTION,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
+            ),
+        ],
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
     )

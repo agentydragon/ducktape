@@ -6,15 +6,21 @@ from collections.abc import Sequence
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.agent_runtime.events.event_log import EventReplicationError
-from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
+from agentplane.app.agent_runtime.models import (
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadManifest,
+)
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.payloads import write_payloads
-from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows
+from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows, payload_references
 from agentplane.app.agent_runtime.view.views import (
     EntityKind,
     ThreadCommandEntityView,
@@ -63,7 +69,8 @@ async def record_thread_fold(
     # A revision takes the conflict path and `set_` omits the index, so `returning` hands back the
     # number the row already had and the counter stays where it is.
     next_index = await _next_entity_index(session, thread_id, result.state.position)
-    for values in ordered_entity_rows(thread_id, result, operational):
+    extents = await _extents(session, thread_id, payload_references(result))
+    for values in ordered_entity_rows(thread_id, result, extents, operational):
         stored = await session.execute(
             insert(ThreadEntity)
             .values(**values, entity_index=next_index)
@@ -180,6 +187,52 @@ async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.Ev
         elif row.entity_kind == EntityKind.COMMAND:
             commands[row.entity_id] = command_summary(ThreadCommandEntityView.model_validate(row, from_attributes=True))
     return fold.PriorEntities(items, commands)
+
+
+async def _extents(
+    session: AsyncSession, thread_id: UUID, references: set[fold.PayloadRef]
+) -> dict[fold.PayloadRef, int]:
+    """How many chunks each stored reference spans, from the manifest of the revision it names."""
+    if not references:
+        return {}
+    manifest = ThreadPayloadManifest
+    rows = await session.execute(
+        select(
+            manifest.projection_epoch,
+            manifest.owner_cursor,
+            manifest.owner_id,
+            manifest.field,
+            manifest.revision_cursor,
+            manifest.generation,
+            manifest.chunk_count,
+        ).where(
+            manifest.thread_id == thread_id,
+            tuple_(
+                manifest.projection_epoch,
+                manifest.owner_cursor,
+                manifest.owner_id,
+                manifest.field,
+                manifest.revision_cursor,
+                manifest.generation,
+            ).in_(
+                [
+                    (
+                        ref.projection_epoch,
+                        ref.owner_cursor,
+                        ref.owner_id,
+                        ref.field,
+                        ref.revision_cursor,
+                        ref.generation,
+                    )
+                    for ref in references
+                ]
+            ),
+        )
+    )
+    return {
+        fold.PayloadRef(epoch, owner_cursor, owner_id, fold.PayloadField(field), revision_cursor, generation): count
+        for epoch, owner_cursor, owner_id, field, revision_cursor, generation, count in rows
+    }
 
 
 async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: fold.Position) -> int:

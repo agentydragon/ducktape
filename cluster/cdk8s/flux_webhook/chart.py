@@ -10,14 +10,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -31,7 +24,6 @@ from flux_alert_crds.io.fluxcd.toolkit.notification import (
     AlertSpecEventSourcesKind,
     AlertSpecProviderRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from flux_provider_crds.io.fluxcd.toolkit.notification import (
     Provider,
     ProviderSpec,
@@ -49,7 +41,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import ntfy
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -199,39 +191,25 @@ def chart(app: App) -> Chart:
             policy_types=["Ingress"],
         ),
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "ntfy-webhook",
-        metadata=metadata(
-            _NTFY_WEBHOOK,
-            NAMESPACE,
-            annotations={
-                "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
-            },
+        name=_NTFY_WEBHOOK,
+        namespace=NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        store=cluster_secret_store(ntfy.SECRET_STORE),
+        data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
         ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=ntfy.SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_NTFY_WEBHOOK,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="ntfy-credentials", property="alertmanager-token"),
-                )
-            ],
-        ),
+        annotations={
+            "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
+            "ntfy.ducktape.io/auth-generation": "1",
+        },
     )
     return chart
 
@@ -251,13 +229,10 @@ def flux_webhook(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
     )

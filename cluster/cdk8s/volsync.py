@@ -12,12 +12,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
@@ -28,17 +22,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "volsync"
@@ -92,44 +82,32 @@ def chart(app: App) -> Chart:
         metadata=metadata("backube", "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://backube.github.io/helm-charts/"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(
-                crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="0.16.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            post_renderers=[
-                HelmReleaseSpecPostRenderers(
-                    kustomize=HelmReleaseSpecPostRenderersKustomize(
-                        patches=[
-                            HelmReleaseSpecPostRenderersKustomizePatches(
-                                target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
-                                    kind="ServiceMonitor", name=NAME
-                                ),
-                                patch=_SERVICE_MONITOR_AUTH_PATCH,
-                            )
-                        ]
-                    )
-                )
-            ],
-            values={"manageCRDs": True, "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"}},
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        version="0.16.0",
+        interval="30m",
+        chart_interval="12h",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
+        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="ServiceMonitor", name=NAME),
+                            patch=_SERVICE_MONITOR_AUTH_PATCH,
+                        )
+                    ]
+                )
+            )
+        ],
+        values={"manageCRDs": True, "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"}},
     )
     return chart
 
@@ -144,26 +122,14 @@ def volsync(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[flux_kustomization_depends_on(snapshot_controller)],
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            # The token controller populates data.token asynchronously. Do not declare
-            # the VolSync auth material ready until Alloy can actually use it.
-            health_check_exprs=[
-                KustomizationSpecHealthCheckExprs(
-                    api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
-                )
-            ],
-        ),
+        artifact,
+        timeout="5m",
+        depends_on=[flux_kustomization_depends_on(snapshot_controller)],
+        # The token controller populates data.token asynchronously. Do not declare
+        # the VolSync auth material ready until Alloy can actually use it.
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
+            )
+        ],
     )

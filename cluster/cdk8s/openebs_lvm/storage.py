@@ -19,23 +19,12 @@ from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot impor
     VolumeSnapshotClass,
     VolumeSnapshotClassDeletionPolicy,
 )
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "openebs-lvm"
@@ -94,26 +83,16 @@ def chart(app: App) -> Chart:
         metadata=metadata(RELEASE, "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://openebs.github.io/lvm-localpv"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(RELEASE, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="lvm-localpv",
-                    version="1.10.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={"lvmNode": {"nodeSelector": _PROXMOX}, "lvmController": {"nodeSelector": _PROXMOX}},
-        ),
+        RELEASE,
+        NAMESPACE,
+        repository=repository,
+        chart="lvm-localpv",
+        version="1.10.1",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        values={"lvmNode": {"nodeSelector": _PROXMOX}, "lvmController": {"nodeSelector": _PROXMOX}},
     )
     _storage_classes(chart)
     VolumeSnapshotClass(
@@ -133,21 +112,4 @@ def write_manifests(root: Path) -> None:
 
 
 def openebs_lvm(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=RELEASE, namespace=NAMESPACE
-                )
-            ],
-        ),
-    )
+    return flux_kustomization(chart, NAME, artifact, timeout="5m")

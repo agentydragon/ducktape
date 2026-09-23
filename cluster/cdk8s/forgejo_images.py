@@ -8,25 +8,20 @@ canonical registry credential.
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import ISecret, Secret, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
-    ExternalSecretSpec,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromExtract,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -82,27 +77,15 @@ def forgejo_images(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2", kind="Terraform", name=NAME, namespace="flux-system"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                # Forgejo API must be up (provider target)
-                forgejo,
-                tofu_controller,
-                tofu_state_db,
-            ),
+        artifact,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            # Forgejo API must be up (provider target)
+            forgejo,
+            tofu_controller,
+            tofu_state_db,
         ),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
@@ -114,24 +97,16 @@ def forgejo_images(
 
 
 def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace: str) -> ExternalSecret:
-    return ExternalSecret(
+    return add_external_secret(
         scope,
         id,
-        metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-forgejo-images-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=SECRET_NAME,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="kubernetes.io/dockerconfigjson",
-                    merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
-                ),
-            ),
-            data_from=[ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=SECRET_NAME))],
+        name=SECRET_NAME,
+        namespace=namespace,
+        refresh="1h",
+        store=cluster_secret_store("kubernetes-forgejo-images-secret-store"),
+        data_from=[ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=SECRET_NAME))],
+        template=ExternalSecretSpecTargetTemplate(
+            type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
         ),
     )
 

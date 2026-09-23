@@ -12,16 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -57,7 +47,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -71,27 +61,14 @@ _INSTANCE_LABELS = {"dashboards": _NAME}
 
 
 def _database(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "database",
-        metadata=metadata(_DB_NAME, _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                topology_key="kubernetes.io/hostname",
-                # Prefer ordinary workers when this workload tolerates control planes.
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-        ),
+        name=_DB_NAME,
+        namespace=_NAMESPACE,
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        storage_class="local-path-ovh",
+        size="2Gi",
     )
 
 

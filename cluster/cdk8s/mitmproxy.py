@@ -34,7 +34,6 @@ from cilium_clusterwide_crds.io.cilium import (
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
-    KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -366,16 +365,14 @@ def agents_mitmproxy(flux_chart: Chart, root: Path, cert_manager_trust: Kustomiz
     return flux_kustomization(
         flux_chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=f"./{OUTPUT_DIR}",
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
-            ),
-            timeout="5m",
-            # Installs Bundle CRDs and transitively the Certificate CRDs.
-            depends_on=[flux_kustomization_depends_on(cert_manager_trust)],
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
         ),
+        retry_interval=None,
+        wait=None,
+        path=f"./{OUTPUT_DIR}",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="5m",
+        # Installs Bundle CRDs and transitively the Certificate CRDs.
+        depends_on=[flux_kustomization_depends_on(cert_manager_trust)],
     )

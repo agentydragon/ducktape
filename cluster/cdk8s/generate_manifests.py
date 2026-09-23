@@ -106,7 +106,7 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
-from cluster.cdk8s.cpap_sync import app as cpap_sync_app, flux_kustomizations as cpap_sync_flux_kustomizations
+from cluster.cdk8s.cpap_sync import app as cpap_sync_app
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
     flux_kustomizations as dcgm_exporter_flux_kustomizations,
@@ -116,7 +116,6 @@ from cluster.cdk8s.external_secrets import (
     flux_kustomizations as external_secrets_flux_kustomizations,
     operator as external_secrets_operator,
 )
-from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
@@ -260,8 +259,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    haku_console_resource_chart = haku_charts.write_console_manifests(root)
-    haku_console_health_checks = flux_health_checks(haku_console_resource_chart, ("Cluster", "Job"))
+    haku_charts.write_console_manifests(root)
     haku_openclaw_spike_config.write_manifests(root)
     haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
@@ -527,7 +525,7 @@ def generate_manifests(root: Path) -> None:
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
     reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
-    cdi_kustomization = kubevirt_flux_kustomizations.cdi(
+    cdi_kustomization = kubevirt_cdi.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
@@ -1089,7 +1087,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_kustomization = cpap_sync_flux_kustomizations.cpap_sync(
+    cpap_sync_kustomization = cpap_sync_app.cpap_sync(
         flux_chart,
         cpap_sync_artifact,
         external_secrets_config_kustomization,
@@ -1422,7 +1420,6 @@ def generate_manifests(root: Path) -> None:
     haku_charts.haku_console(
         flux_chart,
         haku_console_artifact,
-        haku_console_health_checks,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         forgejo_images_kustomization,
@@ -1452,7 +1449,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_devbox_artifact = artifact(
         "public-coder-agent-devbox", "cluster/k8s/agents/public-coder-agent/devbox"
     )
-    agents_flux_kustomizations.public_coder_agent_devbox(
+    public_coder_devbox.public_coder_agent_devbox(
         flux_chart,
         public_coder_agent_devbox_artifact,
         kubevirt_kustomization,

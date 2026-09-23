@@ -16,41 +16,13 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.metadata import metadata
@@ -61,6 +33,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"
@@ -503,32 +476,18 @@ def _gateway_password(scope: Construct) -> None:
         metadata=metadata("haku-openclaw-spike-gateway-password-generator", _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "gateway-password",
-        metadata=metadata(_GATEWAY_PASSWORD_NAME, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            # The generator value is stable. Avoid automatic rotation, which would
-            # interrupt active local Gateway clients unnecessarily.
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name=_GATEWAY_PASSWORD_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_GATEWAY_PASSWORD_NAME,
+        namespace=_NAMESPACE,
+        # The generator value is stable. Avoid automatic rotation, which would
+        # interrupt active local Gateway clients unnecessarily.
+        refresh="8760h",
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
     )
 
 
@@ -624,69 +583,25 @@ def _network_policies(scope: Construct) -> None:
 
 def _backup_bucket(scope: Construct) -> None:
     """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
-    bucket_name = "haku-openclaw-spike-backups"
-    seaweedfs = "seaweedfs"
-    Bucket(
+    # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+    bucket = s3.Bucket(
         scope,
         "backup-bucket",
-        metadata=metadata(
-            bucket_name, _NAMESPACE, annotations={"description": "Haku OpenClaw spike VolSync backup bucket."}
-        ),
-        spec=BucketSpec(
-            name=bucket_name,
-            # The physical bucket is populated; adopt it instead of creating a second bucket
-            # during the Flux ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=seaweedfs, namespace=seaweedfs),
-            # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=bucket_name,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name="haku-openclaw-spike-backups",
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Haku OpenClaw spike VolSync backup bucket.",
+        grant_name=_NAME,
     )
-    S3Credentials(
-        scope,
-        "backup-credentials",
-        metadata=metadata(
-            bucket_name, _NAMESPACE, annotations={"description": "Haku OpenClaw spike VolSync SeaweedFS credentials."}
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=seaweedfs, namespace=seaweedfs),
-            # The IAM username is cluster-global. Without a same-namespace S3Identity, the
-            # operator treats this as the existing identity named above.
-            identity_ref=S3CredentialsSpecIdentityRef(name=bucket_name),
-            # Generate credentials directly where the VolSync SecretStore reads them.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name="haku-openclaw-spike-volsync-s3-credentials",
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only this app's tenant-local Bucket and S3Credentials to reference the SeaweedFS
-    # cluster in its namespace.
-    group = "seaweed.seaweedfs.com"
-    ResourceReferenceGrant(
-        scope,
-        "backup-reference-grant",
-        metadata=metadata(_NAME, seaweedfs),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=group, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=group, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=group, kind="Seaweed", name=seaweedfs)],
-        ),
+    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
+    identity = s3.IdentityRef(scope, "backup-identity", name="haku-openclaw-spike-backups")
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        # Generated directly where the VolSync SecretStore reads it.
+        secret="haku-openclaw-spike-volsync-s3-credentials",
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
     )
 
 

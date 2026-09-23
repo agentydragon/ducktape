@@ -549,6 +549,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:aiquota",
         "//cluster/cdk8s:public_coder_agent_config",
+        "//cluster/cdk8s:public_coder_devbox",
         "//cluster/cdk8s:public_coder_proxy",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -727,6 +728,21 @@ py_test(
         ":image_automation",
         ":k8s",
         ":kustomize",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_flux_wait_health_checks",
+    srcs = ["test_flux_wait_health_checks.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_system_files",
+    ],
+    deps = [
+        ":conftest",
+        ":flux",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

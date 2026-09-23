@@ -19,25 +19,12 @@ from cilium_envoyconfig_crds.io.cilium import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
@@ -53,39 +40,18 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsBearerTokenSecret,
     ServiceMonitorSpecSelector,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = "cluster/k8s/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
 _METRICS_TOKEN = "forgejo-metrics-token"
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
@@ -123,59 +89,22 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Forgejo packages, LFS, attachments, and artifacts."}
-        ),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is already populated; adopt it instead of treating it
-            # as a conflicting bucket during the Flux ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Forgejo's SeaweedFS S3 credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM username is cluster-global. Without a same-namespace S3Identity,
-            # the operator treats this as the existing SeaweedFS identity named forgejo.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Same-namespace targets are created and owned by S3Credentials.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET, access_key_field="accessKey", secret_key_field="secretKey"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    # Declared by the seaweedfs-forgejo-bucket Kustomization.
+    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 
@@ -188,30 +117,16 @@ def _metrics_token(scope: Construct) -> None:
         metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "metrics-token",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_METRICS_TOKEN,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_METRICS_TOKEN,
+        namespace=_NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -436,40 +351,30 @@ def _helm_release(scope: Construct) -> None:
             type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
         ),
     )
-    HelmRelease(
+    helm_release(
         scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            # Extended timeout (PostgreSQL + PVC binding + init containers)
-            timeout="15m",
-            # Runtime prerequisites may become ready after admission; keep retrying while
-            # they converge.
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
-            upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    version="17.1.6",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="forgejo-db-ssd-creds",
-                    values_key="password",
-                    # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
-                    target_path="gitea.config.database.PASSWD",
-                )
-            ],
-            values=_values(),
-        ),
+        _NAME,
+        _NAMESPACE,
+        repository=repository,
+        chart=_NAME,
+        version="17.1.6",
+        interval="15m",
+        # Extended timeout (PostgreSQL + PVC binding + init containers)
+        timeout="15m",
+        # Runtime prerequisites may become ready after admission; keep retrying while
+        # they converge.
+        install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
+        upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="forgejo-db-ssd-creds",
+                values_key="password",
+                # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
+                target_path="gitea.config.database.PASSWD",
+            )
+        ],
+        values=_values(),
     )
 
 

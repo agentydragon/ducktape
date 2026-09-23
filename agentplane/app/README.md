@@ -128,14 +128,17 @@ The retained-event SSE API reads committed PostgreSQL events on whichever replic
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
 are hints and the database cursor remains authoritative.
 
-`/#/threads/{id}` loads metadata and a bounded latest-30 entity interest independently
-of runner discovery. TanStack DB owns synchronized server rows; Electric supplies snapshot,
-live changes and reconnect. Earlier history uses exclusive cursor windows. Text and tool
-arguments follow their referenced revisions, while reasoning, tool output and associated debug
-frames are selected on demand. A command-ID subscription retains outcomes after the command
-leaves the visible history. Local authored intent, unsent drafts and viewport/disclosure state
-remain separate from these server collections. See [the sync design](../docs/thread_view_sync.md)
-for query, revision and memory contracts and the remaining acceptance gates.
+`/#/threads/{id}` loads metadata and the thread's tail independently of runner discovery. The
+browser follows one Electric shape over the thread's rows and one per payload field it shows, each
+pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loads its window as
+subset snapshots of them: the latest 30 positions, the page before the oldest row it holds each
+time the reader scrolls up, the view state, pending commands, and the commands this browser sent,
+by ID, so an outcome stays visible however far the thread has moved on. Every later change to a
+held row arrives on the shape's live log. Text and tool arguments render as far as their
+references' chunk counts, while reasoning, tool output and associated debug frames are read on
+demand. Local authored intent, unsent drafts and viewport/disclosure state remain separate from
+the synchronized rows. See [the sync design](../docs/thread_view_sync.md) for query, revision and
+memory contracts and the remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished

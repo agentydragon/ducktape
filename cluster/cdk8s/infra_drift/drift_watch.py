@@ -9,7 +9,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2,
@@ -23,7 +23,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -157,24 +156,19 @@ def infra_drift(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            # Ready tracks the plan, so a drift finding shows up here as a NotReady
-            # Kustomization — README § Reading a plan.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name=NAME,
-                    namespace=terraform.NAMESPACE,
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
-        ),
+        artifact,
+        wait=None,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        # Ready tracks the plan, so a drift finding shows up here as a NotReady
+        # Kustomization — README § Reading a plan.
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="infra.contrib.fluxcd.io/v1alpha2",
+                kind="Terraform",
+                name=NAME,
+                namespace=terraform.NAMESPACE,
+            )
+        ],
+        depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
     )

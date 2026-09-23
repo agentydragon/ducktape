@@ -40,19 +40,12 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -61,8 +54,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -164,38 +157,26 @@ class Aiquota(Construct):
         self._add_service_monitor()
 
     def _add_bearer_mirror(self, mirror: BearerMirror) -> None:
-        ExternalSecret(
+        add_external_secret(
             self,
             f"bearer-{mirror.consumer}",
-            metadata=metadata(mirror.secret_name, NAMESPACE),
-            spec=ExternalSecretSpec(
-                refresh_interval="1h",
-                secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                    kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                    name="kubernetes-cli-proxy-api-secret-store",
-                ),
-                target=ExternalSecretSpecTarget(
-                    name=mirror.secret_name,
-                    creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                    deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                    template=ExternalSecretSpecTargetTemplate(
-                        metadata=ExternalSecretSpecTargetTemplateMetadata(
-                            annotations={
-                                "description": mirror.description,
-                                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
-                                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
-                            }
-                        )
-                    ),
-                ),
-                data=[
-                    ExternalSecretSpecData(
-                        secret_key=_BEARER_KEY,
-                        remote_ref=ExternalSecretSpecDataRemoteRef(key=BEARER_SECRET_NAME, property=_BEARER_KEY),
-                    )
-                ],
+            name=mirror.secret_name,
+            namespace=NAMESPACE,
+            refresh="1h",
+            store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+            data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+            template=ExternalSecretSpecTargetTemplate(
+                metadata=ExternalSecretSpecTargetTemplateMetadata(
+                    annotations={
+                        "description": mirror.description,
+                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
+                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
+                    }
+                )
             ),
         )
 
@@ -352,32 +333,25 @@ def aiquota(
     kustomization = flux_kustomization(
         flux_chart,
         name,
+        artifact,
         description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                # Provides the shared namespace and the CLIProxyAPI management Secret.
-                cli_proxy_api,
-                # Materializes the narrow mirrored copies of the API bearer for its
-                # consumers; the source Secret stays SOPS-managed here.
-                external_secrets_operator,
-                # Creates the aiquota database the migrate init container populates.
-                clickhouse_schema,
-                # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-                agent_machine_access_tf,
-                # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-                reflector,
-            ),
+        timeout="5m",
+        # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            forgejo_images,
+            # Provides the shared namespace and the CLIProxyAPI management Secret.
+            cli_proxy_api,
+            # Materializes the narrow mirrored copies of the API bearer for its
+            # consumers; the source Secret stays SOPS-managed here.
+            external_secrets_operator,
+            # Creates the aiquota database the migrate init container populates.
+            clickhouse_schema,
+            # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+            agent_machine_access_tf,
+            # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+            reflector,
         ),
     )
     write_yaml(

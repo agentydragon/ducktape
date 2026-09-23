@@ -3,12 +3,11 @@ kind: Kustomization
 resources:
   # cdk8s-generated (cluster/cdk8s/airlock.py) -- see cluster/docs/cdk8s.md.
   - airlock.k8s.yaml
-  # Hand-written: the AIRLOCK_IMAGE_TAG env value carries an image-automation marker an
-  # `images:` Component cannot set.
-  - deployment.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
+components:
+  - ./image-pins
 
 configMapGenerator:
   - name: airlock-config

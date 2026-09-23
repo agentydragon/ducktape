@@ -6,28 +6,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
 from cluster.cdk8s.metadata import metadata
 
 NAME = "vpa"
 NAMESPACE = "kube-system"
 OUTPUT_DIR = "cluster/k8s/vpa"
+_REPOSITORY_NAME = "fairwinds-stable"
+_REPOSITORY_NAMESPACE = "flux-system"
+# Goldilocks installs from this repository too, from its own chart.
+REPOSITORY_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
 
 
 def _component(*, memory_request: str, memory_limit: str, **extra: object) -> dict[str, object]:
@@ -46,39 +39,29 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("fairwinds-stable", "flux-system"),
+        metadata=metadata(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.fairwinds.com/stable"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="5.0.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        version="5.0.1",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            "recommender": _component(
+                memory_request="256Mi",
+                memory_limit="512Mi",
+                # 15m interval reduces control-plane system-disk writes.
+                extraArgs={"recommender-interval": "15m"},
             ),
-            values={
-                "recommender": _component(
-                    memory_request="256Mi",
-                    memory_limit="512Mi",
-                    # 15m interval reduces control-plane system-disk writes.
-                    extraArgs={"recommender-interval": "15m"},
-                ),
-                "updater": _component(memory_request="128Mi", memory_limit="256Mi"),
-                "admissionController": _component(memory_request="128Mi", memory_limit="256Mi"),
-            },
-        ),
+            "updater": _component(memory_request="128Mi", memory_limit="256Mi"),
+            "admissionController": _component(memory_request="128Mi", memory_limit="256Mi"),
+        },
     )
     return chart
 
@@ -91,21 +74,5 @@ def vpa(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization, metrics_server: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server),
-        ),
+        chart, NAME, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server)
     )

@@ -87,7 +87,7 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image"]:::future
+    SANDBOX_EXEC_IMAGE["Planned image<br/>a Nix sandbox image under the runner image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -130,6 +130,7 @@ flowchart TB
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE --> MCP_CONSOLE_INTERNAL
+    SANDBOX_EXEC_IMAGE --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
@@ -386,16 +387,47 @@ settle).
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
 
-### `SANDBOX_EXEC_IMAGE` — a dedicated exec-target image
+### `SANDBOX_EXEC_IMAGE` — a Nix-built sandbox image under the runner image
 
 **Planned image:** the configured `runner` environment stamps the integration app's runner
 template, which carries the egress sidecar, the interception CA and the proxy environment, so the
-path is real end to end. Its workload container is the runner image, and a box to run commands in
-wants neither the harnesses nor the state volume. Build the exec target as its own image and
-`SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
-([sandbox Actions](../docs/sandbox_actions.md)).
+path is real end to end. Its workload container is the runner image, which is both too much and too
+little for a box to run commands in: it brings the harnesses and the state volume, but its only
+tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `tea`, `gh` and
+`bazel` are not on `PATH` (checked 2026-09-19 and 2026-09-23).
 
-Its own clock: nothing waits on it, and the current environment is correct but oversized.
+**Shape:**
+
+- A Nix-built sandbox image holds the tool set as one reviewable list, on the substrate the Haku
+  workspace image (`cluster/k8s/haku/workspaces/image/default.nix`) and `x/codex_pod_image` share:
+  nix-ld's filesystem fallback and static `/usr/bin/env` and `/bin/bash` links, without which an
+  FHS binary (the runner's hermetic Python, the harness CLIs, a toolchain Bazel downloads) finds
+  no loader.
+- The runner image stays a Bazel `oci_image`, with the sandbox image as its `base`, pulled by
+  digest. The runner is not released and pinned for a Nix build instead: `agentplane/runner`'s
+  image tests load the image built from the tree under test, and every runner change would wait
+  on a release.
+- Sandbox Actions get a default environment on the plain sandbox image, through its own
+  `SandboxTemplate` that keeps the sidecar, CA and proxy environment egress needs
+  ([sandbox Actions](../docs/sandbox_actions.md)). `runner` stays as a second environment.
+
+**Steps:**
+
+1. The Nix sandbox image, published to the Forgejo registry beside the runner image.
+2. `oci.pull` fetches wherever Bazel resolves external repositories, so the `bbr` remote runner,
+   developer machines and web sessions get credentials for that registry. The runner image's
+   `base` then switches to the sandbox image; its image tests are the first to run the nix-ld path
+   in a container.
+3. The sandbox `SandboxTemplate` and environment, described by what the image holds.
+
+**What waits on it:**
+
+- Coinbase reads, whose recipe signs its ES256 JWT with the runner's hermetic interpreter, found by
+  its runfiles path, after installing `cryptography` from PyPI on every run.
+- `haku-state`'s `haku read` and validator, which need Bazel or a Python with their dependencies.
+- Most of a counterpart to the console's `sandbox` server (`MCP_CONSOLE_INTERNAL`): the `sandbox`
+  group already provisions boxes and runs commands in them; what a Haku run lacks there is this
+  environment.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
@@ -1109,7 +1141,9 @@ operator's affected Thread. Archive-before-deletion work does not gate this regr
 VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
 its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
 for availability as well as container escape. Verify the suggested Claude Code Web
-comparison before using it as evidence; no runtime is selected by this task.
+comparison before using it as evidence; no runtime is selected by this task. In-container
+alternatives and each harness's interception points are compared in
+[harness tool memory isolation](../docs/harness_tool_memory_isolation.md).
 
 If implemented, make the Sandbox implementation an explicit creation-time choice,
 retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement

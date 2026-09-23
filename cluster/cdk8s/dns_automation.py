@@ -7,24 +7,14 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s import external_creds, terraform
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
 
 OUTPUT_DIR = "cluster/k8s/dns-automation"
@@ -40,26 +30,18 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "credentials",
-        metadata=metadata(_CREDENTIALS_SECRET, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_CREDENTIALS_SECRET, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=_CREDENTIALS_SOURCE, property=key)
-                )
-                for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
-            ],
-        ),
+        name=_CREDENTIALS_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[
+            remote_data(_CREDENTIALS_SOURCE, key)
+            for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     terraform.gitops_terraform(
         chart,
@@ -96,22 +78,17 @@ def dns_automation(
     return flux_kustomization(
         chart,
         "dns-automation",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="dns-records",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                tofu_controller, tofu_state_db, external_creds, external_secrets_config
-            ),
+        artifact,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="infra.contrib.fluxcd.io/v1alpha2",
+                kind="Terraform",
+                name="dns-records",
+                namespace="flux-system",
+            )
+        ],
+        depends_on=flux_kustomization_depends_on_many(
+            tofu_controller, tofu_state_db, external_creds, external_secrets_config
         ),
     )

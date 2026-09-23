@@ -12,14 +12,9 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromFind,
     ExternalSecretSpecDataFromFindName,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
@@ -34,10 +29,9 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -116,45 +110,36 @@ def chart(app: App) -> Chart:
     # Template note: ESO's `dataFrom.find` returns `.<secretName>` as a JSON-encoded *string*
     # of that Secret's data dict, not a Go map. Each per-tenant intermediate Secret has data
     # key `identity` holding the identity JSON, hence `| fromJson` and then `.identity`.
-    ExternalSecret(
+    add_external_secret(
         chart,
         "s3-config",
-        metadata=metadata(
-            SECRET_NAME,
-            namespace.NAME,
-            annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
-        ),
-        spec=ExternalSecretSpec(
-            refresh_interval="1m",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    data={
-                        SECRET_KEY: (
-                            '{"identities":[\n'
-                            "  {{- $first := true -}}\n"
-                            "  {{- range $sName, $sJson := . -}}\n"
-                            "  {{- $sData := $sJson | fromJson -}}\n"
-                            "  {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}\n"
-                            "  {{- end -}}\n"
-                            "]}\n"
-                        )
-                    },
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    find=ExternalSecretSpecDataFromFind(
-                        name=ExternalSecretSpecDataFromFindName(regexp="^s3-identity-.+-json$")
-                    )
+        name=SECRET_NAME,
+        namespace=namespace.NAME,
+        refresh="1m",
+        store=secret_store(_SECRET_STORE),
+        data_from=[
+            ExternalSecretSpecDataFrom(
+                find=ExternalSecretSpecDataFromFind(
+                    name=ExternalSecretSpecDataFromFindName(regexp="^s3-identity-.+-json$")
                 )
-            ],
+            )
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            data={
+                SECRET_KEY: (
+                    '{"identities":[\n'
+                    "  {{- $first := true -}}\n"
+                    "  {{- range $sName, $sJson := . -}}\n"
+                    "  {{- $sData := $sJson | fromJson -}}\n"
+                    "  {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}\n"
+                    "  {{- end -}}\n"
+                    "]}\n"
+                )
+            },
         ),
+        annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
     )
     return chart
 
@@ -180,17 +165,14 @@ def seaweedfs_secrets(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_namespace,
-                # ExternalSecret + SecretStore CRDs + ESO controller
-                external_secrets_operator,
-            ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        suspend=False,
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_namespace,
+            # ExternalSecret + SecretStore CRDs + ESO controller
+            external_secrets_operator,
         ),
     )

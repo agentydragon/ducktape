@@ -11,20 +11,13 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -33,7 +26,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 NAME = "claude-sandbox-secrets"
 OUTPUT_DIR = "cluster/k8s/agents/claude-sandbox-secrets"
@@ -46,30 +38,19 @@ _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 def _external_creds_secret(
     chart: Chart, name: str, *, key: str, deletion_policy: ExternalSecretSpecTargetDeletionPolicy | None
 ) -> None:
-    ExternalSecret(
+    add_external_secret(
         chart,
         name,
-        metadata=metadata(name, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=name,
-                # The target already existed without an ExternalSecret owner reference. Orphan
-                # lets ESO refresh it in place; deleting this ExternalSecret leaves the target
-                # Secret behind, which then needs explicit cleanup.
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                deletion_policy=deletion_policy,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=name, property=key)
-                )
-            ],
-        ),
+        name=name,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(name, key)],
+        # The target already existed without an ExternalSecret owner reference. Orphan
+        # lets ESO refresh it in place; deleting this ExternalSecret leaves the target
+        # Secret behind, which then needs explicit cleanup.
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        deletion_policy=deletion_policy,
     )
 
 
@@ -102,21 +83,8 @@ def claude_sandbox_secrets(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1", kind="ExternalSecret", name=name, namespace=_NAMESPACE
-                )
-                for name in (_TELEGRAM_BOT_TOKEN, _BUILDBUDDY_API_KEY)
-            ],
-        ),
+        artifact,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
     )

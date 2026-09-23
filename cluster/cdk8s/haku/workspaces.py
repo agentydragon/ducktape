@@ -44,20 +44,12 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromExtract,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
     CleanupPolicySpec,
@@ -70,8 +62,8 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s import external_creds, forgejo_images
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -99,26 +91,18 @@ def _external_secrets(chart: Chart) -> None:
     # Reads through the wide flux-system store rather than the scoped one, unlike the sibling
     # proxies: haku-sandbox is on the flux-system store's allowlist regardless, for
     # alloy-otlp-bearer and haku-mail-token, so switching stores would narrow nothing.
-    ExternalSecret(
+    add_external_secret(
         chart,
         "forgejo-images-creds",
-        metadata=metadata(forgejo_images.SECRET_NAME, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-flux-system-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=forgejo_images.SECRET_NAME,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="kubernetes.io/dockerconfigjson",
-                    merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=forgejo_images.SECRET_NAME))
-            ],
+        name=forgejo_images.SECRET_NAME,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store("kubernetes-flux-system-secret-store"),
+        data_from=[
+            ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=forgejo_images.SECRET_NAME))
+        ],
+        template=ExternalSecretSpecTargetTemplate(
+            type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
         ),
     )
     # Mirror the read-only ActivityWatch bearer into haku-sandbox so Haku can query the read route
@@ -127,47 +111,25 @@ def _external_secrets(chart: Chart) -> None:
     # read this namespace, with no per-call approval. The egress-fence placeholder substitution on
     # the sandbox templates stays the path for pods behind the fence; this copy serves the runtimes
     # outside it (the Claude Code web home, hostexec-free reads) and haku-state's `haku aw` CLI.
-    ExternalSecret(
+    add_external_secret(
         chart,
         "activitywatch-read-token",
-        metadata=metadata("activitywatch-read-token", NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-activitywatch-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(name="activitywatch-read-token"),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="activitywatch-read-token", property="token"),
-                )
-            ],
-        ),
+        name="activitywatch-read-token",
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store("kubernetes-activitywatch-secret-store"),
+        data=[remote_data("activitywatch-read-token", "token")],
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "coinbase-api-credentials",
-        metadata=metadata("coinbase-api-credentials", NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name="haku-sandbox-coinbase-api-credentials",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key,
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="coinbase-api-credentials", property=key),
-                )
-                for key in ("api_key", "api_secret")
-            ],
-        ),
+        name="coinbase-api-credentials",
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        target_name="haku-sandbox-coinbase-api-credentials",
     )
 
 
@@ -447,26 +409,19 @@ def haku_workspaces(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                # shared CRDs + controller
-                agent_sandbox_controller,
-                # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-                haku_rbac,
-                # the fence haku-sandbox is opted into
-                haku_egress_proxy,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-                # ESO CRDs and shared ClusterSecretStore
-                external_secrets_config,
-            ),
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # shared CRDs + controller
+            agent_sandbox_controller,
+            # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+            haku_rbac,
+            # the fence haku-sandbox is opted into
+            haku_egress_proxy,
+            # CleanupPolicy CRD and cleanup-controller permissions
+            kyverno_policies,
+            # ESO CRDs and shared ClusterSecretStore
+            external_secrets_config,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )

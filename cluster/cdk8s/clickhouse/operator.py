@@ -11,26 +11,15 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -39,6 +28,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "clickhouse-operator"
@@ -96,36 +86,26 @@ def helmrelease_chart(app: App) -> Chart:
             type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart", interval="12h"
         ),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            timeout="10m",
-            drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="altinity-clickhouse-operator",
-                    version="0.27.3",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    # operator-values.sops.yaml
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="clickhouse-operator-values",
-                    values_key="values.yaml",
-                )
-            ],
-            values=_values(),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="altinity-clickhouse-operator",
+        version="0.27.3",
+        interval="30m",
+        chart_interval="12h",
+        timeout="10m",
+        drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                # operator-values.sops.yaml
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="clickhouse-operator-values",
+                values_key="values.yaml",
+            )
+        ],
+        values=_values(),
     )
     return chart
 
@@ -161,22 +141,10 @@ def clickhouse_operator(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            # The chart enables ServiceMonitor resources.
-            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        ),
+        artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="10m",
+        # The chart enables ServiceMonitor resources.
+        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
     )

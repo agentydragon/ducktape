@@ -6,23 +6,12 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "nvidia-device-plugin"
@@ -46,33 +35,23 @@ def chart(app: App) -> Chart:
         metadata=metadata("nvidia", NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://nvidia.github.io/k8s-device-plugin"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="0.20.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                # nvidia-container-runtime.cdi (in containerd, via RuntimeClass) injects
-                # /dev/nvidia*, driver libs, and glibc via host CDI specs. The device plugin
-                # only needs NVML access (provided by the runtime) to enumerate GPUs.
-                # Default envvar strategy: plugin sets NVIDIA_VISIBLE_DEVICES on workload
-                # containers; the CDI runtime translates that to CDI device injection.
-                "runtimeClassName": "nvidia"
-            },
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        version="0.20.0",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            # nvidia-container-runtime.cdi (in containerd, via RuntimeClass) injects
+            # /dev/nvidia*, driver libs, and glibc via host CDI specs. The device plugin
+            # only needs NVML access (provided by the runtime) to enumerate GPUs.
+            # Default envvar strategy: plugin sets NVIDIA_VISIBLE_DEVICES on workload
+            # containers; the CDI runtime translates that to CDI device injection.
+            "runtimeClassName": "nvidia"
+        },
     )
     return chart
 
@@ -90,19 +69,7 @@ def nvidia_device_plugin(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(nvidia_runtimeclass, node_feature_discovery),
-        ),
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(nvidia_runtimeclass, node_feature_discovery),
     )

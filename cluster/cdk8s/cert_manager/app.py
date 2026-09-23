@@ -10,19 +10,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -36,9 +24,9 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cert-manager"
@@ -140,27 +128,17 @@ def chart(app: App) -> Chart:
         metadata=metadata("jetstack", "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="cert-manager",
-                    version="v1.21.2",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values=_values(),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="cert-manager",
+        version="v1.21.2",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(),
     )
     _service_monitor(chart, "cert-manager", component="controller", port="tcp-prometheus-servicemonitor")
     _service_monitor(chart, "cert-manager-webhook", component="webhook", port="metrics")
@@ -181,39 +159,20 @@ def cert_manager(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Health check ensures cert-manager pods are ready before dependents try to create Certificates
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cert-manager", namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cert-manager-webhook", namespace=NAMESPACE
-                ),
-            ],
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                cert_manager_issuer_config,
-                # Produces the namespace-local ConfigMap that postBuild reads.
-                reflector,
-                # the ServiceMonitor/PodMonitor CRD
-                monitoring_crds,
-            ),
+        artifact,
+        timeout="5m",
+        post_build=KustomizationSpecPostBuild(
+            substitute_from=[
+                KustomizationSpecPostBuildSubstituteFrom(
+                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
+                )
+            ]
+        ),
+        depends_on=flux_kustomization_depends_on_many(
+            cert_manager_issuer_config,
+            # Produces the namespace-local ConfigMap that postBuild reads.
+            reflector,
+            # the ServiceMonitor/PodMonitor CRD
+            monitoring_crds,
         ),
     )

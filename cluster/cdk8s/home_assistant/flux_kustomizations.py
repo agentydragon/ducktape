@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
@@ -26,46 +24,19 @@ def home_assistant(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="home-assistant-backups",
-                    namespace="home-assistant",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="S3Credentials",
-                    name="home-assistant-backups",
-                    namespace="home-assistant",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="home-assistant-config-restic-tenant",
-                    namespace="home-assistant",
-                ),
-            ],
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                local_path_provisioner,
-                seaweedfs_cluster,
-                volsync,
-                external_secrets_config,
-                forgejo_images,
-                # ServiceMonitor + PrometheusRule
-                monitoring_crds,
-                gateway,
-                sso_providers_tf,
-            ),
+        artifact,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            local_path_provisioner,
+            seaweedfs_cluster,
+            volsync,
+            external_secrets_config,
+            forgejo_images,
+            # ServiceMonitor + PrometheusRule
+            monitoring_crds,
+            gateway,
+            sso_providers_tf,
         ),
         description=(
             "Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket."

@@ -217,8 +217,8 @@
       "sha256": "zibRvzTbRUZ0hhXNOu5pC5TcnnZIvzkFFxCYVCpIHQo="
     },
     "skill-seaweed_operator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-fc8b31663a53/seaweed_operator.skill",
-      "sha256": "/IsxZjpTyk1rtenQ7GomVQov2hzfQcKsIeDPh6p9qhg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
+      "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
     },
     "skill-grafana": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-fb1524744592/grafana.skill",

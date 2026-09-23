@@ -17,7 +17,6 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -25,7 +24,7 @@ from uuid import UUID, uuid4
 import jsonschema
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from agentplane.action_service.db import ActionConflictError, ActionStore
+from agentplane.action_service.db import ActionStore
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -44,8 +43,8 @@ from agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
+    ProviderVote,
     UnknownOutcomeReason,
-    Verdict,
 )
 from agentplane.action_service.policy_evaluation import resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
@@ -75,12 +74,6 @@ DEFAULT_EXECUTOR_HEALTH_TIMEOUT = timedelta(seconds=45)
 DEFAULT_DISPATCH_POLL_INTERVAL = timedelta(seconds=1)
 DEFAULT_DRAIN_TIMEOUT = timedelta(seconds=20)
 DEFAULT_STOP_TIMEOUT = timedelta(seconds=5)
-
-
-@dataclass(frozen=True)
-class _ProviderVote:
-    provider: str
-    outcome: ProviderOutcome
 
 
 class ExecutionOutcomeUnknownError(Exception):
@@ -286,8 +279,14 @@ class ActionService:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view = await self._store.submit(body, principal, external_grant=external_grant)
-        return await self._auto_decide(view, body, principal, external_grant)
+        request_id = uuid4()
+        vote = await self._auto_decide(request_id, body, principal)
+        view = await self._store.submit(
+            body, principal, request_id=request_id, vote=vote, external_grant=external_grant
+        )
+        if vote is not None and vote.outcome.verdict is ProviderVerdict.ALLOW:
+            self._schedule(view.id)
+        return view
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name
@@ -301,48 +300,26 @@ class ActionService:
         return executor
 
     async def _auto_decide(
-        self,
-        view: ActionRequestView,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        external_grant: ExternalGrantProvenance | None,
-    ) -> ActionRequestView:
+        self, request_id: UUID, body: ActionRequestInput, principal: CallerPrincipal
+    ) -> ProviderVote | None:
         """Evaluate configured synchronous providers once, against the policy objects as they stand
-        now; defer to the human path on no decisive outcome."""
+        now, before the request is persisted: an auto-decided request is never observable as
+        pending, so nothing (the operator queue, Web Push) treats it as waiting for a human. `None`
+        defers to the human path."""
         if not self._providers:
-            return view
+            return None
         caller = principal.account
-        context = DecisionContext(
-            request_id=view.id,
-            action=body.action,
-            arguments=body.arguments,
-            caller=caller,
-            bindings=resolve_bindings(self._policies, caller, self._clock()),
-        )
-        vote = await self._evaluate_providers(context)
-        if vote is None:
-            return await self._store.get(view.id, principal)
-        try:
-            decided, should_dispatch = await self._store.decide_by_provider(
-                view.id,
-                principal,
-                verdict=Verdict.ALLOW if vote.outcome.verdict is ProviderVerdict.ALLOW else Verdict.DENY,
-                provider=vote.provider,
-                idempotency_key=f"auto:{view.id}",
-                expected_version=view.version,
-                reason_code=vote.outcome.reason_code,
-                reason_description=vote.outcome.reason_description,
-                policy_evidence=vote.outcome.evidence,
+        return await self._evaluate_providers(
+            DecisionContext(
+                request_id=request_id,
+                action=body.action,
+                arguments=body.arguments,
+                caller=caller,
+                bindings=resolve_bindings(self._policies, caller, self._clock()),
             )
-        except ActionConflictError:
-            # A human Decision or caller cancellation may commit during provider evaluation.
-            logger.info("auto-provider decision for %s was stale; another transition already won", view.id)
-            return await self._store.get(view.id, principal)
-        if should_dispatch:
-            self._schedule(view.id)
-        return decided
+        )
 
-    async def _evaluate_providers(self, context: DecisionContext) -> _ProviderVote | None:
+    async def _evaluate_providers(self, context: DecisionContext) -> ProviderVote | None:
         """Run every configured provider to completion first, so deny dominance never depends on
         which provider happens to answer fastest."""
         votes = await asyncio.gather(*(self._ask(provider, context) for provider in self._providers))
@@ -354,7 +331,7 @@ class ActionService:
                 return vote
         return None
 
-    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> _ProviderVote:
+    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> ProviderVote:
         try:
             outcome = await asyncio.wait_for(provider.decide(context), timeout=self._provider_timeout_seconds)
         except TimeoutError:
@@ -365,7 +342,7 @@ class ActionService:
             # or project it. Unavailability is not an allow — it defers like a silent no-opinion.
             logger.exception("decision provider %s raised; treating as no_opinion", provider.name)
             outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_UNAVAILABLE_REASON)
-        return _ProviderVote(provider=provider.name, outcome=outcome)
+        return ProviderVote(provider=provider.name, outcome=outcome)
 
     def caller_action_policy(
         self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None

@@ -7,25 +7,13 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-    HelmReleaseSpecUpgradeRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "headlamp"
@@ -70,56 +58,43 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/headlamp/"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
-                    version="0.45.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                "replicaCount": 1,
-                "podAnnotations": {"reloader.stakater.com/auto": "true"},
-                "config": {
-                    # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
-                    # which validates it via oidc-issuer-url (in Talos machine config).
-                    # Each user gets their own K8s identity (oidc:<username>).
-                    "oidc": {
-                        "secret": {"create": False},
-                        "externalSecret": {"enabled": True, "name": "headlamp-oidc-secret"},
-                    },
-                    "watchPlugins": True,
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
+        version="0.45.0",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=3)),
+        values={
+            "replicaCount": 1,
+            "podAnnotations": {"reloader.stakater.com/auto": "true"},
+            "config": {
+                # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
+                # which validates it via oidc-issuer-url (in Talos machine config).
+                # Each user gets their own K8s identity (oidc:<username>).
+                "oidc": {
+                    "secret": {"create": False},
+                    "externalSecret": {"enabled": True, "name": "headlamp-oidc-secret"},
                 },
-                "httpRoute": {
-                    "enabled": True,
-                    "parentRefs": [{"name": "cluster-gateway", "namespace": "gateway-system"}],
-                    "hostnames": ["headlamp.allegedly.works"],
-                },
-                "ingress": {"enabled": False},
-                "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "resources": {
-                    "requests": {"cpu": "50m", "memory": "128Mi"},
-                    "limits": {"cpu": "500m", "memory": "256Mi"},
-                },
-                "pluginsManager": {"enabled": True, "version": "0.1.1", "configContent": _PLUGINS_CONFIG},
+                "watchPlugins": True,
             },
-        ),
+            "httpRoute": {
+                "enabled": True,
+                "parentRefs": [{"name": "cluster-gateway", "namespace": "gateway-system"}],
+                "hostnames": ["headlamp.allegedly.works"],
+            },
+            "ingress": {"enabled": False},
+            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "tolerations": [
+                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
+            ],
+            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
+            "pluginsManager": {"enabled": True, "version": "0.1.1", "configContent": _PLUGINS_CONFIG},
+        },
     )
     k8s.KubeClusterRoleBinding(
         chart,
@@ -139,22 +114,5 @@ def headlamp(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization, sso_providers_tf: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE),
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                ),
-            ],
-            depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf),
-        ),
+        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf)
     )

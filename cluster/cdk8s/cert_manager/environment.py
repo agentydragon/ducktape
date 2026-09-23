@@ -8,26 +8,16 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -35,7 +25,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
@@ -48,26 +37,17 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "environment", disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE))
-    ExternalSecret(
+    add_external_secret(
         chart,
         "route53-credentials",
-        metadata=metadata(_ROUTE53_SECRET, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_ROUTE53_SECRET, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=_ROUTE53_SOURCE, property=key)
-                )
-                for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
-            ],
-        ),
+        name=_ROUTE53_SECRET,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[
+            remote_data(_ROUTE53_SOURCE, key) for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     return chart
 
@@ -92,31 +72,16 @@ def cert_manager_environment(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-prod", namespace=""
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-staging", namespace=""
-                ),
-            ],
+        artifact,
+        timeout="5m",
+        post_build=KustomizationSpecPostBuild(
+            substitute_from=[
+                KustomizationSpecPostBuildSubstituteFrom(
+                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
+                )
+            ]
+        ),
+        depends_on=flux_kustomization_depends_on_many(
+            cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
         ),
     )

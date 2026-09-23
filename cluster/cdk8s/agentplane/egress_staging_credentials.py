@@ -20,20 +20,8 @@ from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
     EgressPolicySpecRulesMethods,
 )
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
+from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 
 from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
@@ -42,6 +30,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
     credential_external_secret,
+    single_secret_store,
 )
 from cluster.cdk8s.metadata import metadata
 
@@ -66,60 +55,6 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
-def _source_store(
-    scope: Construct,
-    id: str,
-    *,
-    reader: ServiceAccount,
-    source_namespace: str,
-    source_secret: str,
-    credentials_namespace: str,
-) -> str:
-    """A ClusterSecretStore through which `credentials_namespace` reads `source_secret` out of
-    `source_namespace`, returning the store's name. It authenticates as the credentials namespace's
-    own `reader`, which a Role in `source_namespace` lets get that one Secret and nothing else."""
-    reader_role = f"agentplane-staging-egress-{id}-reader"
-    source_role = Role(
-        scope,
-        f"{id}-source-role",
-        metadata=metadata(reader_role, source_namespace),
-        rules=[
-            RolePolicyRule(resources=[Secret.from_secret_name(scope, f"{id}-source", source_secret)], verbs=["get"])
-        ],
-    )
-    RoleBinding(
-        scope, f"{id}-source-binding", metadata=metadata(reader_role, source_namespace), role=source_role
-    ).add_subjects(reader)
-    store = f"kubernetes-agentplane-staging-{id}-secret-store"
-    ClusterSecretStore(
-        scope,
-        f"{id}-store",
-        metadata=ApiObjectMetadata(name=store),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=[credentials_namespace])],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    remote_namespace=source_namespace,
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
-                            name=EXTERNAL_CREDS_READER
-                        )
-                    ),
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                )
-            ),
-        ),
-    )
-    return store
-
-
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     credential_external_secret(
         scope,
@@ -127,13 +62,13 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         target="haku-forgejo-git",
         source="haku-forgejo-git",
         key="password",
-        store=_source_store(
+        store=single_secret_store(
             scope,
-            "forgejo",
+            "agentplane-staging-forgejo",
             reader=reader,
             source_namespace="haku-sandbox",
             source_secret="haku-forgejo-git",
-            credentials_namespace=credentials_namespace,
+            consumer_namespace=credentials_namespace,
         ),
     )
     EgressCredential(
@@ -258,13 +193,13 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
         target="grocy-sf-readonly",
         source=_GROCY_SF_ACCOUNT,
         key="password",
-        store=_source_store(
+        store=single_secret_store(
             scope,
-            "grocy-sf",
+            "agentplane-staging-grocy-sf",
             reader=reader,
             source_namespace="agents-infra",
             source_secret=_GROCY_SF_ACCOUNT,
-            credentials_namespace=credentials_namespace,
+            consumer_namespace=credentials_namespace,
         ),
     )
     EgressCredential(
@@ -310,6 +245,8 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                     methods=[EgressPolicySpecRulesMethods.GET],
                     paths=[
                         "/api/objects/**",
+                        # `/api/stock/**` does not match `/api/stock` itself.
+                        "/api/stock",
                         "/api/stock/**",
                         "/api/user",
                         "/api/system/info",

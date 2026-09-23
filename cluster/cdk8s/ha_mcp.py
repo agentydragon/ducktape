@@ -57,19 +57,11 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -79,7 +71,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
@@ -113,47 +105,27 @@ _APP_DATA_DIR = "/data"
 def _bearer_credentials(scope: Construct) -> None:
     """The facade's static bearer token: ducktape mints it itself (same pattern as
     ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
-    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients."""
+    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients.
+
+    agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
+    token, which no store may reach.
+    """
     Password(
         scope,
         "bearer-password-generator",
         metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "bearer-external-secret",
-        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_BEARER_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
-                        }
-                    ),
-                    data={_BEARER_SECRET_KEY: "{{ .password }}"},
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=_BEARER_SECRET_NAME,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_BEARER_SECRET_NAME,
+        namespace=_NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(_BEARER_SECRET_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={_BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -400,9 +372,8 @@ class HaMcpApp(Construct):
             ],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
-                # The same token agentplane-staging's Action Service presents (reflected as
-                # ha-mcp-bearer into agentplane-staging by the emberstack reflector) -- one source
-                # of truth, no drift.
+                # The same token agentplane-staging's Action Service presents (its ESO copy of
+                # this Secret) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
@@ -514,27 +485,14 @@ def ha_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                ),
-                KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config,
-                forgejo_images,
-                home_assistant,
-                # the ServiceMonitor CRD
-                monitoring_crds,
-            ),
+        artifact,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_config,
+            forgejo_images,
+            home_assistant,
+            # the ServiceMonitor CRD
+            monitoring_crds,
         ),
     )
     write_yaml(
