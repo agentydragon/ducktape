@@ -116,6 +116,9 @@ _GENERATED_FILES = (
     "cluster/k8s/matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
     "cluster/k8s/matrix/user-provisioner/kustomization.yaml",
     "cluster/k8s/study-casino/study-casino.k8s.yaml",
+    "cluster/k8s/github-api-proxy/identity/github-api-proxy-identity.k8s.yaml",
+    "cluster/k8s/github-api-proxy/identity/kustomization.yaml",
+    "cluster/k8s/github-api-proxy/app/github-api-proxy.k8s.yaml",
 )
 
 

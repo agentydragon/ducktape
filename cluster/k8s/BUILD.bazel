@@ -152,6 +152,9 @@ exports_files(
         "matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
         "matrix/user-provisioner/kustomization.yaml",
         "study-casino/study-casino.k8s.yaml",
+        "github-api-proxy/identity/github-api-proxy-identity.k8s.yaml",
+        "github-api-proxy/identity/kustomization.yaml",
+        "github-api-proxy/app/github-api-proxy.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

@@ -74,7 +74,10 @@ from cluster.cdk8s.forgejo import (
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
 from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
-from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
+from cluster.cdk8s.github_api_proxy import (
+    flux_kustomizations as github_api_proxy_flux_kustomizations,
+    proxy as github_api_proxy,
+)
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import (
     flux_kustomizations as github_secrets_sync_flux_kustomizations,
@@ -196,6 +199,7 @@ def generate_manifests(root: Path) -> None:
     matrix.write_manifests(root)
     matrix_user_provisioner.write_manifests(root)
     study_casino_app.write_manifests(root)
+    github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
