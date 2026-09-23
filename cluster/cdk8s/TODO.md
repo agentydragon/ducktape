@@ -57,17 +57,21 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   - Reject declared providers no Pod reads. These were source-graph consistency checks;
     they did not query the cluster or prove a live resource existed.
 
-- **Cross-check ESO namespace whitelists once ESO manifests are uniformly in cdk8s.** A
-  `ClusterExternalSecret.spec.namespaces` entry only actually syncs if the backing
-  `ClusterSecretStore.spec.conditions[].namespaces` also allows it — two independently
-  hand-written namespace lists that can silently drift. PR #7407 widened
-  `google-access-token`'s `ClusterExternalSecret` to add `agentplane-staging` without
-  widening `kubernetes-airlock-secret-store`'s `conditions`, so the sync failed with
-  `SecretSyncedError: could not get secret data from provider` until caught by hand.
-  Once every `ClusterExternalSecret`/`ClusterSecretStore` pair is a cdk8s construct,
-  derive both namespace lists from one source, or validate at synth that a
-  ClusterExternalSecret's namespaces are a subset of its store's condition namespaces,
-  so this can't recur.
+- **Check ESO wiring against each store.** An `ExternalSecret`, or a
+  `ClusterExternalSecret.spec.namespaces` entry, only syncs if the backing
+  `ClusterSecretStore.spec.conditions[].namespaces` admits its namespace, and, for a store
+  with referent auth (`auth.serviceAccount` without a namespace), only if that namespace
+  has the named ServiceAccount. Each is a pair of independently written lists that drift
+  silently: ESO reports `SecretSyncedError` on the live cluster and nothing in CI fails.
+  It has shipped three times: PR #7407 widened `google-access-token`'s
+  `ClusterExternalSecret` to add `agentplane-staging` without widening
+  `kubernetes-airlock-secret-store`'s `conditions`; `kubernetes-forgejo-images-secret-store`
+  never admitted `google-mcp`'s pull secret (#7630); and agentplane-testing's GitHub PAT
+  copy lost its `external-creds-reader` ServiceAccount. `cluster/validation/checks.py`
+  already sees rendered and hand-written resources together (the store checks beside
+  `check_forgejo_image_namespace_reflection`), so resolve every (Cluster)ExternalSecret's
+  store there and fail on either gap. Once every pair is a cdk8s construct, derive both
+  sides from one source instead.
 
   Specific coverage removed:
   - Agentplane staging: `agentplane-oidc` and `agentplane-mcp-oauth` from
