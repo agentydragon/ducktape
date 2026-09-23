@@ -4,7 +4,5 @@ namespace: plaid-mcp
 resources:
   # cdk8s-generated (cluster/cdk8s/plaid_mcp/reader.py) -- see cluster/docs/cdk8s.md.
   - plaid-db-mcp.k8s.yaml
-  # Hand-written: no RedisReplication binding exists for cdk8s.
-  - valkey-kimsufi-instance.yaml
 components:
   - ./image-pins
