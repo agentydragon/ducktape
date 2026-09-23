@@ -47,12 +47,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
         # oci-cache README "Phase 2").
         "ghcr.io",
         "pkg-containers.githubusercontent.com",
-        "gmail.googleapis.com",
-        "www.googleapis.com",
-        # Google Tasks API -- Haku reads the operator's task list. www.googleapis.com covers
-        # Calendar/Drive; Tasks is on its own host. (A 403 here is a token-scope gap, not this
-        # allowlist -- but the host must still be reachable once the scope is granted.)
-        "tasks.googleapis.com",
         # Claude Agent SDK smoke/runtime telemetry. The sandbox CLI subprocess removes
         # *.allegedly.works from its inherited NO_PROXY so this public Authentik-gated endpoint
         # stays behind the forced proxy.
