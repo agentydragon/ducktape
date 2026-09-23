@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
@@ -20,12 +20,15 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore, ThreadScope
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
@@ -42,17 +45,26 @@ class Seeded:
     scope: ThreadScope
 
 
-# Every case here reads: the proxy builds a request and forwards or refuses it, and none writes. The
-# expensive part of a per-test database is creating and migrating it, and that helper is
-# synchronous, so the module can share one without a module-scoped event loop the async fixtures
-# would then need. Each case still seeds its own sandbox, so they share no thread and no lease.
+# The proxy only reads: it builds a request and forwards or refuses it. The expensive part of a
+# per-test database is creating and migrating it, and that helper is synchronous, so the module can
+# share one without a module-scoped event loop the async fixtures would then need. Each case seeds
+# its own sandbox, so they share no thread and no lease.
 @pytest.fixture(scope="module")
 def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
     yield from migrated_database(postgres_container, "test_electric")
 
 
+@dataclass(frozen=True)
+class Unfolded:
+    """A thread whose runner has attached and has events to send, none of them recorded yet."""
+
+    thread: UUID
+    source: ReplicationSource
+    lease: IngestionLease
+
+
 @pytest.fixture
-async def seeded(event_logs: EventLogStore, content: ContentStore, ingestion: Ingestion) -> Seeded:
+async def unfolded(event_logs: EventLogStore, ingestion: Ingestion) -> Unfolded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
     for index in range(3):
@@ -67,18 +79,35 @@ async def seeded(event_logs: EventLogStore, content: ContentStore, ingestion: In
     lease = await ingestion.acquire(sandbox, timedelta(minutes=2))
     assert lease is not None
     await ingestion.set_attached(thread, source.attached, lease=lease)
-    await ingestion.record(thread, source.entries, lease=lease)
-    scope = await content.current_scope(thread)
+    return Unfolded(thread, source, lease)
+
+
+@pytest.fixture
+async def seeded(unfolded: Unfolded, content: ContentStore, ingestion: Ingestion) -> Seeded:
+    await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+    scope = await content.current_scope(unfolded.thread)
     assert scope is not None
-    return Seeded(thread, scope)
+    return Seeded(unfolded.thread, scope)
 
 
-def make_app(upstream: httpx.MockTransport, content: ContentStore) -> tuple[FastAPI, httpx.AsyncClient]:
-    electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
+def serving(proxy: ElectricProxy) -> FastAPI:
     app = FastAPI()
-    app.state.electric = ElectricProxy(electric, content)
+    app.state.electric = proxy
     app.include_router(router)
-    return app, electric
+    return app
+
+
+MakeApp = Callable[[httpx.MockTransport], tuple[FastAPI, httpx.AsyncClient]]
+
+
+@pytest.fixture
+def make_app(content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates) -> MakeApp:
+    def make(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
+        electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
+        proxy = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+        return serving(proxy), electric
+
+    return make
 
 
 async def _unexpected(_request: httpx.Request) -> httpx.Response:
@@ -91,8 +120,8 @@ def _pinned(request: httpx.Request) -> dict[str, str]:
     return {key: value for key, value in query.multi_items() if key in {"table", "where"} or key.startswith("params[")}
 
 
-async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Seeded, content: ContentStore) -> None:
-    app, electric = make_app(httpx.MockTransport(_unexpected), content)
+async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Seeded, make_app: MakeApp) -> None:
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         scope = await client.get(f"/threads/{seeded.thread}/sync/scope")
         unknown = await client.get(f"/threads/{UUID(int=0)}/sync/scope")
@@ -102,10 +131,64 @@ async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Se
         "projection_epoch": seeded.scope.projection_epoch,
         "through_cursor": str(seeded.scope.through_cursor),
     }
+    # Refused at once: a held read would have ended with 204.
     assert unknown.status_code == 404
 
 
-async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: Seeded, content: ContentStore) -> None:
+class ScopeReads(ContentStore):
+    """Signals a scope read that found no fold, so a case can record one while the read waits."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self.unfolded = asyncio.Event()
+
+    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
+        scope = await super().current_scope(thread_id)
+        if scope is None:
+            self.unfolded.set()
+        return scope
+
+
+async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
+    unfolded: Unfolded,
+    engine: AsyncEngine,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    thread_updates: ThreadUpdates,
+) -> None:
+    content = ScopeReads(engine)
+    electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
+    app = serving(ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        read = asyncio.create_task(client.get(f"/threads/{unfolded.thread}/sync/scope"))
+        await content.unfolded.wait()
+        # What wakes the read is the commit's notification, through the listener every replica runs.
+        await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+        response = await read
+    await electric.aclose()
+
+    scope = await content.current_scope(unfolded.thread)
+    assert scope is not None
+    assert response.status_code == 200
+    assert response.json() == {"projection_epoch": scope.projection_epoch, "through_cursor": str(scope.through_cursor)}
+
+
+async def test_a_thread_still_without_a_fold_at_the_end_of_the_hold_is_answered_empty(
+    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates
+) -> None:
+    electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
+    proxy = ElectricProxy(
+        electric, content, event_logs=event_logs, thread_changes=thread_updates.changes, scope_hold_seconds=0.1
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=serving(proxy)), base_url="http://app") as client:
+        response = await client.get(f"/threads/{unfolded.thread}/sync/scope")
+    await electric.aclose()
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: Seeded, make_app: MakeApp) -> None:
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -116,7 +199,7 @@ async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: See
             headers={"electric-offset": "7_0", "electric-up-to-date": "true", "x-private": "no"},
         )
 
-    app, electric = make_app(httpx.MockTransport(upstream), content)
+    app, electric = make_app(httpx.MockTransport(upstream))
     # Everything Electric's client sends, including what it adds when recovering an expired handle and
     # when it follows a shape over SSE.
     protocol = {
@@ -161,7 +244,7 @@ async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: See
     assert {key: query[key] for key in protocol} == protocol
 
 
-async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: Seeded, content: ContentStore) -> None:
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: Seeded, make_app: MakeApp) -> None:
     """A served offset is cached and revalidated, never re-transferred and never served unchecked."""
     seen: list[httpx.Request] = []
 
@@ -171,7 +254,7 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: 
             return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
 
-    app, electric = make_app(httpx.MockTransport(upstream), content)
+    app, electric = make_app(httpx.MockTransport(upstream))
     params = {"projection_epoch": seeded.scope.projection_epoch, "offset": "7_0", "handle": "h"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         path = f"/threads/{seeded.thread}/sync/entities"
@@ -201,10 +284,8 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: 
         "offset=0_0&handle=h&subset__limit=1",
     ],
 )
-async def test_shape_requests_outside_the_protocol_are_rejected(
-    query: str, seeded: Seeded, content: ContentStore
-) -> None:
-    app, electric = make_app(httpx.MockTransport(_unexpected), content)
+async def test_shape_requests_outside_the_protocol_are_rejected(query: str, seeded: Seeded, make_app: MakeApp) -> None:
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     epoch = httpx.QueryParams({"projection_epoch": seeded.scope.projection_epoch})
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(f"/threads/{seeded.thread}/sync/entities?{epoch}&{query}")
@@ -212,9 +293,9 @@ async def test_shape_requests_outside_the_protocol_are_rejected(
     assert response.status_code == 400
 
 
-async def test_a_retired_epoch_or_a_thread_without_a_fold_is_gone(seeded: Seeded, content: ContentStore) -> None:
+async def test_a_retired_epoch_or_a_thread_without_a_fold_is_gone(seeded: Seeded, make_app: MakeApp) -> None:
     """A rebuilt fold is a new epoch, and a reader holding the old one re-resolves its scope."""
-    app, electric = make_app(httpx.MockTransport(_unexpected), content)
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         retired = await client.get(
             f"/threads/{seeded.thread}/sync/entities", params={"projection_epoch": "retired", "offset": "now"}
@@ -249,7 +330,7 @@ async def test_a_retired_epoch_or_a_thread_without_a_fold_is_gone(seeded: Seeded
     ],
 )
 async def test_entity_subsets_forward_within_the_thread_s_shape(
-    subset: dict[str, Any], seeded: Seeded, content: ContentStore
+    subset: dict[str, Any], seeded: Seeded, make_app: MakeApp
 ) -> None:
     seen: list[httpx.Request] = []
 
@@ -257,7 +338,7 @@ async def test_entity_subsets_forward_within_the_thread_s_shape(
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b'{"data":[],"metadata":{}}'))
 
-    app, electric = make_app(httpx.MockTransport(upstream), content)
+    app, electric = make_app(httpx.MockTransport(upstream))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.post(
             f"/threads/{seeded.thread}/sync/entities",
@@ -303,9 +384,9 @@ async def test_entity_subsets_forward_within_the_thread_s_shape(
     ],
 )
 async def test_entity_subsets_outside_the_forms_are_rejected(
-    subset: dict[str, Any], expected: int, seeded: Seeded, content: ContentStore
+    subset: dict[str, Any], expected: int, seeded: Seeded, make_app: MakeApp
 ) -> None:
-    app, electric = make_app(httpx.MockTransport(_unexpected), content)
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.post(
             f"/threads/{seeded.thread}/sync/entities",
@@ -327,14 +408,14 @@ def _bodies(count: int) -> dict[str, Any]:
     }
 
 
-async def test_chunk_shape_and_body_subsets_are_pinned_to_one_field(seeded: Seeded, content: ContentStore) -> None:
+async def test_chunk_shape_and_body_subsets_are_pinned_to_one_field(seeded: Seeded, make_app: MakeApp) -> None:
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), content)
+    app, electric = make_app(httpx.MockTransport(upstream))
     params = {"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         path = f"/threads/{seeded.thread}/sync/chunks/text"
@@ -378,9 +459,9 @@ async def test_chunk_shape_and_body_subsets_are_pinned_to_one_field(seeded: Seed
     ],
 )
 async def test_body_subsets_name_only_owner_generation_pairs(
-    subset: dict[str, Any], seeded: Seeded, content: ContentStore
+    subset: dict[str, Any], seeded: Seeded, make_app: MakeApp
 ) -> None:
-    app, electric = make_app(httpx.MockTransport(_unexpected), content)
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.post(
             f"/threads/{seeded.thread}/sync/chunks/text",
@@ -393,7 +474,7 @@ async def test_body_subsets_name_only_owner_generation_pairs(
 
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
 async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(
-    disconnect: str, seeded: Seeded, content: ContentStore
+    disconnect: str, seeded: Seeded, make_app: MakeApp
 ) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
@@ -413,7 +494,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     async def upstream(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, stream=chunks)
 
-    app, electric = make_app(httpx.MockTransport(upstream), content)
+    app, electric = make_app(httpx.MockTransport(upstream))
     scope = {
         "type": "http",
         "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},

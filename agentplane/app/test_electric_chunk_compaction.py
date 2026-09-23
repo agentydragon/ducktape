@@ -44,6 +44,7 @@ from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadPayloadReference
+from agentplane.app.changes import Changes
 from agentplane.app.database import connect
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
@@ -196,7 +197,7 @@ async def _followed_body() -> AsyncIterator[_FollowedBody]:
                 httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
             ):
                 app = FastAPI()
-                app.state.electric = ElectricProxy(electric, content)
+                app.state.electric = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=Changes())
                 app.include_router(router)
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as browser:
                     proxy = _Shape(

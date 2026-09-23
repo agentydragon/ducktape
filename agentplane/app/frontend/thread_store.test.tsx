@@ -155,10 +155,14 @@ interface Connection {
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
+  /** Whether the thread has a fold: a scope read before it has one is held, as the proxy holds it. */
+  folded = true;
   entities: Json[] = [];
   chunks: Json[] = [];
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
   readonly #live = new Map<string, Connection>();
+  // The held scope read, answered by `respond`.
+  #held: ((response: Response) => void) | null = null;
   // Handles Electric has rotated away from, each with the one its 409 names instead.
   readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
@@ -170,7 +174,7 @@ class FakeSync {
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
-    if (path === "scope") return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+    if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
     const relation = relationOf(path);
     // Electric resolves a shape's handle from its definition.
@@ -209,6 +213,28 @@ class FakeSync {
       headers: { ...headers(relation, handle, position), "content-type": "text/event-stream" },
     });
   };
+
+  scope(): Response {
+    return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+  }
+
+  #hold(signal?: AbortSignal | null): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      this.#held = resolve;
+      signal?.addEventListener("abort", () => {
+        this.#held = null;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    });
+  }
+
+  /** Answer the held scope read. */
+  async respond(response: () => Response): Promise<void> {
+    await vi.waitFor(() => expect(this.#held).not.toBeNull());
+    const resolve = this.#held!;
+    this.#held = null;
+    await act(async () => resolve(response()));
+  }
 
   /** The offset the shape's open SSE connection reads from. */
   async liveOffset(path: string): Promise<string | null> {
@@ -369,6 +395,24 @@ it("opens one shape on the tail and pages older rows into it", async () => {
   expect(new Set(sync.requests.map((request) => request.query.get("handle")).filter(Boolean))).toEqual(
     new Set(["entities-1"])
   );
+});
+
+it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  sync.folded = false;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await sync.respond(() => new Response(null, { status: 204 }));
+  // Already held again, before any timer could have fired.
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  // No window has opened: the view has nothing to show yet.
+  expect(container.textContent).toBe("");
+
+  sync.folded = true;
+  await sync.respond(() => sync.scope());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
 
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {

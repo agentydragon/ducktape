@@ -294,7 +294,11 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            electric=(ElectricProxy(electric_http, content) if settings.electric_url is not None else None),
+            electric=(
+                ElectricProxy(electric_http, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+                if settings.electric_url is not None
+                else None
+            ),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
