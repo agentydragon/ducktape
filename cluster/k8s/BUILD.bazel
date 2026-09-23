@@ -247,6 +247,8 @@ exports_files(
         "monitoring/loki/kustomization.yaml",
         "monitoring/mimir/mimir.k8s.yaml",
         "monitoring/mimir/kustomization.yaml",
+        "monitoring/tempo/tempo.k8s.yaml",
+        "monitoring/tempo/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
