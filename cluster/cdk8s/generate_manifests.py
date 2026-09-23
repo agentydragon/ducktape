@@ -186,8 +186,15 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
+from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
+from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
+from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
+from cluster.cdk8s.monitoring import (
+    alloy_otlp_bearer_token,
+    flux_kustomizations as monitoring_flux_kustomizations,
+    namespace as monitoring_namespace,
+)
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
-from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
@@ -278,6 +285,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    monitoring_namespace.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
     github_secrets_sync_secrets.write_manifests(root)
@@ -411,8 +419,8 @@ def generate_manifests(root: Path) -> None:
     grafana_helmrepository_kustomization = monitoring_flux_kustomizations.grafana_helmrepository(
         flux_chart, grafana_helmrepository_artifact
     )
-    monitoring_namespace_artifact = artifact("monitoring-namespace", "cluster/k8s/monitoring/namespace")
-    monitoring_namespace_kustomization = monitoring_flux_kustomizations.monitoring_namespace(
+    monitoring_namespace_artifact = artifact("monitoring-namespace", monitoring_namespace.OUTPUT_DIR)
+    monitoring_namespace_kustomization = monitoring_namespace.monitoring_namespace(
         flux_chart, monitoring_namespace_artifact
     )
     node_feature_discovery_artifact = artifact("node-feature-discovery", node_feature_discovery.OUTPUT_DIR)

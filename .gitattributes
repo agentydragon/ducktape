@@ -107,6 +107,7 @@ cluster/k8s/atuin/kustomization.yaml linguist-generated=true
 cluster/k8s/atuin/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/db/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/servicemonitor/kustomization.yaml linguist-generated=true

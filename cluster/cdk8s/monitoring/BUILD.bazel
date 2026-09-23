@@ -1,5 +1,18 @@
 # gazelle:resolve py flux_kustomize //cluster/cdk8s/crd_bindings/flux:kustomization
 # gazelle:resolve py source_watcher_crds //cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator
+# gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
+# gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
+# gazelle:resolve py cilium_crds //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy
+# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/crd_bindings/cnpg:cluster
+# gazelle:resolve py gateway_api_crds //cluster/cdk8s/crd_bindings/gateway_api:httproute
+# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafana
+# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard
+# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource
+# gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/crd_bindings/seaweedfs:bucket
+# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant
+# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3credentials
+# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3identity
 
 load("//devinfra/python:defs.bzl", "py_library")
 
@@ -28,5 +41,20 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
