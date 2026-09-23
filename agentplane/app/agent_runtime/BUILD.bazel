@@ -47,10 +47,10 @@ py_library(
     deps = [
         ":updates",
         "//agentplane/app:inventory",
-        "//agentplane/app:runners",
         "//agentplane/app:thread_fold",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
+        "//agentplane/app/agent_runtime/runner:runners",
         "//agentplane/app/thread:recording",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",

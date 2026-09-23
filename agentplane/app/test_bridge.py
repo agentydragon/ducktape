@@ -27,10 +27,11 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedErr
 from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity
+from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
@@ -41,7 +42,6 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
-from agentplane.app.runners import Runners
 from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.views import ThreadOperationalState
@@ -561,7 +561,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
     )
     monkeypatch.setattr(content, "admitted_command", observed_lookup)
     monkeypatch.setattr("agentplane.app.agent_runtime.ingestion.notify", drop_notification)
-    monkeypatch.setattr("agentplane.app.bridge.ADMISSION_REREAD_S", 0.01)
+    monkeypatch.setattr("agentplane.app.agent_runtime.runner.bridge.ADMISSION_REREAD_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
         async with asyncio.timeout(10):

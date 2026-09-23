@@ -17,9 +17,9 @@ from agentplane.app import thread_fold
 from agentplane.app.agent_runtime.events import event_log, ingestion_lease
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.agent_runtime.runner.runners import Runners, SandboxNotReachableError
 from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.inventory import SandboxNotFoundError
-from agentplane.app.runners import Runners, SandboxNotReachableError
 from agentplane.app.thread.recording import ThreadFoldError, record_thread_fold, set_operational
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
