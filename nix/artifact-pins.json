@@ -227,6 +227,10 @@
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-7b6ebfd5ec93/ducktape_claude_api-0.1.0-py3-none-any.whl",
       "sha256": "e26/1eyT6ReNRuD+KcfIV1Ml6cAMaBvSbx++Cby85wI="
+    },
+    "agentplane-runner": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-aeae6b73485f/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "rq5rc0hfJGThOGFnMpMJY8f47ulWsPkr7ggxH+c0q7M="
     }
   }
 }
