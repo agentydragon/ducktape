@@ -1,10 +1,9 @@
 """The central ClickHouse: the ClickHouseInstallation (one shard, two replicas), its
-three-member Keeper quorum, the client Service, ingress NetworkPolicies, and the
-secret-free diagnostics grant for Haku and public-coder.
+three-member Keeper quorum, the client Service, ingress NetworkPolicies, the PodMonitor, and
+the secret-free diagnostics grant for Haku and public-coder.
 
 The users' credentials are hand-written `*.sops.yaml` Secrets beside the generated
-output, as is the PodMonitor (no binding for its CRD); the directory's hand-written
-`kustomization.yaml` lists them all. Pod templates and volume claim templates are
+output; the generated `kustomization.yaml` lists them. Pod templates and volume claim templates are
 untyped in the operator's CRD schema, so they are plain dicts here.
 """
 
@@ -47,9 +46,29 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates,
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecHealthCheckExprs,
+    KustomizationSpecHealthChecks,
+)
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "clickhouse"
@@ -343,6 +362,17 @@ def clickhouse_chart(app: App) -> Chart:
             ),
         ),
     )
+    PodMonitor(
+        chart,
+        "podmonitor",
+        metadata=metadata(_NAME, NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            pod_metrics_endpoints=[
+                PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", scrape_timeout="15s")
+            ],
+        ),
+    )
     return chart
 
 
@@ -612,4 +642,72 @@ def write_manifests(root: Path) -> None:
         service_chart,
         networkpolicy_chart,
         agent_diagnostics_rbac_chart,
+    )
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[
+                "agent-diagnostics-rbac.k8s.yaml",
+                "admin-credentials.sops.yaml",
+                "aiquota-credentials.sops.yaml",
+                "langfuse-credentials.sops.yaml",
+                "grafana-credentials.sops.yaml",
+                "public-coder-credentials.sops.yaml",
+                "keeper.k8s.yaml",
+                "clickhouse.k8s.yaml",
+                "clickhouse-service.k8s.yaml",
+                "networkpolicy.k8s.yaml",
+            ]
+        ),
+    )
+
+
+def clickhouse(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, clickhouse_operator: Kustomization
+) -> Kustomization:
+    name = "clickhouse"
+    return flux_kustomization(
+        chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            path=artifact_path(artifact),
+            prune=True,
+            decryption=SOPS_DECRYPTION,
+            source_ref=artifact_source_ref(artifact),
+            timeout="20m",
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="clickhouse-keeper.altinity.com/v1",
+                    kind="ClickHouseKeeperInstallation",
+                    name="clickhouse-keeper",
+                    namespace="clickhouse",
+                ),
+                KustomizationSpecHealthChecks(
+                    api_version="clickhouse.altinity.com/v1",
+                    kind="ClickHouseInstallation",
+                    name="clickhouse",
+                    namespace="clickhouse",
+                ),
+            ],
+            health_check_exprs=[
+                KustomizationSpecHealthCheckExprs(
+                    api_version="clickhouse-keeper.altinity.com/v1",
+                    kind="ClickHouseKeeperInstallation",
+                    current="status.status == 'Completed'",
+                    failed="status.status == 'Aborted'",
+                    in_progress="status.status != 'Completed' && status.status != 'Aborted'",
+                ),
+                KustomizationSpecHealthCheckExprs(
+                    api_version="clickhouse.altinity.com/v1",
+                    kind="ClickHouseInstallation",
+                    current="status.status == 'Completed'",
+                    failed="status.status == 'Aborted'",
+                    in_progress="status.status != 'Completed' && status.status != 'Aborted'",
+                ),
+            ],
+            depends_on=[flux_kustomization_depends_on(clickhouse_operator)],
+        ),
     )

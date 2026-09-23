@@ -96,6 +96,7 @@ exports_files(
         "clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml",
         "clickhouse/cluster/clickhouse-service.k8s.yaml",
         "clickhouse/cluster/keeper.k8s.yaml",
+        "clickhouse/cluster/kustomization.yaml",
         "clickhouse/operator/helmrelease.k8s.yaml",
         "clickhouse/operator/kustomization.yaml",
         "clickhouse/operator/namespace.k8s.yaml",

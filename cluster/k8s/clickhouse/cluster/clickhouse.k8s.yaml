@@ -228,3 +228,18 @@ spec:
             requests:
               storage: 500Gi
           storageClassName: local-path-ovh-hdd-retain
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: clickhouse
+  namespace: clickhouse
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: metrics
+      scrapeTimeout: 15s
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: clickhouse
+      app.kubernetes.io/name: clickhouse
