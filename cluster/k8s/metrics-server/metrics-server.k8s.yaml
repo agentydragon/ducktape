@@ -13,26 +13,23 @@ metadata:
   name: metrics-server
   namespace: kube-system
 spec:
-  interval: 30m
-  install:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: metrics-server
-      version: "3.14.0"
+      interval: 12h
       sourceRef:
         kind: HelmRepository
         name: metrics-server
         namespace: flux-system
-      interval: 12h
+      version: 3.14.0
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
   values:
-    # Talos-specific configuration
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-
-    # Resource configuration
     resources:
       limits:
         cpu: 100m

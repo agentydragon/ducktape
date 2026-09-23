@@ -24,6 +24,7 @@ from cluster.cdk8s import (
     haku_openclaw_spike_config,
     hubble_ui,
     kube_system,
+    metrics_server,
     ntfy,
     nvidia_runtimeclass,
     public_coder_agent_config,
@@ -105,7 +106,6 @@ from cluster.cdk8s.litellm import (
 )
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
-from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
@@ -190,6 +190,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
     hubble_ui.write_manifests(root)
+    metrics_server.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -308,8 +309,8 @@ def generate_manifests(root: Path) -> None:
     kyverno_policies_kustomization = kyverno_flux_kustomizations.kyverno_policies(
         flux_chart, kyverno_policies_artifact, kyverno_kustomization
     )
-    metrics_server_artifact = artifact("metrics-server", "cluster/k8s/metrics-server")
-    metrics_server_kustomization = metrics_server_flux_kustomizations.metrics_server(
+    metrics_server_artifact = artifact("metrics-server", metrics_server.OUTPUT_DIR)
+    metrics_server_kustomization = metrics_server.metrics_server(
         flux_chart, metrics_server_artifact, kyverno_kustomization
     )
     reloader_artifact = artifact("reloader", "cluster/k8s/reloader")
