@@ -195,7 +195,9 @@ bounding held pages, and a client that keeps them cached avoids it.
 
 - **D5 — a completed body is eventually stored once.** Once a message has finished streaming, it
   is at some point compacted to its final version: a constant number of rows per completed body,
-  not one chunk per appending batch and one manifest per revision. Owner, 2026-09-23.
+  not one chunk per appending batch and one manifest per revision. Compaction does not change the
+  content, so it is not a new version: a reader holding the body refetches nothing. Owner,
+  2026-09-23.
 
 **D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
 appends to a body writes one new chunk row holding only that batch's text
@@ -209,15 +211,24 @@ replacement, which starts a new generation and so is a new body.
 rebuilt from the event log, so compaction deletes nothing that is not recoverable. What it touches
 in sync:
 
-- **A reader holding the body.** Compaction rewrites rows that reader holds. Written as a new
-  generation holding the whole text, it costs each reader of that body one re-send of it — once per
-  body rather than per token, so D4 still holds for the streaming itself. Doing it late, rather
-  than at completion, makes it cost nothing to readers who opened the thread afterwards.
-- **S1.** A reference that names a compacted revision must stop resolving (`410`, like a stale
-  epoch), so a reader holding it moves to the current reference rather than rendering chunks that
-  no longer add up to what it names.
-- **Reading an old revision's body** stops being possible once compacted. Nothing needs it outside
-  debugging, and the event log keeps it.
+- **A reader holding the body.** Compaction keeps the body's identity — owner, generation, and
+  every reference to it — so the entity row does not change and a reader keeps rendering the chunks
+  it holds. What reaches it is the storage change itself:
+  - a delete per replaced chunk, which must not withdraw text the reader shows. Chunk rows are
+    insert-only, so their shapes have no use for `replica=full`; whether a delete under it carries
+    the row's text is not pinned, and without it a delete is a key.
+  - the compacted row, which a live shape over the chunk table pushes to every reader following
+    the field when compaction runs — one re-send of the text. Keeping compacted rows out of the
+    live shape removes it: they never change, so a reader can read one once rather than follow
+    it, at the cost of a second read path (D2). Compacting late makes the re-send rare either way.
+- **S1.** The compacted row must answer a reference as the chunks did: as far as the reference
+  spans. Kept with the length of each chunk it replaces, it answers every revision's reference,
+  intermediate ones included, and nothing has to stop resolving. Without those lengths only the
+  final reference resolves, and one naming an intermediate revision gets `410`, so its reader moves
+  to the current reference.
+- **Reading an old revision's body** survives with the lengths. Without them it stops; nothing
+  needs it outside debugging, and the event log keeps it.
 
-It is a storage change every option can take; they differ only in how a reader learns the
-reference moved, which each already handles for any edit.
+It is a storage change every option can take. The reference does not move, so options differ only
+in what their live channel sends a reader holding the body: a shape over the chunk table pushes
+every row change in it, where an app-owned channel can send nothing.
