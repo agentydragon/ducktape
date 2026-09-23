@@ -90,6 +90,11 @@ ducktapePkgs
   # Build: nix build .#haku-sandbox-image
   # Load:  docker load < result
   haku-sandbox-image = import ../../cluster/k8s/haku/workspaces/image { inherit pkgs; };
+  # agentplane's sandbox image: a box's command-line tools, as one list
+  # (agentplane/sandbox_image/default.nix).
+  # Build: nix build .#agentplane-sandbox-image
+  # Load:  docker load < result
+  agentplane-sandbox-image = import ../../agentplane/sandbox_image { inherit pkgs; };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)

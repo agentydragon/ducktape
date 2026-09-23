@@ -1,0 +1,44 @@
+# Build agentplane's Nix sandbox image (agentplane/sandbox_image/default.nix) and push it to the
+# Forgejo registry, through nix-image.yml. The archive also goes to the Attic cache.
+name: Agentplane Sandbox Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "agentplane/sandbox_image/**"
+      - "nix/lib/nix-ld-image.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-sandbox-image.yml"
+      - ".github/workflows/nix-image.yml"
+  # Build-only on PRs, so a change to the tool list is proven to build before it merges.
+  pull_request:
+    paths:
+      - "agentplane/sandbox_image/**"
+      - "nix/lib/nix-ld-image.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-sandbox-image.yml"
+      - ".github/workflows/nix-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: agentplane-sandbox-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: agentplane-sandbox-image
+      image: git.allegedly.works/ducktape-ci/agentplane-sandbox
+      registry: forgejo
+      attic: true
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

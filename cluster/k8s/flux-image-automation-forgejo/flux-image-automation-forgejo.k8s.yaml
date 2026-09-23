@@ -651,31 +651,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: ha-mcp-token-provisioner
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: ha-mcp-token-provisioner
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: ha-mcp-token-provisioner
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: haku-console
   namespace: flux-system
 spec:

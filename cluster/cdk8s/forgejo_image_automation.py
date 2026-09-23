@@ -77,7 +77,6 @@ IMAGES = (
     "google-mcp",
     "grocy-mcp-oidc-server",
     "grocy-user-perms-provisioner",
-    "ha-mcp-token-provisioner",
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",

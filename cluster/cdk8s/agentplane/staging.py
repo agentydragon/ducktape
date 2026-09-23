@@ -26,12 +26,7 @@ from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import (
-    STAGING_NAMESPACE,
-    EgressCredentials,
-    credential_external_secret,
-    single_secret_store,
-)
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -44,6 +39,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
@@ -74,9 +70,11 @@ _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# ha-mcp and google-mcp each mint their bearer in their own namespace (cluster/cdk8s/ha_mcp.py,
-# google_mcp.py), and this namespace copies it through a store that can read that one Secret; the
-# Tana PAT is an external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
+# ssh-mcp, ha-mcp and google-mcp each mint their bearer in their own namespace
+# (cluster/cdk8s/ssh_mcp/backend.py, ha_mcp.py, google_mcp.py), and this namespace copies it
+# through a store that can read that one Secret; the Tana PAT is an external-creds copy approved
+# for this namespace (cluster/cdk8s/external_creds.py).
+_SSH_MCP_BEARER_SECRET = "ssh-mcp-client-bearer"
 _HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
@@ -311,7 +309,7 @@ ENV = Environment(
         extra_reload_secrets=(
             _GITHUB_MCP_CLIENT_SECRET,
             _WEB_PUSH_SECRET,
-            BEARER_SECRET_NAME,
+            _SSH_MCP_BEARER_SECRET,
             _HA_MCP_BEARER_SECRET,
             _TANA_MCP_BEARER_SECRET,
             _GOOGLE_MCP_BEARER_SECRET,
@@ -321,7 +319,7 @@ ENV = Environment(
         web_push_secret_name=_WEB_PUSH_SECRET,
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         bearer_mcp_mounts=[
-            BearerMcpMount(name="ssh-mcp", secret_name=BEARER_SECRET_NAME, secret_key=BEARER_SECRET_KEY),
+            BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),
             BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
             # The Secret's own key is `token` (it's a Tana personal access token, not a
             # bearer minted for this purpose); renamed at mount time to the same
@@ -375,6 +373,7 @@ def chart(app: App) -> Chart:
         annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     for backend, target, source in (
+        ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
         ("google-mcp", _GOOGLE_MCP_BEARER_SECRET, _GOOGLE_MCP_BEARER_SECRET),
         ("ha-mcp", _HA_MCP_BEARER_SECRET, "ha-mcp-bearer"),
     ):
