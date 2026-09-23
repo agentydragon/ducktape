@@ -108,6 +108,8 @@ _GENERATED_FILES = (
     "cluster/k8s/kube-system/kustomization.yaml",
     "cluster/k8s/user-agentydragon/user-agentydragon.k8s.yaml",
     "cluster/k8s/user-agentydragon/kustomization.yaml",
+    "cluster/k8s/nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
+    "cluster/k8s/nvidia-runtimeclass/kustomization.yaml",
 )
 
 

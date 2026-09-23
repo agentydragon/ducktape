@@ -146,6 +146,8 @@ exports_files(
         "kube-system/kustomization.yaml",
         "user-agentydragon/user-agentydragon.k8s.yaml",
         "user-agentydragon/kustomization.yaml",
+        "nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
+        "nvidia-runtimeclass/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
