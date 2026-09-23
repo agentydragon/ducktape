@@ -69,3 +69,17 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_library(
+    name = "proxy_routes",
+    srcs = ["proxy_routes.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "@pypi//cdk8s",
+    ],
+)
