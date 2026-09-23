@@ -7,106 +7,29 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster, namespace
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "registry-cache"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/registry-cache-bucket"
 _CHART = "registry-cache-bucket"
 _TENANT = "oci-cache"
-_WRITER = NAME
-_GROUP = "seaweed.seaweedfs.com"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    Bucket(
+    # The existing cache bucket was handed to the tenant-local CR.
+    s3.tenant_bucket(
         chart,
-        "bucket",
-        metadata=metadata(NAME, _TENANT),
-        spec=BucketSpec(
-            name=NAME,
-            # The existing cache bucket is being handed to the tenant-local CR.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=cluster.NAME, namespace=namespace.NAME),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_WRITER,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(_WRITER, namespace.NAME),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(_WRITER, _TENANT),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=namespace.NAME),
-            identity_ref=S3CredentialsSpecIdentityRef(name=_WRITER),
-            secret_ref=S3CredentialsSpecSecretRef(name="registry-cache-s3-credentials"),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit the tenant-local Bucket and S3Credentials to reference the SeaweedFS cluster in
-    # its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "grant",
-        metadata=metadata(NAME, namespace.NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="Bucket", namespace=_TENANT),
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=_TENANT),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
-        ),
+        name=NAME,
+        namespace=_TENANT,
+        owns_identity=True,
+        secret="registry-cache-s3-credentials",
+        key_fields=None,
+        grant=NAME,
     )
     return chart
 

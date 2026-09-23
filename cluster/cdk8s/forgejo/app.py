@@ -53,39 +53,16 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsBearerTokenSecret,
     ServiceMonitorSpecSelector,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = "cluster/k8s/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
 _METRICS_TOKEN = "forgejo-metrics-token"
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
@@ -123,59 +100,17 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    Bucket(
+    # The IAM identity `forgejo` is declared by the seaweedfs-forgejo-bucket Kustomization.
+    s3.tenant_bucket(
         scope,
-        "bucket",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Forgejo packages, LFS, attachments, and artifacts."}
-        ),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is already populated; adopt it instead of treating it
-            # as a conflicting bucket during the Flux ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
-    )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Forgejo's SeaweedFS S3 credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM username is cluster-global. Without a same-namespace S3Identity,
-            # the operator treats this as the existing SeaweedFS identity named forgejo.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Same-namespace targets are created and owned by S3Credentials.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET, access_key_field="accessKey", secret_key_field="secretKey"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        owns_identity=False,
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        grant=_NAME,
+        bucket_description="Forgejo packages, LFS, attachments, and artifacts.",
+        credentials_description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 

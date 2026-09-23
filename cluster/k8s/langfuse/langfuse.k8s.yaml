@@ -75,6 +75,16 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: langfuse
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -110,16 +120,6 @@ spec:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
       name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: langfuse
-  namespace: seaweedfs
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

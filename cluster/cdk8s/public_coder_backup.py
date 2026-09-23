@@ -33,28 +33,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
@@ -85,6 +63,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
 OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/backup"
@@ -101,65 +80,18 @@ _RESTIC_PASSWORD_SECRET_NAME = "public-coder-agent-volsync-restic-password"
 
 
 def _bucket(scope: Construct) -> None:
-    Bucket(
+    # The IAM identity is declared by the seaweedfs-public-coder-agent-backups-bucket
+    # Kustomization.
+    s3.tenant_bucket(
         scope,
-        "bucket",
-        metadata=metadata(
-            _BUCKET_NAME,
-            _NAMESPACE,
-            annotations={"description": "Public Coder's tenant-local SeaweedFS backup bucket."},
-        ),
-        spec=BucketSpec(
-            name=_BUCKET_NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_BUCKET_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
-    )
-    S3Credentials(
-        scope,
-        "credentials",
-        metadata=metadata(
-            _BUCKET_NAME,
-            _NAMESPACE,
-            annotations={"description": "Public Coder's tenant-local SeaweedFS backup credentials."},
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=_BUCKET_NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET_NAME,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Public Coder's tenant-local Bucket and S3Credentials to reference the SeaweedFS
-    # cluster in its namespace.
-    group = "seaweed.seaweedfs.com"
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_BUCKET_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=group, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=group, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=group, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+        name=_BUCKET_NAME,
+        namespace=_NAMESPACE,
+        owns_identity=False,
+        secret=_S3_CREDENTIALS_SECRET_NAME,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        grant=_BUCKET_NAME,
+        bucket_description="Public Coder's tenant-local SeaweedFS backup bucket.",
+        credentials_description="Public Coder's tenant-local SeaweedFS backup credentials.",
     )
 
 

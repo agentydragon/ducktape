@@ -65,34 +65,6 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
     RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
@@ -106,13 +78,12 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.seaweedfs import s3
 
 OUTPUT_DIR = "cluster/k8s/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
 _ZONE = "hil-ovh"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
 _VALKEY = "langfuse-valkey-ovh"
 
@@ -175,72 +146,18 @@ def _storage(scope: Construct) -> None:
         ),
         type="Opaque",
     )
-    Bucket(
+    s3.tenant_bucket(
         scope,
-        "bucket",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Langfuse event, export, and media objects."}),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is populated; adopt it during the ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
-    )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Langfuse's tenant-local SeaweedFS credentials."}
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named langfuse.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET,
-                access_key_field="s3-access-key-id",
-                secret_key_field="s3-secret-access-key",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Langfuse's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
-    )
-    S3Identity(
-        scope,
-        "s3-identity",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        owns_identity=True,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
+        grant=_NAME,
+        bucket_description="Langfuse event, export, and media objects.",
+        credentials_description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 
 

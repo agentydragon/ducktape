@@ -144,9 +144,6 @@ differs keeps building the object directly.
 
 - **`valkey_instance(...)`** for the six `RedisReplication`s (~80 near-identical
   lines each): size, storage class, zone affinity and description differ.
-- **`seaweed_bucket(...)`** for the Bucket + S3Identity + S3Credentials +
-  ResourceReferenceGrant bundle repeated in ~14 modules (~890 lines). It is also the
-  one place to hold the operator's rules (`seaweed_operator` skill).
 - **`helm_release(...)`** for the HelmRepository + HelmRelease pair in ~33 modules
   (~1,500 lines); values stay a plain dict. One call shape also gives the Renovate
   annotation one place to live.

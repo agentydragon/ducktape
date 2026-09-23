@@ -1,14 +1,4 @@
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: home-assistant-backups
-  namespace: seaweedfs
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   annotations:
@@ -29,6 +19,16 @@ spec:
     namespace: seaweedfs
   name: home-assistant-backups
   reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

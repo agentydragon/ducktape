@@ -26,27 +26,11 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecMethod,
     ScheduledBackupSpecPluginConfiguration,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
     ResourceReferenceGrant,
     ResourceReferenceGrantSpec,
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
 )
 from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3Identity,
@@ -59,42 +43,26 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "authentik-db-backups"
 NAMESPACE = "authentik"
 OUTPUT_DIR = "cluster/k8s/authentik/db-backups"
 _SEAWEED = "seaweedfs"
 _SEAWEED_NAMESPACE = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _CREDENTIALS_SECRET = "authentik-db-backup-s3"
 _OBJECT_STORE = "authentik-db-ovh"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    Bucket(
+    s3.bucket(
         chart,
-        "bucket",
-        metadata=metadata(
-            NAME, NAMESPACE, annotations={"description": "Private CNPG physical backups and WAL archive for Authentik."}
-        ),
-        spec=BucketSpec(
-            name=NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEED, namespace=_SEAWEED_NAMESPACE),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=NAME,
+        namespace=NAMESPACE,
+        access={NAME: s3.READ_WRITE},
+        adopt_existing=True,
+        description="Private CNPG physical backups and WAL archive for Authentik.",
     )
     identity = S3Identity(
         chart,
@@ -107,20 +75,14 @@ def chart(app: App) -> Chart:
             reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
         ),
     )
-    S3Credentials(
+    s3.credentials(
         chart,
-        "credentials",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEED, namespace=_SEAWEED_NAMESPACE),
-            identity_ref=S3CredentialsSpecIdentityRef(name=identity.name),
-            # The operator creates and owns this Secret in the credential's namespace, where the
-            # ObjectStore below consumes it.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
+        identity=identity.name,
+        namespace=NAMESPACE,
+        # The operator creates and owns this Secret in the credential's namespace, where the
+        # ObjectStore below consumes it.
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
     # Permits only the backup resources above to reference the Seaweed cluster.
     ResourceReferenceGrant(
@@ -129,10 +91,10 @@ def chart(app: App) -> Chart:
         metadata=metadata(NAME, _SEAWEED_NAMESPACE),
         spec=ResourceReferenceGrantSpec(
             from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind=kind, namespace=NAMESPACE)
+                ResourceReferenceGrantSpecFrom(group=s3.GROUP, kind=kind, namespace=NAMESPACE)
                 for kind in ("S3Identity", "S3Credentials", "Bucket")
             ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEED)],
+            to=[ResourceReferenceGrantSpecTo(group=s3.GROUP, kind="Seaweed", name=_SEAWEED)],
         ),
     )
     ObjectStore(
