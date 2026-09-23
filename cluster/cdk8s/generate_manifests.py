@@ -124,7 +124,10 @@ from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomization
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
-from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
+from cluster.cdk8s.openebs_lvm import (
+    flux_kustomizations as openebs_lvm_flux_kustomizations,
+    storage as openebs_lvm_storage,
+)
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
@@ -214,6 +217,7 @@ def generate_manifests(root: Path) -> None:
     talos_cloud_controller_manager.write_manifests(root)
     kube_api_proxy.write_manifests(root)
     vector_talos_logs.write_manifests(root)
+    openebs_lvm_storage.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
