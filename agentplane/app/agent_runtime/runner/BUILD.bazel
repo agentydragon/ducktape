@@ -19,9 +19,9 @@ py_library(
     deps = [
         ":runners",
         "//agentplane/app:changes",
-        "//agentplane/app:ingestion",
         "//agentplane/app:inventory",
         "//agentplane/app:presets",
+        "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:command_pb2",

@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.ingestion import Ingestion
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

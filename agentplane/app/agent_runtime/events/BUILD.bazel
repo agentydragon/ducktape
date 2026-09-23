@@ -8,8 +8,8 @@ py_library(
     deps = [
         ":debug",
         "//agentplane/app:presets",
-        "//agentplane/app/thread:models",
-        "//agentplane/app/thread:updates",
+        "//agentplane/app/agent_runtime:models",
+        "//agentplane/app/agent_runtime:updates",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
@@ -21,7 +21,7 @@ py_library(
     name = "ingestion_lease",
     srcs = ["ingestion_lease.py"],
     deps = [
-        "//agentplane/app/thread:models",
+        "//agentplane/app/agent_runtime:models",
         "@pypi//sqlalchemy",
     ],
 )
@@ -51,7 +51,7 @@ py_test(
         ":ingestion_lease",
         "//:conftest",
         "//agentplane/app:conftest",
-        "//agentplane/app:ingestion",
+        "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/protocol:event_pb2",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",

@@ -43,6 +43,8 @@ from agentplane.app.agent_runtime.events.debug import (
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.agent_runtime.runner import bridge as runner_bridge
 from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.agent_runtime.view.fold import CommandOutcome
 from agentplane.app.agent_runtime.view.views import ThreadView
@@ -77,8 +79,6 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 

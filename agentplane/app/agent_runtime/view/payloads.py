@@ -10,8 +10,8 @@ from uuid import UUID
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentplane.app.agent_runtime.models import ThreadPayloadChunk, ThreadPayloadManifest
 from agentplane.app.agent_runtime.view import fold
-from agentplane.app.thread.models import ThreadPayloadChunk, ThreadPayloadManifest
 
 
 @dataclass

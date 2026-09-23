@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.thread.models import EventLog, SandboxIngestion
+from agentplane.app.agent_runtime.models import EventLog, SandboxIngestion
 
 
 @dataclass(frozen=True)

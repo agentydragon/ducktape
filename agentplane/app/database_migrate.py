@@ -6,12 +6,13 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from agentplane.app.thread.models import Base
+from agentplane.app.agent_runtime.models import Base
 from util.db_migrations import MigrationRunner
 
-# `Base` is declared in operator_sessions.py; thread/models.py's own Thread/Event tables and
-# operator_sessions.py's BrowserSession all share it, and importing it here (via thread/models.py,
-# which already imports operator_sessions.py) registers every table onto one metadata.
+# `Base` is declared in operator_sessions.py; agent_runtime/models.py's own Thread/Event tables and
+# operator_sessions.py's BrowserSession all share it, and importing it here (via
+# agent_runtime/models.py, which already imports operator_sessions.py) registers every table onto
+# one metadata.
 RUNNER = MigrationRunner(
     metadata=Base.metadata,
     migrations_dir=Path(__file__).parent / "migrations",
