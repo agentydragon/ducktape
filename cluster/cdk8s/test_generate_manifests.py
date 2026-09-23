@@ -46,6 +46,7 @@ _GENERATED_FILES = (
     "cluster/k8s/haku/workloads/haku-workloads.k8s.yaml",
     "cluster/k8s/haku/workspaces/app/haku-workspaces.k8s.yaml",
     "cluster/k8s/haku/mailbox/haku-mailbox.k8s.yaml",
+    "cluster/k8s/haku-ci/haku-ci.k8s.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
