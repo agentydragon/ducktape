@@ -192,11 +192,11 @@ class GoogleMcpApp(Construct):
                 read_only_root_filesystem=False,
             ),
         )
-        # `optional=True`: this Secret is populated by a ClusterExternalSecret in a different
-        # Kustomization (Airlock's) with no Flux-level ordering guarantee, so the pod must come
-        # up (failing readiness, not crash-looping) before that Secret first appears.
+        # Airlock's ClusterExternalSecret fills this Secret from another Kustomization. While it is
+        # absent (before the `google-write` consent), the pod waits in ContainerCreating on this
+        # mount rather than starting without a token.
         google_token_secret = Secret.from_secret_name(self, "google-token-secret-ref", GOOGLE_TOKEN_SECRET_NAME)
-        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret, optional=True)
+        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret)
         deployment.containers[0].mount(_GOOGLE_TOKEN_DIR, google_token_volume, read_only=True)
         return deployment
 
