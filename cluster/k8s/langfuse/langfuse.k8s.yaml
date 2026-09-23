@@ -1,0 +1,423 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+  name: langfuse
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: langfuse-db
+  namespace: langfuse
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: langfuse
+      owner: langfuse
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 10Gi
+    storageClass: local-path-ovh
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
+  name: langfuse-s3-credentials
+  namespace: langfuse
+type: Opaque
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Langfuse event, export, and media objects.
+  name: langfuse
+  namespace: langfuse
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: langfuse
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: langfuse
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Langfuse's tenant-local SeaweedFS credentials.
+  name: langfuse
+  namespace: langfuse
+spec:
+  identityRef:
+    name: langfuse
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: s3-access-key-id
+    name: langfuse-seaweedfs-credentials
+    secretKeyField: s3-secret-access-key
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: langfuse
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: langfuse
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: langfuse
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: langfuse
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  hostnames:
+    - langfuse.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: langfuse-web
+          port: 3000
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: langfuse-log-reader
+  namespace: langfuse
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+      - services
+      - configmaps
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-langfuse-reader
+  namespace: langfuse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: langfuse-log-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: claude-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: OVH Valkey for Langfuse queue/cache state
+  name: langfuse-valkey-ovh
+  namespace: langfuse
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: langfuse-valkey-ovh
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: local-path-ovh
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  interval: 24h
+  url: https://langfuse.github.io/langfuse-k8s
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  chart:
+    spec:
+      chart: langfuse
+      sourceRef:
+        kind: HelmRepository
+        name: langfuse
+        namespace: langfuse
+      version: 2.1.0
+  install:
+    strategy:
+      name: RetryOnFailure
+  interval: 15m
+  timeout: 20m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+  values:
+    clickhouse:
+      auth:
+        existingSecret: clickhouse-langfuse-credentials
+        existingSecretKey: password
+        username: langfuse
+      clusterEnabled: true
+      database: langfuse
+      deploy: false
+      host: clickhouse.clickhouse.svc.cluster.local
+      httpPort: 8123
+      migration:
+        autoMigrate: true
+        ssl: false
+        url: clickhouse://clickhouse.clickhouse.svc.cluster.local:9000
+      nativePort: 9000
+    ingress:
+      enabled: false
+    langfuse:
+      additionalEnv:
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=1536
+        - name: CLICKHOUSE_CLUSTER_NAME
+          value: default
+        - name: LANGFUSE_MIGRATION_V4_WRITE_MODE
+          value: dual
+        - name: LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR
+          value: dual_write
+        - name: LANGFUSE_BACKGROUND_MIGRATION_V4_ENABLE_HISTORIC_BACKFILL
+          value: "true"
+        - name: AUTH_CUSTOM_NAME
+          value: Authentik
+        - name: AUTH_CUSTOM_ISSUER
+          value: https://auth.allegedly.works/application/o/langfuse
+        - name: AUTH_CUSTOM_SCOPE
+          value: openid email profile
+        - name: AUTH_CUSTOM_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: client-id
+              name: langfuse-oidc-config
+        - name: AUTH_CUSTOM_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: langfuse-oidc-config
+        - name: AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING
+          value: "true"
+        - name: AUTH_DISABLE_USERNAME_PASSWORD
+          value: "true"
+        - name: LANGFUSE_INIT_ORG_ID
+          value: langfuse-default-org
+        - name: LANGFUSE_INIT_ORG_NAME
+          value: Default
+        - name: LANGFUSE_INIT_PROJECT_ID
+          value: langfuse-litellm-project
+        - name: LANGFUSE_INIT_PROJECT_NAME
+          value: litellm
+        - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+              name: langfuse-secrets
+        - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+              name: langfuse-secrets
+        - name: LANGFUSE_INIT_USER_EMAIL
+          value: agentydragon@gmail.com
+        - name: LANGFUSE_INIT_USER_NAME
+          value: Rai
+        - name: LANGFUSE_INIT_USER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_INIT_USER_PASSWORD
+              name: langfuse-secrets
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      encryptionKey:
+        secretKeyRef:
+          key: encryption-key
+          name: langfuse-secrets
+      features:
+        signUpDisabled: false
+      image:
+        tag: 4.35.0
+      nextauth:
+        secret:
+          secretKeyRef:
+            key: nextauth-secret
+            name: langfuse-secrets
+        url: https://langfuse.allegedly.works
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      salt:
+        secretKeyRef:
+          key: salt
+          name: langfuse-secrets
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      web:
+        livenessProbe:
+          initialDelaySeconds: 300
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 1Gi
+      worker:
+        livenessProbe:
+          initialDelaySeconds: 300
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 1Gi
+    postgresql:
+      auth:
+        database: langfuse
+        existingSecret: langfuse-db-app
+        secretKeys:
+          userPasswordKey: password
+        username: langfuse
+      deploy: false
+      host: langfuse-db-rw
+    redis:
+      auth:
+        username: ""
+      deploy: false
+      host: langfuse-valkey-ovh-master.langfuse.svc.cluster.local
+      port: 6379
+    s3:
+      accessKeyId:
+        secretKeyRef:
+          key: s3-access-key-id
+          name: langfuse-seaweedfs-credentials
+      batchExport:
+        prefix: exports/
+      bucket: langfuse
+      deploy: false
+      endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+      eventUpload:
+        prefix: events/
+      forcePathStyle: true
+      mediaUpload:
+        prefix: media/
+      region: auto
+      secretAccessKey:
+        secretKeyRef:
+          key: s3-secret-access-key
+          name: langfuse-seaweedfs-credentials
+      storageProvider: s3

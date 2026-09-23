@@ -1,0 +1,39 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/metrics-server/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: metrics-server
+  namespace: kube-system
+spec:
+  chart:
+    spec:
+      chart: metrics-server
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: metrics-server
+        namespace: flux-system
+      version: 3.14.0
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  values:
+    args:
+      - --kubelet-insecure-tls
+      - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi

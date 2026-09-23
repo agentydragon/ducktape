@@ -39,7 +39,6 @@ py_library(
         ":console_config",
         ":database",
         "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:metadata",
@@ -108,11 +107,13 @@ py_library(
         "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -157,5 +158,124 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "rbac",
+    srcs = ["rbac.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "forgejo_tea",
+    srcs = ["forgejo_tea.py"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "ui_image_webhook",
+    srcs = ["ui_image_webhook.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/flux:receiver",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "workloads",
+    srcs = ["workloads.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:gitrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "workspaces",
+    srcs = ["workspaces.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
+        "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxwarmpool",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/kyverno:cleanuppolicy",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "mailbox",
+    srcs = ["mailbox.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clusterexternalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )

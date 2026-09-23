@@ -1,0 +1,103 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: altinity-clickhouse-operator
+  namespace: flux-system
+spec:
+  interval: 12h
+  type: oci
+  url: oci://ghcr.io/altinity/clickhouse-operator-helm-chart
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: clickhouse-operator
+  namespace: clickhouse
+spec:
+  chart:
+    spec:
+      chart: altinity-clickhouse-operator
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: altinity-clickhouse-operator
+        namespace: flux-system
+      version: 0.27.3
+  driftDetection:
+    mode: enabled
+  interval: 30m
+  timeout: 10m
+  values:
+    crdHook:
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      image:
+        repository: bitnamilegacy/kubectl
+        tag: 1.33.4@sha256:ed0b31a0508da84ee655c5c6e01bd3897fc56ad6cf69debb27fa1893a06d2246
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 32Mi
+    metrics:
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      enabled: true
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+    operator:
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      seccompProfile:
+        type: RuntimeDefault
+    rbac:
+      namespaceScoped: true
+    serviceMonitor:
+      enabled: true
+    watchNamespaces:
+      - clickhouse
+  valuesFrom:
+    - kind: Secret
+      name: clickhouse-operator-values
+      valuesKey: values.yaml

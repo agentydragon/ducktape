@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: litellm

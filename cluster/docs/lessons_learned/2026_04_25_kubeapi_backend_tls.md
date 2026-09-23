@@ -100,9 +100,8 @@ This works because:
 
 ## Files
 
-| File                                      | Purpose                                         |
-| ----------------------------------------- | ----------------------------------------------- |
-| <../../k8s/kube-api-proxy/service.yaml>   | nginx proxy Deployment + Service + ConfigMap    |
-| <../../k8s/kube-api-proxy/httproute.yaml> | HTTPRoute → kubeapi-proxy:8080                  |
-| <../../k8s/kube-api-proxy/README.md>      | Topology and design rationale                   |
-| <../../terraform/main/cilium-values.yaml> | `enableAppProtocol: true` (kept for future use) |
+| File                                      | Purpose                                                                       |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| <../../cdk8s/kube_api_proxy.py>           | nginx proxy Deployment, Service, ConfigMap and HTTPRoute → kubeapi-proxy:8080 |
+| <../../k8s/kube-api-proxy/README.md>      | Topology and design rationale                                                 |
+| <../../terraform/main/cilium-values.yaml> | `enableAppProtocol: true` (kept for future use)                               |

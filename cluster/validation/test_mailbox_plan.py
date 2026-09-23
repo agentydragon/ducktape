@@ -1,12 +1,13 @@
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 
 
 def test_mailbox_initialization_is_serialized_and_init_only() -> None:
-    deployment_path = get_required_path("_main/cluster/k8s/haku/mailbox/deployment.yaml")
-    deployment = yaml.safe_load(deployment_path.read_text())
+    mailbox_path = get_required_path("_main/cluster/k8s/haku/mailbox/haku-mailbox.k8s.yaml")
+    deployment = one(obj for obj in yaml.safe_load_all(mailbox_path.read_text()) if obj["kind"] == "Deployment")
     kustomization_path = get_required_path("_main/cluster/k8s/haku/mailbox/kustomization.yaml")
     kustomization = yaml.safe_load(kustomization_path.read_text())
 

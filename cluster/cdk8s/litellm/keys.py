@@ -14,8 +14,14 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
@@ -141,6 +147,10 @@ def keys_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, keys_chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=["litellm-keys.k8s.yaml", "litellm-clients-sops-age-key.sops.yaml"]),
+    )
 
 
 # The litellm-keys Terraform CR lives DOWNSTREAM of the litellm app, not in

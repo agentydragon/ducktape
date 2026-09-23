@@ -2,16 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - forgejo-images-creds-eso.yaml
-  - namespace.yaml
-  - deployment.yaml
-  - pvc.yaml
-  - service.yaml
-  - write-httproute.yaml
-  - read-httproute.yaml
-  - cilium-network-policy.yaml
+  # cdk8s-generated (cluster/cdk8s/activitywatch/app.py).
+  - activitywatch.k8s.yaml
   - activitywatch-write-token.sops.yaml
   - activitywatch-read-token.sops.yaml
+components:
+  - ./image-pins
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy

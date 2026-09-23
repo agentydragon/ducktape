@@ -130,7 +130,8 @@ image pulls but does not interrupt a running process.
   `cli-proxy-api-config/config.yaml` for CLIProxyAPI and mirrors it into `litellm` as
   `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptops/agent-box/codex-pod use a scoped
   `codex-clients` LiteLLM virtual key instead.
-- `config-eso.yaml` — plaintext CLIProxyAPI configuration template. It includes three bounded
+- The `cli-proxy-api-config` ExternalSecret (`cluster/cdk8s/cli_proxy_api/cli_proxy_api.py`) —
+  plaintext CLIProxyAPI configuration template. It includes three bounded
   stream bootstrap retries, which retry a failed upstream stream only before any response bytes
   have been sent to the caller.
 - `management-key.sops.yaml` — SOPS-managed key shared only by CLIProxyAPI's

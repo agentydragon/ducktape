@@ -45,6 +45,9 @@ from agentplane.app.action_policy import (
     ActionPolicyUnavailable,
     ActionPolicyView,
 )
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.changes import Changes
 from agentplane.app.egress import (
     BINDINGS_PLURAL,
@@ -64,8 +67,6 @@ from agentplane.app.inventory import (
     sandbox_views,
 )
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.views import ThreadView
 from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
@@ -364,8 +365,16 @@ def _store(request: Request) -> ThreadStore:
     return store
 
 
+def _thread_updates(request: Request) -> ThreadUpdates:
+    updates = request.app.state.thread_updates
+    if not isinstance(updates, ThreadUpdates):
+        raise TypeError(f"app.state.thread_updates is {type(updates).__name__}, not ThreadUpdates")
+    return updates
+
+
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
+Updates = Annotated[ThreadUpdates, Depends(_thread_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
 
@@ -405,16 +414,16 @@ async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
 
 
 @router.get("/threads", responses=_THREADS_FRAMES)
-async def live_threads(index: Index, store: Store, shutdown: Shutdown) -> StreamingResponse:
+async def live_threads(index: Index, store: Store, updates: Updates, shutdown: Shutdown) -> StreamingResponse:
     async def snapshot() -> ThreadsSnapshot:
         return ThreadsSnapshot(
             sandboxes=index.sandbox_views(),
             threads=await store.list_threads(include_archived=True),
-            updates_connected=store.updates_connected,
+            updates_connected=updates.connected,
             watch=_health(index),
         )
 
-    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, store.changes)))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes)))
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
@@ -423,6 +432,7 @@ async def live_sandbox(
     caller: Caller,
     index: Index,
     store: Store,
+    updates: Updates,
     action_policy: ActionPolicy,
     shutdown: Shutdown,
     name: str,
@@ -447,4 +457,4 @@ async def live_sandbox(
             watch=_health(index),
         )
 
-    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, store.changes)))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes)))

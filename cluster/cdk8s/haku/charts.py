@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -30,6 +31,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption, write_yaml
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
@@ -46,12 +48,9 @@ TIMEOUT = "20m"
 
 # Hand-written files the root Kustomization lists beside the generated one.
 EXTRA_RESOURCES = (
-    "haku-console-google-calendar-client-credentials.sops.yaml",
-    "haku-console-google-client-credentials.sops.yaml",
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
     "web-push-vapid.sops.yaml",
-    "../console-namespace",
     "static-metadata.yaml",
     "image-metadata.yaml",
 )
@@ -63,6 +62,26 @@ CONFIG_MAP_GENERATOR = (
 
 def console_chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    # The Haku console's own trusted namespace -- deliberately NOT haku-sandbox.
+    # The console is reviewed/released ducktape code, so it sits OUTSIDE Haku's
+    # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-egress-proxy egress fence
+    # (the fence's CiliumClusterwideNetworkPolicy keys on the haku-sandbox
+    # namespace; this one gets ordinary egress). That is the confidentiality boundary
+    # letting the console hold secrets Haku may not read, e.g. the Claude Code web
+    # session bearer.
+    k8s.KubeNamespace(
+        chart,
+        "namespace",
+        metadata=k8s.ObjectMeta(
+            name=NAMESPACE,
+            labels={
+                "goldilocks.fairwinds.com/enabled": "true",
+                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+                "name": NAMESPACE,
+            },
+        ),
+    )
+    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     Db(chart, "db")
     Migration(chart, "migration")
     Console(chart, "console")

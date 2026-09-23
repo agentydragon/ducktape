@@ -34,7 +34,7 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import egress_fences
+from cluster.cdk8s import egress_fences, public_coder_proxy
 
 
 def hosts(*names: str) -> frozenset[str]:
@@ -96,16 +96,13 @@ BUILD_REGISTRIES = GITHUB_GIT | hosts(
 GITHUB_API = hosts("api.github.com")
 
 # Hosts serving the operator's own accounts. A prompt-injected agent holding these reads the
-# operator's mail, calendar, tasks, finances and study data, so the group is named to keep
+# operator's mail, finances and study data, so the group is named to keep
 # `test_operator_data_reaches_only_haku_sandbox` honest as consumers are added.
-OPERATOR_DATA = hosts(
-    "www.googleapis.com",
-    "gmail.googleapis.com",
-    "tasks.googleapis.com",
-    "api.coinbase.com",
-    "haku-mailbox.allegedly.works",
-    "*.ankiweb.net",
-)
+OPERATOR_DATA = hosts("api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net")
+
+# The operator's Google account (mail, calendar, tasks). No fence here reaches it: agents reach
+# it only through services that hold the token for them (agentplane's egress proxy, google-mcp).
+OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.googleapis.com")
 
 # The fences the assertions below single out: a generated fence by its policy name, a
 # hand-written half by its manifest path, so a failure names the thing to open.
@@ -113,7 +110,7 @@ OPERATOR_DATA_FENCE = "allow-haku-cloud-api-egress"
 HAKU_CLAUDE_FENCE = "allow-haku-claude-oauth-proxy-egress"
 HAKU_OPENCLAW_DNS_FENCE = "allow-haku-openclaw-spike-proxy-egress"
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
-PUBLIC_CODER_WAIVER = "agents/public-coder-agent/proxy/cnp-egress.yaml"
+PUBLIC_CODER_WAIVER = "allow-public-coder-agent-proxy-egress"
 
 
 def _cilium_hosts(document: dict[str, Any]) -> set[str]:
@@ -171,11 +168,15 @@ def allowlists(generated_fences: dict[str, dict[str, Any]], k8s_dir: Path) -> di
     }
 
 
-def test_public_coder_waiver_is_unconfined(k8s_dir: Path) -> None:
+def test_public_coder_waiver_is_unconfined() -> None:
     """The waiver is pinned: it reaches `world`, names no hosts and resolves anything, so
     restoring confinement is a visible change either way, and narrowing DNS alone would fence
     nothing while its `world` rule stands."""
-    document = _load(k8s_dir, PUBLIC_CODER_WAIVER)
+    document = one(
+        obj
+        for obj in Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app()))
+        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == PUBLIC_CODER_WAIVER
+    )
     assert _cilium_hosts(document) == set()
     assert "world" in _cilium_entities(document)
     assert _cilium_dns_names(document) == {"*"}
@@ -215,6 +216,11 @@ def test_operator_data_reaches_only_haku_sandbox(allowlists: dict[str, frozenset
     for fence, allowed in allowlists.items():
         if fence != OPERATOR_DATA_FENCE:
             assert not (allowed & OPERATOR_DATA), fence
+
+
+def test_no_fence_reaches_the_operators_google_account(allowlists: dict[str, frozenset[str]]) -> None:
+    for fence, allowed in allowlists.items():
+        assert not (allowed & OPERATOR_GOOGLE), fence
 
 
 def test_github_api_reaches_only_declared_holders(allowlists: dict[str, frozenset[str]]) -> None:

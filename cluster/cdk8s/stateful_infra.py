@@ -24,7 +24,7 @@ PRIORITY = 1_000_000
 
 def priority_class(scope: Construct) -> k8s.KubePriorityClass:
     """Not `globalDefault`: only pods that opt in via `priorityClassName` get it. Carried by
-    the SeaweedFS master/volume/filer/s3 components (cluster/k8s/seaweedfs/cluster/seaweed.yaml);
+    the SeaweedFS master/volume/filer/s3 components (cluster/cdk8s/seaweedfs/cluster.py);
     reusable for other stateful infra, see
     cluster/docs/lessons_learned/2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md.
     """

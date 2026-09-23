@@ -1,0 +1,36 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana-operator
+  namespace: flux-system
+spec:
+  interval: 12h
+  type: oci
+  url: oci://ghcr.io/grafana/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana-operator
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: grafana-operator
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana-operator
+        namespace: flux-system
+      version: ~5.22
+  driftDetection:
+    mode: enabled
+  interval: 30m
+  values:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi

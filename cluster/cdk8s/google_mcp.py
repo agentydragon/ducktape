@@ -1,7 +1,6 @@
 """google-mcp: a standalone Gmail/Calendar MCP backend for agentplane-staging.
 
-Reuses haku-console's Gmail/Calendar tool code (`x/google_mcp_server`, `haku/console/tools`)
-against a *separate* Google credential from haku-console's own per-Operator connections: a
+Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
 write-scoped Airlock provider (`cluster/k8s/agents/airlock/config.yaml`) whose access token is
 ESO-mirrored into *this namespace only* -- never into claude-sandbox, haku-sandbox, or
 agentplane-staging directly. The agent reaches Gmail/Calendar only through agentplane's
@@ -98,7 +97,7 @@ def _bearer_credentials(scope: Construct) -> None:
     """Mint this pod's caller-facing bearer here, in its own namespace.
 
     agentplane-staging reads a copy through the `kubernetes-google-mcp-secret-store`
-    ClusterSecretStore (cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml) --
+    ClusterSecretStore (cluster/cdk8s/external_secrets/config.py) --
     ESO's own cross-namespace read, the same mechanism Airlock's tokens and the Tana PAT
     already use for agentplane-staging, not Stakater Reflector.
     """
@@ -192,11 +191,11 @@ class GoogleMcpApp(Construct):
                 read_only_root_filesystem=False,
             ),
         )
-        # `optional=True`: this Secret is populated by a ClusterExternalSecret in a different
-        # Kustomization (Airlock's) with no Flux-level ordering guarantee, so the pod must come
-        # up (failing readiness, not crash-looping) before that Secret first appears.
+        # Airlock's ClusterExternalSecret fills this Secret from another Kustomization. While it is
+        # absent (before the `google-write` consent), the pod waits in ContainerCreating on this
+        # mount rather than starting without a token.
         google_token_secret = Secret.from_secret_name(self, "google-token-secret-ref", GOOGLE_TOKEN_SECRET_NAME)
-        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret, optional=True)
+        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret)
         deployment.containers[0].mount(_GOOGLE_TOKEN_DIR, google_token_volume, read_only=True)
         return deployment
 

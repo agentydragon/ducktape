@@ -33,13 +33,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
@@ -158,8 +152,6 @@ def write_manifests(root: Path) -> None:
     ForgejoImageAutomation(chart, "images")
     add_fleet_rules(chart)
     app.synth()
-
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def flux_image_automation_forgejo(

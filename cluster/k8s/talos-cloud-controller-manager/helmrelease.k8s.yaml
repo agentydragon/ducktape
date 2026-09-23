@@ -1,0 +1,43 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: talos-cloud-controller-manager
+  namespace: kube-system
+spec:
+  chart:
+    spec:
+      chart: talos-cloud-controller-manager
+      sourceRef:
+        kind: HelmRepository
+        name: siderolabs
+        namespace: kube-system
+      version: 0.5.7
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
+  values:
+    enabledControllers:
+      - cloud-node
+      - cloud-node-lifecycle
+      - node-csr-approval
+    service:
+      containerPort: 50258
+      port: 50258
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - effect: NoSchedule
+        key: node.cloudprovider.kubernetes.io/uninitialized
+        operator: Exists
+    transformations:
+      - features:
+          publicIPDiscovery: true
+        name: ovh-nodes
+        nodeSelector:
+          - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                  - hil

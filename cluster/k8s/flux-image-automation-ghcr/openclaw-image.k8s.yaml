@@ -1,0 +1,22 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: openclaw
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/openclaw
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: openclaw
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: openclaw
+  policy:
+    alphabetical:
+      order: asc

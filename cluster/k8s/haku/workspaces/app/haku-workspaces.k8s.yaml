@@ -1,0 +1,214 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-sandbox
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-flux-system-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: haku-sandbox
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-activitywatch-secret-store
+  target:
+    name: activitywatch-read-token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: coinbase-api-credentials
+  namespace: haku-sandbox
+spec:
+  data:
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_key
+      secretKey: api_key
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_secret
+      secretKey: api_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    name: haku-sandbox-coinbase-api-credentials
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: haku-sandbox
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: haku
+  namespace: haku-sandbox
+spec:
+  envVarsInjectionPolicy: Allowed
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - sleep
+            - infinity
+          env:
+            - name: HAKU_GIT_USERNAME
+              value: haku
+            - name: HAKU_GIT_PASSWORD
+              value: haku-forgejo-token-placeholder
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-console-agent-api
+            - name: HAKU_KUBERNETES_PROXY_URL
+              value: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
+          image: git.allegedly.works/ducktape-ci/haku-sandbox-image:unset
+          name: workspace
+          resources:
+            limits:
+              cpu: "3"
+              memory: 6Gi
+            requests:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /workspace
+              name: workspace
+          workingDir: /workspace
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - emptyDir:
+            sizeLimit: 30Gi
+          name: workspace
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: haku
+  namespace: haku-sandbox
+spec:
+  replicas: 1
+  sandboxTemplateRef:
+    name: haku
+  updateStrategy:
+    type: Recreate
+---
+apiVersion: kyverno.io/v2
+kind: CleanupPolicy
+metadata:
+  name: haku-workspace-janitor
+  namespace: haku-sandbox
+spec:
+  conditions:
+    all:
+      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
+        operator: GreaterThan
+        value: 168h
+  match:
+    any:
+      - resources:
+          kinds:
+            - agents.x-k8s.io/v1beta1/Sandbox
+            - extensions.agents.x-k8s.io/v1beta1/SandboxClaim
+  schedule: 45 * * * *
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-console-sandbox
+  namespace: haku-sandbox
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxclaims
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - delete
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-console-sandbox
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-console-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: haku-console
+    namespace: haku-console

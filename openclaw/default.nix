@@ -182,7 +182,7 @@ pkgs.dockerTools.buildLayeredImage {
       # give heap_size_limit 2096 MiB -- so this changes nothing today and only
       # stops the heap drifting when the limit next moves. Keep it in step with
       # `limits.memory` in
-      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml.
+      # cluster/cdk8s/public_coder_agent_config.py.
       #
       # --heapsnapshot-signal is the on-demand trigger: `kill -s PWR 1` writes a
       # snapshot without the process having to be near death. Two taken an hour
@@ -197,7 +197,7 @@ pkgs.dockerTools.buildLayeredImage {
       # `limits.memory` or the kernel turns a clean abort into an OOMKill.
       #
       # Both directories are /diag, the dedicated claim mounted by
-      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml -- not /tmp,
+      # cluster/cdk8s/public_coder_agent_config.py -- not /tmp,
       # whose emptyDir the next Flux roll discards along with the capture, and
       # not the state PVC, which volsync backs up. That mount is a precondition,
       # not a preference: without it Node writes a roughly heap-sized snapshot

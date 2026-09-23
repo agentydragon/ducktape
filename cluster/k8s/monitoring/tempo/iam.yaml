@@ -1,9 +1,0 @@
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: tempo
-  namespace: seaweedfs
-spec:
-  seaweedRef:
-    name: seaweedfs
-  reclaimPolicy: Retain

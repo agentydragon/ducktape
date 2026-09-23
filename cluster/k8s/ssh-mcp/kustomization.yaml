@@ -2,7 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: ssh-mcp
 resources:
-  - ./namespace
   - ssh-mcp.k8s.yaml
   - keys-atlas.sops.yaml
   - keys-public-coder-devbox.sops.yaml

@@ -1,0 +1,25 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+  name: kyverno-cleanup-controller-sandboxes
+rules:
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - delete

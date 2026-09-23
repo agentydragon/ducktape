@@ -43,7 +43,7 @@ image should be rebased on Debian. It shouldn't.
 
 ### Also required at cutover, in the pod spec
 
-`sandboxtemplate-haku.yaml` sets `command: ["sleep", "infinity"]`, and a Kubernetes
+The `haku` SandboxTemplate (`cluster/cdk8s/haku/workspaces.py`) sets `command: ["sleep", "infinity"]`, and a Kubernetes
 `command:` overrides the image ENTRYPOINT — so `tini` never becomes PID 1 and reaps nothing
 (confirmed: PID 1 in the probe was coreutils). Change it to
 `["/bin/tini", "--", "sleep", "infinity"]`, or move the sleep to `args:`.
@@ -52,7 +52,7 @@ image should be rebased on Debian. It shouldn't.
 
 The risk is entirely **runtime**, so a green CI build proves nothing about it — the
 [Nix RBE container image experiment notes](../../../../../devinfra/rbe_container_image/x/nix/README.md) explain why. Re-run this
-checklist against any candidate image before switching `sandboxtemplate-haku.yaml`.
+checklist against any candidate image before switching the `haku` SandboxTemplate.
 (Bracketed link, not `<...>`: an autolink containing `_` gets parsed as emphasis and
 prettier rewrites the path — it silently turned this into `nix*rbe_image` once already.)
 

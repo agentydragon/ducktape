@@ -1,0 +1,249 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: oci-cache
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io, registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s, /gcr). Durable content in the SeaweedFS registry-cache bucket (S3); dedupe index in the oci-cache-valkey RedisReplication. No PVC — the only local state is ephemeral upload staging on emptyDir, so the pod reschedules freely. The in-cluster Service is intentionally unauthenticated for Docker registry-mirror compatibility; the public endpoint is authenticated by the nginx sidecar.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: zot
+  name: zot
+  namespace: oci-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zot
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zot
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - serve
+            - /etc/zot/config.json
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: accessKey
+                  name: registry-cache-s3-credentials
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: secretKey
+                  name: registry-cache-s3-credentials
+          image: ghcr.io/project-zot/zot-linux-amd64:v2.1.21
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            tcpSocket:
+              port: http
+          name: zot
+          ports:
+            - containerPort: 5000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - mountPath: /etc/zot
+              name: config
+              readOnly: true
+            - mountPath: /var/lib/zot
+              name: cache
+        - image: nginxinc/nginx-unprivileged:1.31-alpine
+          livenessProbe:
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            tcpSocket:
+              port: public-auth
+          name: public-auth-proxy
+          ports:
+            - containerPort: 8080
+              name: public-auth
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: public-auth
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 101
+            runAsNonRoot: true
+            runAsUser: 101
+          volumeMounts:
+            - mountPath: /etc/nginx/conf.d
+              name: public-auth-config
+              readOnly: true
+            - mountPath: /etc/nginx/auth
+              name: public-auth
+              readOnly: true
+      securityContext:
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: oci-cache-zot-config
+          name: config
+        - configMap:
+            name: oci-cache-public-auth-proxy
+          name: public-auth-config
+        - name: public-auth
+          secret:
+            items:
+              - key: htpasswd
+                path: htpasswd
+            secretName: puller-credential
+        - emptyDir:
+            sizeLimit: 5Gi
+          name: cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: zot
+  name: oci-cache
+  namespace: oci-cache
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+    - name: public-auth
+      port: 8080
+      protocol: TCP
+      targetPort: public-auth
+  selector:
+    app.kubernetes.io/name: zot
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Authenticated public endpoint for the Zot pull-through cache. The cluster-gateway terminates TLS for *.allegedly.works; this route targets the nginx sidecar on Service port 8080, which enforces the puller-credential htpasswd before proxying to Zot.
+  name: oci-cache
+  namespace: oci-cache
+spec:
+  hostnames:
+    - oci-cache.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: oci-cache
+          port: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  annotations:
+    description: Zot OCI-cache application metrics scraped into Mimir by Alloy.
+  name: zot
+  namespace: oci-cache
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+      scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zot
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's cacheDriver points here (remoteCache); the durable content lives in S3, so this holds only rebuildable metadata/dedupe state. Losing it is acceptable but may cause brief cache misses or require a Zot restart/Valkey flush for stale metadb entries. Uses OVH HDD node-local storage so the operator can rebuild a fresh Valkey replica without depending on the SeaweedFS CSI path.
+  name: oci-cache-valkey
+  namespace: oci-cache
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: oci-cache-valkey
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: local-path-ovh-hdd

@@ -57,19 +57,24 @@ from agentplane.app.action_policy import (
     ActionPolicyView,
     BindingProvenance,
 )
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
-from agentplane.app.thread.store import ThreadStore
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -125,6 +130,8 @@ async def review(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -132,6 +139,8 @@ async def review(
     reviewer: TokenReviewer,
     operator_connection: str,
     direct_federation: bool,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
@@ -295,6 +304,10 @@ async def review(
             oidc,
             reviewer,
             operator_actions=operator_client,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
         )
         await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
@@ -302,12 +315,12 @@ async def review(
         )
         browser.headers["Origin"] = app_url
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
-        replica_store = ThreadStore.connect(db_url)
-        stack.push_async_callback(replica_store.close)
+        replica_engine = connect(db_url)
+        stack.push_async_callback(replica_engine.dispose)
         replica = create_app(
             inventory,
             bridge,
-            replica_store,
+            ThreadStore(replica_engine),
             {harness: ["test-model"] for harness in Harness},
             egress,
             decisions,
@@ -318,6 +331,11 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
+            event_logs=EventLogStore(replica_engine),
+            content=ContentStore(replica_engine),
+            # Never started: nothing here reads thread updates, only the shared operator sessions.
+            thread_updates=ThreadUpdates(replica_engine.url),
+            operator_sessions=OperatorSessionStore(replica_engine),
         )
         second_browser = await stack.enter_async_context(
             httpx.AsyncClient(

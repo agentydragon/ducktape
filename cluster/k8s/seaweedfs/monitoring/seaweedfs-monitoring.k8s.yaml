@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: seaweedfs-replication
+  namespace: seaweedfs
+spec:
+  groups:
+    - name: seaweedfs-replication
+      rules:
+        - alert: SeaweedFSReplicaPlacementMismatch
+          annotations:
+            description: "{{ $value }} SeaweedFS volume(s) have not matched their target replica placement for 15m (replication 001 = 2 copies). The replication-repair AdminScript attempts copy-only repair hourly; check its CronJob/Job status and available volume slots if the mismatch persists. It never trims excess or misplaced replicas, so review those deliberately. Suspend the AdminScript and wait for any active Job before planned volume-server maintenance. For an immediate manual repair, inspect `volume.list` and run `volume.fix.replication -apply -doDelete=false` under `lock` from a master pod (`weed shell` reads commands on stdin)."
+            summary: SeaweedFS has {{ $value }} volume(s) off their replica count
+          expr: sum(SeaweedFS_master_replica_placement_mismatch) > 0
+          for: 15m
+          labels:
+            severity: warning

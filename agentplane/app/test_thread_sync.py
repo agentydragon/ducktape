@@ -8,10 +8,14 @@ from uuid import UUID
 import httpx
 import pytest_bazel
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -19,7 +23,8 @@ from agentplane.protocol import command_pb2, event_pb2
 
 async def test_materialized_revisions_replicate_with_restricted_role() -> None:
     async with electric_service() as service:
-        store = ThreadStore.connect(service.database_url)
+        engine = connect(service.database_url)
+        event_logs, content, ingestion = EventLogStore(engine), ContentStore(engine), Ingestion(engine)
         try:
             source = ReplicationSource()
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -30,11 +35,11 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                 )
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
-            thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
-            lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=2))
+            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
             assert lease is not None
-            await store.set_attached(thread, source.attached, lease=lease)
-            await store.record(thread, source.entries, lease=lease)
+            await ingestion.set_attached(thread, source.attached, lease=lease)
+            await ingestion.record(thread, source.entries, lease=lease)
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
                 initial = await client.get("/v1/shape", params=params)
@@ -51,7 +56,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                     )
                 )
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" world")))
-                await store.record(thread, source.entries[4:], lease=lease)
+                await ingestion.record(thread, source.entries[4:], lease=lease)
                 seen_revision = False
                 while not seen_revision:
                     delta = await client.get(
@@ -75,9 +80,9 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                 values = [message["value"] for message in chunks.json() if "value" in message]
                 ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
                 assert "".join(row["text"] for row in ordered) == "Hello world"
-            await _cross_replica_sync(service, store, source, thread, lease)
+            await _cross_replica_sync(service, ingestion, content, source, thread, lease)
         finally:
-            await store.close()
+            await engine.dispose()
 
 
 async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[str, str]) -> httpx.Response:
@@ -103,12 +108,17 @@ async def _current_snapshot(client: httpx.AsyncClient, path: str, params: dict[s
 
 
 async def _cross_replica_sync(
-    service: ElectricService, store: ThreadStore, source: ReplicationSource, thread: UUID, lease: IngestionLease
+    service: ElectricService,
+    ingestion: Ingestion,
+    content: ContentStore,
+    source: ReplicationSource,
+    thread: UUID,
+    lease: IngestionLease,
 ) -> None:
     async with (
         asyncio.timeout(60),
-        app_process(service.database_url, "unused", sandbox_state=None, electric_url=service.url) as first,
-        app_process(service.database_url, "unused", sandbox_state=None, electric_url=service.url) as second,
+        app_process(service.database_url, runner_port=0, sandbox_state=None, electric_url=service.url) as first,
+        app_process(service.database_url, runner_port=0, sandbox_state=None, electric_url=service.url) as second,
         httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
         httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
     ):
@@ -141,7 +151,7 @@ async def _cross_replica_sync(
             == "Hello world"
         )
         entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="!")))
-        await store.record(thread, [entry], lease=lease)
+        await ingestion.record(thread, [entry], lease=lease)
         # Resume the same shape handle/offset through a different application process.
         metadata_offset = initial.headers["electric-offset"]
         while True:
@@ -185,20 +195,21 @@ async def _cross_replica_sync(
         )
         stale = await client_two.get(f"{path}/payload-interest", params=payload_params | {"projection_epoch": "stale"})
         assert stale.status_code == 410
-        await _history_windows(client_one, client_two, path, entity_params, store, source, thread, lease)
-        await _selected_command_outcome(client_one, client_two, path, store, source, thread, lease)
+        await _history_windows(client_one, client_two, path, entity_params, ingestion, source, thread, lease)
+        await _selected_command_outcome(client_one, client_two, path, content, ingestion, source, thread, lease)
 
 
 async def _selected_command_outcome(
     client_one: httpx.AsyncClient,
     client_two: httpx.AsyncClient,
     path: str,
-    store: ThreadStore,
+    content: ContentStore,
+    ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
     lease: IngestionLease,
 ) -> None:
-    scope = await store.current_scope(thread)
+    scope = await content.current_scope(thread)
     assert scope is not None
     params = {"projection_epoch": scope.projection_epoch, "command_id": "selected-command"}
     snapshot = await _current_snapshot(client_one, f"{path}/commands", params)
@@ -221,7 +232,7 @@ async def _selected_command_outcome(
             )
         )
     # Admission and failure may coalesce before the browser observes any pending row.
-    await store.record(thread, source.entries[start:], lease=lease)
+    await ingestion.record(thread, source.entries[start:], lease=lease)
     offset = snapshot.headers["electric-offset"]
     while True:
         update = await client_two.get(
@@ -245,7 +256,7 @@ async def _history_windows(
     client_two: httpx.AsyncClient,
     path: str,
     previous_params: dict[str, str],
-    store: ThreadStore,
+    ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
     lease: IngestionLease,
@@ -262,7 +273,7 @@ async def _history_windows(
         source.append(
             event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=f"history-{index:03}", text=f"Body {index}"))
         )
-    await store.record(thread, source.entries[start:], lease=lease)
+    await ingestion.record(thread, source.entries[start:], lease=lease)
 
     # A disconnected client refreshes its interest instead of replaying an unbounded backlog.
     expired = await client_two.get(f"{path}/entities", params=previous_params | {"offset": "-1"})
@@ -300,7 +311,7 @@ async def _history_windows(
 
     # An item inside the history window remains live even while newer items exist.
     entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-010", text=" revised")))
-    await store.record(thread, [entry], lease=lease)
+    await ingestion.record(thread, [entry], lease=lease)
     offset = page.headers["electric-offset"]
     while True:
         revision = await client_one.get(
@@ -319,7 +330,7 @@ async def _history_windows(
     hidden_text = "A whole selected tool-sized body.\n" * 65536
     hidden = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-040", text=hidden_text)))
     visible = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-094", text=" visible")))
-    await store.record(thread, [hidden, visible], lease=lease)
+    await ingestion.record(thread, [hidden, visible], lease=lease)
     while True:
         update = await client_two.get(
             f"{path}/entities",

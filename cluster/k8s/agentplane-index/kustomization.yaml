@@ -1,13 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - read-token.yaml
-  - forgejo-images-creds-eso.yaml
-  - postgres-cluster.yaml
-  - databases.yaml
-  - ducktape.yaml
-  - haku-state.yaml
+  # cdk8s-generated (cluster/cdk8s/agentplane_index/workers.py).
+  - agentplane-index.k8s.yaml
+components:
+  - ./image-pins
 configMapGenerator:
   - name: agentplane-index-config
     namespace: agentplane-index

@@ -55,8 +55,8 @@ resource "authentik_provider_oauth2" "grocy_mcp_sf" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
-  # Same reason as ha-mcp.tf: haku-console holds an operator OAuth association here, and the
-  # Terraform provider's `minutes=10` default made it renew ~150x/day, any one of which can
+  # agentplane-staging's grocy_sf MCP linkage holds an operator OAuth association here, and
+  # the Terraform provider's `minutes=10` default made it renew ~150x/day, any one of which can
   # permanently wedge the association. Matches the `grocy-sf` proxy provider above.
   access_token_validity = "hours=24"
 
@@ -113,5 +113,50 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
     client_id             = authentik_provider_oauth2.grocy_mcp_sf.client_id
     client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
+  }
+}
+
+# --- agentplane read-only identity ---
+
+# The account agentplane-staging's egress proxy presents to grocy-sf.allegedly.works for
+# claude-ai sandboxes (`grocy-sf-readonly` in cluster/cdk8s/agentplane/egress_staging_credentials.py),
+# as HTTP Basic with this app password. The outpost turns Basic credentials into a
+# client_credentials grant against the grocy-sf proxy provider itself, so no token is minted
+# or stored outside Authentik. Grocy creates the matching user on its first request with no
+# permissions (DEFAULT_PERMISSIONS=none, cluster/k8s/grocy/app-base), and the egress proxy
+# presents the password only on GETs to Grocy's read routes.
+resource "authentik_user" "agentplane_grocy_sf_readonly" {
+  username = "agentplane-grocy-sf-readonly"
+  name     = "agentplane Grocy SF read-only service account"
+  type     = "service_account"
+  path     = "goauthentik.io/service-accounts"
+}
+
+resource "authentik_token" "agentplane_grocy_sf_readonly" {
+  identifier   = "agentplane-grocy-sf-readonly"
+  user         = authentik_user.agentplane_grocy_sf_readonly.id
+  intent       = "app_password"
+  expiring     = false
+  retrieve_key = true
+  description  = "HTTP Basic password agentplane-staging's egress proxy presents to the grocy-sf outpost"
+}
+
+resource "authentik_policy_binding" "grocy_sf_agentplane_readonly" {
+  target = authentik_application.grocy_sf.uuid
+  user   = authentik_user.agentplane_grocy_sf_readonly.id
+  order  = 1
+}
+
+resource "kubernetes_secret" "agentplane_grocy_sf_readonly" {
+  metadata {
+    name      = "agentplane-grocy-sf-readonly"
+    namespace = "agents-infra"
+    annotations = {
+      description = "App password of the agentplane-grocy-sf-readonly Authentik service account, copied by ESO into agentplane-staging's egress-credentials namespace"
+    }
+  }
+
+  data = {
+    password = authentik_token.agentplane_grocy_sf_readonly.key
   }
 }

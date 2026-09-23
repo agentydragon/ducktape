@@ -1,7 +1,7 @@
-"""agentplane-staging's egress credentials beyond the shared set (`egress.py`,
-`egress_credentials.py`): each real account the staging proxy presents for a sandbox, with the
-Secret plumbing that delivers it and the EgressPolicy that scopes where it is presented. Testing
-reaches no real account, so nothing here is rendered there.
+"""agentplane-staging's egress credentials: each real account the staging proxy presents for a
+sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
+and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
+presented. Testing copies in only the GitHub PAT (`egress_testing_credentials.py`).
 """
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -35,50 +35,75 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 
-from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY
+from cluster.cdk8s.agentplane.app_settings import FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST
-from cluster.cdk8s.agentplane.egress_credentials import credential_external_secret
+from cluster.cdk8s.agentplane.egress_credentials import (
+    EXTERNAL_CREDS_READER,
+    EXTERNAL_CREDS_STORE,
+    GITHUB_PAT_SECRET,
+    credential_external_secret,
+)
 from cluster.cdk8s.metadata import metadata
 
-_FORGEJO_STORE = "kubernetes-agentplane-staging-forgejo-secret-store"
-_READER = "external-creds-reader"
+# Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
+# service account whose app password it holds.
+_GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
     construct = Construct(scope, "staging-egress-credentials")
-    _forgejo_haku(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    reader = ServiceAccount(construct, "reader", metadata=metadata(EXTERNAL_CREDS_READER, credentials_namespace))
+    credential_external_secret(
+        construct,
+        namespace=credentials_namespace,
+        target=GITHUB_PAT_SECRET,
+        source="github-agentydragon-agent",
+        key="token",
+        store=EXTERNAL_CREDS_STORE,
+    )
+    _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
+    _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
-def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
-    reader = ServiceAccount(scope, "reader", metadata=metadata(_READER, credentials_namespace))
+def _source_store(
+    scope: Construct,
+    id: str,
+    *,
+    reader: ServiceAccount,
+    source_namespace: str,
+    source_secret: str,
+    credentials_namespace: str,
+) -> str:
+    """A ClusterSecretStore through which `credentials_namespace` reads `source_secret` out of
+    `source_namespace`, returning the store's name. It authenticates as the credentials namespace's
+    own `reader`, which a Role in `source_namespace` lets get that one Secret and nothing else."""
+    reader_role = f"agentplane-staging-egress-{id}-reader"
     source_role = Role(
         scope,
-        "forgejo-source-role",
-        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
+        f"{id}-source-role",
+        metadata=metadata(reader_role, source_namespace),
         rules=[
-            RolePolicyRule(
-                resources=[Secret.from_secret_name(scope, "forgejo-source", "haku-forgejo-git")], verbs=["get"]
-            )
+            RolePolicyRule(resources=[Secret.from_secret_name(scope, f"{id}-source", source_secret)], verbs=["get"])
         ],
     )
     RoleBinding(
-        scope,
-        "forgejo-source-binding",
-        metadata=metadata("agentplane-staging-egress-forgejo-reader", "haku-sandbox"),
-        role=source_role,
+        scope, f"{id}-source-binding", metadata=metadata(reader_role, source_namespace), role=source_role
     ).add_subjects(reader)
+    store = f"kubernetes-agentplane-staging-{id}-secret-store"
     ClusterSecretStore(
         scope,
-        "forgejo-store",
-        metadata=ApiObjectMetadata(name=_FORGEJO_STORE),
+        f"{id}-store",
+        metadata=ApiObjectMetadata(name=store),
         spec=ClusterSecretStoreSpec(
             conditions=[ClusterSecretStoreSpecConditions(namespaces=[credentials_namespace])],
             provider=ClusterSecretStoreSpecProvider(
                 kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    remote_namespace="haku-sandbox",
+                    remote_namespace=source_namespace,
                     auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=_READER)
+                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=EXTERNAL_CREDS_READER
+                        )
                     ),
                     server=ClusterSecretStoreSpecProviderKubernetesServer(
                         ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
@@ -92,13 +117,24 @@ def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: st
             ),
         ),
     )
+    return store
+
+
+def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
         target="haku-forgejo-git",
         source="haku-forgejo-git",
         key="password",
-        store=_FORGEJO_STORE,
+        store=_source_store(
+            scope,
+            "forgejo",
+            reader=reader,
+            source_namespace="haku-sandbox",
+            source_secret="haku-forgejo-git",
+            credentials_namespace=credentials_namespace,
+        ),
     )
     EgressCredential(
         scope,
@@ -149,7 +185,7 @@ def _forgejo_haku(scope: Construct, *, namespace: str, credentials_namespace: st
 
 def _google_readonly(scope: Construct, *, namespace: str) -> None:
     # The Secret itself arrives by Airlock's ClusterExternalSecret
-    # (cluster/k8s/agents/airlock/google-access-token-eso.yaml).
+    # (cluster/cdk8s/airlock.py).
     EgressCredential(
         scope,
         "egresscredential-google-readonly",
@@ -210,6 +246,78 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
                     paths=["/v2/activity:query"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
                 ),
+            ]
+        ),
+    )
+
+
+def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="grocy-sf-readonly",
+        source=_GROCY_SF_ACCOUNT,
+        key="password",
+        store=_source_store(
+            scope,
+            "grocy-sf",
+            reader=reader,
+            source_namespace="agents-infra",
+            source_secret=_GROCY_SF_ACCOUNT,
+            credentials_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                f"The app password of `{_GROCY_SF_ACCOUNT}`, an Authentik service account admitted to "
+                "the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into "
+                "this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the "
+                "account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the "
+                "password only on GETs to Grocy's read routes."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="grocy-sf-readonly", key="password")
+            ),
+            # The grocy-sf.allegedly.works outpost turns HTTP Basic into a client_credentials grant
+            # against its own proxy provider, so the placeholder travels as the password half. A
+            # client sends the username itself; only the password is substituted here.
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-grocy-sf-readonly",
+        metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
+                # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
+                # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
+                # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
+                # that distinction directly, so GET-only admits exactly the read routes
+                # (entities/stock/user/system/file); PUT, POST and DELETE -- every write -- are
+                # refused by the proxy regardless of path.
+                EgressPolicySpecRules(
+                    hosts=["grocy-sf.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=[
+                        "/api/objects/**",
+                        "/api/stock/**",
+                        "/api/user",
+                        "/api/system/info",
+                        "/api/system/db-changed-time",
+                        "/api/files/**",
+                    ],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
+                )
             ]
         ),
     )

@@ -101,7 +101,8 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
             while True:
                 try:
                     response = await client.get(f"{url}/models")
-                except httpx.ConnectError:
+                # A slow first answer is not a failed start: the 30 s budget decides that.
+                except httpx.ConnectError, httpx.TimeoutException:
                     await asyncio.sleep(0.1)
                     continue
                 response.raise_for_status()

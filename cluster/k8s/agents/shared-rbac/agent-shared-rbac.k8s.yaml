@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agent-cluster-diagnostics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-diagnostics-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:agent-box-codex
+  - kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging

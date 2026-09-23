@@ -73,3 +73,38 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+    ],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "secrets",
+    srcs = ["secrets.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)

@@ -16,5 +16,5 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 **Key files**:
 
 - `nix/nixos/modules/k8s-worker.nix` — containerd nvidia runtime config, CDI settings
-- `cluster/k8s/nvidia-device-plugin/helmrelease.yaml` — device plugin + RuntimeClass
-- `cluster/k8s/ollama/deployment.yaml` — example GPU workload (`runtimeClassName: nvidia`)
+- `cluster/cdk8s/nvidia_device_plugin.py` — device plugin + RuntimeClass
+- `cluster/cdk8s/ollama/app.py` — example GPU workload (`runtimeClassName: nvidia`)

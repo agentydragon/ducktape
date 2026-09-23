@@ -12,8 +12,15 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import create_app, upstream_http_error
-from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -21,6 +28,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.kubernetes import (
@@ -34,8 +42,6 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
-from agentplane.app.thread.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -98,12 +104,12 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(store: ThreadStore) -> AsyncIterator[ElectricProxy]:
+async def electric(content: ContentStore) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(client, store)
+        yield ElectricProxy(client, content)
 
 
 @pytest.fixture
@@ -111,6 +117,8 @@ def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -119,6 +127,8 @@ def client(
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
     electric: ElectricProxy,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
@@ -156,6 +166,10 @@ def client(
         reviewer=reviewer,
         presets=TEST_PRESETS,
         electric=electric,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -481,29 +495,34 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
     store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
-    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
-    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    live_index.sandboxes["live"] = sandbox("live")
+    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
 
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
-        address = f"127.0.0.1:{closed_port.getsockname()[1]}"
-
-        async def nobody_listens(name: str) -> str:
-            return address
-
+        runners = Runners(live_index, closed_port.getsockname()[1])
         app = create_app(
             inventory,
-            RunnerBridge(address_of=nobody_listens, store=store),
+            RunnerBridge(
+                runners=runners,
+                event_logs=event_logs,
+                content=content,
+                ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
+                thread_changes=thread_updates.changes,
+            ),
             store,
             TEST_MODELS,
             egress,
@@ -511,6 +530,10 @@ def test_a_runner_that_does_not_answer_is_a_503(
             live_index,
             action_policy,
             reviewer=reviewer,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
             response = client.get("/sandboxes/live/sessions")
@@ -681,19 +704,35 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
+    content: ContentStore,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = str(await store.thread("live", "s-1", spec))
-    await store.thread("live", "s-2", spec)
+    thread_id = str(await event_logs.open("live", "s-1", spec))
+    await event_logs.open("live", "s-2", spec)
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -718,16 +757,21 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
+    content: ContentStore,
 ) -> None:
     """A reload asks the authoritative scope about browser-held ids without resending commands."""
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread = await store.thread("live", "command-reconcile", spec)
-    lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+    thread = await event_logs.open("live", "command-reconcile", spec)
+    lease = await ingestion.acquire("live", timedelta(minutes=1))
     assert lease is not None
     failed = command_pb2.Command(
         command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")
@@ -743,7 +787,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
             event=event_pb2.Event(**observation),  # type: ignore[arg-type]
         )
 
-    await store.record(
+    await ingestion.record(
         thread,
         [
             entry(1, command_admitted=event_pb2.CommandAdmitted(command=failed)),
@@ -753,7 +797,19 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         lease=lease,
     )
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
     async with httpx.AsyncClient(
@@ -785,16 +841,32 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
+    content: ContentStore,
 ) -> None:
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = str(await store.thread("live", "s-1", spec))
+    thread_id = str(await event_logs.open("live", "s-1", spec))
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -817,6 +889,9 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -824,6 +899,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     reviewer: TokenReviewer,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
+    content: ContentStore,
 ) -> None:
     """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
     several Threads is not duplicated once per Thread."""
@@ -831,12 +907,24 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     custom_objects.objects[("sandboxes", "test-provisioning")] = sandbox("test-provisioning")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    live_thread = await store.thread("live", "s-1", spec)
-    other_live_thread = await store.thread("live", "s-2", spec)
-    gone_thread = await store.thread("gone", "s-3", spec)
+    live_thread = await event_logs.open("live", "s-1", spec)
+    other_live_thread = await event_logs.open("live", "s-2", spec)
+    gone_thread = await event_logs.open("gone", "s-3", spec)
     await store.archive(gone_thread)
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH

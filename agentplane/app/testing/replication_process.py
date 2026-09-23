@@ -26,22 +26,30 @@ from uuid import UUID
 import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, AsyncSessionTransaction, async_sessionmaker
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
+from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.thread.store import IngestionLease, ThreadStore
 from agentplane.protocol import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -99,10 +107,10 @@ class ReplayGate:
 
 
 class GatedConversationDelivery:
-    def __init__(self, app: ASGIApp, *, gate: ReplayGate, store: ThreadStore) -> None:
+    def __init__(self, app: ASGIApp, *, gate: ReplayGate, event_logs: EventLogStore) -> None:
         self._app = app
         self._gate = gate
-        self._store = store
+        self._event_logs = event_logs
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -121,7 +129,7 @@ class GatedConversationDelivery:
                 return
             # Only these finite, bounded-interest responses are buffered. The real backend
             # continues ingesting and Electric still owns snapshot/offset reconciliation.
-            cursor = await self._store.last_cursor(thread_id)
+            cursor = await self._event_logs.last_cursor(thread_id)
             if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
                 await send({"type": "http.response.start", "status": 503, "headers": []})
                 await send({"type": "http.response.body", "body": b"test transport interruption"})
@@ -163,9 +171,8 @@ class GatedSession(AsyncSession):
         return GatedTransaction(self)
 
 
-class GatedStore(ThreadStore):
-    def __init__(self, database_url: str, gate: Gate, cursor: int) -> None:
-        engine = create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
+class GatedIngestion(Ingestion):
+    def __init__(self, engine: AsyncEngine, gate: Gate, cursor: int) -> None:
         super().__init__(engine)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
@@ -195,7 +202,7 @@ class ReadyServer(uvicorn.Server):
 
 def _run(
     database_url: str,
-    target: str,
+    runner_port: int,
     connection: Connection,
     boundary: CommitBoundary | None,
     cursor: int,
@@ -207,7 +214,7 @@ def _run(
     asyncio.run(
         _serve(
             database_url,
-            target,
+            runner_port,
             connection,
             boundary,
             cursor,
@@ -221,7 +228,7 @@ def _run(
 
 async def _serve(
     database_url: str,
-    target: str,
+    runner_port: int,
     connection: Connection,
     boundary: CommitBoundary | None,
     cursor: int,
@@ -230,21 +237,10 @@ async def _serve(
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
-    store = (
-        ThreadStore.connect(database_url)
-        if boundary is None
-        else GatedStore(database_url, Gate(boundary, connection), cursor)
-    )
-
-    async def address_of(name: str) -> str:
-        assert name == SANDBOX
-        if sandbox_state is None:
-            raise SandboxNotFoundError(name)
-        if sandbox_state is not ProvisioningState.RUNNING:
-            raise SandboxNotReachableError(name, sandbox_state)
-        return target
-
-    bridge = RunnerBridge(address_of=address_of, store=store)
+    engine = connect(database_url)
+    store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
+    ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
+    thread_updates = ThreadUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -254,9 +250,19 @@ async def _serve(
         custom.objects[("sandboxes", SANDBOX)] = raw
         index.sandboxes[SANDBOX] = raw
         if sandbox_state in (ProvisioningState.RUNNING, ProvisioningState.WAITING_FOR_POD_READY):
+            # Where `ReplicationSource.serve` listens: the bridge dials this address at `runner_port`.
             running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
             core.pods[SANDBOX] = running
             index.pods[SANDBOX] = running
+    runners = Runners(index, runner_port)
+    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+    bridge = RunnerBridge(
+        runners=runners,
+        event_logs=event_logs,
+        content=content,
+        ingester=ingester,
+        thread_changes=thread_updates.changes,
+    )
     async with (
         httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
         httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
@@ -270,25 +276,33 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(electric_http, store) if electric_url is not None else None,
+            electric=ElectricProxy(electric_http, content) if electric_url is not None else None,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=OperatorSessionStore(engine),
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
         app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
         if replay_after is not None:
-            app.add_middleware(GatedConversationDelivery, gate=ReplayGate(replay_after, connection), store=store)
+            app.add_middleware(
+                GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+            )
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await store.start_updates()
-        await bridge.start([SANDBOX] if sandbox_state is ProvisioningState.RUNNING else [])
+        await thread_updates.start()
+        await ingester.start()
         try:
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 url = f"http://127.0.0.1:{listener.getsockname()[1]}"
                 await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
         finally:
-            await bridge.close()
-            await store.close()
+            await ingester.close()
+            await runners.close()
+            await thread_updates.close()
+            await engine.dispose()
 
 
 async def receive(connection: Connection) -> object:
@@ -333,7 +347,7 @@ class AppProcess:
 @asynccontextmanager
 async def app_process(
     database_url: str,
-    target: str,
+    runner_port: int,
     *,
     boundary: CommitBoundary | None = None,
     cursor: int = 0,
@@ -348,7 +362,7 @@ async def app_process(
         target=_run,
         args=(
             database_url,
-            target,
+            runner_port,
             child,
             boundary,
             cursor,

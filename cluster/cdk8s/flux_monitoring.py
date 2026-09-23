@@ -1,0 +1,82 @@
+"""The PodMonitor that scrapes Prometheus metrics from every Flux controller in
+flux-system, and its Flux Kustomization.
+
+Without it the `gotk_reconcile_duration_seconds` series is not ingested, which leaves the
+flux_reconcile_audit skill partly blind. Flux CR Ready-condition metrics come from
+kube-state-metrics `customResourceState` in `monitoring/stack.py`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.metadata import metadata
+
+NAME = "flux-monitoring"
+OUTPUT_DIR = "cluster/k8s/flux-monitoring"
+# Every controller (kustomize-, source-, helm-, notification-, image-automation- and
+# image-reflector-controller) carries this label (per gotk-components.yaml) and exposes
+# /metrics on the `http-prom` named port (8080).
+_FLUX_LABELS = {"app.kubernetes.io/part-of": "flux"}
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    PodMonitor(
+        chart,
+        "flux-system",
+        metadata=metadata("flux-system", "flux-system", labels=_FLUX_LABELS),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_FLUX_LABELS),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="http-prom", path="/metrics")],
+        ),
+    )
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)
+
+
+def flux_monitoring(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="2m",
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+            depends_on=[
+                # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
+                # PodMonitor
+                flux_kustomization_depends_on(monitoring_crds)
+            ],
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="monitoring.coreos.com/v1",
+                    kind="PodMonitor",
+                    name="flux-system",
+                    namespace="flux-system",
+                )
+            ],
+        ),
+    )

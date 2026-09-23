@@ -15,3 +15,268 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "cluster",
+    srcs = ["cluster.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:stateful_infra",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:adminscript",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:seaweed",
+        "//cluster/cdk8s/seaweedfs:filer_db",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "//cluster/cdk8s/seaweedfs:s3_config",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "drivefs_artifacts_bucket",
+    srcs = ["drivefs_artifacts_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "loom_gym_bucket",
+    srcs = ["loom_gym_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "monitoring",
+    srcs = ["monitoring.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "forgejo_bucket",
+    srcs = ["forgejo_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "public_coder_agent_backups_bucket",
+    srcs = ["public_coder_agent_backups_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "registry_cache_bucket",
+    srcs = ["registry_cache_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "pr_visuals_bucket",
+    srcs = ["pr_visuals_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "operator_release",
+    srcs = ["operator_release.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "external_credentials",
+    srcs = ["external_credentials.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "filer_db",
+    srcs = ["filer_db.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "s3_config",
+    srcs = ["s3_config.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/external_secrets:secretstore",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "public_s3",
+    srcs = ["public_s3.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3policy",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3policybinding",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:drivefs_artifacts_bucket",
+        "//cluster/cdk8s/seaweedfs:external_credentials",
+        "//cluster/cdk8s/seaweedfs:loom_gym_bucket",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)

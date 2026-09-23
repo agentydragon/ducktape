@@ -107,30 +107,14 @@ as a pass in its `procedures/`).
   Google account — so `keep_notes` stays an illustrative example only. Further
   read-only Google scopes light up the same way as added.
 
-## Mutating-tool sources behind haku-console
+## Mutating-tool sources behind agentplane
 
 A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
-facade: wire the full server behind haku-console (`cluster/cdk8s/haku/console_config.py`) and
-let the console's approval gate filter it — reads auto-approve, every mutating/paid/destructive
-call queues for operator approval (`haku/console/auto_approval.py`). Authentik OAuth facades
-handle authentication separately from tool filtering; the console approval gate applies the
-tool policy.
-
-**Grocy is wired** — routed through haku-console's `grocy-sf`
-MCP entry (the `grocy_reads` policy in `cluster/cdk8s/haku/console_config.py` auto-approves the
-read tools; every write tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
-(`grocy-mcp-haku-sf` Authentik provider, its JWT rotation, and the ESO reflection into
-`haku-sandbox`) was retired — console-side allowlisting needed no separate credential,
-and unlike the direct read-only path it also lets every runtime reach approval-gated
-Grocy writes.
-
-**Tana is wired** — routed through haku-console's `tana`
-MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
-`get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
-idempotent `get_or_create_calendar_node` auto-approve under the `tana_safe_tools` policy in
-`cluster/cdk8s/haku/console_config.py`; every write tool stays approval-gated. The
-standalone `tana-mcp-ro` facade (`cluster/k8s/agents/tana-mcp-ro/`) was retired —
-console-side allowlisting needed no separate Deployment/secret/route.
+facade: wire the full server as an agentplane ActionGroup (`cluster/cdk8s/agentplane/staging.py`)
+and let action policy filter it — reads go in a policy set bound to `claude-ai`
+(`actions_staging_policies.py`), and every mutating/paid/destructive call waits for operator
+approval. Backend authentication (a static bearer, or the operator's OAuth linkage) is separate
+from that tool policy.
 
 ## Autonomous write capabilities
 

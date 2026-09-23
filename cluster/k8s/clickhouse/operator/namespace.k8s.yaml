@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: clickhouse

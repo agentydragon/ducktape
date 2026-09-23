@@ -15,7 +15,13 @@ from cluster.validation.flux import (
     parse_flux_kustomizations,
 )
 from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resource_file
-from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
+from cluster.validation.kustomize import (
+    KustomizeBuildResult,
+    KustomizeFile,
+    flux_generated_kustomization,
+    has_kustomization_file,
+    parse_kustomize_file,
+)
 
 _K8S_SUBPATH = Path("cluster/k8s")
 
@@ -158,6 +164,11 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
                 source_resources[yaml_file] = resources
                 for r in resources:
                     _index_source(r, flux_sources, artifact_paths)
+
+    for spec in flux_kustomizations.values():
+        if (directory := spec.local_dir(k8s_dir)) and directory.is_dir() and not has_kustomization_file(directory):
+            kust = flux_generated_kustomization(directory)
+            kustomize_files[kust.path] = kust
 
     return ParsedCluster(
         kustomize_files=kustomize_files,

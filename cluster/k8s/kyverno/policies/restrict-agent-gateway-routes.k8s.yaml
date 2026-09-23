@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents have no legitimate need to create routes — their sandbox Roles already omit these resources — so a blanket deny in those namespaces closes the latent hole structurally without touching any existing route (none live in a sandbox namespace). This denylist is preferred over per-listener `allowedRoutes` selectors because the public gateway's listener-level `allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector approach would require labeling the built-in `default` and `flux-system` namespaces that host critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway
+    policies.kyverno.io/title: Restrict Agent Gateway API Routes
+  name: restrict-agent-gateway-routes
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - HTTPRoute
+                - GRPCRoute
+                - TLSRoute
+                - TCPRoute
+                - UDPRoute
+                - Gateway
+              namespaces:
+                - claude-sandbox
+                - haku-sandbox
+              operations:
+                - CREATE
+                - UPDATE
+      name: deny-routes-in-agent-namespaces
+      validate:
+        deny: {}
+        message: "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the `authentik` namespace) instead. Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
+  validationFailureAction: Enforce

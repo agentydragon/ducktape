@@ -25,7 +25,7 @@ manifests depend on.
   source namespace in this cluster.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`,
   `haku-openclaw-spike`, `public-coder-agent`, **and `haku-ci`** (the `Bundle`
-  `namespaceSelector` in `trust-bundle.yaml`).
+  `namespaceSelector` in `cluster/cdk8s/haku_egress_proxy.py`).
 - Kyverno mounts that ConfigMap into haku sandbox pods and points common TLS
   clients at `/egress-proxy-ca/ca-certificates.crt`; `haku-ci` mounts it via its
   own Deployment/runner config (not Kyverno) — see <../../haku-ci/>.

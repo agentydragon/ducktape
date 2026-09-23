@@ -5,13 +5,18 @@ from pathlib import Path
 
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 
 
 def test_github_proxy_rules(tmp_path: Path) -> None:
-    manifest = yaml.safe_load(
-        get_required_path("_main/cluster/k8s/github-api-proxy/app/prometheus-rule.yaml").read_text()
+    manifest = one(
+        manifest
+        for manifest in yaml.safe_load_all(
+            get_required_path("_main/cluster/k8s/github-api-proxy/app/github-api-proxy.k8s.yaml").read_text()
+        )
+        if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "github-proxy.yaml").write_text(yaml.safe_dump(manifest["spec"]))
     (tmp_path / "tests.yaml").write_text(

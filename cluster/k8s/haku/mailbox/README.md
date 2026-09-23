@@ -7,7 +7,7 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 ## Layout
 
 The `haku-mailbox` Flux Kustomization owns the namespace, database, and application
-through the root `kustomization.yaml`; `namespace.yaml` is part of that root. CNPG,
+through the root `kustomization.yaml`; the Namespace is part of that root. CNPG,
 cert-manager, and External Secrets retain their
 operator prerequisites; `cert-manager-issuer-config` supplies the required issuer
 substitution. Registry, storage, identity, and routing services may converge after
@@ -15,11 +15,10 @@ admission. The init container retries through normal Pod reconciliation.
 
 Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.md#migrating-stateful-flux-kustomizations).
 
-| Path                    | Role                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `postgres-cluster.yaml` | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                                   |
-| `deployment.yaml`       | Declarative plan + init reconciliation and production server                                                  |
-| `image/`                | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`git.allegedly.works/ducktape-ci/stalwart`) |
+| Path                    | Role                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `haku-mailbox.k8s.yaml` | Generated (`cluster/cdk8s/haku/mailbox.py`): CNPG Postgres store, Stalwart Deployment (plan + init reconciliation and production server), SMTP ingress, Services, route |
+| `image/`                | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`git.allegedly.works/ducktape-ci/stalwart`)                                                           |
 
 ## Configuration model
 

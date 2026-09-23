@@ -27,11 +27,9 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
-from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
-from agentplane.app.testing.replication_process import AppProcess, app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.thread.models import (
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.models import (
     FeedState,
     ThreadCheckpoint,
     ThreadEntity,
@@ -40,8 +38,14 @@ from agentplane.app.thread.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.app.database import connect
+from agentplane.app.testing.electric_service import ElectricService, electric_service
+from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
+from agentplane.app.testing.replication_process import AppProcess, app_process
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -87,6 +91,8 @@ class ThreadBrowser:
     page: Page
     source: ReplicationSource
     store: ThreadStore
+    event_logs: EventLogStore
+    content: ContentStore
     opened: Opened
     app: AppProcess
     browser_url: str
@@ -134,46 +140,50 @@ async def thread_browser(
     page: Page,
     db_url: str,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
     thread_source: ReplicationSource,
     replay_after: int | None,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
-    thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
-        source.serve() as target,
+        source.serve() as runner_port,
         app_process(
-            db_url, target, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
+            db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{ingress}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, opened, app, ingress)
+        yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
     store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
-    thread_id = await store.thread(SANDBOX, SESSION, thread_source.attached.spec)
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    thread_id = await event_logs.open(SANDBOX, SESSION, thread_source.attached.spec)
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
-    await store.set_attached(thread_id, thread_source.attached, lease=lease)
-    await store.record(thread_id, thread_source.entries, lease=lease)
+    await ingestion.set_attached(thread_id, thread_source.attached, lease=lease)
+    await ingestion.record(thread_id, thread_source.entries, lease=lease)
     await store.rename(thread_id, "Test archived thread")
-    await store.release_ingestion(lease)
+    await ingestion.release(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -199,13 +209,19 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        assert await store.events(thread_id, limit=100) == thread_source.entries
+        assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
 async def test_switching_threads_starts_at_each_threads_tail(
-    page: Page, db_url: str, store: ThreadStore, electric: ElectricService, certificate: BrowserCertificate
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
 ) -> None:
-    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
     threads: list[str] = []
     for number in range(2):
@@ -225,16 +241,16 @@ async def test_switching_threads_starts_at_each_threads_tail(
                     item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
                 )
             )
-        thread = await store.thread(SANDBOX, source.attached.session_id, source.attached.spec)
-        await store.set_attached(thread, source.attached, lease=lease)
-        await store.record(thread, source.entries, lease=lease)
+        thread = await event_logs.open(SANDBOX, source.attached.session_id, source.attached.spec)
+        await ingestion.set_attached(thread, source.attached, lease=lease)
+        await ingestion.record(thread, source.entries, lease=lease)
         await store.rename(thread, f"Test navigation thread {number}")
         threads.append(str(thread))
-    await store.release_ingestion(lease)
+    await ingestion.release(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -259,7 +275,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     thread_browser: ThreadBrowser,
 ) -> None:
     page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
-    thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    thread = await thread_browser.event_logs.open(SANDBOX, SESSION, source.attached.spec)
     thread_browser.opened.replay.set()
     await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -389,13 +405,14 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page.on("request", lambda request: requests.append(request.url))
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with electric_service() as service:
-        store = ThreadStore.connect(service.database_url)
+        engine = connect(service.database_url)
+        event_logs, content = EventLogStore(engine), ContentStore(engine)
         try:
-            thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             async with (
-                source.serve() as target,
+                source.serve() as runner_port,
                 app_process(
-                    service.database_url, target, frontend_directory=directory, electric_url=service.url
+                    service.database_url, runner_port, frontend_directory=directory, electric_url=service.url
                 ) as app,
                 http2_proxy(app.url, certificate) as ingress,
                 asyncio.timeout(60),
@@ -478,7 +495,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
                     while True:
-                        scope = await store.current_scope(thread)
+                        scope = await content.current_scope(thread)
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
@@ -491,7 +508,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 ).to_have_count(1)
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
         finally:
-            await store.close()
+            await engine.dispose()
 
 
 @pytest.mark.parametrize("phone", [False, True])
@@ -616,7 +633,7 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
@@ -696,23 +713,33 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
     await history.hover()
+    # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
+    # still load and be re-measured after it, and the scroll correction for a re-measure lands a
+    # frame after its commit. Sample that same position once two consecutive frames agree.
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
     await page.mouse.wheel(0, -600)
-    await page.wait_for_function(
-        """() => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            return area.scrollHeight - area.clientHeight - area.scrollTop > 400;
-        }"""
-    )
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_anchor = await history.evaluate(
-        """area => {
-            const top = area.getBoundingClientRect().top;
-            const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                item => item.getBoundingClientRect().bottom > top
-            );
-            return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
-        }"""
-    )
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+        reading_anchor = await history.evaluate(
+            """area => new Promise(resolve => {
+                const sample = () => {
+                    const top = area.getBoundingClientRect().top;
+                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                        item => item.getBoundingClientRect().bottom > top
+                    );
+                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
+                };
+                const settle = previous => requestAnimationFrame(() => {
+                    const current = sample();
+                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
+                    else settle(current);
+                });
+                requestAnimationFrame(() => settle(sample()));
+            })"""
+        )
+    await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -950,7 +977,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
     assert source.commands.empty()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    archived = await thread_browser.store.events(thread.id, limit=100)
+    archived = await thread_browser.event_logs.events(thread.id, limit=100)
     assert archived == source.entries
     assert [entry.event.command_admitted.command for entry in archived if entry.event.HasField("command_admitted")] == [
         command,
@@ -1056,7 +1083,7 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     assert command.submit_input.text == "Test input retained across an unsent request"
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
     await page.reload()
     await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
@@ -1074,7 +1101,7 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
-        for entry in await thread_browser.store.events(thread.id, limit=100)
+        for entry in await thread_browser.event_logs.events(thread.id, limit=100)
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
@@ -1112,7 +1139,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert admission in await thread_browser.store.events(thread.id, limit=100)
+        assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
         await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
 
@@ -1164,7 +1191,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         assert admission.event.command_admitted.command == command
         assert admission == source.entries[4]
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
@@ -1203,7 +1230,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         )
         await expect(pending).to_have_count(0)
         assert source.commands.empty(), "reload/replay must not automatically send the Command again"
-        archived = await thread_browser.store.events(thread.id, limit=100)
+        archived = await thread_browser.event_logs.events(thread.id, limit=100)
         assert archived == source.entries
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
@@ -1233,7 +1260,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     assert admission.event.command_admitted.command == command
     assert admission == source.entries[6]
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
     pending = page.get_by_role("region", name="Pending commands")
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
@@ -1259,7 +1286,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1341,7 +1368,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert len(submissions) == 1
         assert source.commands.empty()
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
     finally:
         drop_reply.set()
         await page.unroute_all(behavior="wait")
@@ -1406,7 +1433,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     await expect(page.locator('[aria-label="Interrupt"]:enabled')).to_have_count(0)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.last_cursor(thread.id) == 0
+    assert await thread_browser.event_logs.last_cursor(thread.id) == 0
 
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1415,7 +1442,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
-    assert await thread_browser.store.events(thread.id, limit=100) == thread_browser.source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
 
 @pytest.mark.parametrize(
@@ -1448,7 +1475,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
 
 async def test_unknown_projection_failure_keeps_verified_history_and_stops_browser(
@@ -1502,7 +1529,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
     await expect(composer).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
-    assert await store.events(thread.id, limit=100) == source.entries
+    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
 if __name__ == "__main__":

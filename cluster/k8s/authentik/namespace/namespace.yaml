@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: authentik
-  labels:
-    goldilocks.fairwinds.com/enabled: "true"
-    goldilocks.fairwinds.com/vpa-update-mode: "initial"
-    rbac.ducktape.io/agent-readable-logs: "true"

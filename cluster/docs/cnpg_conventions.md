@@ -88,7 +88,7 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
   (<decisions.md> § "Parked application manifests").
 - Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
   manifests still name `local-path`, the chart-default StorageClass retired
-  2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to
+  2026-06-03 (`cdk8s/local_path_provisioner.py`) — re-point to
   `local-path-proxmox` when reviving.
 - `wayback-archive-db` (<../../loom/wayback/deploy/>): OVH-HA shape,
   retained in the parked Wayback package, outside the active Flux root.

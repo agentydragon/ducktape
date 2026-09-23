@@ -1,0 +1,41 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/name: cilium-agent
+    app.kubernetes.io/part-of: monitoring
+  name: cilium-agent
+  namespace: monitoring
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+      scheme: http
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cilium-agent
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/name: hubble
+    app.kubernetes.io/part-of: monitoring
+  name: hubble
+  namespace: monitoring
+spec:
+  endpoints:
+    - path: /metrics
+      port: hubble-metrics
+      scheme: http
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      k8s-app: hubble

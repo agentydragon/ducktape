@@ -19,8 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingester
+from agentplane.app.agent_runtime.models import SandboxIngestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -29,10 +36,10 @@ from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
 from agentplane.app.oidc import load_settings
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
-from agentplane.app.thread.models import SandboxIngestion
-from agentplane.app.thread.store import ThreadStore
+from agentplane.app.testing.kubernetes import pod, sandbox
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -161,34 +168,55 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_and_store(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    engine: AsyncEngine,
+    operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    runners: Runners,
+    ingester: Ingester,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then releases the ingestion lease and every
-    connection the store held."""
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer)
+    connection the app held."""
+    live_index.sandboxes[SANDBOX] = sandbox(SANDBOX)
+    live_index.pods[SANDBOX] = pod(SANDBOX, phase="Running", ready=True, ip="127.0.0.1")
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=operator_sessions,
+    )
     port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
     server = AppServer(
         uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=60),
         drain_of(app),
     )
-
-    async def sandboxes() -> list[str]:
-        return [SANDBOX]
-
-    serving = asyncio.create_task(serve_then_close(server, bridge=bridge, store=store, sandboxes=sandboxes))
-    # The bridge leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
+    serving = asyncio.create_task(
+        serve_then_close(server, ingester=ingester, runners=runners, thread_updates=thread_updates, engine=engine)
+    )
+    # The ingester leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
     while not server.started or await _leases(database) == 0:
         if serving.done():
             serving.result()

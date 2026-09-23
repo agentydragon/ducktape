@@ -10,13 +10,8 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import write_charts
 
 NAME = "github-branch-protection"
 OUTPUT_DIR = f"cluster/k8s/{NAME}"
@@ -30,7 +25,6 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def github_branch_protection(

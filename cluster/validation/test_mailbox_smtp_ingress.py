@@ -22,16 +22,14 @@ def _resource(path: Path, kind: str, name: str) -> dict[str, Any]:
 
 def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     """Every public MX node should run a source-preserving port-25 proxy."""
-    service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/service.yaml")
-    ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/smtp-ingress.yaml")
+    mailbox_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/haku-mailbox.k8s.yaml")
     ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/nginx.conf").read_text()
-    namespace_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/namespace.yaml")
 
-    smtp_service = _resource(service_yaml, "Service", "haku-mailbox-smtp")
+    smtp_service = _resource(mailbox_yaml, "Service", "haku-mailbox-smtp")
     assert "externalIPs" not in smtp_service["spec"]
     smtp_service_port = one(smtp_service["spec"]["ports"])
 
-    daemonset = _resource(ingress_yaml, "DaemonSet", "haku-mailbox-smtp-ingress")
+    daemonset = _resource(mailbox_yaml, "DaemonSet", "haku-mailbox-smtp-ingress")
     pod_spec = daemonset["spec"]["template"]["spec"]
     # SMTP serves the public MX nodes; Gateway also runs on internal clients.
     assert pod_spec["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
@@ -41,7 +39,7 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     assert smtp_service_port["port"] == smtp_port["containerPort"]
     service_protocol = smtp_service_port.get("protocol", "TCP")
     assert service_protocol == smtp_port.get("protocol", "TCP")
-    namespace = _resource(namespace_yaml, "Namespace", "haku-mailbox")
+    namespace = _resource(mailbox_yaml, "Namespace", "haku-mailbox")
     assert namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "privileged"
 
     assert "proxy_protocol on;" in ingress_config
@@ -50,13 +48,13 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
         f"{smtp_service_port['port']}"
     ) in ingress_config
 
-    ingress_policy = _resource(ingress_yaml, "CiliumNetworkPolicy", "haku-mailbox-smtp-ingress")
+    ingress_policy = _resource(mailbox_yaml, "CiliumNetworkPolicy", "haku-mailbox-smtp-ingress")
     ingress_rule = one(ingress_policy["spec"]["ingress"])
     assert set(ingress_rule["fromEntities"]) == {"world", "host"}
     ingress_port = one(one(ingress_rule["toPorts"])["ports"])
     assert (int(ingress_port["port"]), ingress_port["protocol"]) == (smtp_service_port["port"], service_protocol)
 
-    mailbox_policy = _resource(ingress_yaml, "CiliumNetworkPolicy", "haku-mailbox")
+    mailbox_policy = _resource(mailbox_yaml, "CiliumNetworkPolicy", "haku-mailbox")
     ingress_labels = daemonset["spec"]["template"]["metadata"]["labels"]
     smtp_rule = one(
         rule

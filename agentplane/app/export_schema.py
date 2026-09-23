@@ -14,36 +14,53 @@ import httpx
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.views import ThreadEntityView
 from agentplane.app.api import create_app
-from agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.views import ThreadEntityView
-
-
-async def _unreachable(name: str) -> str:
-    raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
 
 def openapi_document() -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
     inventory = SandboxInventory(namespace="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
-    store = ThreadStore.connect("postgresql+asyncpg://schema@localhost/schema")
+    engine = connect("postgresql+asyncpg://schema@localhost/schema")
+    thread_updates = ThreadUpdates(engine.url)
+    event_logs, content = EventLogStore(engine), ContentStore(engine)
+    live = LiveIndex(stale_after_seconds=900)
+    runners = Runners(live, port=1)
     document: dict[str, Any] = create_app(
         inventory,
-        RunnerBridge(address_of=_unreachable, store=store),
-        store,
+        RunnerBridge(
+            runners=runners,
+            event_logs=event_logs,
+            content=content,
+            ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
+            thread_changes=thread_updates.changes,
+        ),
+        ThreadStore(engine),
         {harness: ["schema-model"] for harness in Harness},
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
-        LiveIndex(stale_after_seconds=900),
+        live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
+        event_logs=event_logs,
+        content=content,
+        thread_updates=thread_updates,
+        operator_sessions=OperatorSessionStore(engine),
     ).openapi()
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):

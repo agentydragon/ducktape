@@ -1,0 +1,32 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: budget-ledger
+  namespace: flux-system
+spec:
+  approvePlan: auto
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "budget_ledger"
+      }
+  dependsOn:
+    - name: forgejo-claude
+    - name: haku-state
+  interval: 15m
+  path: ./tf/gitops/budget-ledger
+  refreshBeforeApply: true
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: tofu-state-db-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux

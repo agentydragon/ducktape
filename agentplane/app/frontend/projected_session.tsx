@@ -533,8 +533,10 @@ function VirtualizedHistory({
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousScrollTop = useRef(0);
-  const previousScrollHeight = useRef(0);
-  const previousClientHeight = useRef(0);
+  // Every bottom the viewport has had since the last scroll event or content resize was handled.
+  // A return to the bottom lands on whichever one was current when it ran; a card can grow in
+  // that task or an earlier one before the browser dispatches the scroll event.
+  const recentBottoms = useRef<number[]>([]);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
   const scrolledSinceInput = useRef(false);
@@ -552,12 +554,15 @@ function VirtualizedHistory({
     restorationSize.current = null;
     restoringAnchor.current = null;
   };
+  const recordBottom = (element: HTMLDivElement) => {
+    const bottom = element.scrollHeight - element.clientHeight;
+    if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
+  };
   const followPreviousBottom = (element: HTMLDivElement) => {
     // A programmatic return to the old bottom can be delivered after a card grows. Preserve
     // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll.
     if (captureNextScroll.current) return false;
-    const previousBottom = previousScrollHeight.current - previousClientHeight.current;
-    if (Math.abs(element.scrollTop - previousBottom) > 2) return false;
+    if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
     atBottom.current = true;
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
@@ -677,8 +682,7 @@ function VirtualizedHistory({
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return;
-    previousScrollHeight.current = element.scrollHeight;
-    previousClientHeight.current = element.clientHeight;
+    recordBottom(element);
     const observer = new ResizeObserver(() => {
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
@@ -688,12 +692,17 @@ function VirtualizedHistory({
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
       else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
-      previousScrollHeight.current = element.scrollHeight;
-      previousClientHeight.current = element.clientHeight;
+      recentBottoms.current = [element.scrollHeight - element.clientHeight];
     });
     observer.observe(content);
+    // A body arriving for a remounted or streaming card is a DOM mutation, and the scroll event
+    // of a return to the bottom that follows it in the same frame precedes the ResizeObserver
+    // delivery for it. The mutation callback runs before any later task, so record its bottom.
+    const mutations = new MutationObserver(() => recordBottom(element));
+    mutations.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
     return () => {
       observer.disconnect();
+      mutations.disconnect();
       cancelRestoration();
     };
   }, [segments, virtualizer]);
@@ -765,7 +774,9 @@ function VirtualizedHistory({
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (followPreviousBottom(element)) {
+        const followed = followPreviousBottom(element);
+        recentBottoms.current = [element.scrollHeight - element.clientHeight];
+        if (followed) {
           previousScrollTop.current = element.scrollTop;
           return;
         }

@@ -112,10 +112,12 @@ develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
    clones `~/haku-state` — synchronously, not backgrounded, so there's no "wait for the
    background command" step here; proceed once it prints `haku ready: …`.
 
-This harness also comes with claude.ai-connector MCP servers wired directly (Gmail, Calendar,
-Drive, Tana, Plaid Postgres, Grocy, GitHub) — usable instead of the raw-REST/`fastmcp` recipes
-in your state's `sources/`, which remain the fallback. A few connectors need one-time interactive
-OAuth before they work; if one errors, don't retry it — note it and move on.
+This harness also carries the claude.ai account's connectors. **Agentplane staging** is the
+route to your sources and to approval-gated external actions — Gmail, Calendar, Drive, Tasks,
+Tana, Grocy, Home Assistant, Coinbase and the Forgejo data repos — as your state's
+`sources/agentplane.md` describes. **Haku** is haku-console: GitHub, SSH, kubectl passthrough, the
+Haku sandbox and grants. If a connector errors (some need one-time interactive OAuth), don't
+retry it — note it and move on.
 
 ## First: wait for bootstrap to finish (avoid the false "first run")
 
@@ -149,8 +151,9 @@ no commits — never on the strength of a local checkout that might still be fil
 
 ## Commands run in the in-cluster sandbox
 
-Not specific to this runtime — **every** environment executes the run's commands in the
-`haku-sandbox` pod the sandbox-provisioning MCP hands out. See `memory/procedures/run.md` →
+Not specific to this runtime — **every** environment executes the run's build and validation
+commands in the `haku-sandbox` pod that haku-console's `sandbox` server hands out; source reads run
+in agentplane sandboxes instead. See `memory/procedures/run.md` →
 _Where your commands run_ for the contract, the standing environment facts, and the fallback.
 What's specific here: this container is a _fallback_ execution surface, not the default, and
 it is the fallback until you've confirmed the sandbox is reachable.

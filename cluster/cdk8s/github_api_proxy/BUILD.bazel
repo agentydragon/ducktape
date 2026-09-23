@@ -15,3 +15,25 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/gateway_api:gateway",
+        "//cluster/cdk8s/crd_bindings/gateway_api:tlsroute",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)

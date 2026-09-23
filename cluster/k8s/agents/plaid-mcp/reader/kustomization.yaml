@@ -2,9 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: plaid-mcp
 resources:
-  - configmap.yaml
-  - valkey-kimsufi-instance.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - networkpolicy.yaml
+  # cdk8s-generated (cluster/cdk8s/plaid_mcp/reader.py) -- see cluster/docs/cdk8s.md.
+  - plaid-db-mcp.k8s.yaml
+components:
+  - ./image-pins

@@ -70,6 +70,7 @@ from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -103,7 +104,7 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
 # the Gateway and back for a Service one hop away, which is why haku's own agent has no public
-# route either (cluster/k8s/agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml). Plain HTTP on
+# route either (haku_egress_proxy.py's haku-agent-runner-egress policy). Plain HTTP on
 # 3000, so the proxy reads the request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000
@@ -145,7 +146,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
                 "limit it adds, so treat anything the token can reach on those hosts as reachable."
             ),
             source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="agentplane-github-pat", key="token")
+                secret_ref=EgressCredentialSpecSourceSecretRef(name=GITHUB_PAT_SECRET, key="token")
             ),
             targets=[
                 EgressCredentialSpecTargets(

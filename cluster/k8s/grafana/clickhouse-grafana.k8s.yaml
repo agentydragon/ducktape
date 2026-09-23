@@ -1,0 +1,47 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: clickhouse
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: false
+    isDefault: false
+    jsonData:
+      defaultDatabase: aiquota
+      host: clickhouse.clickhouse.svc.cluster.local
+      port: 8123
+      protocol: http
+      queryTimeout: 60
+      secure: false
+      username: grafana
+      validateSql: true
+    name: AIQuota Analytics
+    secureJsonData:
+      password: ${password}
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  valuesFrom:
+    - targetPath: secureJsonData.password
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: clickhouse-grafana-credentials
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: aiquota-history
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: dashboard.json
+    name: aiquota-history-dashboard
+  folder: Analytics
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana

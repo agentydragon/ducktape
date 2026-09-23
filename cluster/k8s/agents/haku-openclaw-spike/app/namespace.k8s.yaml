@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku.
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: haku-openclaw-spike
+  name: haku-openclaw-spike

@@ -1,20 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - forgejo-images-creds-eso.yaml
-  - namespace.yaml
+  # cdk8s-generated (cluster/cdk8s/airlock.py) -- see cluster/docs/cdk8s.md.
+  - airlock.k8s.yaml
+  # Hand-written: the AIRLOCK_IMAGE_TAG env value carries an image-automation marker an
+  # `images:` Component cannot set.
+  - deployment.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
-  - session-secret-eso.yaml
-  - serviceaccount.yaml
-  - rbac.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - ciliumnetworkpolicy.yaml
-  - google-access-token-eso.yaml
-  - google-write-access-token-eso.yaml
 
 configMapGenerator:
   - name: airlock-config
