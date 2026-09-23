@@ -2067,6 +2067,65 @@ pub struct CommandResult {
     pub status: std::process::ExitStatus,
 }
 
+fn command_result(output: std::process::Output) -> CommandResult {
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
+/// `debundle spec validate --modules <modules_root> --source-file <source_file>`:
+/// the source-only preflight, which needs no CP-SAT sidecar.
+pub fn run_source_only_validate(
+    modules_root: &Path,
+    source_file: &Path,
+    extra_args: &[&str],
+) -> CommandResult {
+    let bin = debundler_path();
+    let output = Command::new(&bin)
+        .args(["spec", "validate", "--modules"])
+        .arg(modules_root)
+        .arg("--source-file")
+        .arg(source_file)
+        .args(extra_args)
+        .env(
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
+            "/definitely/missing/selector_cpsat_solver",
+        )
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    command_result(output)
+}
+
+/// `debundle spec match-selector --source-file <source_file> --match <selector>
+/// --format json`, parsed; panics on a non-zero exit.
+pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str]) -> Value {
+    let bin = debundler_path();
+    let result = command_result(
+        Command::new(&bin)
+            .args(["spec", "match-selector", "--source-file"])
+            .arg(source_file)
+            .args(["--match", selector, "--format", "json"])
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    );
+    assert!(
+        result.status.success(),
+        "match-selector exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    serde_json::from_str(&result.stdout).unwrap_or_else(|e| {
+        panic!(
+            "match-selector stdout is not JSON ({e}):\n{}",
+            result.stdout
+        )
+    })
+}
+
 fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
 }
