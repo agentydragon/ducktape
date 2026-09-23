@@ -40,6 +40,7 @@ from cluster.cdk8s.artifact_generators import (
 )
 from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
 from cluster.cdk8s.authentik import (
+    app as authentik_app,
     db as authentik_db,
     flux_kustomizations as authentik_flux_kustomizations,
     namespace as authentik_namespace,
@@ -172,6 +173,7 @@ def generate_manifests(root: Path) -> None:
     tofu_state_db.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
+    authentik_app.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
