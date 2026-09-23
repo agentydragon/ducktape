@@ -126,10 +126,7 @@ from cluster.cdk8s.talos_cloud_controller_manager import (
     flux_kustomizations as talos_cloud_controller_manager_flux_kustomizations,
 )
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
-from cluster.cdk8s.tofu_state import (
-    flux_kustomizations as tofu_state_flux_kustomizations,
-    namespace as tofu_state_namespace,
-)
+from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
@@ -171,6 +168,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
+    tofu_state_db.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
@@ -452,10 +450,8 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_filer_db_kustomization = seaweedfs_flux_kustomizations.seaweedfs_filer_db(
         flux_chart, seaweedfs_filer_db_artifact, seaweedfs_namespace_kustomization, cnpg_kustomization
     )
-    tofu_state_db_artifact = artifact("tofu-state-db", "cluster/k8s/tofu-state")
-    tofu_state_db_kustomization = tofu_state_flux_kustomizations.tofu_state_db(
-        flux_chart, tofu_state_db_artifact, cnpg_kustomization
-    )
+    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
+    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
     seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", "cluster/k8s/seaweedfs/secrets")
     seaweedfs_secrets_kustomization = seaweedfs_flux_kustomizations.seaweedfs_secrets(
         flux_chart,

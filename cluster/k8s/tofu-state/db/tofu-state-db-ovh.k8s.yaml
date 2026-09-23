@@ -1,0 +1,44 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tofu-state-db-ovh
+  namespace: tofu-state
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  managed:
+    roles:
+      - ensure: present
+        login: true
+        name: tfstate
+        passwordSecret:
+          name: tofu-state-db-credentials
+  monitoring:
+    enablePodMonitor: true
+  postgresql:
+    parameters:
+      tcp_keepalives_count: "6"
+      tcp_keepalives_idle: "60"
+      tcp_keepalives_interval: "10"
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 1Gi
+    storageClass: local-path-ovh
