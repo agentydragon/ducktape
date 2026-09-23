@@ -36,6 +36,7 @@ NATIVE_PORT = 9000
 HTTP_PORT = 8123
 SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-written file it is generated from
 
+# renovate: datasource=docker
 IMAGE = (
     "clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04"
 )

@@ -302,6 +302,7 @@ py_library(
 py_library(
     name = "flux_sources",
     srcs = ["flux_sources.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
         ":generation",

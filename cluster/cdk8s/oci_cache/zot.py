@@ -109,6 +109,7 @@ def _deployment(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name=_NAME,
+                            # renovate: datasource=docker
                             image="ghcr.io/project-zot/zot-linux-amd64:v2.1.21",
                             image_pull_policy="IfNotPresent",
                             args=["serve", "/etc/zot/config.json"],
@@ -151,6 +152,7 @@ def _deployment(chart: Chart) -> None:
                         # does not send client Docker-config credentials for the mirror host.
                         k8s.Container(
                             name="public-auth-proxy",
+                            # renovate: datasource=docker
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[
                                 k8s.ContainerPort(name="public-auth", container_port=_PUBLIC_AUTH_PORT, protocol="TCP")
@@ -221,6 +223,7 @@ def _valkey(chart: Chart) -> None:
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(

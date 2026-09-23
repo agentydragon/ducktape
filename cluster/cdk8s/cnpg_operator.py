@@ -37,6 +37,10 @@ NAME = "cnpg"
 NAMESPACE = "cnpg-system"
 OUTPUT_DIR = "cluster/k8s/cnpg"
 _BARMAN_CLOUD = "plugin-barman-cloud"
+# renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
+_CNPG_CHART_VERSION = "0.29.0"
+# renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
+_BARMAN_CLOUD_CHART_VERSION = "0.8.0"
 # The operator backs two failurePolicy: Fail webhooks (Cluster, Backup, ScheduledBackup),
 # so while it is down those writes are rejected outright — and it is the operator
 # reconciling every Postgres cluster here. Same treatment as the other blocking-webhook
@@ -87,7 +91,9 @@ def chart(app: App) -> Chart:
             ),
             upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
             chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(chart="cloudnative-pg", version="0.29.0", source_ref=source_ref)
+                spec=HelmReleaseSpecChartSpec(
+                    chart="cloudnative-pg", version=_CNPG_CHART_VERSION, source_ref=source_ref
+                )
             ),
             values=_CRITICAL_VALUES,
         ),
@@ -109,7 +115,9 @@ def chart(app: App) -> Chart:
                 crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
             ),
             chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(chart=_BARMAN_CLOUD, version="0.8.0", source_ref=source_ref)
+                spec=HelmReleaseSpecChartSpec(
+                    chart=_BARMAN_CLOUD, version=_BARMAN_CLOUD_CHART_VERSION, source_ref=source_ref
+                )
             ),
             values=_CRITICAL_VALUES,
         ),

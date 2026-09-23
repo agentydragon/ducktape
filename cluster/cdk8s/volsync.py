@@ -105,6 +105,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=volsync registryUrl=https://backube.github.io/helm-charts/
                     version="0.16.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

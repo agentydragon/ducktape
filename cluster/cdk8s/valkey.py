@@ -32,6 +32,7 @@ NAME = "valkey"
 NAMESPACE = "valkey-system"
 OUTPUT_DIR = "cluster/k8s/valkey"
 _RELEASE = "redis-operator"
+# renovate: datasource=docker depName=quay.io/opstree/redis-operator
 _OPERATOR_TAG = "v0.25.0"
 
 
@@ -63,6 +64,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=_RELEASE,
+                    # renovate: datasource=helm depName=redis-operator registryUrl=https://ot-container-kit.github.io/helm-charts
                     version="0.26.1",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

@@ -112,6 +112,7 @@ def _add_store(chart: Chart) -> None:
         metadata=metadata("haku-mailbox-db", NAMESPACE),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             # CNPG 1.27+ kills isolated primaries by default (liveness probe). Disable to prevent
             # false positives from transient network blips.
@@ -321,6 +322,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="nginx",
+                            # renovate: datasource=docker
                             image="nginxinc/nginx-unprivileged:1.31-alpine@sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
                             ports=[
                                 k8s.ContainerPort(name="smtp", container_port=_SMTP_PORT, host_port=25, protocol="TCP")

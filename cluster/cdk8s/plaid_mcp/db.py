@@ -79,6 +79,7 @@ def _cluster(chart: Chart) -> None:
         ),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
@@ -222,6 +223,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="psql",
+                            # renovate: datasource=docker
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
                             command=["/bin/bash", "-c"],
                             args=[f"set -x\nexec psql \\\n  --set=ON_ERROR_STOP=1 \\\n  -f /sql/{_SQL_FILE}\n"],

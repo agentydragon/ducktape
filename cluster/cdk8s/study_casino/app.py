@@ -181,6 +181,7 @@ def _readonly_provisioner(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name="psql",
+                            # renovate: datasource=docker
                             image="ghcr.io/cloudnative-pg/postgresql:18.6",
                             command=["/bin/bash", "-c"],
                             args=[_PROVISIONER_SCRIPT],

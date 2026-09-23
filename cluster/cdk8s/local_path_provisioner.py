@@ -129,6 +129,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=local-path-provisioner registryUrl=https://charts.containeroo.ch
                     version="0.0.38",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

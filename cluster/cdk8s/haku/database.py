@@ -78,6 +78,7 @@ class Db(Construct):
             metadata=metadata(CLUSTER_NAME, NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}),
             spec=ClusterSpec(
                 instances=2,
+                # renovate: datasource=docker
                 image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
                 probes=ClusterSpecProbes(
                     liveness=ClusterSpecProbesLiveness(

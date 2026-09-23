@@ -47,6 +47,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="metrics-server",
+                    # renovate: datasource=helm depName=metrics-server registryUrl=https://kubernetes-sigs.github.io/metrics-server/
                     version="3.14.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

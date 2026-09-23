@@ -82,6 +82,7 @@ def chart(app: App) -> Chart:
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
                     # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
+                    # renovate: datasource=helm depName=headlamp registryUrl=https://kubernetes-sigs.github.io/headlamp/
                     version="0.45.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

@@ -32,6 +32,7 @@ PORT = 2222
 _HOST_KEY_SECRET_NAME = "public-coder-agent-sshpiper-host-key"
 _RECORDINGS_CLAIM_NAME = "public-coder-agent-sshpiper-recordings"
 # Match MODULE.bazel's sshpiper_pipe_crd tag.
+# renovate: datasource=docker
 _IMAGE = "farmer1992/sshpiperd:v1.6.1@sha256:9ddc25422cc2d7236d7704230b7a706d4c39518edfd211275186b725bf9d3da1"
 _RESOURCES = [
     "host-key.sops.yaml",

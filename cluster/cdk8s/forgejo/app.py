@@ -451,6 +451,7 @@ def _helm_release(scope: Construct) -> None:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=_NAME,
+                    # renovate: datasource=docker depName=code.forgejo.org/forgejo-helm/forgejo
                     version="17.1.6",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

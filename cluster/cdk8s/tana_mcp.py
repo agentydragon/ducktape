@@ -145,6 +145,7 @@ def _tana_deployment(chart: Chart) -> None:
                         # that the port is open.
                         k8s.Container(
                             name="proxy",
+                            # renovate: datasource=docker
                             image="nginx:alpine",
                             ports=[k8s.ContainerPort(name="mcp-proxy", container_port=_PROXY_PORT, protocol="TCP")],
                             volume_mounts=[
@@ -479,6 +480,7 @@ def _valkey(chart: Chart) -> None:
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(

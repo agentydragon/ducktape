@@ -58,6 +58,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=seaweedfs-operator registryUrl=https://seaweedfs.github.io/seaweedfs-operator/
                     version="0.1.42",  # operator v1.0.39 (latest stable as of 2026-09-14)
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

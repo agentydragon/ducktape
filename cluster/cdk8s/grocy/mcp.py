@@ -221,6 +221,7 @@ def _valkey(chart: Chart, *, household: str, display_name: str, namespace: str) 
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(

@@ -73,10 +73,8 @@ def chart(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name="vector",
-                            image=(
-                                "docker.io/timberio/vector:0.58.0-distroless-libc"
-                                "@sha256:6c93dfe2554cc7e38316d618961cd657d5271c7a7aa727e0007502b28cb82c2e"
-                            ),
+                            # renovate: datasource=docker
+                            image="docker.io/timberio/vector:0.58.0-distroless-libc@sha256:6c93dfe2554cc7e38316d618961cd657d5271c7a7aa727e0007502b28cb82c2e",
                             args=["--config", "/etc/vector/vector.toml"],
                             env=[
                                 k8s.EnvVar(

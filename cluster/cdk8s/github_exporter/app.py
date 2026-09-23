@@ -167,6 +167,7 @@ def _rest_exporter(chart: Chart, account: str) -> None:
         description=f"GitHub API rate-limit exporter for the {account} account.",
         container=k8s.Container(
             name="exporter",
+            # renovate: datasource=docker
             image="githubexporter/github-exporter:v2.3.1",
             image_pull_policy="IfNotPresent",
             security_context=k8s.SecurityContext(

@@ -312,6 +312,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="mimir-distributed",
+                    # renovate: datasource=helm depName=mimir-distributed registryUrl=https://grafana.github.io/helm-charts
                     version="6.x",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

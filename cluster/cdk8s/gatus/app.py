@@ -85,6 +85,7 @@ def _database(scope: Construct) -> None:
         metadata=metadata(_DB_NAME, _NAMESPACE),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
@@ -131,6 +132,7 @@ def _helm_release(scope: Construct) -> None:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="gatus",
+                    # renovate: datasource=helm depName=gatus registryUrl=https://twin.github.io/helm-charts
                     version="1.5.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

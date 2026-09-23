@@ -111,10 +111,8 @@ def _deployment(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="postgres-mcp",
-                            image=(
-                                "enterprisedb/pg-airman-mcp:latest"
-                                "@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04"
-                            ),
+                            # renovate: datasource=docker
+                            image="enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04",
                             image_pull_policy="IfNotPresent",
                             args=[
                                 "--access-mode=restricted",
@@ -178,6 +176,7 @@ def _valkey(chart: Chart) -> None:
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(

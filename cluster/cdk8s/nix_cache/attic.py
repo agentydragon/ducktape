@@ -225,6 +225,7 @@ def _server(scope: Construct) -> None:
                         k8s.Container(
                             name=NAME,
                             # TODO: Pin to a versioned tag once attic publishes semver releases.
+                            # renovate: datasource=docker
                             image="ghcr.io/zhaofengli/attic:latest",
                             image_pull_policy="Always",
                             security_context=k8s.SecurityContext(

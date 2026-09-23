@@ -179,6 +179,7 @@ def seaweed(scope: Construct) -> Seaweed:
             # breaking gRPC changes (only additions to filer_pb / master_pb / iam_pb), and
             # split-brain prevention via persistent ClusterID is single-master-friendly
             # (auto-generates on first start).
+            # renovate: datasource=docker
             image="chrislusf/seaweedfs:4.46",
             volume_server_disk_count=1,
             master=SeaweedSpecMaster(

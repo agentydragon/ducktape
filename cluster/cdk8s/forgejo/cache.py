@@ -62,6 +62,7 @@ def _chart(app: App) -> Chart:
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(

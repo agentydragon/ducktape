@@ -98,6 +98,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=reloader registryUrl=https://stakater.github.io/stakater-charts
                     version="2.*",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

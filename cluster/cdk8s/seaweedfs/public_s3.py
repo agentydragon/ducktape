@@ -219,6 +219,7 @@ def _gateway(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name="s3",
+                            # renovate: datasource=docker
                             image="chrislusf/seaweedfs:4.46",
                             image_pull_policy="IfNotPresent",
                             command=[

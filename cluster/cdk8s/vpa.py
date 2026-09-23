@@ -59,6 +59,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=vpa registryUrl=https://charts.fairwinds.com/stable
                     version="5.0.1",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
