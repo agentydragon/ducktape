@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/agentydragon/openclaw
-    newTag: devel-20260923231825-ca87fef # {"$imagepolicy": "flux-system:openclaw:tag"}
+    newTag: devel-20260923234332-29260ed # {"$imagepolicy": "flux-system:openclaw:tag"}
