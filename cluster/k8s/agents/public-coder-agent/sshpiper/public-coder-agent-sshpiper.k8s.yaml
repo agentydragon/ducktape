@@ -1,0 +1,221 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - sshpiper.com
+    resources:
+      - pipes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-sshpiper
+subjects:
+  - kind: ServiceAccount
+    name: public-coder-agent-sshpiper
+    namespace: public-coder-agent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: "Session recordings. This is the audit trail for the SSH route: unlike an MCP tool call, which leaves a structured per-call `mcp_tool_calls` row, a shell session has no equivalent structured record, so the recordings are what remains. Local-path is RWO and binds to one node, which is why the Deployment stays at one replica."
+  name: public-coder-agent-sshpiper-recordings
+  namespace: public-coder-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path-ovh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: public-coder-agent-sshpiper
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent-sshpiper
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: PLUGIN
+              value: kubernetes
+            - name: SSHPIPERD_SERVER_KEY
+              value: /host-key/ssh_host_ed25519_key
+            - name: SSHPIPERD_SERVER_KEY_GENERATE_MODE
+              value: disable
+            - name: SSHPIPERD_LOG_LEVEL
+              value: info
+            - name: SSHPIPERD_DISABLE_LOCAL_FORWARDING
+              value: "true"
+            - name: SSHPIPERD_DISABLE_REMOTE_FORWARDING
+              value: "true"
+            - name: SSHPIPERD_DROP_HOSTKEYS_MESSAGE
+              value: "true"
+            - name: SSHPIPERD_SCREEN_RECORDING_FORMAT
+              value: asciicast
+            - name: SSHPIPERD_SCREEN_RECORDING_DIR
+              value: /recordings
+          image: farmer1992/sshpiperd:v1.6.1@sha256:9ddc25422cc2d7236d7704230b7a706d4c39518edfd211275186b725bf9d3da1
+          livenessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            tcpSocket:
+              port: ssh
+          name: sshpiperd
+          ports:
+            - containerPort: 2222
+              name: ssh
+          readinessProbe:
+            periodSeconds: 10
+            tcpSocket:
+              port: ssh
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /host-key
+              name: host-key
+              readOnly: true
+            - mountPath: /recordings
+              name: recordings
+            - mountPath: /tmp
+              name: tmp
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: public-coder-agent-sshpiper
+      volumes:
+        - name: host-key
+          secret:
+            defaultMode: 288
+            secretName: public-coder-agent-sshpiper-host-key
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: public-coder-agent-sshpiper-recordings
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: ClusterIP for the Agent's SSH route to the devbox. Not published outside the cluster; reachability is decided by cnp-ingress.yaml, not by this Service existing.
+  labels:
+    app.kubernetes.io/name: public-coder-agent-sshpiper
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+spec:
+  ports:
+    - name: ssh
+      port: 2222
+      protocol: TCP
+      targetPort: 2222
+  selector:
+    app.kubernetes.io/name: public-coder-agent-sshpiper
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-sshpiper-ingress
+  namespace: public-coder-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: public-coder-agent
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+      toPorts:
+        - ports:
+            - port: "2222"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-sshpiper-egress
+  namespace: public-coder-agent
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            k8s:kubevirt.io/domain: public-coder-devbox
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
