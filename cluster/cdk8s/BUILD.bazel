@@ -1324,7 +1324,6 @@ py_library(
         "//cluster/cdk8s/oci_cache:zot",
         "//cluster/cdk8s/ollama:app",
         "//cluster/cdk8s/ollama:flux_kustomizations",
-        "//cluster/cdk8s/openebs_lvm:flux_kustomizations",
         "//cluster/cdk8s/openebs_lvm:storage",
         "//cluster/cdk8s/parked:flux_kustomizations",
         "//cluster/cdk8s/plaid_mcp:app",
