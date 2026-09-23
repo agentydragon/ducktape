@@ -65,7 +65,7 @@ def test_consistent_is_clean() -> None:
 def test_repository_missing_from_webhook() -> None:
     cluster = _cluster(_repo("foo"), _policy("foo", "foo"), _receiver([]))
     errors = check_image_automation_webhook(cluster)
-    assert any("foo" in e and "github-webhook-receiver" in e for e in errors)
+    assert any("foo" in e and "GitHub Receiver" in e for e in errors)
 
 
 def test_non_ghcr_repository_exempt_from_webhook() -> None:
