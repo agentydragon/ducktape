@@ -78,44 +78,6 @@ uniquely. In the largest downstream spec, four selectors of this shape match
 resolves them only because every other candidate is claimed by another
 selector. Burn-down: <plans/selector_engine.md>.
 
-## Global Matching Needs Injective Target Assignment
-
-Status: fixed (2026-09-17). `all_different` over claimed targets is compiled
-into the CP-SAT model (`require_target_all_different`, reason
-`target_injectivity`) and covered by model- and backend-level tests. The
-end-to-end fixture at
-`e2e/testdata/global_selector_assignment_stress/broad_specific_injective/` is
-still not wired to a test; that is the remaining gap.
-
-Some selectors are intentionally broad, and the spec relies on the whole
-assignment to disambiguate them. Solving each selector independently, or
-dropping target injectivity, leaves those broad selectors ambiguous.
-
-Observed pattern:
-
-```js
-const broadCandidate = f(134);
-const exactCandidate = f(123);
-```
-
-Given two readable claims:
-
-- `X`: `const x = f(ANYTHING);`
-- `Y`: `const y = f(123);`
-
-`Y` should bind to `exactCandidate`, and target injectivity should force `X` to
-`broadCandidate`. Without a native/global `all_different`, both `X` and `Y` can
-claim `exactCandidate`, or `X` can remain ambiguous between both candidates.
-
-Desired behavior:
-
-- Treat `all_different` across claimed targets as selector semantics, not as a
-  best-effort diagnostic.
-- Enforce it in the exact-assignment backend so forced matches propagate to
-  broader selectors instead of enumerating invalid duplicate rows and rejecting
-  them late.
-- Add regression coverage before replacing the current `AssignmentRow` solver.
-
 ## Stable Identifiers Are Only Local To One Match
 
 Status: open (reproduced 2026-09-23 through `debundle run`). A free identifier

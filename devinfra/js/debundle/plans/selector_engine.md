@@ -52,9 +52,11 @@ tests.
    today only native lowering has.
 3. **`const ANYTHING = <expr>` holes only the name.** Today the hole swallows the
    whole declarator, initializer included.
-4. **Pin current behaviour worth keeping.** Wire
-   `e2e/testdata/global_selector_assignment_stress/broad_specific_injective/` to
-   a test; add command-level tests for each relational selector kind.
+4. **Pin current behaviour worth keeping.** Every `alpha_all` scoping rule that
+   only native lowering's internal tests pin gets a command-level agreement case.
+   Injectivity forcing and chained relational selectors are already covered end
+   to end (`e2e/global_selector_assignment_test.rs`,
+   `e2e/intrinsic_alias_lowering_test.rs`).
 5. **One engine.** Delete native `source_match` lowering, the three `run`
    fallbacks in `lowering/materialize/plan_builder.rs`, `FactDomains`, and
    validate's native lowerability audit. `match-selector`, `validate

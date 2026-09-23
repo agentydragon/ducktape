@@ -2,8 +2,9 @@
 //! selector and chunk: `debundle run`, `spec validate --source-file` and
 //! `spec match-selector`. Each case also pins an `alpha_all` scoping rule the
 //! commands must share: same-spelled locals in sibling blocks, loop heads,
-//! `switch` bodies and named function expressions are independent bindings,
-//! while `var` hoists to the enclosing function.
+//! `switch` bodies, named function/class expressions and shadowing arrow params
+//! are independent bindings; `var` hoists to the enclosing function out of
+//! blocks, `catch` and `switch`; property names stay exact.
 
 use std::fs;
 use std::path::Path;
@@ -253,4 +254,131 @@ export { actual };
         matched["matches"].as_array().unwrap().is_empty(),
         "{matched:#}"
     );
+}
+
+const VAR_HOISTED_OUT_OF_CATCH: Case = Case {
+    chunk: r#"function actual(run) {
+  try {
+    run();
+  } catch (e) {
+    var a = String(e);
+  }
+  return a;
+}
+console.log(actual(() => { throw "boom"; }));
+export { actual };
+"#,
+    selector: r#"function readable(run) {
+  try {
+    run();
+  } catch (error) {
+    var message = String(error);
+  }
+  return message;
+}"#,
+    local: "readable",
+    subject: "actual",
+};
+
+const VAR_HOISTED_OUT_OF_SWITCH: Case = Case {
+    chunk: r#"function actual(kind) {
+  switch (kind) {
+    case "a":
+      var b = 1;
+      break;
+    default:
+      b = 2;
+  }
+  return b;
+}
+console.log(actual("a"), actual("z"));
+export { actual };
+"#,
+    selector: r#"function readable(kind) {
+  switch (kind) {
+    case "a":
+      var value = 1;
+      break;
+    default:
+      value = 2;
+  }
+  return value;
+}"#,
+    local: "readable",
+    subject: "actual",
+};
+
+const NAMED_CLASS_EXPRESSION: Case = Case {
+    chunk: r#"const a = () => "outer";
+const b = class c {
+  static create() {
+    return new c();
+  }
+};
+console.log(a(), b.create() instanceof b);
+export { a, b };
+"#,
+    selector: r#"const outer = () => "outer";
+const Widget = class outer {
+  static create() {
+    return new outer();
+  }
+};"#,
+    local: "Widget",
+    subject: "b",
+};
+
+const ARROW_PARAM_SHADOWS_OUTER: Case = Case {
+    chunk: r#"function actual(n, l) {
+  return l.map((t) => t.id).concat(n);
+}
+console.log(actual(0, [{ id: 1 }]).join(","));
+export { actual };
+"#,
+    selector: r#"function readable(value, list) {
+  return list.map((value) => value.id).concat(value);
+}"#,
+    local: "readable",
+    subject: "actual",
+};
+
+#[test]
+fn var_hoists_out_of_catch() {
+    assert_all_commands_resolve(&VAR_HOISTED_OUT_OF_CATCH);
+}
+
+#[test]
+fn var_hoists_out_of_switch() {
+    assert_all_commands_resolve(&VAR_HOISTED_OUT_OF_SWITCH);
+}
+
+#[test]
+fn named_class_expression_name_is_local() {
+    assert_all_commands_resolve(&NAMED_CLASS_EXPRESSION);
+}
+
+#[test]
+fn arrow_param_shadows_outer_binding() {
+    assert_all_commands_resolve(&ARROW_PARAM_SHADOWS_OUTER);
+}
+
+/// Alpha renaming covers identifiers, never property names: `.id` in the
+/// template does not match `.key` in the chunk, in any command.
+#[test]
+fn property_names_stay_exact_under_alpha() {
+    let case = Case {
+        chunk: r#"function actual(n, l) {
+  return l.map((t) => t.key).concat(n);
+}
+export { actual };
+"#,
+        ..ARROW_PARAM_SHADOWS_OUTER
+    };
+    let validated = validate(&case);
+    assert_eq!(
+        validated["counts"]["unresolved_selector"], 1,
+        "{validated:#}"
+    );
+    let matched = match_selector(&case);
+    assert_eq!(matched["unique"], false, "{matched:#}");
 }
