@@ -179,6 +179,8 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/external-credentials/external-credentials.k8s.yaml",
+        "seaweedfs/external-credentials/kustomization.yaml",
         "seaweedfs/operator/seaweedfs-operator.k8s.yaml",
         "seaweedfs/operator/kustomization.yaml",
         "seaweedfs/pr-visuals-bucket/pr-visuals-bucket.k8s.yaml",

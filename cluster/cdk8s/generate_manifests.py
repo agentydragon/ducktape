@@ -226,6 +226,7 @@ from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomiz
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
+    external_credentials as seaweedfs_external_credentials,
     flux_kustomizations as seaweedfs_flux_kustomizations,
     forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
@@ -335,6 +336,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_registry_cache_bucket.write_manifests(root)
     seaweedfs_pr_visuals_bucket.write_manifests(root)
     seaweedfs_operator_release.write_manifests(root)
+    seaweedfs_external_credentials.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)
@@ -846,9 +848,9 @@ def generate_manifests(root: Path) -> None:
         )
     )
     seaweedfs_external_credentials_artifact = artifact(
-        "seaweedfs-external-credentials", "cluster/k8s/seaweedfs/external-credentials"
+        "seaweedfs-external-credentials", seaweedfs_external_credentials.OUTPUT_DIR
     )
-    seaweedfs_external_credentials_kustomization = seaweedfs_flux_kustomizations.seaweedfs_external_credentials(
+    seaweedfs_external_credentials_kustomization = seaweedfs_external_credentials.seaweedfs_external_credentials(
         flux_chart,
         seaweedfs_external_credentials_artifact,
         seaweedfs_secrets_kustomization,
