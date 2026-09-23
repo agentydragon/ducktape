@@ -74,6 +74,8 @@ exports_files(
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
         "haku/mailbox/haku-mailbox.k8s.yaml",
         "haku-ci/haku-ci.k8s.yaml",
+        "agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
+        "agents/agent-rbac-base/kustomization.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
         "agents/public-coder-agent/namespace/kustomization.yaml",
@@ -343,8 +345,7 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "agentplane-staging/agentplane.k8s.yaml",
-        "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
-        "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
+        "agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
         "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml",
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/app/agentplane-acceptance-operator.yaml",

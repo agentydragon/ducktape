@@ -42,8 +42,11 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     k8s_dir: Path, haku_console_objects: list[dict[str, Any]]
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
-    metadata_role = yaml.safe_load(
-        (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml").read_text()
+    rbac_base = list(yaml.safe_load_all((k8s_dir / "agents/agent-rbac-base/agent-rbac-base.k8s.yaml").read_text()))
+    metadata_role = one(
+        obj
+        for obj in rbac_base
+        if obj["kind"] == "ClusterRole" and obj["metadata"]["name"] == "agent-readable-namespace-metadata"
     )
     assert all(rule["verbs"] == ["get", "list", "watch"] for rule in metadata_role["rules"])
     assert not {
@@ -59,8 +62,10 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         "pods/portforward",
     } & _resources(metadata_role)
 
-    logs_role = yaml.safe_load(
-        (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml").read_text()
+    logs_role = one(
+        obj
+        for obj in rbac_base
+        if obj["kind"] == "ClusterRole" and obj["metadata"]["name"] == "agent-readable-namespace-logs"
     )
     assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
 

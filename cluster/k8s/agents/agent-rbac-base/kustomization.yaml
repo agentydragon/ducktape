@@ -1,16 +1,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - resourcequota.yaml
-  - limitrange.yaml
-  - role-sandbox.yaml
-  - rolebinding-sandbox.yaml
-  - rolebinding-ollama-consumer.yaml
-  - clusterrole-cluster-diagnostics-reader.yaml
-  - clusterrole-agent-readable-namespace-logs.yaml
-  - clusterrole-agent-readable-namespace-metadata.yaml
-  - clusterrole-logs-configmaps-reader.yaml
-  - clusterrole-namespace-diagnostics-reader.yaml
-  - clusterrole-secrets-reader.yaml
-  - cleanuppolicy-sandbox-janitor.yaml
+  - agent-rbac-base.k8s.yaml

@@ -959,6 +959,7 @@ py_library(
     ],
     deps = [
         ":agent_machine_access",
+        ":agent_rbac_base",
         ":agent_shared_rbac",
         ":aiquota",
         ":airlock",
@@ -1195,6 +1196,8 @@ py_test(
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
+        "//cluster/k8s:agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
+        "//cluster/k8s:agents/agent-rbac-base/kustomization.yaml",
         "//cluster/k8s:agents/airlock/airlock.k8s.yaml",
         "//cluster/k8s:agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",

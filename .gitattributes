@@ -66,6 +66,7 @@ cluster/k8s/descheduler/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/rbac/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/agent-rbac-base/kustomization.yaml linguist-generated=true
 cluster/k8s/kyverno/app/kustomization.yaml linguist-generated=true
 cluster/k8s/kyverno/policies/kustomization.yaml linguist-generated=true
 cluster/k8s/cert-manager/app/kustomization.yaml linguist-generated=true

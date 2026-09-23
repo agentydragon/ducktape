@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import (
     agent_machine_access,
+    agent_rbac_base,
     agent_shared_rbac,
     aiquota,
     airlock,
@@ -486,9 +487,9 @@ def generate_manifests(root: Path) -> None:
     )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
     haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, root, haku_rbac_kustomization)
-    claude_rbac_artifact = artifact("claude-rbac", "cluster/k8s/agents/agent-rbac-base")
-    claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(
-        flux_chart, claude_rbac_artifact, kyverno_policies_kustomization
+    claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
+    claude_rbac_kustomization = agent_rbac_base.claude_rbac(
+        flux_chart, claude_rbac_artifact, root, kyverno_policies_kustomization
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
