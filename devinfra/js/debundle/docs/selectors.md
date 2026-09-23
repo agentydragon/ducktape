@@ -490,8 +490,8 @@ position:
 - As an object-literal shorthand property, it absorbs a run of key/value
   properties or spreads:
   `{ required: EXPR, ANYTHING, other: EXPR }`.
-- As a variable declarator with a placeholder initializer
-  (`const ANYTHING = null, selected = ...;`, or `= ANYTHING`), it behaves like
+- As a variable declarator whose initializer is a hole
+  (`const ANYTHING = ANYTHING, selected = ...;`), it behaves like
   anonymous `DECLARATORS` and absorbs a run of sibling declarators. With any
   other initializer (`const ANYTHING = config.limit;`) it is one declarator
   whose name is a hole and whose initializer must match, found anywhere among

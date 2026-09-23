@@ -677,8 +677,8 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
         // the keyword. An `ANYTHING` declarator is a run only when its
-        // initializer carries nothing (absent, the `null` placeholder `const`
-        // needs, or itself a hole); otherwise it floats (see
+        // initializer carries nothing (absent, or itself a hole, as in
+        // `const ANYTHING = ANYTHING`); otherwise it floats (see
         // [`is_floating_declarator`]).
         NodeKind::VarDecl => {
             ck == NodeKind::VarDeclarator && {
@@ -694,12 +694,13 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
     }
 }
 
-/// A declarator whose initializer is more than a placeholder: not absent, not
-/// `null`, not itself a hole.
+/// A declarator whose initializer is more than a placeholder: present and not
+/// itself a hole.
 fn has_informative_init(index: &Index, declarator: NodeId) -> bool {
-    index.children_of(declarator).get(1).is_some_and(|&init| {
-        index.kind_of(init) != NodeKind::NullLit && !is_single_node_hole(index, init)
-    })
+    index
+        .children_of(declarator)
+        .get(1)
+        .is_some_and(|&init| !is_single_node_hole(index, init))
 }
 
 /// `ANYTHING = <init>` with an informative initializer: one declarator of any

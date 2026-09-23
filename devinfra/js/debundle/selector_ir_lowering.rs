@@ -3014,7 +3014,7 @@ fn object_props_carrier_ident(
 }
 
 /// Mirrors the matcher: a declarator initializer that is more than a
-/// placeholder (absent, `null`, or a hole).
+/// placeholder (absent, or a hole).
 fn native_informative_init(
     declarator: NodeId,
     node_kind: &BTreeMap<NodeId, NodeKind>,
@@ -3025,12 +3025,11 @@ fn native_informative_init(
         .get(&declarator)
         .and_then(|children| children.iter().find(|(ordinal, _)| *ordinal == 1))
         .is_some_and(|(_, init)| {
-            node_kind.get(init) != Some(&NodeKind::NullLit)
-                && !(node_kind.get(init) == Some(&NodeKind::Ident)
-                    && ident_name.get(init).is_some_and(|name| {
-                        hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-                            || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
-                    }))
+            !(node_kind.get(init) == Some(&NodeKind::Ident)
+                && ident_name.get(init).is_some_and(|name| {
+                    hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+                        || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+                }))
         })
 }
 
@@ -4951,7 +4950,7 @@ function second() {
     #[test]
     fn source_match_with_anything_declarators_lowers_to_native_child_list_pattern() {
         let selector = AnonymousStatementSelector::exact(
-            "const ANYTHING = null, picked = make(), ANYTHING = null;",
+            "const ANYTHING = ANYTHING, picked = make(), ANYTHING = ANYTHING;",
         );
         let lowered = lower_member_selector(
             &context(),
