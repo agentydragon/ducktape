@@ -1127,6 +1127,21 @@ http_file(
     urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanaserviceaccounts.yaml"],
 )
 
+# Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/k8s/kyverno/app/kyverno.yaml.
+http_file(
+    name = "kyverno_clusterpolicy_crd",
+    downloaded_file_path = "kyverno.io_clusterpolicies.yaml",
+    sha256 = "8b567653a33c7db9843ec2d2c2f4845625bed6d4b005dbb5485e6646b9376703",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_clusterpolicies.yaml"],
+)
+
+http_file(
+    name = "kyverno_cleanuppolicy_crd",
+    downloaded_file_path = "kyverno.io_cleanuppolicies.yaml",
+    sha256 = "84d8f500897ad14122177129adfeb3cbb0dac1d24796abf7cf22001c2ac9eb25",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
