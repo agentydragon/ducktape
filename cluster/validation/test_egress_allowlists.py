@@ -96,16 +96,14 @@ BUILD_REGISTRIES = GITHUB_GIT | hosts(
 GITHUB_API = hosts("api.github.com")
 
 # Hosts serving the operator's own accounts. A prompt-injected agent holding these reads the
-# operator's mail, calendar, tasks, finances and study data, so the group is named to keep
+# operator's mail, finances and study data, so the group is named to keep
 # `test_operator_data_reaches_only_haku_sandbox` honest as consumers are added.
-OPERATOR_DATA = hosts(
-    "www.googleapis.com",
-    "gmail.googleapis.com",
-    "tasks.googleapis.com",
-    "api.coinbase.com",
-    "haku-mailbox.allegedly.works",
-    "*.ankiweb.net",
-)
+OPERATOR_DATA = hosts("api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net")
+
+# The operator's Google account (mail, calendar, tasks). No fence here reaches it: agents reach
+# it only through services that hold the token for them (agentplane's egress proxy, google-mcp,
+# haku-console's Gmail/Calendar tools).
+OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.googleapis.com")
 
 # The fences the assertions below single out: a generated fence by its policy name, a
 # hand-written half by its manifest path, so a failure names the thing to open.
@@ -215,6 +213,11 @@ def test_operator_data_reaches_only_haku_sandbox(allowlists: dict[str, frozenset
     for fence, allowed in allowlists.items():
         if fence != OPERATOR_DATA_FENCE:
             assert not (allowed & OPERATOR_DATA), fence
+
+
+def test_no_fence_reaches_the_operators_google_account(allowlists: dict[str, frozenset[str]]) -> None:
+    for fence, allowed in allowlists.items():
+        assert not (allowed & OPERATOR_GOOGLE), fence
 
 
 def test_github_api_reaches_only_declared_holders(allowlists: dict[str, frozenset[str]]) -> None:
