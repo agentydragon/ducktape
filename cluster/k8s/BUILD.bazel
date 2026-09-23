@@ -152,6 +152,8 @@ exports_files(
         "flux-grafana-secrets/kustomization.yaml",
         "monitoring/grafana-operator/grafana-operator.k8s.yaml",
         "monitoring/grafana-operator/kustomization.yaml",
+        "monitoring/cilium/cilium-monitoring.k8s.yaml",
+        "monitoring/cilium/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

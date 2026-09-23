@@ -80,6 +80,7 @@ cluster/k8s/monitoring/namespace/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/grafana-helmrepository/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-grafana-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/grafana-operator/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/cilium/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
