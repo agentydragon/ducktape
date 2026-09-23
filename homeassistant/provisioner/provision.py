@@ -6,9 +6,11 @@ import asyncio
 from pathlib import Path
 
 import httpx2
+import kubernetes
 from client import HomeAssistantClient, OnboardingStep
 from component_installer import install_components
 from settings import load_settings
+from tokens import provision_token
 
 
 async def provision(client: HomeAssistantClient, password: str) -> None:
@@ -39,16 +41,25 @@ async def provision(client: HomeAssistantClient, password: str) -> None:
 
 
 async def main() -> None:
-    """Install configured components and complete configured onboarding."""
+    """Install configured components, complete configured onboarding, then keep the configured
+    token Secrets valid."""
     settings = load_settings()
     config_dir = Path("/config")
     async with httpx2.AsyncClient() as http_client:
         await install_components(http_client, config_dir, settings.components)
+        if not settings.onboarding_enabled and settings.tokens is None:
+            return
+        if settings.local_admin_password is None:
+            raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required for onboarding and tokens")
+        password = settings.local_admin_password.get_secret_value()
+        client = HomeAssistantClient(http_client, settings)
         if settings.onboarding_enabled:
-            if settings.local_admin_password is None:
-                raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required for onboarding")
-            client = HomeAssistantClient(http_client, settings)
-            await provision(client, settings.local_admin_password.get_secret_value())
+            await provision(client, password)
+        if settings.tokens is not None:
+            kubernetes.config.load_incluster_config()
+            v1 = kubernetes.client.CoreV1Api()
+            for token in settings.tokens:
+                await provision_token(client, v1, token, password)
 
 
 if __name__ == "__main__":

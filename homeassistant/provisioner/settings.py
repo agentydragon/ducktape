@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import ClassVar
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; Gazelle
@@ -39,6 +39,18 @@ class ComponentConfig(BaseModel):
     config_files: tuple[str, ...] = ()
 
 
+class TokenConfig(BaseModel):
+    """A Secret the provisioner keeps holding a long-lived token of the local owner that Home
+    Assistant accepts, under the key `token`."""
+
+    client_name: str = Field(
+        description="The token's name in Home Assistant. Minting one revokes the owner's other tokens of this name."
+    )
+    secret_name: str
+    secret_namespace: str
+    description: str = Field(description="The Secret's `description` annotation.")
+
+
 class ProvisionerSettings(BaseSettings):
     """Settings loaded from env, then an optional YAML config file.
 
@@ -57,6 +69,9 @@ class ProvisionerSettings(BaseSettings):
     http_config: HttpConfig
     components: tuple[ComponentConfig, ...]
     onboarding_enabled: bool
+    tokens: tuple[TokenConfig, ...] | None = Field(
+        default=None, description="Secrets to keep holding valid tokens; None when this run keeps none."
+    )
 
     # Used by callers that need to describe the source without duplicating the
     # environment-variable name in their own argument parsers.
