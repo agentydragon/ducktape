@@ -4,7 +4,6 @@ from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -186,55 +185,6 @@ def monitoring_rules(
                 # PrometheusRule
                 flux_kustomization_depends_on(monitoring_crds)
             ],
-        ),
-    )
-
-
-def monitoring_stack(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_namespace: Kustomization,
-    monitoring_crds: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "monitoring-stack",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="kube-prometheus-stack",
-                    namespace="monitoring",
-                ),
-            ],
-            # The built-in Secret health check only checks existence. This CEL check waits
-            # for the service-account token controller to populate data.token.
-            health_check_exprs=[
-                KustomizationSpecHealthCheckExprs(
-                    api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
-                )
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(
-                monitoring_namespace,
-                # The chart's Prometheus/Alertmanager CRs are rejected at admission until
-                # the CRDs exist, and the chart no longer installs them itself.
-                monitoring_crds,
-                ntfy,
-                external_secrets_config,
-            ),
         ),
     )
 

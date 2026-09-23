@@ -196,6 +196,7 @@ from cluster.cdk8s.monitoring import (
     grafana_helmrepository,
     grafana_operator,
     namespace as monitoring_namespace,
+    stack as monitoring_stack,
 )
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
@@ -300,6 +301,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    monitoring_stack.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
@@ -747,8 +749,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
-    monitoring_stack_artifact = artifact("monitoring-stack", "cluster/k8s/monitoring/stack")
-    monitoring_flux_kustomizations.monitoring_stack(
+    monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
+    monitoring_stack.monitoring_stack(
         flux_chart,
         monitoring_stack_artifact,
         monitoring_namespace_kustomization,
